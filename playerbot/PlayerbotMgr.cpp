@@ -2495,6 +2495,12 @@ std::string PlayerbotHolder::HandleBotDelete(Player* bot, Player* master, const 
 
 std::string PlayerbotHolder::HandleBotGear(Player* bot, Player* master, const std::string param)
 {
+    if (!bot)
+        return "Player is offline";
+
+    if (bot->isRealPlayer() || !bot->GetPlayerbotAI())
+        return "Target is not a bot";
+
     if (param.empty())
     {
         PlayerbotFactory factory(bot, bot->GetLevel());
