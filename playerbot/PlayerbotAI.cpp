@@ -2631,7 +2631,9 @@ Unit* PlayerbotAI::GetUnit(CreatureDataPair const* creatureDataPair)
     if (!guid)
         return NULL;
 
-    Map* map = sMapMgr.FindMap(creatureDataPair->second.mapid);
+    uint32 const instanceId = sMapMgr.GetContinentInstanceId(creatureDataPair->second.mapid,
+        creatureDataPair->second.posX, creatureDataPair->second.posY);
+    Map* map = sMapMgr.FindMap(creatureDataPair->second.mapid, instanceId);
 
     if (!map)
         return NULL;
@@ -2686,7 +2688,9 @@ GameObject* PlayerbotAI::GetGameObject(GameObjectDataPair const* gameObjectDataP
     if (!guid)
         return NULL;
 
-    Map* map = sMapMgr.FindMap(gameObjectDataPair->second.mapid);
+    uint32 const instanceId = sMapMgr.GetContinentInstanceId(gameObjectDataPair->second.mapid,
+        gameObjectDataPair->second.posX, gameObjectDataPair->second.posY);
+    Map* map = sMapMgr.FindMap(gameObjectDataPair->second.mapid, instanceId);
 
     if (!map)
         return NULL;
