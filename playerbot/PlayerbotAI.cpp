@@ -8290,14 +8290,17 @@ void PlayerbotAI::EnchantItemT(uint32 spellid, uint8 slot, Item* item)
       return;
    }
 
-   if (!((1 << pItem->GetProto()->SubClass) & spellInfo->EquippedItemSubClassMask) &&
-      !((1 << pItem->GetProto()->InventoryType) & spellInfo->EquippedItemInventoryTypeMask))
-   {
-
-      sLog.outError("%s: items could not be enchanted, wrong item type equipped", bot->GetName());
-
+   if (spellInfo->EquippedItemClass >= 0 &&
+       uint32(spellInfo->EquippedItemClass) != pItem->GetProto()->Class)
       return;
-   }
+
+   if (spellInfo->EquippedItemSubClassMask &&
+       !((uint32(1) << pItem->GetProto()->SubClass) & uint32(spellInfo->EquippedItemSubClassMask)))
+      return;
+
+   if (spellInfo->EquippedItemInventoryTypeMask &&
+       !((uint32(1) << pItem->GetProto()->InventoryType) & uint32(spellInfo->EquippedItemInventoryTypeMask)))
+      return;
 
 #ifdef MANGOSBOT_TWO
    EnchantmentSlot enchantSlot = spellInfo->Effect[0] == SPELL_EFFECT_ENCHANT_ITEM_PRISMATIC ? PRISMATIC_ENCHANTMENT_SLOT : PERM_ENCHANTMENT_SLOT;
