@@ -215,10 +215,29 @@ namespace ai
 
         //Map functions. Player independent.
         const MapEntry* getMapEntry() const { return sMapStore.LookupEntry(mapid); }
-        uint32 getFirstInstanceId() const { for (auto& map : sMapMgr.Maps()) { if (map.second->GetId() == getMapId()) return map.second->GetInstanceId(); }; return 0; }
+        uint32 getFirstInstanceId() const
+        {
+            uint32 const partitionId = sMapMgr.GetContinentInstanceId(mapid, coord_x, coord_y);
+            if (partitionId)
+                return partitionId;
+            for (auto& map : sMapMgr.Maps())
+                if (map.second->GetId() == getMapId())
+                    return map.second->GetInstanceId();
+            return 0;
+        }
 
         InstanceTemplate const* getInstanceTemplate() { return sObjectMgr.GetInstanceTemplate(mapid); }
-        Map* getMap(uint32 instanceId) const { if (!*this) return nullptr; loadMapAndVMap(instanceId); return sMapMgr.FindMap(mapid, instanceId ? instanceId : (getMapEntry()->Instanceable() ? getFirstInstanceId() : 0)); }
+        Map* getMap(uint32 instanceId) const
+        {
+            if (!*this)
+                return nullptr;
+            uint32 resolvedInstanceId = instanceId;
+            if (!resolvedInstanceId)
+                resolvedInstanceId = getMapEntry()->Instanceable() ? getFirstInstanceId() :
+                    sMapMgr.GetContinentInstanceId(mapid, coord_x, coord_y);
+            loadMapAndVMap(resolvedInstanceId);
+            return sMapMgr.FindMap(mapid, resolvedInstanceId);
+        }
         const TerrainInfo* getTerrain() const { return getMap(getFirstInstanceId()) ? getMap(getFirstInstanceId())->GetTerrain() : sTerrainMgr.LoadTerrain(getMapId()); }
         bool isDungeon() { return getMapEntry()->IsDungeon(); }
         bool isCity() { return GetArea() && GetArea()->flags & (AREA_FLAG_CITY | AREA_FLAG_SLAVE_CAPITAL); }
