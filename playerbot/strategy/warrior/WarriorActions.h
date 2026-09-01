@@ -4,9 +4,9 @@
 namespace ai
 {
     // stances
-    BUFF_ACTION(CastBattleStanceAction, "battle stance");
-    BUFF_ACTION(CastDefensiveStanceAction, "defensive stance");
-    BUFF_ACTION(CastBerserkerStanceAction, "berserker stance");
+    BUFF_ACTION_U(CastBattleStanceAction, "battle stance", bot->GetShapeshiftForm() != FORM_BATTLESTANCE && CastBuffSpellAction::isUseful());
+    BUFF_ACTION_U(CastDefensiveStanceAction, "defensive stance", bot->GetShapeshiftForm() != FORM_DEFENSIVESTANCE && CastBuffSpellAction::isUseful());
+    BUFF_ACTION_U(CastBerserkerStanceAction, "berserker stance", bot->GetShapeshiftForm() != FORM_BERSERKERSTANCE && CastBuffSpellAction::isUseful());
 
     // shouts
     MELEE_ACTION_U(CastBattleShoutTauntAction, "battle shout", CastSpellAction::isUseful()); // useful to rebuff
