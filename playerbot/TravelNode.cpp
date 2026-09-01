@@ -1505,7 +1505,7 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
     if (start == goal)
         return TravelNodeRoute();
 
-    if(!start->hasRouteTo(goal))
+    if (!start->hasRouteTo(goal) && start->getName() != "Bot Pos")
         return TravelNodeRoute();
 
     //Basic A* algoritm
