@@ -11,6 +11,21 @@
 #include "Globals/ObjectAccessor.h"
 
 using namespace ai;
+
+TravelMgr::CacheStats TravelMgr::GetCacheStats() const
+{
+    CacheStats stats;
+    for (auto const& purpose : destinationMap)
+        for (auto const& entry : purpose.second)
+            stats.destinations += entry.second.size();
+    stats.points = pointsMap.size();
+    stats.fishPoints = fishPoints.size();
+    stats.areaLevels = areaLevels.size();
+    stats.badMmaps = badMmap.size();
+    for (auto const& transfer : mapTransfersMap)
+        stats.mapTransfers += transfer.second.size();
+    return stats;
+}
 using namespace MaNGOS;
 
 PlayerTravelInfo::PlayerTravelInfo(Player* player)

@@ -162,6 +162,28 @@ RandomItemMgr::~RandomItemMgr()
     predicates.clear();
 }
 
+RandomItemCacheStats RandomItemMgr::GetCacheStats() const
+{
+    RandomItemCacheStats stats;
+    for (auto const& level : randomItemCache)
+        for (auto const& type : level.second)
+            stats.randomItems += type.second.size();
+    for (auto const& entry : equipCache)
+        stats.equipmentItems += entry.second.size();
+    stats.itemInfoEntries = itemInfoCache.size();
+    for (auto const& level : potionCache)
+        for (auto const& effect : level.second)
+            stats.consumableItems += effect.second.size();
+    for (auto const& level : foodCache)
+        for (auto const& category : level.second)
+            stats.consumableItems += category.second.size();
+    for (auto const& level : tradeCache)
+        stats.tradeItems += level.second.size();
+    for (auto const& entry : randomEnchantsCache)
+        stats.enchantItems += entry.second.size();
+    return stats;
+}
+
 bool RandomItemMgr::HandleConsoleCommand(ChatHandler* handler, char const* args)
 {
     if (!args || !*args)

@@ -200,10 +200,19 @@ namespace ai
 
         T* Create(std::string name, PlayerbotAI* ai)
         {
-            if (created.find(name) == created.end())
-                return created[name] = NamedObjectFactory<T>::Create(name, ai);
+            auto const existing = created.find(name);
+            if (existing == created.end())
+            {
+                // Unsupported qualified names are common probes. Do not cache
+                // nullptr entries forever; those maps otherwise grow as bots
+                // encounter new GUID/item/spell qualifiers.
+                T* object = NamedObjectFactory<T>::Create(name, ai);
+                if (object)
+                    created.emplace(std::move(name), object);
+                return object;
+            }
 
-            return created[name];
+            return existing->second;
         }
 
         virtual ~NamedObjectContext()
@@ -261,6 +270,8 @@ namespace ai
                 keys.insert(it->first);
             return keys;
         }
+
+        size_t GetCreatedCount() const { return created.size(); }
 
     protected:
         std::map<std::string, T*> created;
@@ -364,6 +375,14 @@ namespace ai
                     result.insert(*j);
             }
             return result;
+        }
+
+        size_t GetCreatedCount() const
+        {
+            size_t count = 0;
+            for (typename std::list<NamedObjectContext<T>*>::const_iterator i = contexts.begin(); i != contexts.end(); ++i)
+                count += (*i)->GetCreatedCount();
+            return count;
         }
 
         void Erase(const std::string& name)
