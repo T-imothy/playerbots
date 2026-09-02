@@ -703,6 +703,9 @@ protected:
     std::queue<ChatCommandHolder> chatCommands;
     std::queue<ChatQueuedReply> chatReplies;
     std::mutex chatRepliesMutex;
+    // A login/map transition can expose the same bot to two update paths for
+    // a short window. Never execute its mutable AI context concurrently.
+    std::mutex updateExecutionMutex;
     PacketHandlingHelper botOutgoingPacketHandlers;
     PacketHandlingHelper masterIncomingPacketHandlers;
     PacketHandlingHelper masterOutgoingPacketHandlers;

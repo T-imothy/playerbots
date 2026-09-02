@@ -253,6 +253,13 @@ PlayerbotAI::~PlayerbotAI()
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanced)
 {
+    // Do not block a map worker behind another map worker that is already
+    // updating this bot. The current update owns the complete mutable AI
+    // context; a duplicate transition-frame update is safe to skip.
+    std::unique_lock<std::mutex> updateLock(updateExecutionMutex, std::try_to_lock);
+    if (!updateLock.owns_lock())
+        return;
+
     AiObjectContext* context = aiObjectContext;
     std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
     auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAI " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
