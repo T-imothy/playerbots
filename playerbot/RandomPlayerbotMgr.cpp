@@ -746,6 +746,28 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 
     uint32 maxLogins = sPlayerbotAIConfig.randomBotsMaxLoginsPerInterval;
 
+    // Do not materialize thousands of complete login holders faster than the
+    // world thread can consume them. Each holder owns several query results,
+    // so an unbounded queue creates a large and avoidable startup memory spike.
+    const uint32 loginQueueLimit = sPlayerbotAIConfig.randomBotLoginDbQueueLimit;
+    if (loginQueueLimit)
+    {
+        const size_t pendingLoginDbWork = CharacterDatabase.GetPendingResultCount() +
+            CharacterDatabase.GetPendingAsyncOperationCount();
+        if (pendingLoginDbWork >= loginQueueLimit)
+            maxLogins = 0;
+        else
+            maxLogins = std::min<uint32>(maxLogins, loginQueueLimit - static_cast<uint32>(pendingLoginDbWork));
+
+        static time_t lastBackpressureLog = 0;
+        if (!maxLogins && pendingLoginDbWork && time(nullptr) >= lastBackpressureLog + 5)
+        {
+            lastBackpressureLog = time(nullptr);
+            sLog.outPerformance("BOT_LOGIN_BACKPRESSURE pending=%u limit=%u bots_online=%u target=%u",
+                static_cast<uint32>(pendingLoginDbWork), loginQueueLimit, onlineBotCount, maxAllowedBotCount);
+        }
+    }
+
     //Log in bots
     if (sRandomPlayerbotMgr.GetDatabaseDelay("CharacterDatabase") < 10 * IN_MILLISECONDS && !sPlayerbotAIConfig.asyncBotLogin && onlineBotCount < maxAllowedBotCount && maxLogins > 0)
     {
