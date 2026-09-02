@@ -369,7 +369,7 @@ public:
 	PlayerbotAI(Player* bot);
 	virtual ~PlayerbotAI();
 
-    virtual void UpdateAI(uint32 elapsed, bool minimal = false);
+    virtual void UpdateAI(uint32 elapsed, bool minimal = false, bool delayAlreadyAdvanced = false);
 
     void HandleCommands();
 private:
@@ -721,6 +721,7 @@ protected:
     uint32 jumpTime;
     bool fallAfterJump;
     uint32 faceTargetUpdateDelay;
+    uint32 lastValueCacheCleanupMs = 0;
     bool isPlayerFriend = false;
     bool isMovingToTransport = false;
     bool shouldLogOut = false;
