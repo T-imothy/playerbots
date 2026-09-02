@@ -892,6 +892,10 @@ AiPlayerbot.FleeingEnabled = 1
 # Intervals
 #AiPlayerbot.RandomBotUpdateInterval = 1000
 #AiPlayerbot.RandomBotsMaxLoginsPerInterval = 10
+# Maximum pending Character DB operations/results created by bot login holders.
+# This bounds startup memory while real-player DB work continues to use its
+# separate priority lane. Zero disables the bound.
+AiPlayerbot.RandomBotLoginDbQueueLimit = 256
 AiPlayerbot.RandomBotCountChangeMinInterval = 1800
 AiPlayerbot.RandomBotCountChangeMaxInterval = 7200
 #AiPlayerbot.MinRandomBotInWorldTime = 3600
