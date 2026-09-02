@@ -116,6 +116,8 @@ namespace ai
         std::atomic<uint64> outcomeUnknown{0};
         std::atomic<uint64> suppressedFailed{0};
         std::atomic<uint64> suppressedImpossible{0};
+        std::atomic<uint64> exactFailed{0};
+        std::atomic<uint64> exactImpossible{0};
 
         std::atomic<uint64> managerPasses{0};
         std::atomic<uint64> managerDurationUs{0};

@@ -96,6 +96,11 @@ void PlayerbotDiagnostics::RecordFailure(const std::string& action, const std::s
     if (!IsEnabled())
         return;
 
+    if (outcome == PlayerbotDiagnosticOutcome::Failed)
+        exactFailed.fetch_add(1, std::memory_order_relaxed);
+    else if (outcome == PlayerbotDiagnosticOutcome::Impossible)
+        exactImpossible.fetch_add(1, std::memory_order_relaxed);
+
     const std::string key = std::to_string(static_cast<uint32>(outcome)) + "\x1f" + action + "\x1f" + source;
     std::lock_guard<std::mutex> guard(failureMutex);
     auto existing = failures.find(key);
@@ -249,7 +254,7 @@ void PlayerbotDiagnostics::Flush(const PlayerbotManagerSnapshot& snapshot)
         snapshot.worldAverageDiff, snapshot.worldMaxDiff, snapshot.trackedMaps);
 
     sPlayerbotAIConfig.log(sPlayerbotAIConfig.diagnosticsLogFile,
-        "%s PB_DIAG_ENGINE samples=%llu avg_us=%.2f max_us=%llu avg_evaluations=%.2f max_evaluations=%llu avg_queue_start=%.2f avg_queue_end=%.2f max_queue=%llu no_action=%llu minimal=%llu ok=%llu failed=%llu impossible=%llu useless=%llu unknown=%llu suppressed_failed=%llu suppressed_impossible=%llu",
+        "%s PB_DIAG_ENGINE samples=%llu avg_us=%.2f max_us=%llu avg_evaluations=%.2f max_evaluations=%llu avg_queue_start=%.2f avg_queue_end=%.2f max_queue=%llu no_action=%llu minimal=%llu sampled_ok=%llu sampled_failed=%llu sampled_impossible=%llu sampled_useless=%llu sampled_unknown=%llu sampled_suppressed_failed=%llu sampled_suppressed_impossible=%llu exact_failed=%llu exact_impossible=%llu",
         timestamp.c_str(), static_cast<unsigned long long>(samples), samples ? static_cast<double>(engineUs) / samples : 0.0,
         static_cast<unsigned long long>(maxEngineUs), samples ? static_cast<double>(evaluations) / samples : 0.0,
         static_cast<unsigned long long>(maxEvaluations), samples ? static_cast<double>(queueStart) / samples : 0.0,
@@ -258,7 +263,8 @@ void PlayerbotDiagnostics::Flush(const PlayerbotManagerSnapshot& snapshot)
         static_cast<unsigned long long>(Take(outcomeOk)), static_cast<unsigned long long>(Take(outcomeFailed)),
         static_cast<unsigned long long>(Take(outcomeImpossible)), static_cast<unsigned long long>(Take(outcomeUseless)),
         static_cast<unsigned long long>(Take(outcomeUnknown)), static_cast<unsigned long long>(Take(suppressedFailed)),
-        static_cast<unsigned long long>(Take(suppressedImpossible)));
+        static_cast<unsigned long long>(Take(suppressedImpossible)), static_cast<unsigned long long>(Take(exactFailed)),
+        static_cast<unsigned long long>(Take(exactImpossible)));
 
     sPlayerbotAIConfig.log(sPlayerbotAIConfig.diagnosticsLogFile,
         "%s PB_DIAG_MANAGER passes=%llu avg_us=%.2f max_us=%llu process_scans=%llu process_calls=%llu login_scans=%llu login_requests=%llu login_backpressure_passes=%llu db_delay_ms=%u db_pending_results=%u db_pending_ops=%u db_pings=%llu",
