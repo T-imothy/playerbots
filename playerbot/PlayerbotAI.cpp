@@ -251,20 +251,43 @@ PlayerbotAI::~PlayerbotAI()
         delete aiObjectContext;
 }
 
-void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
+void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanced)
 {
     AiObjectContext* context = aiObjectContext;
     std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
     auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAI " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
     
-    if(aiInternalUpdateDelay > elapsed)
+    if (!delayAlreadyAdvanced)
     {
-        aiInternalUpdateDelay -= elapsed;
+        if(aiInternalUpdateDelay > elapsed)
+        {
+            aiInternalUpdateDelay -= elapsed;
+        }
+        else
+        {
+            aiInternalUpdateDelay = 0;
+            isWaiting = false;
+        }
     }
-    else
+    else if (!aiInternalUpdateDelay)
     {
-        aiInternalUpdateDelay = 0;
         isWaiting = false;
+    }
+
+    // Qualified AI values are caches. Expired entries used to survive until a
+    // much slower random-bot maintenance cycle, retaining memory for hours.
+    // Spread cleanup by GUID so 10k bots never sweep their caches together.
+    if (minimal && aiObjectContext && sPlayerbotAIConfig.valueCacheCleanupInterval)
+    {
+        uint32 const now = WorldTimer::getMSTime();
+        uint32 const interval = sPlayerbotAIConfig.valueCacheCleanupInterval;
+        if (!lastValueCacheCleanupMs)
+            lastValueCacheCleanupMs = now - (bot->GetGUIDLow() % interval);
+        if (WorldTimer::getMSTimeDiff(lastValueCacheCleanupMs, now) >= interval)
+        {
+            aiObjectContext->ClearExpiredValues();
+            lastValueCacheCleanupMs = now;
+        }
     }
 
     // cancel logout in combat
