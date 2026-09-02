@@ -46,7 +46,7 @@ private:
     std::vector<std::string> auras;
 };
 
-ObjectGuid FriendlyUnitWithoutAuraValue::Calculate()
+Unit* FriendlyUnitWithoutAuraValue::Calculate()
 {
     bool ignoreTank = false;
     std::string auras = qualifier;
@@ -59,11 +59,10 @@ ObjectGuid FriendlyUnitWithoutAuraValue::Calculate()
     }
 
     PlayerWithoutAuraPredicate predicate(ai, auras);
-    Unit* target = FindPartyMember(predicate, false, ignoreTank);
-    return target ? target->GetObjectGuid() : ObjectGuid();
+    return FindPartyMember(predicate, false, ignoreTank);
 }
 
-ObjectGuid PartyMemberWithoutAuraValue::Calculate()
+Unit* PartyMemberWithoutAuraValue::Calculate()
 {
     bool ignoreTank = false;
     std::string auras = qualifier;
@@ -76,8 +75,7 @@ ObjectGuid PartyMemberWithoutAuraValue::Calculate()
     }
 
 	PlayerWithoutAuraPredicate predicate(ai, auras);
-    Unit* target = FindPartyMember(predicate, true, ignoreTank);
-    return target ? target->GetObjectGuid() : ObjectGuid();
+    return FindPartyMember(predicate, true, ignoreTank);
 }
 
 class PlayerWithoutMyAuraPredicate : public FindPlayerPredicate, public PlayerbotAIAware
@@ -109,7 +107,7 @@ private:
     std::vector<std::string> auras;
 };
 
-ObjectGuid PartyMemberWithoutMyAuraValue::Calculate()
+Unit* PartyMemberWithoutMyAuraValue::Calculate()
 {
     bool ignoreTank = false;
     std::string auras = qualifier;
@@ -122,8 +120,7 @@ ObjectGuid PartyMemberWithoutMyAuraValue::Calculate()
     }
 
     PlayerWithoutMyAuraPredicate predicate(ai, auras);
-    Unit* target = FindPartyMember(predicate, false, ignoreTank);
-    return target ? target->GetObjectGuid() : ObjectGuid();
+    return FindPartyMember(predicate, false, ignoreTank);
 }
 
 class TankWithoutAuraPredicate : public FindPlayerPredicate, public PlayerbotAIAware
@@ -160,9 +157,8 @@ private:
     std::vector<std::string> auras;
 };
 
-ObjectGuid PartyTankWithoutAuraValue::Calculate()
+Unit* PartyTankWithoutAuraValue::Calculate()
 {
     TankWithoutAuraPredicate predicate(ai, qualifier);
-    Unit* target = FindPartyMember(predicate);
-    return target ? target->GetObjectGuid() : ObjectGuid();
+    return FindPartyMember(predicate);
 }

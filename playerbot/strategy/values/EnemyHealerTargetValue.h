@@ -9,6 +9,6 @@ namespace ai
         EnemyHealerTargetValue(PlayerbotAI* ai) : UnitCalculatedValue(ai, "enemy healer target"), Qualified() {}
 
     protected:
-        virtual ObjectGuid Calculate() override;
+        virtual Unit* Calculate() override;
 	};
 }

@@ -29,7 +29,7 @@ namespace ai
     {
     public:
         EnemyPlayerValue(PlayerbotAI* ai, std::string name = "enemy player") : UnitCalculatedValue(ai, name) {}
-        virtual ObjectGuid Calculate() override;
+        virtual Unit* Calculate() override;
 
         static float GetMaxAttackDistance(Player* bot);
     };

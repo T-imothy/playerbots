@@ -158,7 +158,7 @@ BattleGroundTypeId RpgBgTypeValue::Calculate()
     return BATTLEGROUND_TYPE_NONE;
 }
 
-ObjectGuid FlagCarrierValue::Calculate()
+Unit* FlagCarrierValue::Calculate()
 {
     Unit* carrier = nullptr;
 
@@ -169,7 +169,7 @@ ObjectGuid FlagCarrierValue::Calculate()
             BattleGroundWS *bg = (BattleGroundWS*)ai->GetBot()->GetBattleGround();
 
             if (!bg)
-                return NULL;
+                return nullptr;
 
             if ((!sameTeam && bot->GetTeam() == HORDE || (sameTeam && bot->GetTeam() == ALLIANCE)) && !bg->GetFlagCarrierGuid(TEAM_INDEX_HORDE).IsEmpty())
                 carrier = bg->GetBgMap()->GetPlayer(bg->GetFlagCarrierGuid(TEAM_INDEX_HORDE));
@@ -181,10 +181,10 @@ ObjectGuid FlagCarrierValue::Calculate()
             {
                 if (ignoreRange || bot->IsWithinDistInMap(carrier, sPlayerbotAIConfig.sightDistance))
                 {
-                    return carrier ? carrier->GetObjectGuid() : ObjectGuid();
+                    return carrier;
                 }
                 else
-                    return NULL;
+                    return nullptr;
             }
         }
 #ifndef MANGOSBOT_ZERO
@@ -193,14 +193,14 @@ ObjectGuid FlagCarrierValue::Calculate()
             BattleGroundEY* bg = (BattleGroundEY*)ai->GetBot()->GetBattleGround();
 
             if (!bg)
-                return NULL;
+                return nullptr;
 
             if (bg->GetFlagCarrierGuid().IsEmpty())
-                return NULL;
+                return nullptr;
 
             Player* fc = bg->GetBgMap()->GetPlayer(bg->GetFlagCarrierGuid());
             if (!fc)
-                return NULL;
+                return nullptr;
 
             if (!sameTeam && (fc->GetTeam() != bot->GetTeam()))
                 carrier = fc;
@@ -212,13 +212,13 @@ ObjectGuid FlagCarrierValue::Calculate()
             {
                 if (ignoreRange || bot->IsWithinDistInMap(carrier, sPlayerbotAIConfig.sightDistance))
                 {
-                    return carrier ? carrier->GetObjectGuid() : ObjectGuid();
+                    return carrier;
                 }
                 else
-                    return NULL;
+                    return nullptr;
             }
         }
 #endif
     }
-    return carrier ? carrier->GetObjectGuid() : ObjectGuid();
+    return carrier;
 }

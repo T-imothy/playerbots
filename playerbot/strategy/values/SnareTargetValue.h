@@ -10,6 +10,6 @@ namespace ai
             UnitCalculatedValue(ai, "snare target"), Qualified() {}
 
     protected:
-        virtual ObjectGuid Calculate() override;
+        virtual Unit* Calculate() override;
 	};
 }
