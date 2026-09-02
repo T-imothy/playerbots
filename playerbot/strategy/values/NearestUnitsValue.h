@@ -77,11 +77,11 @@ namespace ai
         NearestStealthedSingleUnitValue(PlayerbotAI* ai) :
             UnitCalculatedValue(ai, "nearest stealthed unit") {}
 
-        virtual ObjectGuid Calculate() override
+        virtual Unit* Calculate() override
         {
             std::list<ObjectGuid> targets = AI_VALUE(std::list<ObjectGuid>, "nearest stealthed units");
             if (targets.empty())
-                return NULL;
+                return nullptr;
 
             std::vector<Unit*> units;
             for (std::list<ObjectGuid>::iterator i = targets.begin(); i != targets.end(); ++i)
@@ -94,10 +94,9 @@ namespace ai
             }
 
             if (units.empty())
-                return NULL;
+                return nullptr;
 
-            Unit* unit = units[urand(0, units.size() - 1)];
-            return unit ? unit->GetObjectGuid() : ObjectGuid();
+            return units[urand(0, units.size() - 1)];
         }
     };
 }

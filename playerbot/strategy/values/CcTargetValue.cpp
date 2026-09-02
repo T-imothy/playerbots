@@ -91,7 +91,7 @@ private:
     float maxDistance;
 };
 
-ObjectGuid CcTargetValue::Calculate()
+Unit* CcTargetValue::Calculate()
 {
     std::list<ObjectGuid> possible = AI_VALUE(std::list<ObjectGuid>,"possible targets no los");
 
@@ -118,6 +118,5 @@ ObjectGuid CcTargetValue::Calculate()
     }
 
     FindTargetForCcStrategy strategy(ai, qualifier);
-    Unit* target = FindTarget(&strategy);
-    return target ? target->GetObjectGuid() : ObjectGuid();
+    return FindTarget(&strategy);
 }

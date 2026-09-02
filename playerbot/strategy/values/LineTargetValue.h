@@ -9,6 +9,6 @@ namespace ai
         LineTargetValue(PlayerbotAI* ai, std::string name = "line target") : UnitCalculatedValue(ai, name) {}
 
     public:
-        virtual ObjectGuid Calculate() override;
+        virtual Unit* Calculate() override;
 	};
 }

@@ -12,7 +12,7 @@ namespace ai
           PartyMemberValue(ai, name), Qualified() {}
 
     protected:
-        virtual ObjectGuid Calculate() override;
+        virtual Unit* Calculate() override;
         virtual FindPlayerPredicate* CreatePredicate();
     };
 

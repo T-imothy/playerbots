@@ -11,6 +11,6 @@ namespace ai
         CcTargetValue(PlayerbotAI* ai, std::string name = "cc target") : TargetValue(ai, name), Qualified() {}
 
     public:
-        ObjectGuid Calculate() override;
+        Unit* Calculate() override;
     };
 }

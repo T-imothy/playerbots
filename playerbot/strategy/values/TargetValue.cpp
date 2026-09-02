@@ -148,7 +148,7 @@ void PullTargetValue::Set(Unit* unit)
     guid = unit ? unit->GetObjectGuid() : ObjectGuid();
 }
 
-ObjectGuid PullTargetValue::Get()
+Unit* PullTargetValue::Get()
 {
     Unit* unit = nullptr;
     if (!guid.IsEmpty())
@@ -159,7 +159,7 @@ ObjectGuid PullTargetValue::Get()
     return unit;
 }
 
-ObjectGuid FollowTargetValue::Calculate()
+Unit* FollowTargetValue::Calculate()
 {
     Unit* followTarget = AI_VALUE(GuidPosition, "manual follow target").GetUnit(bot->GetInstanceId());
     if (followTarget == nullptr)
@@ -175,10 +175,10 @@ ObjectGuid FollowTargetValue::Calculate()
         }
     }
 
-    return followTarget ? followTarget->GetObjectGuid() : ObjectGuid();
+    return followTarget;
 }
 
-ObjectGuid ClosestAttackerTargetingMeTargetValue::Calculate()
+Unit* ClosestAttackerTargetingMeTargetValue::Calculate()
 {
     Unit* result = nullptr;
     float closest = 9999.0f;
@@ -198,7 +198,7 @@ ObjectGuid ClosestAttackerTargetingMeTargetValue::Calculate()
         }
     }
 
-    return result ? result->GetObjectGuid() : ObjectGuid();
+    return result;
 }
 
 std::list<ObjectGuid> FriendlyManualTargetsValue::Get()

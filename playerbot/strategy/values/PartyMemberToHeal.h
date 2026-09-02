@@ -11,7 +11,7 @@ namespace ai
           PartyMemberValue(ai, name) {}
     
     protected:
-        virtual ObjectGuid Calculate() override;
+        virtual Unit* Calculate() override;
         bool CanHealPet(Pet* pet);
         virtual bool Check(Unit* player);
 
@@ -26,7 +26,7 @@ namespace ai
             PartyMemberValue(ai, name) {}
 
     protected:
-        virtual ObjectGuid Calculate() override;
+        virtual Unit* Calculate() override;
     };
 
     class PartyMemberToRemoveRoots : public PartyMemberValue
@@ -36,6 +36,6 @@ namespace ai
             PartyMemberValue(ai, name) {}
 
     protected:
-        virtual ObjectGuid Calculate() override;
+        virtual Unit* Calculate() override;
     };
 }

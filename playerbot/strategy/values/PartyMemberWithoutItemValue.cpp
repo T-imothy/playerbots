@@ -44,12 +44,12 @@ private:
     std::string item;
 };
 
-ObjectGuid PartyMemberWithoutItemValue::Calculate()
+Unit* PartyMemberWithoutItemValue::Calculate()
 {
     FindPlayerPredicate *predicate = CreatePredicate();
     Unit *unit = FindPartyMember(*predicate);
     delete predicate;
-    return unit ? unit->GetObjectGuid() : ObjectGuid();
+    return unit;
 }
 
 FindPlayerPredicate* PartyMemberWithoutItemValue::CreatePredicate()

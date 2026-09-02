@@ -10,6 +10,6 @@ namespace ai
         PartyMemberToSoulstone(PlayerbotAI* ai, std::string name = "party member to soulstone") : PartyMemberValue(ai,name) {}
 
     protected:
-        virtual ObjectGuid Calculate() override;
+        virtual Unit* Calculate() override;
     };
 }
