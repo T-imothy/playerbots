@@ -226,7 +226,7 @@ namespace ai
 
         virtual std::string Format() override
         {
-            Unit* unit = ai->GetUnit(this->Calculate());
+            Unit* unit = this->Calculate();
             return unit ? unit->GetName() : "<none>";
         }
     };
@@ -329,7 +329,7 @@ namespace ai
 
         virtual std::string Format() override
         {
-            Unit* unit = ai->GetUnit(Get());
+            Unit* unit = Get();
             return unit ? unit->GetName() : "<none>";
         }
     };

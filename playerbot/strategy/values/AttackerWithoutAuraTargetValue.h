@@ -9,6 +9,6 @@ namespace ai
         AttackerWithoutAuraTargetValue(PlayerbotAI* ai) : UnitCalculatedValue(ai, "attacker without aura"), Qualified() {}
 
     protected:
-        virtual ObjectGuid Calculate() override;
+        virtual Unit* Calculate() override;
 	};
 }

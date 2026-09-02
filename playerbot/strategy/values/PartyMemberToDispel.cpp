@@ -25,11 +25,10 @@ private:
     uint32 dispelType;
 };
 
-ObjectGuid PartyMemberToDispel::Calculate()
+Unit* PartyMemberToDispel::Calculate()
 {
     uint32 dispelType = atoi(qualifier.c_str());
 
     PartyMemberToDispelPredicate predicate(ai, dispelType);
-    Unit* target = FindPartyMember(predicate);
-    return target ? target->GetObjectGuid() : ObjectGuid();
+    return FindPartyMember(predicate);
 }

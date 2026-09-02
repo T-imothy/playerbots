@@ -8,6 +8,6 @@ namespace ai
 	public:
         MasterTargetValue(PlayerbotAI* ai, std::string name = "master target") : UnitCalculatedValue(ai, name) {}
 
-        virtual ObjectGuid Calculate() override { return ai->GetGroupMaster(); }
+        virtual Unit* Calculate() override { return ai->GetGroupMaster(); }
     };
 }

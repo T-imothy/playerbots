@@ -11,7 +11,7 @@ namespace ai
         GrindTargetValue(PlayerbotAI* ai, std::string name = "grind target") : TargetValue(ai, name, 2) {}
 
     public:
-        ObjectGuid Calculate() override;
+        Unit* Calculate() override;
 
     private:
         int GetTargetingPlayerCount(Unit* unit);

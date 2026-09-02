@@ -7,7 +7,7 @@
 
 using namespace ai;
 
-ObjectGuid SnareTargetValue::Calculate()
+Unit* SnareTargetValue::Calculate()
 {
     std::string spell = qualifier;
 
@@ -16,7 +16,7 @@ ObjectGuid SnareTargetValue::Calculate()
     {
         Player* plr = dynamic_cast<Player*>(enemy);
         if (plr && !(plr->HasAuraType(SPELL_AURA_MOD_ROOT) || plr->HasAuraType(SPELL_AURA_MOD_STUN)) && (!plr->IsStopped() || plr->IsNonMeleeSpellCasted(false) || (plr->GetVictim() && plr->GetVictim()->GetObjectGuid() == bot->GetObjectGuid())))
-            return enemy ? enemy->GetObjectGuid() : ObjectGuid();
+            return enemy;
     }
 
     std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
@@ -46,7 +46,7 @@ ObjectGuid SnareTargetValue::Calculate()
                     shouldSnare = false;
 
                 if (victim && shouldSnare)
-                    return unit ? unit->GetObjectGuid() : ObjectGuid();
+                    return unit;
             }
         }
 
@@ -54,7 +54,7 @@ ObjectGuid SnareTargetValue::Calculate()
         switch (unit->GetMotionMaster()->GetCurrentMovementGeneratorType())
         {
         case FLEEING_MOTION_TYPE:
-            return unit ? unit->GetObjectGuid() : ObjectGuid();
+            return unit;
         case CHASE_MOTION_TYPE:
             chaseTarget = sServerFacade.GetChaseTarget(unit);
             if (!chaseTarget) continue;
@@ -74,7 +74,7 @@ ObjectGuid SnareTargetValue::Calculate()
                 shouldSnare = false;
 
             if (chaseTargetPlayer && shouldSnare && !ai->IsTank(chaseTargetPlayer))
-                return unit ? unit->GetObjectGuid() : ObjectGuid();
+                return unit;
         }
     }
 
