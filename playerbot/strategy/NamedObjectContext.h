@@ -249,6 +249,26 @@ namespace ai
             }
         }
 
+        template <typename Predicate>
+        size_t EraseIf(Predicate predicate)
+        {
+            std::lock_guard<std::recursive_mutex> lock(createdMutex);
+            size_t erased = 0;
+            for (auto existing = created.begin(); existing != created.end();)
+            {
+                if (!predicate(existing->first, existing->second))
+                {
+                    ++existing;
+                    continue;
+                }
+
+                delete existing->second;
+                existing = created.erase(existing);
+                ++erased;
+            }
+            return erased;
+        }
+
         void Update()
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
@@ -412,6 +432,15 @@ namespace ai
             {
                 (*i)->Erase(name);
             }
+        }
+
+        template <typename Predicate>
+        size_t EraseIf(Predicate predicate)
+        {
+            size_t erased = 0;
+            for (typename std::list<NamedObjectContext<T>*>::iterator i = contexts.begin(); i != contexts.end(); ++i)
+                erased += (*i)->EraseIf(predicate);
+            return erased;
         }
 
     private:

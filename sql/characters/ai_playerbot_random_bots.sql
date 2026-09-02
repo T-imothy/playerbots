@@ -9,6 +9,7 @@ CREATE TABLE `ai_playerbot_random_bots` (
   `value` bigint(20) DEFAULT NULL,
   `data` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `owner_bot_event` (`owner`,`bot`,`event`),
   KEY `owner` (`owner`),
   KEY `bot` (`bot`),
   KEY `event` (`event`)

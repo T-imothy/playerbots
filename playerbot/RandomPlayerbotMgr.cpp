@@ -298,7 +298,7 @@ RandomPlayerbotMgr::RandomPlayerbotMgr()
         guildsDeleted = false;
         arenaTeamsDeleted = false;
 
-        std::list<uint32> availableBots = GetBots();
+        const std::vector<uint32>& availableBots = GetBots();
 
         for (auto& bot : availableBots)
         {
@@ -682,7 +682,7 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
             urand(sPlayerbotAIConfig.randomBotCountChangeMinInterval, sPlayerbotAIConfig.randomBotCountChangeMaxInterval));
     }
 
-    std::list<uint32> availableBots = GetBots();    
+    const std::vector<uint32>& availableBots = GetBots();
     uint32 availableBotCount = availableBots.size();
     uint32 onlineBotCount = GetPlayerbotsAmount();
     
@@ -731,9 +731,13 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 
     uint32 updateBots = sPlayerbotAIConfig.randomBotsPerInterval == 0 ? UINT32_MAX : sPlayerbotAIConfig.randomBotsPerInterval;
 
-    //Update bots
-    for (auto bot : availableBots)
+    const size_t processScanLimit = availableBots.size();
+    for (size_t scanned = 0; scanned < processScanLimit && !availableBots.empty(); ++scanned)
     {
+        processBotCursor %= availableBots.size();
+        const uint32 bot = availableBots[processBotCursor];
+        processBotCursor = (processBotCursor + 1) % availableBots.size();
+
         if (GetPlayerBot(bot))
         {
             if (ProcessBot(bot))
@@ -771,8 +775,13 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     //Log in bots
     if (sRandomPlayerbotMgr.GetDatabaseDelay("CharacterDatabase") < 10 * IN_MILLISECONDS && !sPlayerbotAIConfig.asyncBotLogin && onlineBotCount < maxAllowedBotCount && maxLogins > 0)
     {
-        for (auto bot : availableBots)
+        const size_t loginScanLimit = availableBots.size();
+        for (size_t scanned = 0; scanned < loginScanLimit && !availableBots.empty(); ++scanned)
         {
+            loginBotCursor %= availableBots.size();
+            const uint32 bot = availableBots[loginBotCursor];
+            loginBotCursor = (loginBotCursor + 1) % availableBots.size();
+
             if (GetPlayerBot(bot))
                 continue;   
 
@@ -807,13 +816,23 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 
     MirrorAh();
 
-    for (auto& [mapId, map] : sMapMgr.Maps())
+    const time_t now = time(nullptr);
+    if (!performanceMapScanTimer || now >= performanceMapScanTimer + std::max<uint32>(1, sPlayerbotAIConfig.performanceMapScanInterval / IN_MILLISECONDS))
     {
-        sPerformanceMonitor.Init(map->GetId(), map->GetInstanceId());
+        performanceMapScanTimer = now;
+        for (auto& [mapId, map] : sMapMgr.Maps())
+        {
+            const std::pair<uint32, uint32> mapKey(map->GetId(), map->GetInstanceId());
+            if (initializedPerformanceMaps.insert(mapKey).second)
+                sPerformanceMonitor.Init(mapKey.first, mapKey.second);
+        }
     }
 
-    //Ping character database.
-    CharacterDatabase.AsyncPQuery(&RandomPlayerbotMgr::DatabasePing, sWorld.GetCurrentMSTime(), std::string("CharacterDatabase"), "SELECT 1");
+    if (!databasePingTimer || now >= databasePingTimer + std::max<uint32>(1, sPlayerbotAIConfig.randomBotDatabasePingInterval / IN_MILLISECONDS))
+    {
+        databasePingTimer = now;
+        CharacterDatabase.AsyncPQuery(&RandomPlayerbotMgr::DatabasePing, sWorld.GetCurrentMSTime(), std::string("CharacterDatabase"), "SELECT 1");
+    }
 
     PlayerbotHolder::UpdateAIInternal(elapsed, minimal);
 }
@@ -2223,7 +2242,7 @@ bool RandomPlayerbotMgr::ProcessBot(uint32 bot)
         else
             sLog.outDetail("Bot #%d %s:%d <%s>: log out", bot, IsAlliance(player->getRace()) ? "A" : "H", player->GetLevel(), player->GetName());
 
-        currentBots.remove(bot);
+        currentBots.erase(std::remove(currentBots.begin(), currentBots.end(), bot), currentBots.end());
         SetEventValue(bot, "add", 0, 0);
 
         if (!player)
@@ -2409,6 +2428,26 @@ void RandomPlayerbotMgr::Revive(Player* player)
     }
 }
 
+void RandomPlayerbotMgr::LogTeleportFailure(Player* bot)
+{
+    const time_t now = time(nullptr);
+    if (!teleportFailureLogTimer)
+    {
+        teleportFailureLogTimer = now;
+        sLog.outError("Cannot teleport bot %s - no locations available", bot->GetName());
+        return;
+    }
+
+    ++suppressedTeleportFailureLogs;
+    if (now >= teleportFailureLogTimer + 10)
+    {
+        sLog.outError("Cannot teleport bots - no locations available (%u repeated failures suppressed; last bot %s)",
+            suppressedTeleportFailureLogs, bot->GetName());
+        suppressedTeleportFailureLogs = 0;
+        teleportFailureLogTimer = now;
+    }
+}
+
 void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> &locs, bool hearth, bool activeOnly)
 {
     if (bot->IsBeingTeleported())
@@ -2431,7 +2470,7 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
 
     if (locs.empty())
     {
-        sLog.outError("Cannot teleport bot %s - no locations available", bot->GetName());
+        LogTeleportFailure(bot);
         return;
     }
 
@@ -2604,7 +2643,7 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
                 return RandomTeleportForLevel(bot, false);
         }
 
-        sLog.outError("Cannot teleport bot %s - no locations available", bot->GetName());
+        LogTeleportFailure(bot);
 
         return;
     }
@@ -2698,7 +2737,7 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
         }
     }
 
-    sLog.outError("Cannot teleport bot %s - no locations available", bot->GetName());
+    LogTeleportFailure(bot);
 }
 
 std::vector<std::pair<uint32, uint32>> RandomPlayerbotMgr::RpgLocationsNear(WorldLocation pos, const std::map<uint32, std::map<uint32, std::vector<std::string>>>& areaNames, uint32 radius)
@@ -3266,7 +3305,7 @@ bool RandomPlayerbotMgr::IsRandomBot(uint32 bot)
     return GetEventValue(bot, "add");
 }
 
-std::list<uint32> RandomPlayerbotMgr::GetBots()
+const std::vector<uint32>& RandomPlayerbotMgr::GetBots()
 {
     if (!currentBots.empty()) return currentBots;
 
@@ -3306,31 +3345,42 @@ std::list<uint32> RandomPlayerbotMgr::GetBgBots(uint32 bracket)
     return BgBots;
 }
 
-uint32 RandomPlayerbotMgr::GetEventValue(uint32 bot, std::string event)
+void RandomPlayerbotMgr::EnsureEventCacheLoaded(uint32 bot)
 {
-    // load all events at once on first event load
-    if (eventCache[bot].empty())
+    if (!loadedEventBots.insert(bot).second)
+        return;
+
+    auto results = CharacterDatabase.PQuery("SELECT `event`, `value`, `time`, validIn, `data` FROM ai_playerbot_random_bots WHERE owner = 0 AND bot = '%u'", bot);
+    if (results)
     {
-        auto results = CharacterDatabase.PQuery("SELECT `event`, `value`, `time`, validIn, `data` FROM ai_playerbot_random_bots WHERE owner = 0 AND bot = '%u'", bot);
-        if (results)
+        do
         {
-            do
-            {
-                Field* fields = results->Fetch();
-                std::string eventName = fields[0].GetString();
-                CachedEvent e;
-                e.value = fields[1].GetUInt32();
-                e.lastChangeTime = fields[2].GetUInt32();
-                e.validIn = fields[3].GetUInt32();
-                e.data = fields[4].GetString();
-                eventCache[bot][eventName] = e;
-            } while (results->NextRow());
-        }
+            Field* fields = results->Fetch();
+            std::string eventName = fields[0].GetString();
+            CachedEvent e;
+            e.value = fields[1].GetUInt32();
+            e.lastChangeTime = fields[2].GetUInt32();
+            e.validIn = fields[3].GetUInt32();
+            e.data = fields[4].GetString();
+            eventCache[bot][eventName] = std::move(e);
+        } while (results->NextRow());
     }
-    CachedEvent e = eventCache[bot][event];
+}
+
+uint32 RandomPlayerbotMgr::GetEventValue(uint32 bot, const std::string& event)
+{
+    EnsureEventCacheLoaded(bot);
+    auto botEvents = eventCache.find(bot);
+    if (botEvents == eventCache.end())
+        return 0;
+    auto existing = botEvents->second.find(event);
+    if (existing == botEvents->second.end())
+        return 0;
+
+    const CachedEvent& e = existing->second;
 
     if ((time(0) - e.lastChangeTime) >= e.validIn && event != "specNo" && event != "specLink" && event != "init" && event != "current_time" && event != "always" && event != "selfbot")
-        e.value = 0;
+        return 0;
 
     return e.value;
 }
@@ -3348,38 +3398,36 @@ int32 RandomPlayerbotMgr::GetValueValidTime(uint32 bot, std::string event)
     return e.validIn-(time(0) - e.lastChangeTime);
 }
 
-std::string RandomPlayerbotMgr::GetEventData(uint32 bot, std::string event)
+std::string RandomPlayerbotMgr::GetEventData(uint32 bot, const std::string& event)
 {
-    std::string data = "";
-    if (GetEventValue(bot, event))
-    {
-        CachedEvent e = eventCache[bot][event];
-        data = e.data;
-    }
-    return data;
+    if (!GetEventValue(bot, event))
+        return "";
+    auto botEvents = eventCache.find(bot);
+    if (botEvents == eventCache.end())
+        return "";
+    auto existing = botEvents->second.find(event);
+    return existing == botEvents->second.end() ? "" : existing->second.data;
 }
 
-uint32 RandomPlayerbotMgr::SetEventValue(uint32 bot, std::string event, uint32 value, uint32 validIn, std::string data)
+uint32 RandomPlayerbotMgr::SetEventValue(uint32 bot, const std::string& event, uint32 value, uint32 validIn, const std::string& data)
 {
-    CharacterDatabase.PExecute("DELETE FROM ai_playerbot_random_bots WHERE owner = 0 AND bot = '%u' AND event = '%s'",
-            bot, event.c_str());
+    const uint32 now = static_cast<uint32>(time(nullptr));
     if (value)
     {
-        if (data != "")
-        {
-            CharacterDatabase.PExecute(
-                "INSERT INTO ai_playerbot_random_bots (owner, bot, `time`, validIn, event, `value`, `data`) VALUES ('%u', '%u', '%u', '%u', '%s', '%u', '%s')",
-                0, bot, (uint32)time(0), validIn, event.c_str(), value, data.c_str());
-        }
-        else
-        {
-            CharacterDatabase.PExecute(
-                "INSERT INTO ai_playerbot_random_bots (owner, bot, `time`, validIn, event, `value`) VALUES ('%u', '%u', '%u', '%u', '%s', '%u')",
-                0, bot, (uint32)time(0), validIn, event.c_str(), value);
-        }
+        CharacterDatabase.PExecute(
+            "INSERT INTO ai_playerbot_random_bots (owner, bot, `time`, validIn, event, `value`, `data`) "
+            "VALUES ('%u', '%u', '%u', '%u', '%s', '%u', '%s') "
+            "ON DUPLICATE KEY UPDATE `time`=VALUES(`time`), validIn=VALUES(validIn), `value`=VALUES(`value`), `data`=VALUES(`data`)",
+            0, bot, now, validIn, event.c_str(), value, data.c_str());
+    }
+    else
+    {
+        CharacterDatabase.PExecute("DELETE FROM ai_playerbot_random_bots WHERE owner = 0 AND bot = '%u' AND event = '%s'",
+            bot, event.c_str());
     }
 
-    CachedEvent e(value, (uint32)time(0), validIn, data);
+    loadedEventBots.insert(bot);
+    CachedEvent e(value, now, validIn, data);
     eventCache[bot][event] = e;
     return value;
 }
@@ -3686,7 +3734,7 @@ void RandomPlayerbotMgr::OnPlayerLoginError(uint32 bot)
 {
     SetEventValue(bot, "add", 0, 0);
     SetEventValue(bot, "login", 0, 0);
-    currentBots.remove(bot);
+    currentBots.erase(std::remove(currentBots.begin(), currentBots.end(), bot), currentBots.end());
 }
 
 Player* RandomPlayerbotMgr::GetRandomPlayer()

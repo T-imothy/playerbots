@@ -8,6 +8,9 @@
 #include "WorldPosition.h"
 #include <map>
 #include <list>
+#include <set>
+#include <unordered_set>
+#include <vector>
 
 class WorldPacket;
 class Player;
@@ -175,10 +178,12 @@ public:
         botPID pid = botPID(1, 50, -50, 0, 0, 0);
         float activityMod = 0.25;
         std::map<std::string, uint32> databaseDelay;
-        uint32 GetEventValue(uint32 bot, std::string event);
-        std::string GetEventData(uint32 bot, std::string event);
-        uint32 SetEventValue(uint32 bot, std::string event, uint32 value, uint32 validIn, std::string data = "");
-        std::list<uint32> GetBots();
+        uint32 GetEventValue(uint32 bot, const std::string& event);
+        std::string GetEventData(uint32 bot, const std::string& event);
+        uint32 SetEventValue(uint32 bot, const std::string& event, uint32 value, uint32 validIn, const std::string& data = "");
+        const std::vector<uint32>& GetBots();
+        void EnsureEventCacheLoaded(uint32 bot);
+        void LogTeleportFailure(Player* bot);
         std::list<uint32> GetBgBots(uint32 bracket);
         time_t BgCheckTimer;
         time_t LfgCheckTimer;
@@ -235,13 +240,21 @@ public:
         std::map<uint32, std::map<uint32, std::vector<std::pair<ObjectGuid, WorldLocation>> > > innCacheLevel;
         std::map<Team, std::map<BattleGroundTypeId, std::list<uint32> > > BattleMastersCache;
         std::map<uint32, std::map<std::string, CachedEvent> > eventCache;
+        std::unordered_set<uint32> loadedEventBots;
         BarGoLink* loginProgressBar;
-        std::list<uint32> currentBots;
+        std::vector<uint32> currentBots;
+        size_t processBotCursor = 0;
+        size_t loginBotCursor = 0;
         std::list<uint32> arenaTeamMembers;
         uint32 bgBotsCount;
         uint32 playersLevel = 0;
         uint32 botCount = 0;
-        uint32 activeBots = 0;        
+        uint32 activeBots = 0;
+        time_t databasePingTimer = 0;
+        time_t performanceMapScanTimer = 0;
+        time_t teleportFailureLogTimer = 0;
+        uint32 suppressedTeleportFailureLogs = 0;
+        std::set<std::pair<uint32, uint32>> initializedPerformanceMaps;
 
         std::unordered_map<uint32, std::vector<std::pair<int32,int32>>> playerBotMoveLog;
         typedef std::unordered_map <uint32, std::list<float>> botPerformanceMetric;

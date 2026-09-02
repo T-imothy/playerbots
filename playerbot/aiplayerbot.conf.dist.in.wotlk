@@ -817,7 +817,7 @@ AiPlayerbot.PremadeSpecGlyp.11.8.80 = Aquatic Form,Challenging Roar,Claw|1082,Da
 #AiPlayerbot.CommandPrefix =
 
 # Max AI iterations per tick
-#AiPlayerbot.IterationsPerTick = 10
+AiPlayerbot.IterationsPerTick = 10
 
 # Allow/deny bots from your guild
 AiPlayerbot.AllowGuildBots = 1
@@ -836,6 +836,9 @@ AiPlayerbot.ReactDelay = 500
 
 # Inactivity delay
 AiPlayerbot.PassiveDelay = 10000
+AiPlayerbot.ValueCacheCleanupInterval = 60000
+AiPlayerbot.FailedActionRetryBase = 250
+AiPlayerbot.FailedActionRetryMax = 2000
 
 # Minimum delay between repeating actions (chat messages, emotes etc)
 AiPlayerbot.RepeatDelay = 5000
@@ -929,8 +932,11 @@ AiPlayerbot.FleeingEnabled = 1
 #AiPlayerbot.OpenGoSpell = 6477
 
 # Intervals
-#AiPlayerbot.RandomBotUpdateInterval = 1000
+AiPlayerbot.RandomBotUpdateInterval = 1000
 #AiPlayerbot.RandomBotsMaxLoginsPerInterval = 10
+AiPlayerbot.RandomBotLoginDbQueueLimit = 256
+AiPlayerbot.RandomBotDatabasePingInterval = 10000
+AiPlayerbot.PerformanceMapScanInterval = 30000
 AiPlayerbot.RandomBotCountChangeMinInterval = 1800
 AiPlayerbot.RandomBotCountChangeMaxInterval = 7200
 #AiPlayerbot.MinRandomBotInWorldTime = 3600

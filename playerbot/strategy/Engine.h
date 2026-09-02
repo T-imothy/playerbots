@@ -8,6 +8,9 @@
 #include "Strategy.h"
 #include "playerbot/BotState.h"
 
+#include <atomic>
+#include <unordered_map>
+
 namespace ai
 {
     class ActionExecutionListener
@@ -79,6 +82,8 @@ namespace ai
 		void PrintStrategies(Player* requester, const std::string& engineType);
         std::string GetLastAction() { return lastAction; }
         const Action* GetLastExecutedAction() const { return lastExecutedAction; }
+        static uint64 GetSuppressedImpossibleActions();
+        static uint64 GetSuppressedFailedActions();
 
     public:
 	    virtual bool DoNextAction(Unit*, int depth, bool minimal, bool isStunned);
@@ -111,6 +116,16 @@ namespace ai
     private:
         void LogAction(const char* format, ...);
         void LogValues();
+        std::string GetFailureKey(Action* action, const Event& event, ActionResult reason) const;
+        bool IsFailureBackedOff(Action* action, const Event& event, ActionResult reason) const;
+        void RecordFailure(Action* action, const Event& event, ActionResult reason);
+        void ClearFailures(Action* action, const Event& event);
+
+        struct FailureState
+        {
+            uint32 failures = 0;
+            uint32 retryAfter = 0;
+        };
 
     protected:
 	    Queue queue;
@@ -123,6 +138,9 @@ namespace ai
         ActionExecutionListeners actionExecutionListeners;
         BotState state;
         Action* lastExecutedAction;
+        std::unordered_map<std::string, FailureState> actionFailures;
+        static std::atomic<uint64> suppressedImpossibleActions;
+        static std::atomic<uint64> suppressedFailedActions;
 
     public:
 		bool testMode;

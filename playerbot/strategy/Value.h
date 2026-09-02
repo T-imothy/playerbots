@@ -8,6 +8,8 @@
 #include "playerbot/GuidPosition.h"
 #include "NamedObjectContext.h"
 
+#include <algorithm>
+
 namespace ai
 {
     class UntypedValue : public AiNamedObject
@@ -77,7 +79,7 @@ namespace ai
         virtual void Set(T value) override { this->value = value; }
         virtual void Update() { }
         virtual void Reset() override { lastCheckTime = 0; }
-        virtual bool Expired() override { return Expired(checkInterval / 2); }
+        virtual bool Expired() override { return Expired(static_cast<uint32>(std::max(1, checkInterval / 2))); }
         virtual bool Expired(uint32 interval) override { return time(0) - lastCheckTime >= interval; }
     protected:
         virtual T Calculate() = 0;

@@ -778,7 +778,7 @@ AiPlayerbot.PremadeSpecLink.11.9.60 = 0143503002551351--5005021
 #AiPlayerbot.CommandPrefix =
 
 # Max AI iterations per tick
-#AiPlayerbot.IterationsPerTick = 10
+AiPlayerbot.IterationsPerTick = 10
 
 # Allow/deny bots from your guild
 AiPlayerbot.AllowGuildBots = 1
@@ -798,6 +798,8 @@ AiPlayerbot.ReactDelay = 100
 # Inactivity delay
 AiPlayerbot.PassiveDelay = 10000
 AiPlayerbot.ValueCacheCleanupInterval = 60000
+AiPlayerbot.FailedActionRetryBase = 250
+AiPlayerbot.FailedActionRetryMax = 2000
 
 # Minimum delay between repeating actions (chat messages, emotes etc)
 AiPlayerbot.RepeatDelay = 5000
@@ -891,12 +893,14 @@ AiPlayerbot.FleeingEnabled = 1
 #AiPlayerbot.OpenGoSpell = 6477
 
 # Intervals
-#AiPlayerbot.RandomBotUpdateInterval = 1000
+AiPlayerbot.RandomBotUpdateInterval = 1000
 #AiPlayerbot.RandomBotsMaxLoginsPerInterval = 10
 # Maximum pending Character DB operations/results created by bot login holders.
 # This bounds startup memory while real-player DB work continues to use its
 # separate priority lane. Zero disables the bound.
 AiPlayerbot.RandomBotLoginDbQueueLimit = 256
+AiPlayerbot.RandomBotDatabasePingInterval = 10000
+AiPlayerbot.PerformanceMapScanInterval = 30000
 AiPlayerbot.RandomBotCountChangeMinInterval = 1800
 AiPlayerbot.RandomBotCountChangeMaxInterval = 7200
 #AiPlayerbot.MinRandomBotInWorldTime = 3600

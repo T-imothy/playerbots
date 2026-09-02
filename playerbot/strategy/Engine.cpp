@@ -13,6 +13,59 @@
 
 using namespace ai;
 
+std::atomic<uint64> Engine::suppressedImpossibleActions{0};
+std::atomic<uint64> Engine::suppressedFailedActions{0};
+
+uint64 Engine::GetSuppressedImpossibleActions()
+{
+    return suppressedImpossibleActions.load(std::memory_order_relaxed);
+}
+
+uint64 Engine::GetSuppressedFailedActions()
+{
+    return suppressedFailedActions.load(std::memory_order_relaxed);
+}
+
+std::string Engine::GetFailureKey(Action* action, const Event& event, ActionResult reason) const
+{
+    std::ostringstream out;
+    out << action->getName() << '|' << event.getSource() << '|';
+    if (Unit* target = action->GetTarget())
+        out << target->GetObjectGuid().GetRawValue();
+    else
+        out << 0;
+    out << '|' << static_cast<uint32>(reason);
+    return out.str();
+}
+
+bool Engine::IsFailureBackedOff(Action* action, const Event& event, ActionResult reason) const
+{
+    auto existing = actionFailures.find(GetFailureKey(action, event, reason));
+    if (existing == actionFailures.end())
+        return false;
+
+    const uint32 now = WorldTimer::getMSTime();
+    return static_cast<int32>(existing->second.retryAfter - now) > 0;
+}
+
+void Engine::RecordFailure(Action* action, const Event& event, ActionResult reason)
+{
+    if (!sPlayerbotAIConfig.failedActionRetryBase || !sPlayerbotAIConfig.failedActionRetryMax)
+        return;
+
+    FailureState& failure = actionFailures[GetFailureKey(action, event, reason)];
+    failure.failures = std::min<uint32>(failure.failures + 1, 16);
+    const uint32 shift = std::min<uint32>(failure.failures - 1, 4);
+    const uint64 delay = static_cast<uint64>(sPlayerbotAIConfig.failedActionRetryBase) << shift;
+    failure.retryAfter = WorldTimer::getMSTime() + static_cast<uint32>(std::min<uint64>(delay, sPlayerbotAIConfig.failedActionRetryMax));
+}
+
+void Engine::ClearFailures(Action* action, const Event& event)
+{
+    actionFailures.erase(GetFailureKey(action, event, ACTION_RESULT_IMPOSSIBLE));
+    actionFailures.erase(GetFailureKey(action, event, ACTION_RESULT_FAILED));
+}
+
 Engine::Engine(PlayerbotAI* ai, AiObjectContext *factory, BotState state) : PlayerbotAIAware(ai), aiObjectContext(factory), state(state)
 {
     lastRelevance = 0.0f;
@@ -147,7 +200,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
             bool skipPrerequisites = basket->isSkipPrerequisites();
             Event event = basket->getEvent();
             if (minimal && (relevance < 100))
-                continue;
+                break;
             // NOTE: queue.Pop() deletes basket
             ActionNode* actionNode = queue.Pop();
             Action* action = InitializeAction(actionNode);
@@ -193,6 +246,19 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
                 if (isUseful)
                 {
+                    if (IsFailureBackedOff(action, event, ACTION_RESULT_IMPOSSIBLE))
+                    {
+                        suppressedImpossibleActions.fetch_add(1, std::memory_order_relaxed);
+                        delete actionNode;
+                        continue;
+                    }
+                    if (IsFailureBackedOff(action, event, ACTION_RESULT_FAILED))
+                    {
+                        suppressedFailedActions.fetch_add(1, std::memory_order_relaxed);
+                        delete actionNode;
+                        continue;
+                    }
+
                     if (std::find(modifiedActions.begin(), modifiedActions.end(), action) == modifiedActions.end())
                     {
                         for (std::list<Multiplier*>::iterator i = multipliers.begin(); i != multipliers.end(); i++)
@@ -245,6 +311,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
                         if (actionExecuted)
                         {
+                            ClearFailures(action, event);
                             LogAction("A:%s - OK", action->getName().c_str());
                             MultiplyAndPush(actionNode->getContinuers(), 0, false, event, "cont");
                             lastRelevance = relevance;
@@ -253,12 +320,14 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         }
                         else
                         {
+                            RecordFailure(action, event, ACTION_RESULT_FAILED);
                             LogAction("A:%s - FAILED", action->getName().c_str());
                             MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                         }
                     }
                     else
                     {
+                        RecordFailure(action, event, ACTION_RESULT_IMPOSSIBLE);
                         if (sPlayerbotAIConfig.CanLogAction(ai, actionNode->getName(), false, ""))
                         {
                             std::ostringstream out;
