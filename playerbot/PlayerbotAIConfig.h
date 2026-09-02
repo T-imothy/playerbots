@@ -174,6 +174,12 @@ public:
     uint32 randomBotsPerInterval;
     uint32 randomBotLoginDbQueueLimit;
     uint32 randomBotDatabasePingInterval, performanceMapScanInterval;
+    bool diagnosticsEnabled = false;
+    uint32 diagnosticsInterval = 30000;
+    uint32 diagnosticsEngineSampleRate = 16;
+    uint32 diagnosticsTopFailures = 10;
+    uint32 diagnosticsMaxFailureKeys = 2048;
+    std::string diagnosticsLogFile = "PlayerbotDiagnostics.log";
     uint32 minRandomBotsPriceChangeInterval, maxRandomBotsPriceChangeInterval;
     //Auction house settings
     bool shouldQueryAHListingsOutsideOfAH;

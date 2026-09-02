@@ -5,7 +5,10 @@
 
 #include "Engine.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/PlayerbotDiagnostics.h"
 #include "playerbot/PerformanceMonitor.h"
+
+#include <chrono>
 
 #ifdef BUILD_ELUNA
 #include "LuaEngine/LuaEngine.h"
@@ -175,6 +178,13 @@ void Engine::Init()
 
 bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 {
+    const bool collectDiagnostics = sPlayerbotDiagnostics.ShouldSampleEngineTick();
+    const auto diagnosticStart = std::chrono::steady_clock::now();
+    PlayerbotEngineSample diagnosticSample;
+    diagnosticSample.minimal = minimal;
+    if (collectDiagnostics)
+        diagnosticSample.queueStart = static_cast<uint32>(queue.Size());
+
     LogAction("--- AI Tick ---");
     if (sPlayerbotAIConfig.logValuesPerTick)
         LogValues();
@@ -203,6 +213,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                 break;
             // NOTE: queue.Pop() deletes basket
             ActionNode* actionNode = queue.Pop();
+            if (collectDiagnostics)
+                ++diagnosticSample.evaluations;
             Action* action = InitializeAction(actionNode);
 
             std::string actionName = (action ? action->getName() : "unknown");
@@ -216,6 +228,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
             if (!action)
             {
+                if (collectDiagnostics)
+                    ++diagnosticSample.unknown;
                 if (sPlayerbotAIConfig.CanLogAction(ai, actionNode->getName(), false, ""))
                 {
                     std::ostringstream out;
@@ -249,12 +263,16 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     if (IsFailureBackedOff(action, event, ACTION_RESULT_IMPOSSIBLE))
                     {
                         suppressedImpossibleActions.fetch_add(1, std::memory_order_relaxed);
+                        if (collectDiagnostics)
+                            ++diagnosticSample.suppressedImpossible;
                         delete actionNode;
                         continue;
                     }
                     if (IsFailureBackedOff(action, event, ACTION_RESULT_FAILED))
                     {
                         suppressedFailedActions.fetch_add(1, std::memory_order_relaxed);
+                        if (collectDiagnostics)
+                            ++diagnosticSample.suppressedFailed;
                         delete actionNode;
                         continue;
                     }
@@ -311,6 +329,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
                         if (actionExecuted)
                         {
+                            if (collectDiagnostics)
+                                ++diagnosticSample.ok;
                             ClearFailures(action, event);
                             LogAction("A:%s - OK", action->getName().c_str());
                             MultiplyAndPush(actionNode->getContinuers(), 0, false, event, "cont");
@@ -320,6 +340,9 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         }
                         else
                         {
+                            if (collectDiagnostics)
+                                ++diagnosticSample.failed;
+                            sPlayerbotDiagnostics.RecordFailure(action->getName(), event.getSource(), PlayerbotDiagnosticOutcome::Failed);
                             RecordFailure(action, event, ACTION_RESULT_FAILED);
                             LogAction("A:%s - FAILED", action->getName().c_str());
                             MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
@@ -327,6 +350,9 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     }
                     else
                     {
+                        if (collectDiagnostics)
+                            ++diagnosticSample.impossible;
+                        sPlayerbotDiagnostics.RecordFailure(action->getName(), event.getSource(), PlayerbotDiagnosticOutcome::Impossible);
                         RecordFailure(action, event, ACTION_RESULT_IMPOSSIBLE);
                         if (sPlayerbotAIConfig.CanLogAction(ai, actionNode->getName(), false, ""))
                         {
@@ -349,6 +375,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                 }
                 else
                 {
+                    if (collectDiagnostics)
+                        ++diagnosticSample.useless;
                     if (sPlayerbotAIConfig.CanLogAction(ai, actionNode->getName(), false, ""))
                     {
                         std::ostringstream out;
@@ -400,6 +428,14 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
         LogAction("no actions executed");
 
     queue.RemoveExpired();
+    if (collectDiagnostics)
+    {
+        diagnosticSample.queueEnd = static_cast<uint32>(queue.Size());
+        diagnosticSample.actionExecuted = actionExecuted;
+        diagnosticSample.durationUs = static_cast<uint64>(std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - diagnosticStart).count());
+        sPlayerbotDiagnostics.RecordEngineSample(diagnosticSample);
+    }
     return actionExecuted;
 }
 

@@ -242,6 +242,14 @@ bool PlayerbotAIConfig::Initialize()
     randomBotLoginDbQueueLimit = config.GetIntDefault("AiPlayerbot.RandomBotLoginDbQueueLimit", 256);
     randomBotDatabasePingInterval = config.GetIntDefault("AiPlayerbot.RandomBotDatabasePingInterval", 10000);
     performanceMapScanInterval = config.GetIntDefault("AiPlayerbot.PerformanceMapScanInterval", 30000);
+    diagnosticsEnabled = config.GetBoolDefault("AiPlayerbot.Diagnostics.Enabled", false);
+    diagnosticsInterval = std::max<int32>(1000, config.GetIntDefault("AiPlayerbot.Diagnostics.Interval", 30000));
+    diagnosticsEngineSampleRate = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.Diagnostics.EngineSampleRate", 16));
+    diagnosticsTopFailures = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.Diagnostics.TopFailures", 10));
+    diagnosticsMaxFailureKeys = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.Diagnostics.MaxFailureKeys", 2048));
+    diagnosticsLogFile = config.GetStringDefault("AiPlayerbot.Diagnostics.LogFile", "PlayerbotDiagnostics.log");
+    if (diagnosticsLogFile.empty())
+        diagnosticsLogFile = "PlayerbotDiagnostics.log";
     minRandomBotsPriceChangeInterval = config.GetIntDefault("AiPlayerbot.MinRandomBotsPriceChangeInterval", 2 * 3600);
     maxRandomBotsPriceChangeInterval = config.GetIntDefault("AiPlayerbot.MaxRandomBotsPriceChangeInterval", 48 * 3600);
     //Auction house settings
@@ -1037,12 +1045,12 @@ bool PlayerbotAIConfig::openLog(std::string fileName, char const* mode, bool has
 
 
     file = fopen((m_logsDir + fileName).c_str(), mode);
-    fileOpen = true;
+    fileOpen = file != nullptr;
 
     logFileIt->second.first = file;
     logFileIt->second.second = fileOpen;
 
-    return true;
+    return fileOpen;
 }
 
 void PlayerbotAIConfig::log(std::string fileName, const char* str, ...)
@@ -1057,6 +1065,8 @@ void PlayerbotAIConfig::log(std::string fileName, const char* str, ...)
             return;
 
     FILE* file = logFiles.find(fileName)->second.first;
+    if (!file)
+        return;
 
     va_list ap;
     va_start(ap, str);

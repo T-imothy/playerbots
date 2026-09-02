@@ -2,7 +2,9 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/PlayerbotDiagnostics.h"
 #include "playerbot/PlayerbotFactory.h"
+#include "strategy/AiObjectContext.h"
 #include "strategy/values/LastMovementValue.h"
 #include "Accounts/AccountMgr.h"
 #include "Globals/ObjectMgr.h"
@@ -37,6 +39,8 @@
 #endif
 
 #include "playerbot/TravelMgr.h"
+#include <chrono>
+#include <cmath>
 #include <iomanip>
 #include <float.h>
 
@@ -649,6 +653,13 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     if (!sPlayerbotAIConfig.randomBotAutologin || !sPlayerbotAIConfig.enabled)
         return;
 
+    const auto diagnosticsStart = std::chrono::steady_clock::now();
+    uint32 diagnosticsProcessScans = 0;
+    uint32 diagnosticsProcessCalls = 0;
+    uint32 diagnosticsLoginScans = 0;
+    uint32 diagnosticsLoginRequests = 0;
+    bool diagnosticsLoginBackpressure = false;
+
 #ifdef GenerateBotTests
     if (sPlayerbotAIConfig.startupRunTestsPending)
     {
@@ -734,12 +745,14 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     const size_t processScanLimit = availableBots.size();
     for (size_t scanned = 0; scanned < processScanLimit && !availableBots.empty(); ++scanned)
     {
+        ++diagnosticsProcessScans;
         processBotCursor %= availableBots.size();
         const uint32 bot = availableBots[processBotCursor];
         processBotCursor = (processBotCursor + 1) % availableBots.size();
 
         if (GetPlayerBot(bot))
         {
+            ++diagnosticsProcessCalls;
             if (ProcessBot(bot))
                 updateBots--;
 
@@ -754,12 +767,15 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     // world thread can consume them. Each holder owns several query results,
     // so an unbounded queue creates a large and avoidable startup memory spike.
     const uint32 loginQueueLimit = sPlayerbotAIConfig.randomBotLoginDbQueueLimit;
+    size_t pendingLoginDbWork = CharacterDatabase.GetPendingResultCount() +
+        CharacterDatabase.GetPendingAsyncOperationCount();
     if (loginQueueLimit)
     {
-        const size_t pendingLoginDbWork = CharacterDatabase.GetPendingResultCount() +
-            CharacterDatabase.GetPendingAsyncOperationCount();
         if (pendingLoginDbWork >= loginQueueLimit)
+        {
             maxLogins = 0;
+            diagnosticsLoginBackpressure = true;
+        }
         else
             maxLogins = std::min<uint32>(maxLogins, loginQueueLimit - static_cast<uint32>(pendingLoginDbWork));
 
@@ -778,6 +794,7 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
         const size_t loginScanLimit = availableBots.size();
         for (size_t scanned = 0; scanned < loginScanLimit && !availableBots.empty(); ++scanned)
         {
+            ++diagnosticsLoginScans;
             loginBotCursor %= availableBots.size();
             const uint32 bot = availableBots[loginBotCursor];
             loginBotCursor = (loginBotCursor + 1) % availableBots.size();
@@ -798,6 +815,7 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
                 break;
 
             if (ProcessBot(bot)) {
+                ++diagnosticsLoginRequests;
                 --maxLogins;
             }
 
@@ -832,9 +850,58 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     {
         databasePingTimer = now;
         CharacterDatabase.AsyncPQuery(&RandomPlayerbotMgr::DatabasePing, sWorld.GetCurrentMSTime(), std::string("CharacterDatabase"), "SELECT 1");
+        sPlayerbotDiagnostics.RecordDatabasePing();
     }
 
     PlayerbotHolder::UpdateAIInternal(elapsed, minimal);
+
+    const uint64 diagnosticsDurationUs = static_cast<uint64>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - diagnosticsStart).count());
+    sPlayerbotDiagnostics.RecordManagerPass(diagnosticsDurationUs, diagnosticsProcessScans, diagnosticsProcessCalls,
+        diagnosticsLoginScans, diagnosticsLoginRequests, diagnosticsLoginBackpressure);
+
+    if (sPlayerbotDiagnostics.IsFlushDue())
+    {
+        PlayerbotManagerSnapshot snapshot;
+        snapshot.botsOnline = GetPlayerbotsAmount();
+        snapshot.botsTarget = maxAllowedBotCount;
+        snapshot.botsAvailable = availableBotCount;
+        snapshot.botsActive = activeBots;
+        snapshot.realPlayers = static_cast<uint32>(players.size());
+        snapshot.activityPercent = static_cast<uint32>(std::round(getActivityPercentage()));
+        snapshot.worldDiff = sWorld.GetCurrentDiff();
+        snapshot.worldAverageDiff = sWorld.GetAverageDiff();
+        snapshot.worldMaxDiff = sWorld.GetMaxDiff();
+        snapshot.characterDbDelay = GetDatabaseDelay("CharacterDatabase");
+        snapshot.pendingDbResults = static_cast<uint32>(CharacterDatabase.GetPendingResultCount());
+        snapshot.pendingDbOperations = static_cast<uint32>(CharacterDatabase.GetPendingAsyncOperationCount());
+        snapshot.loadedEventBots = static_cast<uint32>(loadedEventBots.size());
+        snapshot.trackedMaps = static_cast<uint32>(initializedPerformanceMaps.size());
+
+        for (const auto& botEvents : eventCache)
+            snapshot.cachedEvents += static_cast<uint32>(botEvents.second.size());
+
+        ForEachPlayerbot([&](Player* bot)
+        {
+            if (!bot || !bot->GetPlayerbotAI() || !bot->GetPlayerbotAI()->GetAiObjectContext())
+                return;
+            AiObjectContext* context = bot->GetPlayerbotAI()->GetAiObjectContext();
+            snapshot.cachedValues += context->GetCreatedValueCount();
+            snapshot.cachedActions += context->GetCreatedActionCount();
+            snapshot.cachedTriggers += context->GetCreatedTriggerCount();
+            snapshot.cachedStrategies += context->GetCreatedStrategyCount();
+        });
+        snapshot.expiredValuesReleased = AiObjectContext::GetExpiredValuesReleased();
+
+#if PLATFORM == PLATFORM_WINDOWS
+        PROCESS_MEMORY_COUNTERS_EX memory = {};
+        memory.cb = sizeof(memory);
+        if (GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory), sizeof(memory)))
+            snapshot.privateBytes = memory.PrivateUsage;
+#endif
+
+        sPlayerbotDiagnostics.Flush(snapshot);
+    }
 }
 
 void RandomPlayerbotMgr::ScaleBotActivity()
@@ -2430,6 +2497,7 @@ void RandomPlayerbotMgr::Revive(Player* player)
 
 void RandomPlayerbotMgr::LogTeleportFailure(Player* bot)
 {
+    sPlayerbotDiagnostics.RecordTeleportFailure();
     const time_t now = time(nullptr);
     if (!teleportFailureLogTimer)
     {
@@ -3350,6 +3418,8 @@ void RandomPlayerbotMgr::EnsureEventCacheLoaded(uint32 bot)
     if (!loadedEventBots.insert(bot).second)
         return;
 
+    const auto cacheLoadStart = std::chrono::steady_clock::now();
+    uint32 loadedRows = 0;
     auto results = CharacterDatabase.PQuery("SELECT `event`, `value`, `time`, validIn, `data` FROM ai_playerbot_random_bots WHERE owner = 0 AND bot = '%u'", bot);
     if (results)
     {
@@ -3363,8 +3433,12 @@ void RandomPlayerbotMgr::EnsureEventCacheLoaded(uint32 bot)
             e.validIn = fields[3].GetUInt32();
             e.data = fields[4].GetString();
             eventCache[bot][eventName] = std::move(e);
+            ++loadedRows;
         } while (results->NextRow());
     }
+    const uint64 cacheLoadUs = static_cast<uint64>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - cacheLoadStart).count());
+    sPlayerbotDiagnostics.RecordEventCacheLoad(loadedRows, cacheLoadUs);
 }
 
 uint32 RandomPlayerbotMgr::GetEventValue(uint32 bot, const std::string& event)
@@ -3425,6 +3499,8 @@ uint32 RandomPlayerbotMgr::SetEventValue(uint32 bot, const std::string& event, u
         CharacterDatabase.PExecute("DELETE FROM ai_playerbot_random_bots WHERE owner = 0 AND bot = '%u' AND event = '%s'",
             bot, event.c_str());
     }
+
+    sPlayerbotDiagnostics.RecordEventMutation(!value);
 
     loadedEventBots.insert(bot);
     CachedEvent e(value, now, validIn, data);

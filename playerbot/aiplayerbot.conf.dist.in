@@ -901,6 +901,17 @@ AiPlayerbot.RandomBotUpdateInterval = 1000
 AiPlayerbot.RandomBotLoginDbQueueLimit = 256
 AiPlayerbot.RandomBotDatabasePingInterval = 10000
 AiPlayerbot.PerformanceMapScanInterval = 30000
+
+# Append-only aggregate diagnostics for finding Playerbot CPU, queue, memory,
+# cache, teleport, and Character DB bottlenecks. Frequent AI ticks are sampled
+# to keep diagnostic overhead low; actual failed/impossible actions are tracked
+# exactly and grouped in the top-failure report.
+AiPlayerbot.Diagnostics.Enabled = 0
+AiPlayerbot.Diagnostics.Interval = 30000
+AiPlayerbot.Diagnostics.EngineSampleRate = 16
+AiPlayerbot.Diagnostics.TopFailures = 10
+AiPlayerbot.Diagnostics.MaxFailureKeys = 2048
+AiPlayerbot.Diagnostics.LogFile = PlayerbotDiagnostics.log
 AiPlayerbot.RandomBotCountChangeMinInterval = 1800
 AiPlayerbot.RandomBotCountChangeMaxInterval = 7200
 #AiPlayerbot.MinRandomBotInWorldTime = 3600
