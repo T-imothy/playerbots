@@ -456,25 +456,50 @@ BotPool PlayerBotLoginMgr::LoadBotsFromDb()
 
 void PlayerBotLoginMgr::SendHolders(const BotInfos& queue)
 {  
+    const uint32 queueLimit = sPlayerbotAIConfig.randomBotLoginDbQueueLimit;
+    uint32 available = static_cast<uint32>(queue.size());
+    if (queueLimit)
+    {
+        const size_t pending = CharacterDatabase.GetPendingResultCount() + CharacterDatabase.GetPendingAsyncOperationCount();
+        available = pending >= queueLimit ? 0 : std::min<uint32>(available, queueLimit - static_cast<uint32>(pending));
+    }
+    if (!available)
+        return;
+
     CharacterDatabase.AsyncPQuery(&RandomPlayerbotMgr::DatabasePing, sWorld.GetCurrentMSTime(), std::string("CharacterDatabase"), "select 1");
 
     for (auto& info : queue)
     {
+        if (!available)
+            break;
         if (sRandomPlayerbotMgr.GetDatabaseDelay("CharacterDatabase") > 100)
             break;
-        info->SendHolder();
+        if (info->SendHolder())
+            --available;
     }
 }
 
 void PlayerBotLoginMgr::SendHolders(BotPool* pool)
 {
-    CharacterDatabase.AsyncPQuery(&RandomPlayerbotMgr::DatabasePing, sWorld.GetCurrentMSTime(), std::string("CharacterDatabase"), "select 1");
+    const uint32 queueLimit = sPlayerbotAIConfig.randomBotLoginDbQueueLimit;
+    uint32 available = queueLimit;
+    if (queueLimit)
+    {
+        const size_t pending = CharacterDatabase.GetPendingResultCount() + CharacterDatabase.GetPendingAsyncOperationCount();
+        available = pending >= queueLimit ? 0 : queueLimit - static_cast<uint32>(pending);
+    }
+    if (queueLimit && !available)
+        return;
 
+    CharacterDatabase.AsyncPQuery(&RandomPlayerbotMgr::DatabasePing, sWorld.GetCurrentMSTime(), std::string("CharacterDatabase"), "select 1");
     for (auto& [guid, info] : *pool)
     {
+        if (queueLimit && !available)
+            break;
         if (sRandomPlayerbotMgr.GetDatabaseDelay("CharacterDatabase") > 100)
             break;
-        info.SendHolder();
+        if (info.SendHolder() && queueLimit)
+            --available;
     }
 }
 
