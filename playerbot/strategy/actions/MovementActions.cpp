@@ -704,8 +704,14 @@ TravelPath MovementAction::ResolveMovePath(const WorldPosition& startPosition, c
     if (!lastMove.lastPath.empty() && !outMovePath.empty() && lastMove.lastPath.getBack().distance(endPosition) <= outMovePath.getBack().distance(endPosition))
         outMovePath = lastMove.lastPath;
 
+    // A failed navigation request is not permission to walk directly to the
+    // requested coordinates. In particular, doing so after an instance
+    // transfer can send a bot through disconnected dungeon geometry.
     if (outMovePath.empty())
-        outMovePath.addPoint(endPosition);
+    {
+        lastMove.clear();
+        return TravelPath();
+    }
 
     return outMovePath;
 }
@@ -1066,6 +1072,23 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     Unit* mover = GetMover(bot);
 
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+
+    // Different instances can share the same map id (all Scarlet Monastery
+    // wings are a common example). Never try to follow the master's raw
+    // coordinates across those disconnected copies.
+    if (Player* master = ai->GetMaster())
+    {
+        if (bot->GetMapId() == master->GetMapId() &&
+            bot->GetInstanceId() != master->GetInstanceId() &&
+            endPos.getMapId() == master->GetMapId() &&
+            endPos.sqDistance(WorldPosition(master)) <=
+                sPlayerbotAIConfig.sightDistance * sPlayerbotAIConfig.sightDistance)
+        {
+            lastMove.clear();
+            ai->StopMoving();
+            return false;
+        }
+    }
 
     bool detailedMove = ai->AllowActivity(DETAILED_MOVE_ACTIVITY, true);
     if (!detailedMove && lastMove.nextTeleport)

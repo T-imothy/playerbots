@@ -38,6 +38,15 @@ bool ReachAreaTriggerAction::Execute(Event& event)
         return true;
     }
 
+    WorldPosition const triggerPosition(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z);
+    if (!WorldPosition(bot).canPathTo(triggerPosition, bot))
+    {
+        context->GetValue<LastMovement&>("last area trigger")->Get().clear();
+        ai->StopMoving();
+        ai->TellError(requester, "I can't safely reach the instance portal");
+        return true;
+    }
+
     MotionMaster &mm = *bot->GetMotionMaster();
 	mm.MovePoint(atEntry->mapid, atEntry->x, atEntry->y, atEntry->z, FORCED_MOVEMENT_RUN);
     const float distance = sqrt(bot->GetDistance(atEntry->x, atEntry->y, atEntry->z));

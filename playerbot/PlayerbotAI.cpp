@@ -1239,6 +1239,8 @@ void PlayerbotAI::HandleTeleportAck()
     if (IsRealPlayer() && bot->IsBeingTeleportedFar())
         return;
 
+    bool const farTeleport = bot->IsBeingTeleportedFar();
+
     StopMoving();
 
 	if (bot->IsBeingTeleportedNear())
@@ -1263,9 +1265,26 @@ void PlayerbotAI::HandleTeleportAck()
         // add delay to simulate teleport delay
         SetAIInternalUpdateDelay(urand(1000, 2000));
 	}
-	else if (bot->IsBeingTeleportedFar())
-	{
+    else if (farTeleport)
+    {
         bot->GetSession()->HandleMoveWorldportAckOpcode();
+
+        // Stop the movement that brought the bot to the source-side area
+        // trigger. StopMoving() intentionally returns while a far teleport is
+        // pending, so the old generator must be cleared after the worldport
+        // acknowledgement has placed the bot on the destination map. Keeping
+        // it alive can make the bot pursue source-map coordinates inside the
+        // destination instance and walk through walls or below the terrain.
+        bot->InterruptMoving(true);
+        if (!bot->GetMotionMaster()->empty())
+            bot->GetMotionMaster()->Clear(false, true);
+        bot->GetMotionMaster()->MoveIdle();
+
+        if (!bot->GetTransport())
+            bot->m_movementInfo.SetMovementFlags(MOVEFLAG_NONE);
+
+        aiObjectContext->GetValue<LastMovement&>("last movement")->Get().clear();
+        aiObjectContext->GetValue<LastMovement&>("last area trigger")->Get().clear();
 
         // add delay to simulate teleport delay
         SetAIInternalUpdateDelay(urand(2000, 5000));
