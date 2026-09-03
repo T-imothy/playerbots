@@ -279,14 +279,19 @@ void PlayerbotDiagnostics::Flush(const PlayerbotManagerSnapshot& snapshot)
     const uint64 cacheLoadUs = Take(eventCacheLoadUs);
     const uint64 cacheMaxLoadUs = Take(eventCacheMaxLoadUs);
     sPlayerbotAIConfig.log(sPlayerbotAIConfig.diagnosticsLogFile,
-        "%s PB_DIAG_CACHE event_bots=%u event_entries=%u event_loads=%llu event_rows_loaded=%llu event_load_avg_us=%.2f event_load_max_us=%llu event_upserts=%llu event_deletes=%llu values=%llu actions=%llu triggers=%llu strategies=%llu expired_values_released_total=%llu teleport_failures=%llu failure_key_overflow=%llu",
+        "%s PB_DIAG_CACHE event_bots=%u event_entries=%u event_loads=%llu event_rows_loaded=%llu event_load_avg_us=%.2f event_load_max_us=%llu event_upserts=%llu event_deletes=%llu values=%llu actions=%llu triggers=%llu strategies=%llu expired_values_released_total=%llu action_failure_entries=%llu action_failure_peak=%llu action_failure_expired_total=%llu action_failure_evicted_total=%llu teleport_failures=%llu failure_key_overflow=%llu",
         timestamp.c_str(), snapshot.loadedEventBots, snapshot.cachedEvents,
         static_cast<unsigned long long>(cacheLoads), static_cast<unsigned long long>(Take(eventCacheRows)),
         cacheLoads ? static_cast<double>(cacheLoadUs) / cacheLoads : 0.0, static_cast<unsigned long long>(cacheMaxLoadUs),
         static_cast<unsigned long long>(Take(eventUpserts)), static_cast<unsigned long long>(Take(eventDeletes)),
         static_cast<unsigned long long>(snapshot.cachedValues), static_cast<unsigned long long>(snapshot.cachedActions),
         static_cast<unsigned long long>(snapshot.cachedTriggers), static_cast<unsigned long long>(snapshot.cachedStrategies),
-        static_cast<unsigned long long>(snapshot.expiredValuesReleased), static_cast<unsigned long long>(Take(teleportFailures)),
+        static_cast<unsigned long long>(snapshot.expiredValuesReleased),
+        static_cast<unsigned long long>(snapshot.actionFailureCacheEntries),
+        static_cast<unsigned long long>(snapshot.actionFailureCachePeakEntries),
+        static_cast<unsigned long long>(snapshot.expiredActionFailureEntries),
+        static_cast<unsigned long long>(snapshot.evictedActionFailureEntries),
+        static_cast<unsigned long long>(Take(teleportFailures)),
         static_cast<unsigned long long>(Take(failureKeyOverflow)));
 
     std::vector<FailureBucket> topFailures;

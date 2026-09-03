@@ -892,6 +892,10 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
             snapshot.cachedStrategies += context->GetCreatedStrategyCount();
         });
         snapshot.expiredValuesReleased = AiObjectContext::GetExpiredValuesReleased();
+        snapshot.actionFailureCacheEntries = Engine::GetActionFailureCacheEntries();
+        snapshot.actionFailureCachePeakEntries = Engine::GetActionFailureCachePeakEntries();
+        snapshot.expiredActionFailureEntries = Engine::GetExpiredActionFailureEntries();
+        snapshot.evictedActionFailureEntries = Engine::GetEvictedActionFailureEntries();
 
 #if PLATFORM == PLATFORM_WINDOWS
         PROCESS_MEMORY_COUNTERS_EX memory = {};

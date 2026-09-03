@@ -114,6 +114,8 @@ bool PlayerbotAIConfig::Initialize()
     valueCacheCleanupInterval = (uint32) config.GetIntDefault("AiPlayerbot.ValueCacheCleanupInterval", 60000);
     failedActionRetryBase = (uint32) config.GetIntDefault("AiPlayerbot.FailedActionRetryBase", 250);
     failedActionRetryMax = (uint32) config.GetIntDefault("AiPlayerbot.FailedActionRetryMax", 2000);
+    failedActionCacheTtl = (uint32) std::max<int32>(1000, config.GetIntDefault("AiPlayerbot.FailedActionCacheTtl", 30000));
+    failedActionCacheMaxEntries = (uint32) std::max<int32>(8, config.GetIntDefault("AiPlayerbot.FailedActionCacheMaxEntries", 64));
     repeatDelay = (uint32) config.GetIntDefault("AiPlayerbot.RepeatDelay", 5000);
     errorDelay = (uint32) config.GetIntDefault("AiPlayerbot.ErrorDelay", 5000);
     rpgDelay = (uint32) config.GetIntDefault("AiPlayerbot.RpgDelay", 3000);

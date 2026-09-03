@@ -60,6 +60,10 @@ namespace ai
         uint64 cachedTriggers = 0;
         uint64 cachedStrategies = 0;
         uint64 expiredValuesReleased = 0;
+        uint64 actionFailureCacheEntries = 0;
+        uint64 actionFailureCachePeakEntries = 0;
+        uint64 expiredActionFailureEntries = 0;
+        uint64 evictedActionFailureEntries = 0;
     };
 
     class PlayerbotDiagnostics
