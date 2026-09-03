@@ -696,8 +696,10 @@ public:
 private:
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
-    void RequestUrgentTransition();
+    void RequestUrgentTransition(uint32 triggerId);
     void PrepareForUrgentTransition();
+    bool ProcessPendingTransition();
+    void ClearPendingTransition(uint32 expectedTriggerId = 0, bool stopMovement = false);
 
 protected:
 	Player* bot;
@@ -720,6 +722,17 @@ protected:
     // queues without touching mutable AI state.
     std::atomic<uint32> transitionGeneration{1};
     std::atomic<bool> urgentTransitionPending{false};
+    struct PendingTransitionState
+    {
+        uint32 triggerId = 0;
+        uint32 sourceMapId = 0;
+        uint32 sourceInstanceId = 0;
+        uint32 startedAtMs = 0;
+        uint32 lastAttemptAtMs = 0;
+        uint32 attempts = 0;
+    };
+    std::mutex pendingTransitionMutex;
+    PendingTransitionState pendingTransition;
     static std::atomic<uint64> discardedTransitionWork;
     static std::atomic<uint64> transitionRequests;
     PacketHandlingHelper botOutgoingPacketHandlers;

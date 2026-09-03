@@ -268,6 +268,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
     if (urgentTransitionPending.exchange(false, std::memory_order_acq_rel))
         PrepareForUrgentTransition();
 
+    // A master's instance transition is a short-lived, exclusive operation.
+    // Keep ordinary AI actions from replacing the validated portal approach,
+    // and retry the normal CMaNGOS area-trigger path if an update was missed.
+    if (ProcessPendingTransition())
+        return;
+
     AiObjectContext* context = aiObjectContext;
     std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
     auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAI " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
@@ -1253,6 +1259,7 @@ void PlayerbotAI::HandleTeleportAck()
     // context before acknowledging either kind of teleport.
     transitionGeneration.fetch_add(1, std::memory_order_acq_rel);
     urgentTransitionPending.store(false, std::memory_order_release);
+    ClearPendingTransition();
 
     StopMoving();
 
@@ -2071,14 +2078,29 @@ void PlayerbotAI::HandleMasterIncomingPacket(const WorldPacket& packet)
         if (sObjectMgr.GetAreaTrigger(triggerId) && atEntry && bot &&
             bot->GetMapId() == atEntry->mapid &&
             bot->GetDistance(atEntry->x, atEntry->y, atEntry->z) <= sPlayerbotAIConfig.sightDistance)
-            RequestUrgentTransition();
+            RequestUrgentTransition(triggerId);
+        else
+            masterIncomingPacketHandlers.AddPacket(packet);
+
+        return;
     }
 
     masterIncomingPacketHandlers.AddPacket(packet);
 }
 
-void PlayerbotAI::RequestUrgentTransition()
+void PlayerbotAI::RequestUrgentTransition(uint32 triggerId)
 {
+    uint32 const now = WorldTimer::getMSTime();
+    {
+        std::lock_guard<std::mutex> lock(pendingTransitionMutex);
+        pendingTransition.triggerId = triggerId;
+        pendingTransition.sourceMapId = bot->GetMapId();
+        pendingTransition.sourceInstanceId = bot->GetInstanceId();
+        pendingTransition.startedAtMs = now;
+        pendingTransition.lastAttemptAtMs = 0;
+        pendingTransition.attempts = 0;
+    }
+
     transitionGeneration.fetch_add(1, std::memory_order_acq_rel);
     urgentTransitionPending.store(true, std::memory_order_release);
     transitionRequests.fetch_add(1, std::memory_order_relaxed);
@@ -2116,6 +2138,116 @@ void PlayerbotAI::PrepareForUrgentTransition()
     StopMoving();
     aiObjectContext->GetValue<LastMovement&>("last movement")->Get().clear();
     aiObjectContext->GetValue<LastMovement&>("last area trigger")->Get().clear();
+}
+
+bool PlayerbotAI::ProcessPendingTransition()
+{
+    static uint32 const TRANSITION_TIMEOUT_MS = 15000;
+    static uint32 const TRANSITION_RETRY_MS = 1000;
+    static uint32 const MAX_TRANSITION_ATTEMPTS = 6;
+
+    PendingTransitionState state;
+    {
+        std::lock_guard<std::mutex> lock(pendingTransitionMutex);
+        state = pendingTransition;
+    }
+
+    if (!state.triggerId)
+        return false;
+
+    uint32 const now = WorldTimer::getMSTime();
+    if (WorldTimer::getMSTimeDiff(state.startedAtMs, now) >= TRANSITION_TIMEOUT_MS)
+    {
+        ClearPendingTransition(state.triggerId, true);
+        return false;
+    }
+
+    // A successful area-trigger transfer changes map or instance context. The
+    // normal teleport acknowledgement also clears this state, but recognizing
+    // the context change here closes the small interval before that callback.
+    if (!bot || (bot->IsInWorld() &&
+        (bot->GetMapId() != state.sourceMapId || bot->GetInstanceId() != state.sourceInstanceId)))
+    {
+        ClearPendingTransition(state.triggerId);
+        return false;
+    }
+
+    if (!bot->IsInWorld() || bot->IsBeingTeleported())
+        return true;
+
+    AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(state.triggerId);
+    AreaTrigger const* areaTrigger = sObjectMgr.GetAreaTrigger(state.triggerId);
+    if (!atEntry || !areaTrigger || bot->GetMapId() != atEntry->mapid ||
+        bot->GetDistance(atEntry->x, atEntry->y, atEntry->z) > sPlayerbotAIConfig.sightDistance)
+    {
+        ClearPendingTransition(state.triggerId, true);
+        return false;
+    }
+
+    bool const retryDue = !state.lastAttemptAtMs ||
+        WorldTimer::getMSTimeDiff(state.lastAttemptAtMs, now) >= TRANSITION_RETRY_MS;
+    if (!retryDue)
+        return true;
+
+    bool const insideTrigger = ::IsPointInAreaTriggerZone(atEntry, bot->GetMapId(),
+        bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), 0.5f);
+
+    LastMovement& movement = aiObjectContext->GetValue<LastMovement&>("last area trigger")->Get();
+    bool const approachingTrigger = movement.lastAreaTrigger == state.triggerId &&
+        (!bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+
+    // A valid approach remains under MotionMaster control without being
+    // restarted every tick. Retry only when the bot stopped/stalled, or when
+    // it has reached the official trigger and needs the handler invoked again.
+    if (!insideTrigger && approachingTrigger)
+        return true;
+
+    if (state.attempts >= MAX_TRANSITION_ATTEMPTS)
+    {
+        ClearPendingTransition(state.triggerId, true);
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(pendingTransitionMutex);
+        if (pendingTransition.triggerId != state.triggerId)
+            return pendingTransition.triggerId != 0;
+
+        pendingTransition.lastAttemptAtMs = now;
+        ++pendingTransition.attempts;
+    }
+
+    WorldPacket triggerPacket(CMSG_AREATRIGGER);
+    triggerPacket << state.triggerId;
+    triggerPacket.rpos(0);
+
+    if (insideTrigger)
+        bot->GetSession()->HandleAreaTriggerOpcode(triggerPacket);
+    else
+        DoSpecificAction("reach area trigger", Event("transition retry", triggerPacket), true);
+
+    return true;
+}
+
+void PlayerbotAI::ClearPendingTransition(uint32 expectedTriggerId, bool stopMovement)
+{
+    bool cleared = false;
+    {
+        std::lock_guard<std::mutex> lock(pendingTransitionMutex);
+        if (!expectedTriggerId || pendingTransition.triggerId == expectedTriggerId)
+        {
+            pendingTransition = PendingTransitionState();
+            cleared = true;
+        }
+    }
+
+    if (!cleared || !stopMovement || !bot || !bot->IsInWorld() || bot->IsBeingTeleported())
+        return;
+
+    StopMoving();
+    aiObjectContext->GetValue<LastMovement&>("last movement")->Get().clear();
+    aiObjectContext->GetValue<LastMovement&>("last area trigger")->Get().clear();
+    ResetAIInternalUpdateDelay();
 }
 
 bool PlayerbotAI::IsTransitionContextCurrent(uint32 generation, uint32 mapId, uint32 instanceId) const
