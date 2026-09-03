@@ -63,6 +63,8 @@ uint64 extractGuid(WorldPacket& packet);
 std::string &trim(std::string &s);
 
 std::set<std::string> PlayerbotAI::unsecuredCommands;
+std::atomic<uint64> PlayerbotAI::discardedTransitionWork{0};
+std::atomic<uint64> PlayerbotAI::transitionRequests{0};
 
 uint32 PlayerbotChatHandler::extractQuestId(std::string str)
 {
@@ -259,6 +261,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
     std::unique_lock<std::mutex> updateLock(updateExecutionMutex, std::try_to_lock);
     if (!updateLock.owns_lock())
         return;
+
+    // A real map transfer outranks ordinary action duration. Without this,
+    // food, drink, crafting, fishing, or a channel can leave the master's
+    // area-trigger packet waiting behind a multi-second AI delay.
+    if (urgentTransitionPending.exchange(false, std::memory_order_acq_rel))
+        PrepareForUrgentTransition();
 
     AiObjectContext* context = aiObjectContext;
     std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
@@ -1241,6 +1249,11 @@ void PlayerbotAI::HandleTeleportAck()
 
     bool const farTeleport = bot->IsBeingTeleportedFar();
 
+    // Invalidate every path or queued worker snapshot from the old world
+    // context before acknowledging either kind of teleport.
+    transitionGeneration.fetch_add(1, std::memory_order_acq_rel);
+    urgentTransitionPending.store(false, std::memory_order_release);
+
     StopMoving();
 
 	if (bot->IsBeingTeleportedNear())
@@ -2043,7 +2056,88 @@ int32 PlayerbotAI::CalculateGlobalCooldown(uint32 spellid)
 
 void PlayerbotAI::HandleMasterIncomingPacket(const WorldPacket& packet)
 {
+    if (packet.GetOpcode() == CMSG_AREATRIGGER)
+    {
+        WorldPacket triggerPacket(packet);
+        triggerPacket.rpos(0);
+        uint32 triggerId = 0;
+        triggerPacket >> triggerId;
+
+        AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(triggerId);
+
+        // Only a reachable, real teleport trigger preempts this bot's current
+        // action. PlayerbotMgr forwards the master's packet to every owned bot,
+        // including remote bots that cannot follow this transition.
+        if (sObjectMgr.GetAreaTrigger(triggerId) && atEntry && bot &&
+            bot->GetMapId() == atEntry->mapid &&
+            bot->GetDistance(atEntry->x, atEntry->y, atEntry->z) <= sPlayerbotAIConfig.sightDistance)
+            RequestUrgentTransition();
+    }
+
     masterIncomingPacketHandlers.AddPacket(packet);
+}
+
+void PlayerbotAI::RequestUrgentTransition()
+{
+    transitionGeneration.fetch_add(1, std::memory_order_acq_rel);
+    urgentTransitionPending.store(true, std::memory_order_release);
+    transitionRequests.fetch_add(1, std::memory_order_relaxed);
+}
+
+void PlayerbotAI::PrepareForUrgentTransition()
+{
+    SetAIInternalUpdateDelay(0);
+    isWaiting = false;
+
+    if (reactionEngine)
+        reactionEngine->Reset();
+
+    if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported())
+        return;
+
+    // Use the core's normal cancellation semantics. Standing removes food and
+    // drink auras carrying AURA_INTERRUPT_FLAG_STANDING_CANCELS. Interrupt all
+    // interruptible current spell types, including channels and profession
+    // casts, then clear movement through the normal movement handler.
+    if (bot->IsSitState())
+        bot->SetStandState(UNIT_STAND_STATE_STAND);
+
+    for (int type = CURRENT_MELEE_SPELL; type < CURRENT_MAX_SPELL; ++type)
+    {
+        Spell* currentSpell = bot->GetCurrentSpell(static_cast<CurrentSpellTypes>(type));
+        if (currentSpell && currentSpell->CanBeInterrupted())
+        {
+            uint32 const spellId = currentSpell->m_spellInfo->Id;
+            bot->InterruptSpell(static_cast<CurrentSpellTypes>(type));
+            SpellInterrupted(spellId);
+        }
+    }
+
+    StopMoving();
+    aiObjectContext->GetValue<LastMovement&>("last movement")->Get().clear();
+    aiObjectContext->GetValue<LastMovement&>("last area trigger")->Get().clear();
+}
+
+bool PlayerbotAI::IsTransitionContextCurrent(uint32 generation, uint32 mapId, uint32 instanceId) const
+{
+    return bot && bot->IsInWorld() && !bot->IsBeingTeleported() &&
+        transitionGeneration.load(std::memory_order_acquire) == generation &&
+        bot->GetMapId() == mapId && bot->GetInstanceId() == instanceId;
+}
+
+void PlayerbotAI::RecordDiscardedTransitionWork()
+{
+    discardedTransitionWork.fetch_add(1, std::memory_order_relaxed);
+}
+
+uint64 PlayerbotAI::ConsumeDiscardedTransitionWork()
+{
+    return discardedTransitionWork.exchange(0, std::memory_order_acq_rel);
+}
+
+uint64 PlayerbotAI::ConsumeTransitionRequests()
+{
+    return transitionRequests.exchange(0, std::memory_order_acq_rel);
 }
 
 void PlayerbotAI::HandleMasterOutgoingPacket(const WorldPacket& packet)
