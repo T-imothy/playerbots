@@ -87,7 +87,11 @@ bool ReachAreaTriggerAction::Execute(Event& event)
         distance += (portalPath[i] - portalPath[i - 1]).magnitude();
 
     MotionMaster& mm = *bot->GetMotionMaster();
+#ifdef MANGOSBOT_TWO
+    mm.MovePath(portalPath, 0.0f, FORCED_MOVEMENT_RUN, false);
+#else
     mm.MovePath(portalPath, 0.0f, FORCED_MOVEMENT_RUN, false, false);
+#endif
     const float duration = 1000.0f * distance / bot->GetSpeed(MOVE_RUN) + sPlayerbotAIConfig.reactDelay;
     ai->TellError(requester, "Wait for me");
     SetDuration(duration);
