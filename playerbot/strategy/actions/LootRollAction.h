@@ -77,6 +77,7 @@ namespace ai
         AutoLootRollAction(PlayerbotAI* ai, std::string name = "auto loot roll") : RollAction(ai, name) {}
         virtual bool Execute(Event& event) override;
         virtual bool isPossible() override;
+        virtual bool isUseful() override { return isPossible(); }
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "auto loot roll"; } //Must equal internal name

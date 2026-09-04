@@ -183,6 +183,7 @@ public:
         uint32 SetEventValue(uint32 bot, const std::string& event, uint32 value, uint32 validIn, const std::string& data = "");
         const std::vector<uint32>& GetBots();
         void EnsureEventCacheLoaded(uint32 bot);
+        uint64 PruneExpiredEventCache(time_t now);
         void LogTeleportFailure(Player* bot);
         std::list<uint32> GetBgBots(uint32 bracket);
         time_t BgCheckTimer;
@@ -252,6 +253,13 @@ public:
         uint32 activeBots = 0;
         time_t databasePingTimer = 0;
         time_t performanceMapScanTimer = 0;
+        time_t memoryMaintenanceTimer = 0;
+        time_t admissionStateLogTimer = 0;
+        bool memoryAdmissionPaused = false;
+        uint64 lastPrivateBytes = 0;
+        uint64 eventCachePeakEstimatedBytes = 0;
+        uint64 aiCachePeakEstimatedBytes = 0;
+        uint64 expiredEventsReleased = 0;
         time_t teleportFailureLogTimer = 0;
         uint32 suppressedTeleportFailureLogs = 0;
         std::set<std::pair<uint32, uint32>> initializedPerformanceMaps;

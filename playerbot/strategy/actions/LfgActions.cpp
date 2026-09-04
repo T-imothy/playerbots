@@ -8,6 +8,8 @@ using namespace ai;
 
 bool LfgJoinAction::Execute(Event& event)
 {
+    if (!isUseful())
+        return false;
     return JoinLFG();
 }
 
@@ -1188,6 +1190,9 @@ bool LfgJoinAction::isUseful()
         return false;
 
     if (bot->IsDead())
+        return false;
+
+    if (!bot->IsInWorld() || bot->IsInCombat())
         return false;
 
     if (!sRandomPlayerbotMgr.IsFreeBot(bot))

@@ -35,6 +35,11 @@ bool PlayerbotDiagnostics::IsEnabled() const
     return sPlayerbotAIConfig.diagnosticsEnabled;
 }
 
+bool PlayerbotDiagnostics::IsDeepEnabled() const
+{
+    return sPlayerbotAIConfig.diagnosticsMode >= 2;
+}
+
 bool PlayerbotDiagnostics::ShouldSampleEngineTick()
 {
     if (!IsEnabled())
@@ -100,6 +105,11 @@ void PlayerbotDiagnostics::RecordFailure(const std::string& action, const std::s
         exactFailed.fetch_add(1, std::memory_order_relaxed);
     else if (outcome == PlayerbotDiagnosticOutcome::Impossible)
         exactImpossible.fetch_add(1, std::memory_order_relaxed);
+
+    // Standard production diagnostics retain exact numeric totals without
+    // allocating a compound string or serializing every failure on one mutex.
+    if (!IsDeepEnabled())
+        return;
 
     const std::string key = std::to_string(static_cast<uint32>(outcome)) + "\x1f" + action + "\x1f" + source;
     std::lock_guard<std::mutex> guard(failureMutex);
@@ -211,8 +221,9 @@ void PlayerbotDiagnostics::EnsureSessionHeader()
 
     sessionHeaderWritten = true;
     sPlayerbotAIConfig.log(sPlayerbotAIConfig.diagnosticsLogFile,
-        "%s PB_DIAG_SESSION interval_ms=%u engine_sample_rate=%u top_failures=%u max_failure_keys=%u",
-        sPlayerbotAIConfig.GetTimestampStr().c_str(), sPlayerbotAIConfig.diagnosticsInterval,
+        "%s PB_DIAG_SESSION mode=%u interval_ms=%u engine_sample_rate=%u top_failures=%u max_failure_keys=%u",
+        sPlayerbotAIConfig.GetTimestampStr().c_str(), sPlayerbotAIConfig.diagnosticsMode,
+        sPlayerbotAIConfig.diagnosticsInterval,
         sPlayerbotAIConfig.diagnosticsEngineSampleRate, sPlayerbotAIConfig.diagnosticsTopFailures,
         sPlayerbotAIConfig.diagnosticsMaxFailureKeys);
 }
@@ -279,16 +290,24 @@ void PlayerbotDiagnostics::Flush(const PlayerbotManagerSnapshot& snapshot)
     const uint64 cacheLoadUs = Take(eventCacheLoadUs);
     const uint64 cacheMaxLoadUs = Take(eventCacheMaxLoadUs);
     sPlayerbotAIConfig.log(sPlayerbotAIConfig.diagnosticsLogFile,
-        "%s PB_DIAG_CACHE event_bots=%u event_entries=%u event_loads=%llu event_rows_loaded=%llu event_load_avg_us=%.2f event_load_max_us=%llu event_upserts=%llu event_deletes=%llu values=%llu actions=%llu triggers=%llu strategies=%llu expired_values_released_total=%llu action_failure_entries=%llu action_failure_peak=%llu action_failure_expired_total=%llu action_failure_evicted_total=%llu teleport_failures=%llu failure_key_overflow=%llu",
+        "%s PB_DIAG_CACHE event_bots=%u event_entries=%u event_estimated_kb=%.2f event_peak_kb=%.2f event_expired_released_total=%llu current_bot_capacity=%llu event_loads=%llu event_rows_loaded=%llu event_load_avg_us=%.2f event_load_max_us=%llu event_upserts=%llu event_deletes=%llu values=%llu actions=%llu triggers=%llu strategies=%llu spell_capability_entries=%llu ai_estimated_mb=%.2f ai_peak_mb=%.2f expired_values_released_total=%llu action_failure_entries=%llu action_failure_peak=%llu action_failure_estimated_kb=%.2f action_failure_expired_total=%llu action_failure_evicted_total=%llu teleport_failures=%llu failure_key_overflow=%llu",
         timestamp.c_str(), snapshot.loadedEventBots, snapshot.cachedEvents,
+        static_cast<double>(snapshot.eventCacheEstimatedBytes) / 1024.0,
+        static_cast<double>(snapshot.eventCachePeakEstimatedBytes) / 1024.0,
+        static_cast<unsigned long long>(snapshot.expiredEventsReleased),
+        static_cast<unsigned long long>(snapshot.currentBotVectorCapacity),
         static_cast<unsigned long long>(cacheLoads), static_cast<unsigned long long>(Take(eventCacheRows)),
         cacheLoads ? static_cast<double>(cacheLoadUs) / cacheLoads : 0.0, static_cast<unsigned long long>(cacheMaxLoadUs),
         static_cast<unsigned long long>(Take(eventUpserts)), static_cast<unsigned long long>(Take(eventDeletes)),
         static_cast<unsigned long long>(snapshot.cachedValues), static_cast<unsigned long long>(snapshot.cachedActions),
         static_cast<unsigned long long>(snapshot.cachedTriggers), static_cast<unsigned long long>(snapshot.cachedStrategies),
+        static_cast<unsigned long long>(snapshot.spellCapabilityCacheEntries),
+        static_cast<double>(snapshot.estimatedAiBytes) / (1024.0 * 1024.0),
+        static_cast<double>(snapshot.peakEstimatedAiBytes) / (1024.0 * 1024.0),
         static_cast<unsigned long long>(snapshot.expiredValuesReleased),
         static_cast<unsigned long long>(snapshot.actionFailureCacheEntries),
         static_cast<unsigned long long>(snapshot.actionFailureCachePeakEntries),
+        static_cast<double>(snapshot.failureCacheEstimatedBytes) / 1024.0,
         static_cast<unsigned long long>(snapshot.expiredActionFailureEntries),
         static_cast<unsigned long long>(snapshot.evictedActionFailureEntries),
         static_cast<unsigned long long>(Take(teleportFailures)),

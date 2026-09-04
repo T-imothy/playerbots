@@ -54,10 +54,18 @@ bool CastSpellAction::Execute(Event& event)
                 castId = pSpellInfo->Id;
         }
 
+        if (!castId || !sServerFacade.LookupSpellInfo(castId))
+            return false;
+
         executed = ai->CastSpell(castId, bot, nullptr, false, &spellDuration);
     }
     else
     {
+        // Keep invalid and expansion-incompatible actions out of the core spell
+        // path. Dynamic mount selection is still resolved by the normal value.
+        if (!spellId || !sServerFacade.LookupSpellInfo(spellId))
+            return false;
+
         if (GetTargetName() == "current target" && (!bot->GetCurrentSpell(CURRENT_MELEE_SPELL) && !bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL)))
         {
             if (bot->getClass() == CLASS_HUNTER && spellName != "auto shot" && sServerFacade.GetDistance2d(bot, GetTarget()) > 5.0f)
@@ -80,6 +88,9 @@ bool CastSpellAction::Execute(Event& event)
 
 bool CastSpellAction::isPossible()
 {
+    if (!spellId || !sServerFacade.LookupSpellInfo(spellId))
+        return false;
+
     if (spellName == "mount")
     {
         if (!bot->IsMounted() && !bot->IsInCombat())

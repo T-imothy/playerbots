@@ -841,6 +841,9 @@ AiPlayerbot.GlobalCooldown = 1500
 # Delay between two bot actions (default 100)
 AiPlayerbot.ReactDelay = 500
 
+# Backoff for an unchanged failed navigation request (milliseconds)
+AiPlayerbot.PathFailureRetryMs = 3000
+
 # Inactivity delay
 AiPlayerbot.PassiveDelay = 10000
 AiPlayerbot.ValueCacheCleanupInterval = 60000
@@ -911,6 +914,16 @@ AiPlayerbot.FleeingEnabled = 1
 
 # Random bot default strategies (applied after defaults)
 #AiPlayerbot.RandomBotCombatStrategies = +dps,+dps assist,-threat
+
+# ManTech diagnostics mode: 0=off, 1=low-cost production aggregates, 2=deep analysis.
+# Mode is authoritative; Enabled remains a backward-compatible alias.
+AiPlayerbot.Diagnostics.Enabled = 0
+AiPlayerbot.Diagnostics.Mode = 0
+AiPlayerbot.Diagnostics.Interval = 30000
+AiPlayerbot.Diagnostics.EngineSampleRate = 16
+AiPlayerbot.Diagnostics.TopFailures = 10
+AiPlayerbot.Diagnostics.MaxFailureKeys = 2048
+AiPlayerbot.Diagnostics.LogFile = PlayerbotDiagnostics.log
 #AiPlayerbot.RandomBotNonCombatStrategies = +grind,+loot,+rpg,+custom::say
 #AiPlayerbot.RandomBotReactStrategies = 
 #AiPlayerbot.RandomBotDeadStrategies = 

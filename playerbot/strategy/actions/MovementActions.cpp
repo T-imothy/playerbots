@@ -16,6 +16,9 @@
 #include "Entities/Vehicle.h"
 #endif
 #include "playerbot/strategy/generic/CombatStrategy.h"
+#include "Util/Timer.h"
+
+#include <cmath>
 
 using namespace ai;
 
@@ -1061,7 +1064,7 @@ Unit* MovementAction::GetMover(Player* bot)
 
 bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)
 {
-    if (!endPos.isValid())
+    if (!endPos.isValid() || !std::isfinite(endPos.getX()) || !std::isfinite(endPos.getY()) || !std::isfinite(endPos.getZ()))
         return false;
 
     UpdateMovementState();
@@ -1072,6 +1075,22 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     Unit* mover = GetMover(bot);
 
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
+
+    // Bound retries for an unchanged navigation failure.  The key is per bot,
+    // map/instance, transition generation and an eight-yard destination cell,
+    // so moving the target or completing a transition invalidates it naturally.
+    int32 const destinationCellX = static_cast<int32>(std::floor(endPos.getX() / 8.0f));
+    int32 const destinationCellY = static_cast<int32>(std::floor(endPos.getY() / 8.0f));
+    uint32 const transitionGeneration = ai->GetTransitionGeneration();
+    uint32 const nowMs = WorldTimer::getMSTime();
+    bool const sameFailedRequest = lastMove.failedPathMap == endPos.getMapId() &&
+        lastMove.failedPathInstance == bot->GetInstanceId() &&
+        lastMove.failedPathCellX == destinationCellX && lastMove.failedPathCellY == destinationCellY &&
+        lastMove.failedPathGeneration == transitionGeneration;
+    if (sameFailedRequest && static_cast<int32>(lastMove.failedPathRetryUntil - nowMs) > 0)
+        return false;
+    if (!sameFailedRequest)
+        lastMove.clearPathFailure();
 
     // Different instances can share the same map id (all Scarlet Monastery
     // wings are a common example). Never try to follow the master's raw
@@ -1135,7 +1154,18 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     lastMove.setPath(movePath);
 
     if (movePath.empty())
+    {
+        lastMove.failedPathMap = endPos.getMapId();
+        lastMove.failedPathInstance = bot->GetInstanceId();
+        lastMove.failedPathCellX = destinationCellX;
+        lastMove.failedPathCellY = destinationCellY;
+        lastMove.failedPathGeneration = transitionGeneration;
+        lastMove.failedPathRetryUntil = nowMs + sPlayerbotAIConfig.pathFailureRetryMs;
+        ai->StopMoving();
         return false;
+    }
+
+    lastMove.clearPathFailure();
 
      
     if (!bot->GetTransport())
@@ -3266,10 +3296,17 @@ bool MoveToLootAction::Execute(Event& event)
         ai->TellPlayerNoFacing(GetMaster(), out);
     }
 
-    if(sServerFacade.IsWithinLOSInMap(bot, wo))
-        return MoveNear(wo, sPlayerbotAIConfig.contactDistance);
-
-    return MoveTo(WorldPosition(wo));
+    const bool moved = sServerFacade.IsWithinLOSInMap(bot, wo) ?
+        MoveNear(wo, sPlayerbotAIConfig.contactDistance) : MoveTo(WorldPosition(wo));
+    if (!moved)
+    {
+        // A failed navigation request is already held in the per-bot path
+        // backoff. Drop the current object as well so loot/gather triggers do
+        // not recreate the same futile movement action every AI pass.
+        AI_VALUE(LootObjectStack*, "available loot")->Remove(loot.guid);
+        RESET_AI_VALUE(LootObject, "loot target");
+    }
+    return moved;
 }
 
 bool MoveOutOfEnemyContactAction::Execute(Event& event)

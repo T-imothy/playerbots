@@ -114,7 +114,7 @@ public:
     bool enabled;
     bool allowGuildBots;
     bool allowMultiAccountAltBots;
-    uint32 globalCoolDown, reactDelay, maxWaitForMove, expireActionTime, dispelAuraDuration, passiveDelay, repeatDelay,
+    uint32 globalCoolDown, reactDelay, pathFailureRetryMs, maxWaitForMove, expireActionTime, dispelAuraDuration, passiveDelay, repeatDelay,
         errorDelay, rpgDelay, sitDelay, returnDelay, lootDelay, valueCacheCleanupInterval,
         failedActionRetryBase, failedActionRetryMax, failedActionCacheTtl, failedActionCacheMaxEntries;
     float sightDistance, spellDistance, reactDistance, grindDistance, lootDistance, groupMemberLootDistance, groupMemberLootDistanceWithActiveMaster,
@@ -175,6 +175,7 @@ public:
     uint32 randomBotLoginDbQueueLimit;
     uint32 randomBotDatabasePingInterval, performanceMapScanInterval;
     bool diagnosticsEnabled = false;
+    uint32 diagnosticsMode = 0;
     uint32 diagnosticsInterval = 30000;
     uint32 diagnosticsEngineSampleRate = 16;
     uint32 diagnosticsTopFailures = 10;

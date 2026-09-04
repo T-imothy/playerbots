@@ -313,6 +313,22 @@ namespace ai
             return created.size();
         }
 
+        size_t GetEstimatedCreatedBytes() const
+        {
+            std::lock_guard<std::recursive_mutex> lock(createdMutex);
+            size_t bytes = 0;
+            for (const auto& entry : created)
+            {
+                // std::map node bookkeeping is implementation-specific. Three
+                // links plus the value, owned key storage and the concrete base
+                // object give a stable lower-bound useful for growth correlation.
+                bytes += sizeof(entry) + 3 * sizeof(void*) + entry.first.capacity() + 1;
+                if (entry.second)
+                    bytes += sizeof(T);
+            }
+            return bytes;
+        }
+
     protected:
         std::map<std::string, T*> created;
         mutable std::recursive_mutex createdMutex;
@@ -424,6 +440,14 @@ namespace ai
             for (typename std::list<NamedObjectContext<T>*>::const_iterator i = contexts.begin(); i != contexts.end(); ++i)
                 count += (*i)->GetCreatedCount();
             return count;
+        }
+
+        size_t GetEstimatedCreatedBytes() const
+        {
+            size_t bytes = 0;
+            for (typename std::list<NamedObjectContext<T>*>::const_iterator i = contexts.begin(); i != contexts.end(); ++i)
+                bytes += (*i)->GetEstimatedCreatedBytes();
+            return bytes;
         }
 
         void Erase(const std::string& name)

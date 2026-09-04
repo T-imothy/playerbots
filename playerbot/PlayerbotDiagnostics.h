@@ -53,17 +53,25 @@ namespace ai
         uint32 pendingDbOperations = 0;
         uint32 loadedEventBots = 0;
         uint32 cachedEvents = 0;
+        uint64 eventCacheEstimatedBytes = 0;
+        uint64 eventCachePeakEstimatedBytes = 0;
+        uint64 expiredEventsReleased = 0;
+        uint64 currentBotVectorCapacity = 0;
         uint32 trackedMaps = 0;
         uint64 privateBytes = 0;
         uint64 cachedValues = 0;
         uint64 cachedActions = 0;
         uint64 cachedTriggers = 0;
         uint64 cachedStrategies = 0;
+        uint64 estimatedAiBytes = 0;
+        uint64 peakEstimatedAiBytes = 0;
         uint64 expiredValuesReleased = 0;
         uint64 actionFailureCacheEntries = 0;
         uint64 actionFailureCachePeakEntries = 0;
         uint64 expiredActionFailureEntries = 0;
         uint64 evictedActionFailureEntries = 0;
+        uint64 failureCacheEstimatedBytes = 0;
+        uint64 spellCapabilityCacheEntries = 0;
     };
 
     class PlayerbotDiagnostics
@@ -72,6 +80,7 @@ namespace ai
         static PlayerbotDiagnostics& instance();
 
         bool IsEnabled() const;
+        bool IsDeepEnabled() const;
         bool ShouldSampleEngineTick();
         bool IsFlushDue() const;
 

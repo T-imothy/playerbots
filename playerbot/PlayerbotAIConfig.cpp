@@ -110,10 +110,13 @@ bool PlayerbotAIConfig::Initialize()
     expireActionTime = config.GetIntDefault("AiPlayerbot.ExpireActionTime", 5000);
     dispelAuraDuration = config.GetIntDefault("AiPlayerbot.DispelAuraDuration", 2000);
     reactDelay = (uint32) config.GetIntDefault("AiPlayerbot.ReactDelay", 100);
+    pathFailureRetryMs = std::max<uint32>(250, (uint32)config.GetIntDefault("AiPlayerbot.PathFailureRetryMs", 3000));
     passiveDelay = (uint32) config.GetIntDefault("AiPlayerbot.PassiveDelay", 4000);
     valueCacheCleanupInterval = (uint32) config.GetIntDefault("AiPlayerbot.ValueCacheCleanupInterval", 60000);
     failedActionRetryBase = (uint32) config.GetIntDefault("AiPlayerbot.FailedActionRetryBase", 250);
     failedActionRetryMax = (uint32) config.GetIntDefault("AiPlayerbot.FailedActionRetryMax", 2000);
+    failedActionRetryBase = std::max<uint32>(50, failedActionRetryBase);
+    failedActionRetryMax = std::max<uint32>(failedActionRetryBase, failedActionRetryMax);
     failedActionCacheTtl = (uint32) std::max<int32>(1000, config.GetIntDefault("AiPlayerbot.FailedActionCacheTtl", 30000));
     failedActionCacheMaxEntries = (uint32) std::max<int32>(8, config.GetIntDefault("AiPlayerbot.FailedActionCacheMaxEntries", 64));
     repeatDelay = (uint32) config.GetIntDefault("AiPlayerbot.RepeatDelay", 5000);
@@ -241,12 +244,15 @@ bool PlayerbotAIConfig::Initialize()
     randomBotTeleportMaxInterval = config.GetIntDefault("AiPlayerbot.RandomBotTeleportTeleportMaxInterval", 48 * 3600);
     randomBotsMaxLoginsPerInterval = config.GetIntDefault("AiPlayerbot.RandomBotsMaxLoginsPerInterval", 10);
     randomBotsPerInterval = config.GetIntDefault("AiPlayerbot.RandomBotsPerInterval", 0);
-    randomBotLoginDbQueueLimit = config.GetIntDefault("AiPlayerbot.RandomBotLoginDbQueueLimit", 256);
-    randomBotDatabasePingInterval = config.GetIntDefault("AiPlayerbot.RandomBotDatabasePingInterval", 10000);
-    performanceMapScanInterval = config.GetIntDefault("AiPlayerbot.PerformanceMapScanInterval", 30000);
+    randomBotLoginDbQueueLimit = std::max<int32>(16, config.GetIntDefault("AiPlayerbot.RandomBotLoginDbQueueLimit", 256));
+    randomBotDatabasePingInterval = std::max<int32>(1000, config.GetIntDefault("AiPlayerbot.RandomBotDatabasePingInterval", 10000));
+    performanceMapScanInterval = std::max<int32>(1000, config.GetIntDefault("AiPlayerbot.PerformanceMapScanInterval", 30000));
     diagnosticsEnabled = config.GetBoolDefault("AiPlayerbot.Diagnostics.Enabled", false);
-    diagnosticsInterval = std::max<int32>(1000, config.GetIntDefault("AiPlayerbot.Diagnostics.Interval", 30000));
-    diagnosticsEngineSampleRate = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.Diagnostics.EngineSampleRate", 16));
+    diagnosticsMode = std::min<uint32>(2, std::max<int32>(0,
+        config.GetIntDefault("AiPlayerbot.Diagnostics.Mode", diagnosticsEnabled ? 2 : 0)));
+    diagnosticsEnabled = diagnosticsMode > 0;
+    diagnosticsInterval = std::max<int32>(1000, config.GetIntDefault("AiPlayerbot.Diagnostics.Interval", diagnosticsMode == 1 ? 300000 : 30000));
+    diagnosticsEngineSampleRate = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.Diagnostics.EngineSampleRate", diagnosticsMode == 1 ? 64 : 16));
     diagnosticsTopFailures = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.Diagnostics.TopFailures", 10));
     diagnosticsMaxFailureKeys = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.Diagnostics.MaxFailureKeys", 2048));
     diagnosticsLogFile = config.GetStringDefault("AiPlayerbot.Diagnostics.LogFile", "PlayerbotDiagnostics.log");
@@ -837,6 +843,11 @@ bool PlayerbotAIConfig::Initialize()
 
     if (sPlayerbotAIConfig.randomBotJoinBG)
         sRandomPlayerbotMgr.LoadBattleMastersCache();
+
+    sLog.outString("ARCH3_PLAYERBOT_CONFIG enabled=%u bots_min=%u bots_max=%u react_ms=%u path_retry_ms=%u failure_retry_ms=%u/%u failure_ttl_ms=%u failure_entries=%u login_db_limit=%u diagnostics_mode=%u diagnostics_interval_ms=%u diagnostics_sample=%u",
+        enabled ? 1u : 0u, minRandomBots, maxRandomBots, reactDelay, pathFailureRetryMs,
+        failedActionRetryBase, failedActionRetryMax, failedActionCacheTtl, failedActionCacheMaxEntries,
+        randomBotLoginDbQueueLimit, diagnosticsMode, diagnosticsInterval, diagnosticsEngineSampleRate);
 
     sLog.outString("---------------------------------------");
     sLog.outString("        AI Playerbot initialized       ");

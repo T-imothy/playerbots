@@ -796,6 +796,9 @@ AiPlayerbot.GlobalCooldown = 1500
 # Delay between two bot actions (default 100)
 AiPlayerbot.ReactDelay = 100
 
+# Backoff for an unchanged failed navigation request (milliseconds)
+AiPlayerbot.PathFailureRetryMs = 3000
+
 # Inactivity delay
 AiPlayerbot.PassiveDelay = 10000
 AiPlayerbot.ValueCacheCleanupInterval = 60000
@@ -910,6 +913,7 @@ AiPlayerbot.PerformanceMapScanInterval = 30000
 # to keep diagnostic overhead low; actual failed/impossible actions are tracked
 # exactly and grouped in the top-failure report.
 AiPlayerbot.Diagnostics.Enabled = 0
+AiPlayerbot.Diagnostics.Mode = 0
 AiPlayerbot.Diagnostics.Interval = 30000
 AiPlayerbot.Diagnostics.EngineSampleRate = 16
 AiPlayerbot.Diagnostics.TopFailures = 10
