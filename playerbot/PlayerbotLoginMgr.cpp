@@ -727,11 +727,25 @@ BotInfos PlayerBotLoginMgr::FillLoginLogoutQueue(BotPool* pool, const RealPlayer
 
 void PlayerBotLoginMgr::LoginLogoutBots(const BotInfos& queue)
 {
+    const uint32 target = GetMaxOnlineBotCount();
+    const uint32 online = sRandomPlayerbotMgr.GetPlayerbotsAmount();
+    uint32 admissionCapacity = target > online ? target - online : 0;
+
     for (auto& info : queue)
-    {        
+    {
+        if (info->GetLoginState() == LoginState::BOT_ON_LOGINQUEUE && !admissionCapacity)
+        {
+            // The asynchronously prepared queue can become stale while login
+            // holders are completing. Revalidate the hard target on the world
+            // thread before materializing another session.
+            info->ResetLoginState();
+            continue;
+        }
+
         if (info->LoginBot())
         {
             onlineBots.push_back(info);
+            --admissionCapacity;
         }
         if (info->LogoutBot())
         {

@@ -135,7 +135,8 @@ void PlayerbotDiagnostics::RecordFailure(const std::string& action, const std::s
 }
 
 void PlayerbotDiagnostics::RecordManagerPass(uint64 durationUs, uint32 processScanCount, uint32 processCallCount,
-    uint32 loginScanCount, uint32 loginRequestCount, bool loginBackpressure)
+    uint32 loginScanCount, uint32 loginRequestCount, bool loginBackpressure, uint32 pendingLoginCount,
+    uint32 currentAdmissionCapacity, uint32 currentLoginScanBudget, bool loginScanBudgetExhausted)
 {
     if (!IsEnabled())
         return;
@@ -148,6 +149,11 @@ void PlayerbotDiagnostics::RecordManagerPass(uint64 durationUs, uint32 processSc
     loginRequests.fetch_add(loginRequestCount, std::memory_order_relaxed);
     if (loginBackpressure)
         loginBackpressurePasses.fetch_add(1, std::memory_order_relaxed);
+    loginScanBudget.fetch_add(currentLoginScanBudget, std::memory_order_relaxed);
+    if (loginScanBudgetExhausted)
+        loginScanBudgetExhaustedPasses.fetch_add(1, std::memory_order_relaxed);
+    pendingLogins.store(pendingLoginCount, std::memory_order_relaxed);
+    admissionCapacity.store(currentAdmissionCapacity, std::memory_order_relaxed);
     UpdateMax(managerMaxDurationUs, durationUs);
 }
 
@@ -278,11 +284,15 @@ void PlayerbotDiagnostics::Flush(const PlayerbotManagerSnapshot& snapshot)
         static_cast<unsigned long long>(Take(exactImpossible)));
 
     sPlayerbotAIConfig.log(sPlayerbotAIConfig.diagnosticsLogFile,
-        "%s PB_DIAG_MANAGER passes=%llu avg_us=%.2f max_us=%llu process_scans=%llu process_calls=%llu login_scans=%llu login_requests=%llu login_backpressure_passes=%llu db_delay_ms=%u db_pending_results=%u db_pending_ops=%u db_pings=%llu",
+        "%s PB_DIAG_MANAGER passes=%llu avg_us=%.2f max_us=%llu process_scans=%llu process_calls=%llu login_scans=%llu login_requests=%llu login_backpressure_passes=%llu pending_logins=%llu admission_capacity=%llu login_scan_budget=%llu login_scan_budget_exhausted_passes=%llu db_delay_ms=%u db_pending_results=%u db_pending_ops=%u db_pings=%llu",
         timestamp.c_str(), static_cast<unsigned long long>(managerCount), managerCount ? static_cast<double>(managerUs) / managerCount : 0.0,
         static_cast<unsigned long long>(maxManagerUs), static_cast<unsigned long long>(Take(processScans)),
         static_cast<unsigned long long>(Take(processCalls)), static_cast<unsigned long long>(Take(loginScans)),
         static_cast<unsigned long long>(Take(loginRequests)), static_cast<unsigned long long>(Take(loginBackpressurePasses)),
+        static_cast<unsigned long long>(pendingLogins.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(admissionCapacity.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(Take(loginScanBudget)),
+        static_cast<unsigned long long>(Take(loginScanBudgetExhaustedPasses)),
         snapshot.characterDbDelay, snapshot.pendingDbResults, snapshot.pendingDbOperations,
         static_cast<unsigned long long>(Take(databasePings)));
 

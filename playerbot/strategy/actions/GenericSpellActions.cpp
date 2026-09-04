@@ -152,6 +152,13 @@ bool CastSpellAction::isPossible()
 
 bool CastSpellAction::isUseful()
 {
+    // Expansion-specific strategies can expose actions for spells this bot has
+    // not learned (or that do not exist in the current client data). Reject
+    // those static capability misses before target/range/cast evaluation. The
+    // cached HasSpell path is invalidated by spellbook/talent changes.
+    if (!spellId || !sServerFacade.LookupSpellInfo(spellId) || !ai->HasSpell(spellId))
+        return false;
+
     if (ai->IsInVehicle() && !ai->IsInVehicle(false, false, true))
         return false;
 

@@ -184,6 +184,10 @@ public:
         const std::vector<uint32>& GetBots();
         void EnsureEventCacheLoaded(uint32 bot);
         uint64 PruneExpiredEventCache(time_t now);
+        uint32 PrunePendingBotLogins(time_t now);
+        void MarkPendingBotLogin(uint32 bot, time_t now);
+        void ClearPendingBotLogin(uint32 bot);
+        bool IsPendingBotLogin(uint32 bot) const;
         void LogTeleportFailure(Player* bot);
         std::list<uint32> GetBgBots(uint32 bracket);
         time_t BgCheckTimer;
@@ -242,6 +246,7 @@ public:
         std::map<Team, std::map<BattleGroundTypeId, std::list<uint32> > > BattleMastersCache;
         std::map<uint32, std::map<std::string, CachedEvent> > eventCache;
         std::unordered_set<uint32> loadedEventBots;
+        std::unordered_map<uint32, time_t> pendingBotLogins;
         BarGoLink* loginProgressBar;
         std::vector<uint32> currentBots;
         size_t processBotCursor = 0;

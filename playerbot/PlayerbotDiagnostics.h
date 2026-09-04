@@ -87,7 +87,8 @@ namespace ai
         void RecordEngineSample(const PlayerbotEngineSample& sample);
         void RecordFailure(const std::string& action, const std::string& source, PlayerbotDiagnosticOutcome outcome);
         void RecordManagerPass(uint64 durationUs, uint32 processScans, uint32 processCalls,
-            uint32 loginScans, uint32 loginRequests, bool loginBackpressure);
+            uint32 loginScans, uint32 loginRequests, bool loginBackpressure, uint32 pendingLogins,
+            uint32 admissionCapacity, uint32 loginScanBudget, bool loginScanBudgetExhausted);
         void RecordEventCacheLoad(uint32 rows, uint64 durationUs);
         void RecordEventMutation(bool removed);
         void RecordDatabasePing();
@@ -140,6 +141,10 @@ namespace ai
         std::atomic<uint64> loginScans{0};
         std::atomic<uint64> loginRequests{0};
         std::atomic<uint64> loginBackpressurePasses{0};
+        std::atomic<uint64> loginScanBudget{0};
+        std::atomic<uint64> loginScanBudgetExhaustedPasses{0};
+        std::atomic<uint64> pendingLogins{0};
+        std::atomic<uint64> admissionCapacity{0};
         std::atomic<uint64> eventCacheLoads{0};
         std::atomic<uint64> eventCacheRows{0};
         std::atomic<uint64> eventCacheLoadUs{0};

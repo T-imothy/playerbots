@@ -658,7 +658,11 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     uint32 diagnosticsProcessCalls = 0;
     uint32 diagnosticsLoginScans = 0;
     uint32 diagnosticsLoginRequests = 0;
+    uint32 diagnosticsPendingLogins = 0;
+    uint32 diagnosticsAdmissionCapacity = 0;
+    uint32 diagnosticsLoginScanBudget = 0;
     bool diagnosticsLoginBackpressure = false;
+    bool diagnosticsLoginScanBudgetExhausted = false;
 
 #if PLATFORM == PLATFORM_WINDOWS
     PROCESS_MEMORY_COUNTERS_EX currentMemory = {};
@@ -703,6 +707,9 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     const std::vector<uint32>& availableBots = GetBots();
     uint32 availableBotCount = availableBots.size();
     uint32 onlineBotCount = GetPlayerbotsAmount();
+    const time_t loginNow = time(nullptr);
+    PrunePendingBotLogins(loginNow);
+    uint32 pendingLoginCount = static_cast<uint32>(pendingBotLogins.size());
     
     SetAIInternalUpdateDelay(sPlayerbotAIConfig.randomBotUpdateInterval);
 
@@ -769,6 +776,13 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     }
 
     uint32 maxLogins = sPlayerbotAIConfig.randomBotsMaxLoginsPerInterval;
+
+    // A submitted login does not enter playerBots until its query holder has
+    // completed. Count those in-flight requests against the configured target
+    // so consecutive manager passes cannot each admit another full batch.
+    uint32 admissionCapacity = maxAllowedBotCount > onlineBotCount + pendingLoginCount ?
+        maxAllowedBotCount - onlineBotCount - pendingLoginCount : 0;
+    maxLogins = std::min(maxLogins, admissionCapacity);
 
     // Admission control sheds only new background logins. Existing bots, real
     // players, groups, combat and instances remain untouched.
@@ -854,9 +868,14 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     }
 
     //Log in bots
-    if (sRandomPlayerbotMgr.GetDatabaseDelay("CharacterDatabase") < 10 * IN_MILLISECONDS && !sPlayerbotAIConfig.asyncBotLogin && onlineBotCount < maxAllowedBotCount && maxLogins > 0)
+    if (sRandomPlayerbotMgr.GetDatabaseDelay("CharacterDatabase") < 10 * IN_MILLISECONDS && !sPlayerbotAIConfig.asyncBotLogin && admissionCapacity > 0 && maxLogins > 0)
     {
-        const size_t loginScanLimit = availableBots.size();
+        // When only a handful of slots are open almost every candidate is
+        // already online. Continue the round-robin cursor over later passes
+        // instead of rescanning the complete 10K pool every second.
+        const size_t loginScanLimit = std::min<size_t>(availableBots.size(),
+            std::max<size_t>(256, static_cast<size_t>(maxLogins) * 64));
+        diagnosticsLoginScanBudget = static_cast<uint32>(loginScanLimit);
         for (size_t scanned = 0; scanned < loginScanLimit && !availableBots.empty(); ++scanned)
         {
             ++diagnosticsLoginScans;
@@ -865,29 +884,31 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
             loginBotCursor = (loginBotCursor + 1) % availableBots.size();
 
             if (GetPlayerBot(bot))
-                continue;   
-
-            if (!eventCache[bot].empty() && GetEventValue(bot, "login"))
-            {
-                onlineBotCount++;
                 continue;
-            }
+
+            if (IsPendingBotLogin(bot))
+                continue;
 
             if (GetEventValue(bot, "login"))
-                onlineBotCount++;
-
-            if (onlineBotCount >= maxAllowedBotCount)
-                break;
+                continue;
 
             if (ProcessBot(bot)) {
                 ++diagnosticsLoginRequests;
                 --maxLogins;
+                ++pendingLoginCount;
+                --admissionCapacity;
             }
 
             if (maxLogins == 0)
                 break;
         }
+
+        diagnosticsLoginScanBudgetExhausted = diagnosticsLoginScans >= diagnosticsLoginScanBudget &&
+            admissionCapacity > 0 && maxLogins > 0;
     }
+
+    diagnosticsPendingLogins = static_cast<uint32>(pendingBotLogins.size());
+    diagnosticsAdmissionCapacity = admissionCapacity;
 
     LoginFreeBots();
 
@@ -923,7 +944,8 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     const uint64 diagnosticsDurationUs = static_cast<uint64>(std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - diagnosticsStart).count());
     sPlayerbotDiagnostics.RecordManagerPass(diagnosticsDurationUs, diagnosticsProcessScans, diagnosticsProcessCalls,
-        diagnosticsLoginScans, diagnosticsLoginRequests, diagnosticsLoginBackpressure);
+        diagnosticsLoginScans, diagnosticsLoginRequests, diagnosticsLoginBackpressure, diagnosticsPendingLogins,
+        diagnosticsAdmissionCapacity, diagnosticsLoginScanBudget, diagnosticsLoginScanBudgetExhausted);
 
     if (sPlayerbotDiagnostics.IsFlushDue())
     {
@@ -2336,6 +2358,7 @@ bool RandomPlayerbotMgr::AddRandomBot(uint32 bot)
 
     if (!GetEventValue(bot, "login"))
     {
+        MarkPendingBotLogin(bot, time(nullptr));
         AddPlayerBot(bot, 0);
         SetEventValue(bot, "add", 1, urand(sPlayerbotAIConfig.minRandomBotInWorldTime, sPlayerbotAIConfig.maxRandomBotInWorldTime));
         SetEventValue(bot, "logout", 0, 0);
@@ -2418,9 +2441,13 @@ bool RandomPlayerbotMgr::ProcessBot(uint32 bot)
         if (!botsAllowedInWorld)
             return false;
 
+        if (IsPendingBotLogin(bot))
+            return true;
+
         if (GetEventValue(bot, "login"))
             return true;
 
+        MarkPendingBotLogin(bot, time(nullptr));
         AddPlayerBot(bot, 0);
 
         SetEventValue(bot, "login", 1, -1); // This will be reset to 0 on server startup. Check RandomPlayerbotMgr constructor
@@ -3558,6 +3585,50 @@ uint64 RandomPlayerbotMgr::PruneExpiredEventCache(time_t now)
     return released;
 }
 
+uint32 RandomPlayerbotMgr::PrunePendingBotLogins(time_t now)
+{
+    static constexpr time_t pendingLoginTimeout = 120;
+    uint32 expired = 0;
+    for (auto pending = pendingBotLogins.begin(); pending != pendingBotLogins.end();)
+    {
+        if (GetPlayerBot(pending->first))
+        {
+            pending = pendingBotLogins.erase(pending);
+            continue;
+        }
+
+        if (now >= pending->second && now - pending->second >= pendingLoginTimeout)
+        {
+            SetEventValue(pending->first, "login", 0, 0);
+            pending = pendingBotLogins.erase(pending);
+            ++expired;
+            continue;
+        }
+
+        ++pending;
+    }
+
+    if (expired)
+        sLog.outPerformance("BOT_LOGIN_TIMEOUT expired=%u pending=%u timeout_seconds=%u",
+            expired, static_cast<uint32>(pendingBotLogins.size()), static_cast<uint32>(pendingLoginTimeout));
+    return expired;
+}
+
+void RandomPlayerbotMgr::MarkPendingBotLogin(uint32 bot, time_t now)
+{
+    pendingBotLogins[bot] = now;
+}
+
+void RandomPlayerbotMgr::ClearPendingBotLogin(uint32 bot)
+{
+    pendingBotLogins.erase(bot);
+}
+
+bool RandomPlayerbotMgr::IsPendingBotLogin(uint32 bot) const
+{
+    return pendingBotLogins.find(bot) != pendingBotLogins.end();
+}
+
 uint32 RandomPlayerbotMgr::GetEventValue(uint32 bot, const std::string& event)
 {
     EnsureEventCacheLoaded(bot);
@@ -3846,6 +3917,7 @@ void RandomPlayerbotMgr::HandleCommand(uint32 type, const std::string& text, Pla
 
 void RandomPlayerbotMgr::OnPlayerLogout(Player* player)
 {
+    ClearPendingBotLogin(player->GetGUIDLow());
     bool hadPlayerBot = GetPlayerBot(player->GetGUIDLow());
 
     DisablePlayerBot(player->GetGUIDLow());
@@ -3870,6 +3942,7 @@ void RandomPlayerbotMgr::OnPlayerLogout(Player* player)
 
 void RandomPlayerbotMgr::OnBotLoginInternal(Player * const bot)
 {
+    ClearPendingBotLogin(bot->GetGUIDLow());
     sLog.outDetail("%u/%d Bot %s logged in", GetPlayerbotsAmount(), sRandomPlayerbotMgr.GetMaxAllowedBotCount(), bot->GetName());
 	//if (loginProgressBar && playerBots.size() < sRandomPlayerbotMgr.GetMaxAllowedBotCount()) { loginProgressBar->step(); }
 	//if (loginProgressBar && playerBots.size() >= sRandomPlayerbotMgr.GetMaxAllowedBotCount() - 1) {
@@ -3881,6 +3954,7 @@ void RandomPlayerbotMgr::OnBotLoginInternal(Player * const bot)
 
 void RandomPlayerbotMgr::OnPlayerLogin(Player* player)
 {
+    ClearPendingBotLogin(player->GetGUIDLow());
     if (!sPlayerbotAIConfig.enabled)
         return;
 
@@ -3925,6 +3999,7 @@ void RandomPlayerbotMgr::OnPlayerLogin(Player* player)
 
 void RandomPlayerbotMgr::OnPlayerLoginError(uint32 bot)
 {
+    ClearPendingBotLogin(bot);
     SetEventValue(bot, "add", 0, 0);
     SetEventValue(bot, "login", 0, 0);
     currentBots.erase(std::remove(currentBots.begin(), currentBots.end(), bot), currentBots.end());
