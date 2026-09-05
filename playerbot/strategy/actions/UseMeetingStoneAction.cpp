@@ -93,12 +93,6 @@ bool SummonAction::Execute(Event& event)
         return true;
     }
 
-    if (SummonUsingGos(requester, bot, requester) || SummonUsingNpcs(requester, bot, requester))
-    {
-        ai->TellPlayerNoFacing(requester, "Welcome!");
-        return true;
-    }
-
     return false;
 }
 
@@ -123,6 +117,12 @@ bool SummonAction::SummonUsingGos(Player* requester, Player *summoner, Player *p
 bool SummonAction::SummonUsingNpcs(Player* requester, Player *summoner, Player *player)
 {
     if (!sPlayerbotAIConfig.summonAtInnkeepersEnabled)
+        return false;
+
+    // The bare summon command is only allowed to move the bot to its
+    // requester.  Never consume a real player's hearthstone cooldown as an
+    // implicit reverse-summon fallback.
+    if (player->isRealPlayer())
         return false;
 
     std::list<Unit*> targets;
