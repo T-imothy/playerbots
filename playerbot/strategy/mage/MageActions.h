@@ -156,6 +156,8 @@ namespace ai
 
         bool Execute(Event& event) override
         {
+            if (!isPossible())
+                return false;
             uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
             if (ai->CastSpell(spellId, bot, nullptr, false, &spellDuration))
             {
@@ -175,40 +177,30 @@ namespace ai
         { 
             if (!ai->HasCheat(BotCheatMask::item))
             {
-                const uint32 level = bot->GetLevel();
-                if (level >= 28 && level < 38)
-                {
-                    spellId = 759;
-                }
-                else if (level >= 38 && level < 48)
-                {
-                    spellId = 3552;
-                }
-                else if (level >= 48 && level < 58)
-                {
-                    spellId = 10053;
-                }
-                else if (level >= 58 && level < 68)
-                {
-                    spellId = 10054;
-                }
-                else if (level >= 68 && level < 77)
-                {
-                    spellId = 27101;
-                }
-                else if (level >= 77)
-                {
-                    spellId = 42985;
-                }
-
-                return ai->CanCastSpell(spellId, bot, 0);
+                spellId = 0;
+#ifdef MANGOSBOT_TWO
+                // Wrath ranks share a name; use the normal learned-rank resolver.
+                spellId = AI_VALUE2(uint32, "spell id", "conjure mana gem");
+#else
+                // Earlier clients have distinct gem spells, ordered strongest first.
+                const std::vector<std::string> gems = {
+#ifdef MANGOSBOT_ONE
+                    "conjure mana emerald",
+#endif
+                    "conjure mana ruby", "conjure mana citrine", "conjure mana jade", "conjure mana agate"
+                };
+                for (const std::string& gem : gems)
+                    if ((spellId = AI_VALUE2(uint32, "spell id", gem)))
+                        break;
+#endif
+                return spellId && ai->CanCastSpell(spellId, bot, 0);
             }
 
             return false;
         }
 
     private:
-        uint32 spellId;
+        uint32 spellId = 0;
     };
 
 	class CastIceBlockAction : public CastBuffSpellAction

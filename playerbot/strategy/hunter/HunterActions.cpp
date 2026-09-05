@@ -39,7 +39,6 @@ bool HunterEquipAmmoAction::Execute(Event& event)
     if (!ranged)
         return false;
 
-    uint32 ammoClass = ITEM_CLASS_PROJECTILE;
     uint32 subClass = 0;
 
     switch (ranged->GetProto()->SubClass)
@@ -51,34 +50,37 @@ bool HunterEquipAmmoAction::Execute(Event& event)
     case ITEM_SUBCLASS_WEAPON_CROSSBOW:
         subClass = ITEM_SUBCLASS_ARROW;
         break;
-    case ITEM_SUBCLASS_WEAPON_THROWN:
-        ammoClass = ITEM_CLASS_WEAPON;
-        subClass = ITEM_SUBCLASS_WEAPON_THROWN;
-        break;
+    default:
+        // Thrown weapons/wands do not use the projectile ammo slot.
+        return false;
     }
 
     uint32 currentAmmoId = bot->GetUInt32Value(PLAYER_AMMO_ID);
     const ItemPrototype* bestAmmoProto = nullptr;
 
-    // Scan inventory for best ammo
+    auto considerAmmo = [&](Item* item)
+    {
+        if (!item)
+            return;
+        const ItemPrototype* proto = item->GetProto();
+        if (!proto || proto->Class != ITEM_CLASS_PROJECTILE || proto->SubClass != subClass ||
+            bot->CanUseAmmo(proto->ItemId) != EQUIP_ERR_OK)
+            return;
+        if (!bestAmmoProto || proto->ItemLevel > bestAmmoProto->ItemLevel)
+            bestAmmoProto = proto;
+    };
+
+    // Backpack plus equipped bags, never bank contents.
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        considerAmmo(bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+
     for (int i = INVENTORY_SLOT_BAG_START; i < INVENTORY_SLOT_BAG_END; ++i)
     {
         if (Bag* bag = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, i))
         {
             for (uint32 j = 0; j < bag->GetBagSize(); ++j)
             {
-                if (Item* item = bag->GetItemByPos(j))
-                {
-                    const ItemPrototype* proto = item->GetProto();
-                    if (!proto)
-                        continue;
-
-                    if (proto->Class == ammoClass && proto->SubClass == subClass)
-                    {
-                        if (!bestAmmoProto || proto->ItemLevel > bestAmmoProto->ItemLevel)
-                            bestAmmoProto = proto;
-                    }
-                }
+                considerAmmo(bag->GetItemByPos(j));
             }
         }
     }
@@ -86,9 +88,8 @@ bool HunterEquipAmmoAction::Execute(Event& event)
     // Equip best ammo if not already equipped
     if (bestAmmoProto && currentAmmoId != bestAmmoProto->ItemId)
     {
-        bot->SetUInt32Value(PLAYER_AMMO_ID, bestAmmoProto->ItemId);
-        bot->UpdateDamagePhysical(RANGED_ATTACK);
-        return true;
+        bot->SetAmmo(bestAmmoProto->ItemId);
+        return bot->GetUInt32Value(PLAYER_AMMO_ID) == bestAmmoProto->ItemId;
     }
 
     return false;

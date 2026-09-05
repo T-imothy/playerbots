@@ -217,7 +217,7 @@ namespace ai
     class CastBarskinAction : public CastBuffSpellAction
     {
     public:
-        CastBarskinAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "barskin") {}
+        CastBarskinAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "barkskin") {}
     };
 
     class CastInnervateAction : public CastSpellTargetAction

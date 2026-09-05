@@ -78,15 +78,24 @@ bool RuneforgeAction::Execute(Event& event)
         runeforgeSpellId = chat->parseSpell(text);
 
         if(!runeforgeSpellId)
+        {
             ai->TellPlayerNoFacing(requester, text + " is not a [spelllink].", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            return false;
+        }
 
         std::vector<uint32> available = AI_VALUE(std::vector<uint32>, "runeforge spells");
 
         if(std::find(available.begin(), available.end(), runeforgeSpellId) == available.end())
+        {
             ai->TellPlayerNoFacing(requester, text + " is not a known runeforgespell.", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            return false;
+        }
     }
     else
         runeforgeSpellId = AI_VALUE(uint32, "best runeforge spell");
+
+    if (!runeforgeSpellId || !sServerFacade.LookupSpellInfo(runeforgeSpellId) || !bot->HasSpell(runeforgeSpellId))
+        return false;
 
     WorldPosition botLocation(bot);
     GameObject* runeforge = nullptr;
@@ -112,6 +121,8 @@ bool RuneforgeAction::Execute(Event& event)
     if (runeforge && closestDistance <= INTERACTION_DISTANCE)
     {
         Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_MAINHAND);
+        if (!weapon)
+            return false;
         
 
         uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;

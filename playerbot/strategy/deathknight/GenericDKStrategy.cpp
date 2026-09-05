@@ -230,6 +230,6 @@ void GenericDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 		NextAction::array(0,
 			new NextAction("howling blast", ACTION_NORMAL + 5),
 			new NextAction("pestilence", ACTION_NORMAL + 4),
-			new NextAction("hearth strike", ACTION_NORMAL + 3),
+            new NextAction("heart strike", ACTION_NORMAL + 3),
 			new NextAction("blood boil", ACTION_NORMAL + 3), NULL)));
 }

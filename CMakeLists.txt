@@ -108,10 +108,12 @@ file(GLOB Playerbot_Warrior ${CMAKE_CURRENT_SOURCE_DIR}/playerbot/strategy/warri
     source_group("Player Bot\\Strategies\\Warrior" FILES ${Playerbot_Warrior})
     LIST(APPEND LIBRARY_SRCS ${Playerbot_Warrior})
 
-#Deathknight AI
+# Death knights exist only in Wrath. Do not compile their implementation into older cores.
+if (CMAKE_PROJECT_NAME MATCHES "WoTLK")
 file(GLOB Playerbot_DeathKnight ${CMAKE_CURRENT_SOURCE_DIR}/playerbot/strategy/deathknight/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/playerbot/strategy/deathknight/*.h)
     source_group("Player Bot\\Strategies\\DeathKnight" FILES ${Playerbot_DeathKnight})
     LIST(APPEND LIBRARY_SRCS ${Playerbot_DeathKnight})
+endif()
 
 #Test framework
 file(GLOB Playerbot_Tests ${CMAKE_CURRENT_SOURCE_DIR}/playerbot/strategy/tests/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/playerbot/strategy/tests/*.h)

@@ -28,12 +28,14 @@ namespace ai
 		}
 	};
 
-	class CastDarkCommandAction : public CastBuffSpellAction {
+    class CastDarkCommandAction : public CastSpellAction {
 	public:
-		CastDarkCommandAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "dark command") {}
-		virtual NextAction** getPrerequisites() {
-			return NextAction::merge(NextAction::array(0, new NextAction("blood presence"), NULL), CastSpellAction::getPrerequisites());
-		}
+        CastDarkCommandAction(PlayerbotAI* ai) : CastSpellAction(ai, "dark command") {}
+        bool isUseful() override
+        {
+            Unit* target = GetTarget();
+            return target && target->GetVictim() && target->GetVictim() != bot && CastSpellAction::isUseful();
+        }
 	};
 
 	BEGIN_RANGED_SPELL_ACTION(CastDeathGripAction, "death grip")
@@ -117,27 +119,26 @@ namespace ai
 		CastUnholyBlightAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "unholy blight") {}
 	};
 
-	class CastSummonGargoyleAction : public CastBuffSpellAction
+    class CastSummonGargoyleAction : public CastSpellAction
 	{
 	public:
-		CastSummonGargoyleAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "summon gargoyle") {}
+        CastSummonGargoyleAction(PlayerbotAI* ai) : CastSpellAction(ai, "summon gargoyle") {}
 	};
 
 	class CastGhoulFrenzyAction : public CastBuffSpellAction
 	{
 	public:
 		CastGhoulFrenzyAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "ghoul frenzy") {}
+        std::string GetTargetName() override { return "pet target"; }
 	};
 
 	BEGIN_MELEE_SPELL_ACTION(CastCorpseExplosionAction, "corpse explosion")
 	END_SPELL_ACTION()
 
-	BEGIN_MELEE_SPELL_ACTION(CastAntiMagicShellAction, "anti magic shell")
-	END_SPELL_ACTION()
+    BUFF_ACTION(CastAntiMagicShellAction, "anti-magic shell");
 
 
-	BEGIN_MELEE_SPELL_ACTION(CastAntiMagicZoneAction, "anti magic zone")
-	END_SPELL_ACTION()
+    BUFF_ACTION(CastAntiMagicZoneAction, "anti-magic zone");
 
 
 	class CastChainsOfIceAction : public CastSpellAction {
@@ -177,12 +178,12 @@ namespace ai
 
 	class CastScourgeStrikeAction : public CastMeleeSpellAction {
 	public:
-		CastScourgeStrikeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "scorgue strike") {}
+        CastScourgeStrikeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "scourge strike") {}
 	};
 
 	class CastDeathCoilAction : public CastSpellAction {
 	public:
-		CastDeathCoilAction(PlayerbotAI* ai) : CastSpellAction(ai, "death coill") {}
+        CastDeathCoilAction(PlayerbotAI* ai) : CastSpellAction(ai, "death coil") {}
 	};
 
 	class CastBloodBoilAction : public CastBuffSpellAction {
@@ -225,10 +226,10 @@ namespace ai
 		CastDeathRuneMasteryAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "death rune mastery") {}
 	};
 
-	class CastDancingWeaponAction : public CastBuffSpellAction
+    class CastDancingWeaponAction : public CastSpellAction
 	{
 	public:
-		CastDancingWeaponAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "dancing weapon") {}
+        CastDancingWeaponAction(PlayerbotAI* ai) : CastSpellAction(ai, "dancing rune weapon") {}
 	};
 
 	class CastEmpowerRuneWeaponAction : public CastBuffSpellAction

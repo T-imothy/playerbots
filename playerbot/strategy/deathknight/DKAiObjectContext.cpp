@@ -120,6 +120,7 @@ namespace ai
 				creators["scourge strike"] = [](PlayerbotAI* ai) { return new CastScourgeStrikeAction(ai); };
 				creators["death and decay"] = [](PlayerbotAI* ai) { return new CastDeathAndDecayAction(ai); };
 				creators["unholy pressence"] = [](PlayerbotAI* ai) { return new CastUnholyPresenceAction(ai); };
+                creators["unholy presence"] = [](PlayerbotAI* ai) { return new CastUnholyPresenceAction(ai); };
 				creators["raise dead"] = [](PlayerbotAI* ai) { return new CastRaiseDeadAction(ai); };
 				creators["army of the dead"] = [](PlayerbotAI* ai) { return new CastArmyOfTheDeadAction(ai); };
 				creators["summon gargoyle"] = [](PlayerbotAI* ai) { return new CastSummonGargoyleAction(ai); };

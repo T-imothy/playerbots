@@ -25,8 +25,10 @@ void RacialsStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
         triggers.push_back(new TriggerNode("cannibalize", NextAction::array(0, new NextAction("cannibalize", 71.0f), NULL)));
         triggers.push_back(new TriggerNode("will of the forsaken", NextAction::array(0, new NextAction("will of the forsaken", 71.0f), NULL)));
     }
+#ifndef MANGOSBOT_TWO
     if (race == RACE_HUMAN)
         triggers.push_back(new TriggerNode("perception", NextAction::array(0, new NextAction("perception", 71.0f), NULL)));
+#endif
     if (race == RACE_GNOME)
         triggers.push_back(new TriggerNode("rooted", NextAction::array(0, new NextAction("escape artist", 71.0f), NULL)));
     if (race == RACE_TROLL)
@@ -38,7 +40,9 @@ void RacialsStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 #ifndef MANGOSBOT_ZERO
     if (race == RACE_BLOODELF)
     {
+#ifdef MANGOSBOT_ONE
         triggers.push_back(new TriggerNode("mana tap", NextAction::array(0, new NextAction("mana tap", 71.0f), NULL)));
+#endif
         triggers.push_back(new TriggerNode("arcane torrent", NextAction::array(0, new NextAction("arcane torrent", 71.0f), NULL)));
     }
 #endif

@@ -61,9 +61,8 @@ void GenericDKNonCombatStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &
 
 void DKBuffDpsStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
-    triggers.push_back(new TriggerNode(
-        "improved icy talons",
-        NextAction::array(0, new NextAction("improved icy talons", 19.0f), NULL)));
+    // Improved Icy Talons is a passive talent/proc handled by the core,
+    // not an independently castable buff.
 }
 
 void DKBuffDpsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
