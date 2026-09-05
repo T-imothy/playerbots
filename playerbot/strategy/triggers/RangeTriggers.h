@@ -15,6 +15,22 @@ namespace ai
         
         virtual bool IsActive() override
         {
+            // Ranged spacing is not emergency fleeing. Persisted or manually
+            // added ranged strategies must not make melee-only classes kite.
+            switch (bot->getClass())
+            {
+                case CLASS_WARRIOR:
+                case CLASS_ROGUE:
+#ifdef MANGOSBOT_TWO
+                case CLASS_DEATH_KNIGHT:
+#endif
+                    return false;
+                default:
+                    break;
+            }
+            if (ai->ContainsStrategy(STRATEGY_TYPE_MELEE) || ai->IsTank(bot))
+                return false;
+
             Unit* target = AI_VALUE(Unit*, "current target");
             if (target)
             {

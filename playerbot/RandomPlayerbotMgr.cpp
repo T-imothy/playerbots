@@ -2528,6 +2528,27 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
 
     if (idleBot)
     {
+        // Recheck clearly over-levelled residents of low-level areas instead
+        // of making them wait for the normal multi-hour relocation timer.
+        // The manager caller already protects nearby players and groups.
+        const WorldPosition position(player);
+        const int32 areaLevel = position.getAreaLevel();
+        if (sPlayerbotAIConfig.autonomousTravel && sPlayerbotAIConfig.enableRandomTeleports &&
+            position.isOverworld() && !position.HasAreaFlag(AREA_FLAG_CAPITAL) &&
+            areaLevel > 0 && areaLevel <= 10 && player->GetLevel() >= 20 &&
+            !player->GetGroup() && !player->IsInCombat() && !player->IsTaxiFlying() &&
+            !player->GetPlayerbotAI()->HasRealPlayerMaster() && !player->GetPlayerbotAI()->HasPlayerNearby() &&
+            !GetEventValue(bot, "placement_check"))
+        {
+            const bool relocated = RandomTeleportForLevel(player, false);
+            SetEventValue(bot, "placement_check", 1, relocated ? 1800 : 60);
+            if (relocated)
+            {
+                ScheduleTeleport(bot);
+                return true;
+            }
+        }
+
         uint32 randomize = GetEventValue(bot, "randomize");
         if (!randomize)
         {
@@ -2556,8 +2577,8 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
             if (sPlayerbotAIConfig.enableRandomTeleports)
             {
                 sLog.outDetail("Changing strategy for bot #%d %s:%d <%s>", bot, player->GetTeam() == ALLIANCE ? "A" : "H", player->GetLevel(), player->GetName());
-                ChangeStrategy(player);
-                ScheduleChangeStrategy(bot);
+                const bool relocated = ChangeStrategy(player);
+                ScheduleChangeStrategy(bot, relocated ? 0 : 60);
             }
             else
             {
@@ -2572,8 +2593,8 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
             if (sPlayerbotAIConfig.enableRandomTeleports)
             {
                 sLog.outDetail("Bot #%d %s:%d <%s>: sent to grind", bot, player->GetTeam() == ALLIANCE ? "A" : "H", player->GetLevel(), player->GetName());
-                RandomTeleportForLevel(player, true);
-                ScheduleTeleport(bot);
+                const bool relocated = RandomTeleportForLevel(player, true);
+                ScheduleTeleport(bot, relocated ? 0 : 60);
             }
             else
             {
@@ -2625,30 +2646,51 @@ void RandomPlayerbotMgr::LogTeleportFailure(Player* bot)
     }
 }
 
-void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> &locs, bool hearth, bool activeOnly)
+bool RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> &locs, bool hearth, bool activeOnly)
 {
+    if (!bot || !bot->GetPlayerbotAI() || bot->isRealPlayer() || !bot->IsInWorld() || bot->GetSession()->isLogingOut() || bot->GetPlayerbotAI()->HasRealPlayerMaster())
+        return false;
+
     if (bot->IsBeingTeleported())
-        return;
+        return false;
+
+    if (bot->IsInCombat() || bot->GetTransport())
+        return false;
 
     if (bot->InBattleGround())
-        return;
+        return false;
 
     if (bot->InBattleGroundQueue())
-        return;
+        return false;
 
 	if (bot->GetLevel() < 5)
-		return;
+        return false;
 
     if (bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
-        return;
+        return false;
+
+    // Never propagate autonomous relocation into a mixed or player-owned group.
+    if (bot->GetGroup())
+    {
+        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->getSource();
+            if (!member || !member->IsInWorld() || !IsRandomBot(member) || member->isRealPlayer() ||
+                !member->GetPlayerbotAI() || member->GetPlayerbotAI()->HasRealPlayerMaster() ||
+                member->IsBeingTeleported() || member->GetSession()->isLogingOut() ||
+                member->IsInCombat() || member->IsTaxiFlying() || member->GetTransport() ||
+                member->InBattleGround() || member->InBattleGroundQueue())
+                return false;
+        }
+    }
 
     if (bot->IsTaxiFlying() && bot->GetPlayerbotAI()->HasPlayerNearby())
-        return;
+        return false;
 
     if (locs.empty())
     {
         LogTeleportFailure(bot);
-        return;
+        return false;
     }
 
     std::vector<WorldPosition> tlocs;
@@ -2822,7 +2864,7 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
 
         LogTeleportFailure(bot);
 
-        return;
+        return false;
     }
 
     auto pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "RandomTeleportByLocations");
@@ -2881,11 +2923,11 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
             if (bot->IsTaxiFlying())
                 bot->GetMotionMaster()->MovementExpired();
 
-            if (hearth)
-                bot->SetHomebindToLocation(loc, area->ID);
-
             bot->GetMotionMaster()->Clear();
-            bot->TeleportTo(loc.mapid, x, y, z, 0);
+            if (!bot->TeleportTo(loc.mapid, x, y, z, 0))
+                continue;
+            if (hearth)
+                bot->SetHomebindToLocation(WorldLocation(loc.mapid, x, y, z), area->ID);
             bot->SendHeartBeat();
             bot->GetPlayerbotAI()->Reset(true);
 
@@ -2894,27 +2936,28 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
                 for (GroupReference* gref = bot->GetGroup()->GetFirstMember(); gref; gref = gref->next())
                 {
                     Player* member = gref->getSource();
-                    PlayerbotAI* ai = bot->GetPlayerbotAI();
-                    if (ai && bot != member)
+                    PlayerbotAI* ai = member ? member->GetPlayerbotAI() : nullptr;
+                    if (ai && member != bot && !member->isRealPlayer() && !ai->HasRealPlayerMaster())
                     {
                         if (member->IsTaxiFlying())
                             member->GetMotionMaster()->MovementExpired();
-                        if (hearth)
-                            member->SetHomebindToLocation(loc, area->ID);
-
                         member->GetMotionMaster()->Clear();
-                        member->TeleportTo(loc.mapid, x, y, z, 0);
+                        if (!member->TeleportTo(loc.mapid, x, y, z, 0))
+                            continue;
+                        if (hearth)
+                            member->SetHomebindToLocation(WorldLocation(loc.mapid, x, y, z), area->ID);
                         member->SendHeartBeat();
                         member->GetPlayerbotAI()->Reset(true);
                     }
 
                 }
             }
-            return;
+            return true;
         }
     }
 
     LogTeleportFailure(bot);
+    return false;
 }
 
 std::vector<std::pair<uint32, uint32>> RandomPlayerbotMgr::RpgLocationsNear(WorldLocation pos, const std::map<uint32, std::map<uint32, std::vector<std::string>>>& areaNames, uint32 radius)
@@ -3189,13 +3232,14 @@ void RandomPlayerbotMgr::PrintTeleportCache()
     }
 }
 
-void RandomPlayerbotMgr::RandomTeleportForLevel(Player* bot, bool activeOnly)
+bool RandomPlayerbotMgr::RandomTeleportForLevel(Player* bot, bool activeOnly)
 {
-    if (bot->InBattleGround())
-        return;
+    if (!bot || bot->InBattleGround())
+        return false;
 
     sLog.outDetail("Preparing location to random teleporting bot %s for level %u", bot->GetName(), bot->GetLevel());
-    RandomTeleport(bot, locsPerLevelCache[bot->GetLevel()], false, activeOnly);
+    if (!RandomTeleport(bot, locsPerLevelCache[bot->GetLevel()], false, activeOnly))
+        return false;
     Refresh(bot);
 
     WorldPosition botPos(bot);
@@ -3205,7 +3249,7 @@ void RandomPlayerbotMgr::RandomTeleportForLevel(Player* bot, bool activeOnly)
     for (auto& [innGuid, innPosition] : innCacheLevel[bot->getRace()][bot->GetLevel()])
     {
         float distance = botPos.sqDistance(innPosition);
-        if (minDistance > 0 || distance >= minDistance)
+        if (minDistance >= 0 && distance >= minDistance)
             continue;
 
         minDistance = distance;
@@ -3219,6 +3263,7 @@ void RandomPlayerbotMgr::RandomTeleportForLevel(Player* bot, bool activeOnly)
         data << uint32(3286);                                   // Bind
         bot->GetSession()->SendPacket(data);
     }
+    return true;
 }
 
 void RandomPlayerbotMgr::RandomTeleport(Player* bot)
@@ -3240,8 +3285,7 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot)
         for (std::list<Unit *>::iterator i = targets.begin(); i != targets.end(); ++i)
         {
             Unit* unit = *i;
-            bot->SetPosition(unit->GetPositionX(), unit->GetPositionY(), unit->GetPositionZ(), 0);
-            FleeManager manager(bot, sPlayerbotAIConfig.sightDistance, 0, true);
+            FleeManager manager(bot, sPlayerbotAIConfig.sightDistance, 0, true, WorldPosition(unit));
             float rx, ry, rz;
             if (manager.CalculateDestination(&rx, &ry, &rz))
             {
@@ -3250,14 +3294,10 @@ void RandomPlayerbotMgr::RandomTeleport(Player* bot)
             }
         }
     }
-    else
-    {
-        RandomTeleportForLevel(bot, true);
-    }
-
+    const bool relocated = !locs.empty() ? RandomTeleport(bot, locs) : RandomTeleportForLevel(bot, true);
     pmo.reset();
-
-    Refresh(bot);
+    if (relocated && !locs.empty())
+        Refresh(bot);
 }
 
 void RandomPlayerbotMgr::InstaRandomize(Player* bot)
@@ -3265,7 +3305,13 @@ void RandomPlayerbotMgr::InstaRandomize(Player* bot)
     sRandomPlayerbotMgr.Randomize(bot);
 
     if(bot->GetLevel() > sWorld.getConfig(CONFIG_UINT32_START_PLAYER_LEVEL))
-        sRandomPlayerbotMgr.RandomTeleportForLevel(bot, false);
+    {
+        if (!sRandomPlayerbotMgr.RandomTeleportForLevel(bot, false))
+        {
+            ScheduleTeleport(bot->GetGUIDLow(), 60);
+            ScheduleChangeStrategy(bot->GetGUIDLow(), 60);
+        }
+    }
 }
 
 void RandomPlayerbotMgr::Randomize(Player* bot)
@@ -4345,31 +4391,35 @@ std::string RandomPlayerbotMgr::HandleRemoteCommand(std::string request)
     return ai->HandleRemoteCommand(command);
 }
 
-void RandomPlayerbotMgr::ChangeStrategy(Player* player)
+bool RandomPlayerbotMgr::ChangeStrategy(Player* player)
 {
     uint32 bot = player->GetGUIDLow();
+    bool relocated = false;
 
     if (urand(0, 100) > 100 * sPlayerbotAIConfig.randomBotRpgChance) // select grind / pvp
     {
         sLog.outDetail("Bot #%d %s:%d <%s>: sent to grind spot", bot, player->GetTeam() == ALLIANCE ? "A" : "H", player->GetLevel(), player->GetName());
         // teleport in different places only if players are online
-        RandomTeleportForLevel(player, players.size());
-        ScheduleTeleport(bot);
+        relocated = RandomTeleportForLevel(player, !players.empty());
     }
     else
     {
         sLog.outDetail("Bot #%d %s:%d <%s>: sent to inn", bot, player->GetTeam() == ALLIANCE ? "A" : "H", player->GetLevel(), player->GetName());
-        RandomTeleportForRpg(player, players.size());
-        ScheduleTeleport(bot);
+        relocated = RandomTeleportForRpg(player, !players.empty());
     }
+    ScheduleTeleport(bot, relocated ? 0 : 60);
+    return relocated;
 }
 
-void RandomPlayerbotMgr::RandomTeleportForRpg(Player* bot, bool activeOnly)
+bool RandomPlayerbotMgr::RandomTeleportForRpg(Player* bot, bool activeOnly)
 {
+    if (!bot)
+        return false;
     uint32 race = bot->getRace();
     uint32 level = bot->GetLevel();
     sLog.outDetail("Random teleporting bot %s for RPG (%zu locations available)", bot->GetName(), rpgLocsCacheLevel[race][level].size());
-    RandomTeleport(bot, rpgLocsCacheLevel[race][level], true, activeOnly);
+    if (!RandomTeleport(bot, rpgLocsCacheLevel[race][level], true, activeOnly))
+        return false;
     Refresh(bot);
 
     //Travel cooldown for 10 minutes.
@@ -4382,6 +4432,7 @@ void RandomPlayerbotMgr::RandomTeleportForRpg(Player* bot, bool activeOnly)
         travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
         travelTarget->SetExpireIn(10 * MINUTE * IN_MILLISECONDS);
     }
+    return true;
 }
 
 void RandomPlayerbotMgr::Remove(Player* bot)

@@ -97,6 +97,8 @@ void TravelStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
     for (auto& [trigger, action, relevance] : StringActions)
     {
+        if (action == "request quest travel target" && !sPlayerbotAIConfig.autoDoQuests && !ai->HasRealPlayerMaster())
+            continue;
         triggers.push_back(new TriggerNode(
             trigger,
             NextAction::array(0, new NextAction(action, relevance), NULL)));

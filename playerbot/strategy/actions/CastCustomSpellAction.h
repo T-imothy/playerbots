@@ -17,7 +17,7 @@ namespace ai
         virtual std::string GetTargetName() override { return "current target"; }
     private:
 
-        bool CastSummonPlayer(Player* requester, std::string command);
+        bool CastSummonPlayer(Player* requester, std::string command, bool& handled);
 
     protected:
         bool ncCast = false;

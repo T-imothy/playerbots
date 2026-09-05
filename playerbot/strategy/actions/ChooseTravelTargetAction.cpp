@@ -104,16 +104,16 @@ void ChooseTravelTargetAction::setNewTarget(Player* requester, TravelTarget* new
         ReportTravelTarget(bot, requester, newTarget, oldTarget);
 
     //If we are heading to a creature/npc clear it from the ignore list. 
-    if (oldTarget && oldTarget == newTarget && newTarget->GetEntry())
+    if (newTarget && newTarget->GetEntry())
     {
         std::set<ObjectGuid>& ignoreList = context->GetValue<std::set<ObjectGuid>&>("ignore rpg target")->Get();
 
-        for (auto& i : ignoreList)
+        for (auto i = ignoreList.begin(); i != ignoreList.end();)
         {
-            if (i.GetEntry() == newTarget->GetEntry())
-            {
-                ignoreList.erase(i);
-            }
+            if (i->GetEntry() == newTarget->GetEntry())
+                i = ignoreList.erase(i);
+            else
+                ++i;
         }
 
         context->GetValue<std::set<ObjectGuid>&>("ignore rpg target")->Set(ignoreList);

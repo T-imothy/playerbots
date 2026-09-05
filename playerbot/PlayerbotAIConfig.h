@@ -347,6 +347,7 @@ public:
     bool autoLearnQuestSpells;
     bool autoLearnDroppedSpells;
     bool autoDoQuests;
+    bool autonomousTravel;
     bool syncLevelWithPlayers;
     uint32 syncLevelMaxAbove, syncLevelNoPlayer;
     bool syncAltLevelToMaster;

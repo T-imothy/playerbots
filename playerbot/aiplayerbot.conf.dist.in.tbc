@@ -5,6 +5,11 @@
 [AiPlayerbotConf]
 ConfVersion=2020072501
 
+# Allow autonomous travel for random bots even when AutoDoQuests is disabled.
+# Uses existing travel strategies and activity limits; does not enable quest travel.
+# Set to 0 to retain the previous AutoDoQuests-coupled travel behavior.
+AiPlayerbot.AutonomousTravel = 1
+
 # Enable or disable AI Playerbot
 AiPlayerbot.Enabled = 1
 

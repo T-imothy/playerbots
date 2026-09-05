@@ -51,7 +51,7 @@ bool LootStartRollAction::Execute(Event& event)
 
     SET_AI_VALUE(LootRollMap, "active rolls", lootRolls);
 
-    return false;
+    return true;
 }
 
 bool RollAction::Execute(Event& event)

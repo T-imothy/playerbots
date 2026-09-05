@@ -1313,7 +1313,7 @@ void TravelMgr::SetMobAvoidAreaMap(uint32 mapId)
     }
 }
 
-void TravelMgr::LoadQuestTravelTable()
+void TravelMgr::LoadQuestTravelTable(bool includeQuests)
 {
     if (!sTravelMgr.destinationMap.empty())
         return;
@@ -1331,7 +1331,9 @@ void TravelMgr::LoadQuestTravelTable()
 
     sLog.outString("Finding possible travel destinations.");
 
-    EntryQuestRelationMap eMap = GAI_VALUE(EntryQuestRelationMap, "entry quest relation");
+    EntryQuestRelationMap eMap;
+    if (includeQuests)
+        eMap = GAI_VALUE(EntryQuestRelationMap, "entry quest relation");
 
     sLog.outString("Creating travel destinations.");
 

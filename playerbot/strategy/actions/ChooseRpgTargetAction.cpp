@@ -37,9 +37,6 @@ bool ChooseRpgTargetAction::HasSameTarget(ObjectGuid guid, uint32 max, std::list
         if (!ai)
             continue;
 
-        if (!ai->AllowActivity(GRIND_ACTIVITY))
-            continue;
-
         if (PAI_VALUE(GuidPosition,"rpg target") != guid)
             continue;
 
@@ -73,6 +70,25 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
     std::list<ObjectGuid> possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible rpg targets");
     std::list<ObjectGuid> possibleObjects = bot->GetMap()->IsDungeon() ? AI_VALUE(std::list<ObjectGuid>, "nearest game objects") : AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
     std::list<ObjectGuid> possiblePlayers = AI_VALUE(std::list<ObjectGuid>, "nearest friendly players");
+
+    // Count occupancy once, before sampling/removing nearby players. Keep the
+    // crowd limit in dense areas without scanning the crowd for every NPC.
+    std::unordered_map<ObjectGuid, uint32> rpgOccupancy;
+    if (!ai->HasRealPlayerMaster())
+    {
+        for (ObjectGuid playerGuid : possiblePlayers)
+        {
+            Player* other = sObjectMgr.GetPlayer(playerGuid);
+            if (!other || other == bot || !ai->IsSafe(other))
+                continue;
+            PlayerbotAI* otherAI = other->GetPlayerbotAI();
+            if (!otherAI)
+                continue;
+            GuidPosition occupied = otherAI->GetAiObjectContext()->GetValue<GuidPosition>("rpg target")->Get();
+            if (occupied)
+                ++rpgOccupancy[occupied];
+        }
+    }
 
     //List of targets that we rpg'ed with before and should be ignored.
     std::set<ObjectGuid>& ignoreList = AI_VALUE(std::set<ObjectGuid>&, "ignore rpg target");
@@ -201,8 +217,9 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
             }
         }
 
-        //Limit the amount of bots that can rpg with 1 target. Only if the calculation doesn't involve checking 200+ players.
-        if (possiblePlayers.size() < 200 && HasSameTarget(guidP, urand(5, 15), possiblePlayers))
+        // The limit applies at every crowd size, including inactive occupants.
+        auto occupancy = rpgOccupancy.find(guidP);
+        if (occupancy != rpgOccupancy.end() && occupancy->second >= urand(5, 15))
         {
             sametarget++;
             SkipRpgTarget("Too many bots are rpging with this npc.");

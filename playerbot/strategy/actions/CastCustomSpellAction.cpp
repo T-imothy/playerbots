@@ -44,10 +44,10 @@ bool CastCustomSpellAction::Execute(Event& event)
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
 
     // Process summon request
-    if (CastSummonPlayer(requester, text))
-    {
-        return true;
-    }
+    bool summonHandled = false;
+    const bool summonResult = CastSummonPlayer(requester, text, summonHandled);
+    if (summonHandled)
+        return summonResult;
 
     // Grab the first game object or unit from the parameters as target.
     GameObject* gameObjectTarget = nullptr;
@@ -276,35 +276,51 @@ bool CastCustomSpellAction::Execute(Event& event)
     return result;
 }
 
-bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string command)
+bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string command, bool& handled)
 {
+    handled = false;
     if (bot->getClass() == CLASS_WARLOCK)
     {
-        if (command.find("summon") != std::string::npos)
+        if (command == "summon" || command.find("summon ") == 0)
         {
             // Don't summon player when trying to summon warlock pet
-            if (command.find("imp") != std::string::npos || 
-                command.find("voidwalker") != std::string::npos || 
-                command.find("succubus") != std::string::npos || 
-                command.find("felhunter") != std::string::npos ||
-                command.find("felguard") != std::string::npos ||
-                command.find("felsteed") != std::string::npos ||
-                command.find("dreadsteed") != std::string::npos)
+            if (command == "summon imp" ||
+                command == "summon voidwalker" ||
+                command == "summon succubus" ||
+                command == "summon felhunter" ||
+                command == "summon felguard" ||
+                command == "summon felsteed" ||
+                command == "summon dreadsteed")
             {
                 return false;
             }
 
-            if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT))
+            handled = true;
+            if (!requester || !bot->IsAlive() || !bot->IsInWorld() || bot->IsBeingTeleported() ||
+                bot->IsTaxiFlying() || bot->GetTransport())
+                return false;
+            if (!bot->HasSpell(698) || !sServerFacade.LookupSpellInfo(698))
+            {
+                ai->TellPlayerNoFacing(requester, "I have not learned Ritual of Summoning.");
+                return false;
+            }
+            if (!bot->GetGroup() || requester->GetGroup() != bot->GetGroup())
+                return false;
+            if (!bot->IsInCombat())
             {
                 // Get target from command parameters
                 uint8 membersAroundSummoner = 0;
                 Player* target = nullptr;
                 const std::string summonString = "summon ";
-                const int pos = command.find(summonString);
+                const size_t pos = command.find(summonString);
                 if (pos != std::string::npos)
                 {
                     // Get player name
-                    std::string playerName = command.substr(summonString.size());
+                    std::string playerName = command.substr(pos + summonString.size());
+                    ltrim(playerName);
+                    playerName.erase(playerName.find_last_not_of(" \t\r\n") + 1);
+                    if (!normalizePlayerName(playerName))
+                        return false;
 
                     const Group* group = bot->GetGroup();
                     if (group && !playerName.empty())
@@ -320,10 +336,7 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                                     target = member;
                                 }
 
-                                if (member->GetDistance(bot) <= sPlayerbotAIConfig.reactDistance)
-                                {
-                                    membersAroundSummoner++;
-                                }
+
                             }
                         }
                     }
@@ -350,20 +363,33 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                                             target = member;
                                         }
 
-                                        if (ai->IsSafe(member) && member->GetDistance(bot) <= sPlayerbotAIConfig.reactDistance)
-                                        {
-                                            membersAroundSummoner++;
-                                        }
+
                                     }
                                 }
                             }
                         }
-                    }   
+                    }
                 }
 
-                if (target)
+                if (target && target != bot && target->IsAlive() && target->IsInWorld() &&
+                    !target->IsBeingTeleported() && !target->IsTaxiFlying() && !target->GetTransport() &&
+                    !target->GetSession()->isLogingOut() && !target->IsInCombat())
                 {
-                    if (membersAroundSummoner >= 3)
+                    for (const auto& slot : bot->GetGroup()->GetMemberSlots())
+                    {
+                        Player* member = sObjectMgr.GetPlayer(slot.guid);
+                        if (!member || member == bot || member == target || !ai->IsSafe(member) ||
+                            !member->IsInWorld() || !member->IsAlive() || member->IsBeingTeleported() ||
+                            member->GetSession()->isLogingOut() || member->IsTaxiFlying() ||
+                            member->GetTransport() || member->IsInCombat() ||
+                            !bot->IsWithinDistInMap(member, sPlayerbotAIConfig.reactDistance) ||
+                            !bot->IsWithinLOSInMap(member))
+                            continue;
+                        ++membersAroundSummoner;
+                    }
+                    if (!bot->GetMap()->CanEnter(target))
+                        return false;
+                    if (membersAroundSummoner >= 2)
                     {
                         if (target->isRealPlayer())
                         {
@@ -379,9 +405,8 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                         }
                         else
                         {
-                            target->TeleportTo(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation());
-                            if (target->isRealPlayer())
-                                target->SendHeartBeat();
+                            if (!target->TeleportTo(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation()))
+                                return false;
                         }
 
                         std::ostringstream msg;

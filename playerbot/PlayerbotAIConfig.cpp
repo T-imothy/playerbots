@@ -659,6 +659,7 @@ bool PlayerbotAIConfig::Initialize()
     autoLearnQuestSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnQuestSpells", false);
     autoLearnDroppedSpells = config.GetBoolDefault("AiPlayerbot.AutoLearnDroppedSpells", false);
     autoDoQuests = config.GetBoolDefault("AiPlayerbot.AutoDoQuests", true);
+    autonomousTravel = config.GetBoolDefault("AiPlayerbot.AutonomousTravel", true);
     syncLevelWithPlayers = config.GetBoolDefault("AiPlayerbot.SyncLevelWithPlayers", false);
     syncLevelMaxAbove = config.GetIntDefault("AiPlayerbot.SyncLevelMaxAbove", 5);
     syncLevelNoPlayer = config.GetIntDefault("AiPlayerbot.SyncLevelNoPlayer", randombotStartingLevel);
@@ -832,10 +833,10 @@ bool PlayerbotAIConfig::Initialize()
 
     LoadTalentSpecs();
 
-    if (sPlayerbotAIConfig.autoDoQuests)
+    if (sPlayerbotAIConfig.autoDoQuests || sPlayerbotAIConfig.autonomousTravel)
     {
-        sLog.outString("Loading Quest Detail Data...");
-        sTravelMgr.LoadQuestTravelTable();
+        sLog.outString("Loading travel destinations (quest destinations: %s)...", autoDoQuests ? "enabled" : "disabled");
+        sTravelMgr.LoadQuestTravelTable(autoDoQuests);
     }
 
     sLog.outString("Loading named locations...");

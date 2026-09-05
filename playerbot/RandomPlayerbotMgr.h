@@ -110,14 +110,14 @@ public:
         void SetTradeDiscount(Player* bot, Player* master, uint32 value);
         uint32 GetTradeDiscount(Player* bot, Player* master);
         void Refresh(Player* bot);
-        void RandomTeleportForLevel(Player* bot, bool activeOnly);
-        void RandomTeleportForLevel(Player* bot) { return RandomTeleportForLevel(bot, true); }
-        void RandomTeleportForRpg(Player* bot, bool activeOnly);
-        void RandomTeleportForRpg(Player* bot) { return RandomTeleportForRpg(bot, true); }
+        bool RandomTeleportForLevel(Player* bot, bool activeOnly);
+        bool RandomTeleportForLevel(Player* bot) { return RandomTeleportForLevel(bot, true); }
+        bool RandomTeleportForRpg(Player* bot, bool activeOnly);
+        bool RandomTeleportForRpg(Player* bot) { return RandomTeleportForRpg(bot, true); }
         int GetMaxAllowedBotCount();
         bool ProcessBot(Player* player);
         void Revive(Player* player);
-        void ChangeStrategy(Player* player);
+        bool ChangeStrategy(Player* player);
         uint32 GetValue(Player* bot, std::string type);
         uint32 GetValue(uint32 bot, std::string type);
         int32 GetValueValidTime(uint32 bot, std::string event);
@@ -199,7 +199,7 @@ public:
         bool ProcessBot(uint32 bot);
         void ScheduleRandomize(uint32 bot, uint32 time);
         void RandomTeleport(Player* bot);
-        void RandomTeleport(Player* bot, std::vector<WorldLocation> &locs, bool hearth = false, bool activeOnly = false);
+        bool RandomTeleport(Player* bot, std::vector<WorldLocation> &locs, bool hearth = false, bool activeOnly = false);
         uint32 GetZoneLevel(uint16 mapId, float teleX, float teleY, float teleZ);
         void PrepareTeleportCache();
         typedef std::list<std::string> (RandomPlayerbotMgr::*ConsoleCommandHandler) (std::string param);

@@ -427,7 +427,7 @@ namespace ai
         };
 		TravelMgr() {};
         ~TravelMgr() { Clear(); };
-		void LoadQuestTravelTable();
+        void LoadQuestTravelTable(bool includeQuests = true);
 
 		void GetPopulatedGrids();
 		void GetPopulatedGrids(uint32 mapId);

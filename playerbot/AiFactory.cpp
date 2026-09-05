@@ -985,6 +985,9 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
             }
 
             nonCombatEngine->ChangeStrategy(sPlayerbotAIConfig.randomBotNonCombatStrategies);
+            // Population movement is independent of automatic quest completion.
+            if (sPlayerbotAIConfig.autonomousTravel && !facade->HasRealPlayerMaster())
+                nonCombatEngine->addStrategy("travel");
         }
         else
         {
@@ -1010,6 +1013,8 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                     }
 
                     nonCombatEngine->ChangeStrategy(sPlayerbotAIConfig.randomBotNonCombatStrategies);
+                    if (sPlayerbotAIConfig.autonomousTravel && !facade->HasRealPlayerMaster())
+                        nonCombatEngine->addStrategy("travel");
                 }
                 else
                 {

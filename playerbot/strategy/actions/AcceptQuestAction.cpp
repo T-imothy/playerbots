@@ -67,7 +67,7 @@ bool AcceptQuestAction::Execute(Event& event)
     }
 
     if (!quest || !guid)
-        return false;
+        return hasAccept;
 
     Quest const* qInfo = sObjectMgr.GetQuestTemplate(quest);
     if (!qInfo)

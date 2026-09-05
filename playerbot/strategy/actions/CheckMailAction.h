@@ -25,6 +25,6 @@ namespace ai
         virtual bool isUseful() override;
 
     private:
-        void ProcessMail(Mail* mail, Player* owner);
+        bool ProcessMail(Mail* mail);
     };
 }
