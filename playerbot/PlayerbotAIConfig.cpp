@@ -256,6 +256,13 @@ bool PlayerbotAIConfig::Initialize()
     diagnosticsTopFailures = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.Diagnostics.TopFailures", 10));
     diagnosticsMaxFailureKeys = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.Diagnostics.MaxFailureKeys", 2048));
     diagnosticsLogFile = config.GetStringDefault("AiPlayerbot.Diagnostics.LogFile", "PlayerbotDiagnostics.log");
+    combatDiagnosticsEnabled = config.GetBoolDefault("AiPlayerbot.CombatDiagnostics.Enabled", false);
+    combatDiagnosticsSampleRate = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.CombatDiagnostics.SampleRate", 16));
+    combatDiagnosticsClassMask = uint32(config.GetIntDefault("AiPlayerbot.CombatDiagnostics.ClassMask", 4094)) & 4094;
+    combatDiagnosticsTraceBot = std::max<int32>(0, config.GetIntDefault("AiPlayerbot.CombatDiagnostics.TraceBot", 0));
+    combatDiagnosticsMaxKeys = std::min<int32>(4096, std::max<int32>(16, config.GetIntDefault("AiPlayerbot.CombatDiagnostics.MaxKeys", 2048)));
+    combatDiagnosticsMaxTraces = std::min<int32>(1024, std::max<int32>(0, config.GetIntDefault("AiPlayerbot.CombatDiagnostics.MaxTraces", 128)));
+    combatDiagnosticsMaxFileMB = std::min<int32>(64, std::max<int32>(1, config.GetIntDefault("AiPlayerbot.CombatDiagnostics.MaxFileMB", 8)));
     if (diagnosticsLogFile.empty())
         diagnosticsLogFile = "PlayerbotDiagnostics.log";
     minRandomBotsPriceChangeInterval = config.GetIntDefault("AiPlayerbot.MinRandomBotsPriceChangeInterval", 2 * 3600);

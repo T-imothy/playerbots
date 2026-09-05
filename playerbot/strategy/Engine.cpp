@@ -6,6 +6,7 @@
 #include "Engine.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotDiagnostics.h"
+#include "playerbot/CombatDiagnostics.h"
 #include "playerbot/PerformanceMonitor.h"
 
 #include <chrono>
@@ -341,6 +342,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                 actionName += " <" + event.getSource() + ">";
             
             auto pmo1 = sPerformanceMonitor.start(PERF_MON_ACTION, actionName, ai);
+            CombatActionContext combatContext(actionName);
 
             if(action)
                 action->setRelevance(relevance);
@@ -349,6 +351,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
             {
                 if (collectDiagnostics)
                     ++diagnosticSample.unknown;
+                if (CombatDiagnostics::Select(ai))
+                    CombatDiagnostics::Record(ai, actionNode->getName(), event.getSource(), "action_unknown", 0);
                 if (sPlayerbotAIConfig.CanLogAction(ai, actionNode->getName(), false, ""))
                 {
                     std::ostringstream out;
@@ -384,6 +388,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         suppressedImpossibleActions.fetch_add(1, std::memory_order_relaxed);
                         if (collectDiagnostics)
                             ++diagnosticSample.suppressedImpossible;
+                        if (CombatDiagnostics::Select(ai))
+                            CombatDiagnostics::Record(ai, action->getName(), event.getSource(), "suppressed_impossible", 0);
                         delete actionNode;
                         continue;
                     }
@@ -392,6 +398,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         suppressedFailedActions.fetch_add(1, std::memory_order_relaxed);
                         if (collectDiagnostics)
                             ++diagnosticSample.suppressedFailed;
+                        if (CombatDiagnostics::Select(ai))
+                            CombatDiagnostics::Record(ai, action->getName(), event.getSource(), "suppressed_failed", 0);
                         delete actionNode;
                         continue;
                     }
@@ -438,6 +446,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     {
                         auto pmo4 = sPerformanceMonitor.start(PERF_MON_ACTION, "Execute", ai);
                         actionExecuted = ListenAndExecute(action, event);
+                        if (CombatDiagnostics::Select(ai))
+                            CombatDiagnostics::Record(ai, action->getName(), event.getSource(), "action_execute", actionExecuted ? 1 : 0);
                         pmo4.reset();
 
 #ifdef PLAYERBOT_ELUNA
@@ -472,6 +482,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         if (collectDiagnostics)
                             ++diagnosticSample.impossible;
                         sPlayerbotDiagnostics.RecordFailure(action->getName(), event.getSource(), PlayerbotDiagnosticOutcome::Impossible);
+                        if (CombatDiagnostics::Select(ai))
+                            CombatDiagnostics::Record(ai, action->getName(), event.getSource(), "action_impossible", 0);
                         RecordFailure(action, event, ACTION_RESULT_IMPOSSIBLE);
                         if (sPlayerbotAIConfig.CanLogAction(ai, actionNode->getName(), false, ""))
                         {
@@ -496,6 +508,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                 {
                     if (collectDiagnostics)
                         ++diagnosticSample.useless;
+                    if (CombatDiagnostics::Select(ai))
+                        CombatDiagnostics::Record(ai, action->getName(), event.getSource(), "action_useless", 0);
                     if (sPlayerbotAIConfig.CanLogAction(ai, actionNode->getName(), false, ""))
                     {
                         std::ostringstream out;

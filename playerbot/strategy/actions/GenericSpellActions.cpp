@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "GenericActions.h"
 #include "UseItemAction.h"
+#include "playerbot/CombatDiagnostics.h"
 
 using namespace ai;
 
@@ -22,6 +23,7 @@ bool CastSpellAction::Execute(Event& event)
 {
     RefreshSpellId();
     bool executed = false;
+    uint32 observedSpellId = spellId;
     uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
     if (spellName == "conjure food" || spellName == "conjure water")
     {
@@ -59,6 +61,7 @@ bool CastSpellAction::Execute(Event& event)
             return false;
 
         executed = ai->CastSpell(castId, bot, nullptr, false, &spellDuration);
+        observedSpellId = castId;
     }
     else
     {
@@ -75,6 +78,9 @@ bool CastSpellAction::Execute(Event& event)
 
         executed = ai->CastSpell(spellName, GetTarget(), nullptr, false, &spellDuration);
     }
+
+    if (CombatDiagnostics::Select(ai))
+        CombatDiagnostics::Record(ai, getName(), event.getSource(), "cast_wrapper_result", executed ? 1 : 0, observedSpellId);
 
     if (executed)
     {

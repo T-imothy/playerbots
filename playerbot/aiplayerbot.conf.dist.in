@@ -4892,3 +4892,12 @@ AiPlayerbot.GearProgressionSystem.5.11.3.15 = 22988	# Main Hand
 AiPlayerbot.GearProgressionSystem.5.11.3.16 = 13385	# Off Hand
 AiPlayerbot.GearProgressionSystem.5.11.3.17 = 23198	# Ranged
 AiPlayerbot.GearProgressionSystem.5.11.3.18 = 5976	# Tabard
+# Temporary development-only combat/action diagnostics (see docs/combat-diagnostics.md).
+# Master AiPlayerbot.Diagnostics.Mode must also be nonzero.
+AiPlayerbot.CombatDiagnostics.Enabled = 0
+AiPlayerbot.CombatDiagnostics.SampleRate = 16
+AiPlayerbot.CombatDiagnostics.ClassMask = 4094
+AiPlayerbot.CombatDiagnostics.TraceBot = 0
+AiPlayerbot.CombatDiagnostics.MaxKeys = 2048
+AiPlayerbot.CombatDiagnostics.MaxTraces = 128
+AiPlayerbot.CombatDiagnostics.MaxFileMB = 8

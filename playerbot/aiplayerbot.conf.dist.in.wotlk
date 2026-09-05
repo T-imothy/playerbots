@@ -1197,3 +1197,12 @@ AiPlayerbot.LLMDefaultPromptsFile = llm_character_card.txt
 
 # Mystery config value. Currently enables async bot pathfinding. Rarely crashes the server.
 # AiPlayerbot.TweakValue = 0
+# Temporary development-only combat/action diagnostics (see docs/combat-diagnostics.md).
+# Master AiPlayerbot.Diagnostics.Mode must also be nonzero.
+AiPlayerbot.CombatDiagnostics.Enabled = 0
+AiPlayerbot.CombatDiagnostics.SampleRate = 16
+AiPlayerbot.CombatDiagnostics.ClassMask = 4094
+AiPlayerbot.CombatDiagnostics.TraceBot = 0
+AiPlayerbot.CombatDiagnostics.MaxKeys = 2048
+AiPlayerbot.CombatDiagnostics.MaxTraces = 128
+AiPlayerbot.CombatDiagnostics.MaxFileMB = 8

@@ -17,6 +17,7 @@
 #include "LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
+#include "CombatDiagnostics.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "PlayerbotSecurity.h"
 #include "Groups/Group.h"
@@ -56,6 +57,34 @@
 #include "strategy/values/GuildValues.h"
 
 using namespace ai;
+
+namespace
+{
+    // Observe the existing result output; never run CheckCast a second time.
+    // A check result is not an executed/completed spell or the wrapper's bool policy.
+    class CombatSpellCheck
+    {
+    public:
+        CombatSpellCheck(PlayerbotAI* owner, uint32 id, Unit* victim, SpellCastResult*& output)
+            : ai(owner), spell(id), target(victim), original(output), selected(CombatDiagnostics::Select(owner))
+        {
+            if (selected) output = &result;
+        }
+        ~CombatSpellCheck()
+        {
+            if (!selected) return;
+            if (original && int32(result) != -1) *original = result;
+            CombatDiagnostics::Record(ai, "spell check", CombatActionContext::Current(), "spell_check", int32(result), spell, target);
+        }
+    private:
+        PlayerbotAI* ai;
+        uint32 spell;
+        Unit* target;
+        SpellCastResult* original;
+        bool selected;
+        SpellCastResult result = static_cast<SpellCastResult>(-1);
+    };
+}
 
 std::vector<std::string>& split(const std::string &s, char delim, std::vector<std::string> &elems);
 std::vector<std::string> split(const std::string &s, char delim);
@@ -4328,6 +4357,7 @@ bool PlayerbotAI::CanCastSpell(std::string name, Unit* target, uint8 effectMask,
 
 bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, bool checkHasSpell, Item* itemTarget, bool ignoreRange, bool ignoreInCombat, bool ignoreMount, SpellCastResult* checkResult)
 {
+    CombatSpellCheck diagnosticCheck(this, spellid, target, checkResult);
     if (!spellid || !sServerFacade.LookupSpellInfo(spellid))
     {
         if (checkResult)

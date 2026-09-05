@@ -2,6 +2,7 @@
 #include "PlayerbotDiagnostics.h"
 
 #include "PlayerbotAIConfig.h"
+#include "CombatDiagnostics.h"
 
 #include <algorithm>
 #include <chrono>
@@ -246,6 +247,7 @@ void PlayerbotDiagnostics::Flush(const PlayerbotManagerSnapshot& snapshot)
     const uint64 now = SteadyMilliseconds();
     const uint64 intervalMs = lastFlushMs ? now - lastFlushMs : 0;
     lastFlushMs = now;
+    CombatDiagnostics::Flush();
 
     const uint64 samples = Take(engineSamples);
     const uint64 engineUs = Take(engineDurationUs);
