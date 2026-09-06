@@ -792,6 +792,11 @@ void ShadowPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PriestStrategy::InitCombatTriggers(triggers);
 
+    triggers.push_back(new TriggerNode("low mana",
+        NextAction::array(0, new NextAction("dispersion", ACTION_EMERGENCY + 5), NULL)));
+    triggers.push_back(new TriggerNode("low health",
+        NextAction::array(0, new NextAction("dispersion", ACTION_EMERGENCY + 5), NULL)));
+
     triggers.push_back(new TriggerNode(
         "target critical health",
         NextAction::array(0, new NextAction("shadow word: death", ACTION_HIGH + 1), NULL)));

@@ -84,6 +84,15 @@ claim that every encounter has been implemented or played successfully**.
   Weapon on depleted rune cooldowns/runic power/native castability.
 - Wrath Arcane Blast builds up to four stacks rather than stopping after one,
   with the existing low-mana boundary. Older expansion behavior is unchanged.
+- Wrath Sword and Board, Sudden Death, Taste for Blood, Fingers of Frost and
+  Killing Machine check the native temporary proc IDs, not identically named
+  passive talents. These proc checks return false in earlier expansions.
+- Wrath Explosive Shot does not overwrite its own still-ticking effect during
+  Lock and Load. Another hunter's effect does not block it. The secondary-target
+  Black Arrow trigger now invokes its matching target-specific action.
+- Wrath Shadow priests can use learned/ready Dispersion for low mana or low
+  health through normal buff/cast/channel handling. No earlier-expansion action
+  is registered. Existing mana-potion fallback remains available.
 - TBC/Wrath Misdirection and Wrath Tricks automatic combat support uses a live
   group tank, preferring the current enemy's tank victim. It rejects self,
   controlled/dead/other-map/non-group targets and already-active caster auras.
@@ -147,6 +156,9 @@ omission, not deletion of this NPC's individual gossip options. The core testing
 branches now require those baseline modules by default and reject cached OFF
 settings. Restored-module native builds pass; production was not deployed.
 The four existing dual-spec tables were inspected read-only, not rebuilt/deleted.
+Production reports of training dummies chasing/attacking match this same missing
+module. Controlled tests verify the restored passive/no-combat-movement setup,
+the core's passive attack-start guard and ten-second inactivity combat reset.
 The native module save hook also consumed action-button dirty states before the
 normal core saver ran, contradicting its default-table-mirroring comment. The
 Classic/TBC correction explicitly mirrors the active bar in the existing save

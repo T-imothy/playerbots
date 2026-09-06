@@ -210,7 +210,7 @@ namespace ai
     BUFF_TRIGGER_A(HotStreakTrigger, "hot streak");
     BUFF_TRIGGER_A(FireballOrFrostfireBoltFreeTrigger, "fireball!");
     DEBUFF_TRIGGER_A(NoImprovedScorchDebuffTrigger, "improved scorch");
-    HAS_AURA_TRIGGER(FingersOfFrostTrigger, "fingers of frost");
+    HAS_AURA_TRIGGER_A(FingersOfFrostTrigger, "fingers of frost");
 
     class NoFireVulnerabilityTrigger : public Trigger
     {

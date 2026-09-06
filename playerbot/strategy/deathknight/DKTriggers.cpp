@@ -5,6 +5,15 @@
 
 using namespace ai;
 
+bool KillingMachineTrigger::IsActive()
+{
+#ifdef MANGOSBOT_TWO
+    return bot->HasAura(51124); // The proc consumed by the native core.
+#else
+    return false;
+#endif
+}
+
 bool DKPresenceTrigger::IsActive()
 {
     Unit* target = GetTarget();

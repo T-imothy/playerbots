@@ -263,7 +263,9 @@ namespace ai
                 creators["vampiric touch"] = [](PlayerbotAI* ai) { return new CastVampiricTouchAction(ai); };
                 creators["vampiric touch on attacker"] = [](PlayerbotAI* ai) { return new CastVampiricTouchActionOnAttacker(ai); };
                 creators["vampiric embrace"] = [](PlayerbotAI* ai) { return new CastVampiricEmbraceAction(ai); };
-                //creators["dispersion"] = [](PlayerbotAI* ai) { return new CastDispersionAction(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["dispersion"] = [](PlayerbotAI* ai) { return new CastDispersionAction(ai); };
+#endif
                 creators["shadow protection"] = [](PlayerbotAI* ai) { return new CastShadowProtectionAction(ai); };
                 creators["shadow protection on party"] = [](PlayerbotAI* ai) { return new CastShadowProtectionOnPartyAction(ai); };
                 creators["shackle undead"] = [](PlayerbotAI* ai) { return new CastShackleUndeadAction(ai); };

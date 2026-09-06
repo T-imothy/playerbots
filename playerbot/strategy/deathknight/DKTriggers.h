@@ -108,6 +108,7 @@ namespace ai
     {
     public:
         KillingMachineTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "killing machine") {}
+        bool IsActive() override;
     };
 
     class MindFreezeOnEnemyHealerTrigger : public InterruptEnemyHealerTrigger

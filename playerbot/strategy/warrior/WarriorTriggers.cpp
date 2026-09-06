@@ -5,6 +5,33 @@
 
 using namespace ai;
 
+bool SwordAndBoardTrigger::IsActive()
+{
+#ifdef MANGOSBOT_TWO
+    return bot->HasAura(50227); // Proc, not the identically named passive talent.
+#else
+    return false;
+#endif
+}
+
+bool SuddenDeathTrigger::IsActive()
+{
+#ifdef MANGOSBOT_TWO
+    return bot->HasAura(52437);
+#else
+    return false;
+#endif
+}
+
+bool TasteForBloodTrigger::IsActive()
+{
+#ifdef MANGOSBOT_TWO
+    return bot->HasAura(60503);
+#else
+    return false;
+#endif
+}
+
 bool BloodrageBuffTrigger::IsActive()
 {
     return AI_VALUE2(uint8, "health", "self target") >= sPlayerbotAIConfig.mediumHealth &&

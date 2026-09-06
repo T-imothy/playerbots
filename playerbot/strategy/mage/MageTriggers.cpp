@@ -5,6 +5,15 @@
 
 using namespace ai;
 
+bool FingersOfFrostTrigger::IsActive()
+{
+#ifdef MANGOSBOT_TWO
+    return bot->HasAura(44544); // Native frozen-target proc, not talent 44543/44545.
+#else
+    return false;
+#endif
+}
+
 bool AnyMageArmorTrigger::IsActive()
 {
     Unit* target = GetTarget();

@@ -4,6 +4,7 @@
 namespace ai
 {
 #ifdef MANGOSBOT_TWO
+    BUFF_ACTION_U(CastDispersionAction, "dispersion", bot->IsInCombat() && !ai->IsHeal(bot) && CastBuffSpellAction::isUseful());
     BUFF_ACTION_U(CastDivineHymnAction, "divine hymn", ai->IsHeal(bot) && CastBuffSpellAction::isUseful());
     HEAL_PARTY_ACTION(CastPenanceOnPartyAction, "penance");
 #endif

@@ -5,6 +5,19 @@
 
 using namespace ai;
 
+bool CastExplosiveShotAction::isUseful()
+{
+#ifdef MANGOSBOT_TWO
+    if (!CastSpellAction::isUseful()) return false;
+    // Lock and Load can make another shot ready before the final periodic tick.
+    // Do not overwrite our own running effect; another hunter's effect is not ours.
+    Aura* aura = ai->GetAura("explosive shot", GetTarget(), true);
+    return !aura || !aura->GetHolder() || aura->GetHolder()->GetAuraDuration() <= 0;
+#else
+    return false;
+#endif
+}
+
 bool CastSerpentStingAction::isUseful()
 {
     return CastRangedDebuffSpellAction::isUseful() && AI_VALUE2(uint8, "health", GetTargetName()) > 50 && (!(AI_VALUE2(uint8, "mana", GetTargetName()) >= 10) || (ai->HasStrategy("sting serpent", BotState::BOT_STATE_COMBAT)));

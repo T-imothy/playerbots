@@ -20,7 +20,7 @@ namespace ai
     BUFF_TRIGGER(RampageAvailableTrigger, "rampage");
     BUFF_TRIGGER_A(BloodrageBuffTrigger, "bloodrage");
     CAN_CAST_TRIGGER(VictoryRushTrigger, "victory rush");
-    HAS_AURA_TRIGGER(SwordAndBoardTrigger, "sword and board");
+    HAS_AURA_TRIGGER_A(SwordAndBoardTrigger, "sword and board");
     SNARE_TRIGGER(ConcussionBlowTrigger, "concussion blow");
     SNARE_TRIGGER(HamstringTrigger, "hamstring");
     SNARE_TRIGGER(MockingBlowTrigger, "mocking blow");
@@ -40,9 +40,9 @@ namespace ai
     INTERRUPT_HEALER_TRIGGER(InterceptInterruptEnemyHealerSpellTrigger, "intercept");
     INTERRUPT_TRIGGER(InterceptInterruptSpellTrigger, "intercept");
     DEFLECT_TRIGGER(SpellReflectionTrigger, "spell reflection");
-    HAS_AURA_TRIGGER(SuddenDeathTrigger, "sudden death");
+    HAS_AURA_TRIGGER_A(SuddenDeathTrigger, "sudden death");
     HAS_AURA_TRIGGER(SlamInstantTrigger, "slam!");
-    HAS_AURA_TRIGGER(TasteForBloodTrigger, "taste for blood");
+    HAS_AURA_TRIGGER_A(TasteForBloodTrigger, "taste for blood");
 
     class BattleShoutTrigger : public Trigger
     {

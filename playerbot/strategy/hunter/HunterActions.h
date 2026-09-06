@@ -32,8 +32,12 @@ public:
     BEGIN_RANGED_SPELL_ACTION(CastArcaneShotAction, "arcane shot")
     END_SPELL_ACTION()
 
-    BEGIN_RANGED_SPELL_ACTION(CastExplosiveShotAction, "explosive shot")
-    END_SPELL_ACTION()
+    class CastExplosiveShotAction : public CastSpellAction
+    {
+    public:
+        CastExplosiveShotAction(PlayerbotAI* ai) : CastSpellAction(ai, "explosive shot") {}
+        bool isUseful() override;
+    };
 
     BEGIN_RANGED_SPELL_ACTION(CastAimedShotAction, "aimed shot")
     END_SPELL_ACTION()
