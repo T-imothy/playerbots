@@ -121,6 +121,7 @@ namespace ai
             creators["onyxia position"] = [](PlayerbotAI* ai) { return new OnyxiaPositionValue(ai); };
             creators["molten core position"] = [](PlayerbotAI* ai) { return new MoltenCorePositionValue(ai); };
             creators["mechanar position"] = [](PlayerbotAI* ai) { return new MechanarPositionValue(ai); };
+            creators["aran flame wreath"] = [](PlayerbotAI* ai) { return new AranFlameWreathValue(ai); };
             creators["active spell"] = [](PlayerbotAI* ai) { return new ActiveSpellValue(ai); };
             creators["craft"] = [](PlayerbotAI* ai) { return new CraftValue(ai); };
             creators["collision"] = [](PlayerbotAI* ai) { return new CollisionValue(ai); };

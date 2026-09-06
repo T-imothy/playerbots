@@ -7,6 +7,8 @@ using namespace ai;
 
 void KarazhanDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("aran hold position",
+        NextAction::array(0, new NextAction("aran hold position", 110.0f), NULL)));
 	triggers.push_back(new TriggerNode(
 		"start netherspite fight",
 		NextAction::array(0, new NextAction("enable netherspite fight strategy", 100.0f), NULL)));
@@ -14,6 +16,22 @@ void KarazhanDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 	triggers.push_back(new TriggerNode(
 		"start prince malchezaar fight",
 		NextAction::array(0, new NextAction("enable prince malchezaar fight strategy", 100.0f), NULL)));
+}
+
+void KarazhanDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("aran hold position",
+        NextAction::array(0, new NextAction("aran hold position", 110.0f), NULL)));
+}
+
+void KarazhanDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveAranFlameWreathMultiplier(ai));
+}
+
+void KarazhanDungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveAranFlameWreathMultiplier(ai));
 }
 
 void NetherspiteFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

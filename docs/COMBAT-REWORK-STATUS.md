@@ -87,6 +87,20 @@ claim that every encounter has been implemented or played successfully**.
   honor configured raid-target marks, retain a valid current add, and reject
   charm, teleport, death and different-instance targets. Normal AttackAction is
   used; this is not direct damage, fabricated threat or forced CC removal.
+- Aran (TBC/Wrath): stop normal motion while his native Flame Wreath cast or
+  a living same-instance group member's ring aura is present. Keep stationary
+  attacks/heals available; suppress chase/jump/flee and native movement-effect
+  spell actions such as Charge/Blink/Disengage. Combat and reaction scheduling
+  use the same cached decision. No aura removal, false root or boss-script edit.
+- Prince retreat checks now require the actual live engaged Prince, not an
+  arbitrary current/tank target. Only same-instance living group members count
+  for Enfeeble; an unrelated master target is no longer treated as that debuff.
+- Shared creature avoidance honors its requested creature ID (the configurable
+  list previously searched for its base class's zero entry), rejects dead,
+  other-instance and controlled/transition cases, and matches the trigger's
+  victim policy. Safe-healer shortcuts now validate against the closest hazard
+  too and try other nearby healers within an eight-candidate bound. Existing
+  native LOS/path checks and radial fallback are retained.
 - Shared spell actions reject passive talents/procs instead of casting them;
   target-map validation uses the actual map instance, not just the map number.
 - Wrath DK: apply owned Blood Plague/Frost Fever, use the secondary target for
@@ -132,6 +146,11 @@ combat scheduling or Wrath-only ability scheduling is added to Classic/TBC.
   map/control/life guards and the eight-path-query bound. Add-target tests passed
   for CC fallback exclusion, marked/current target precedence, role assignment,
   instance/transition/life guards and Classic exclusion of Pathaleon behavior.
+- Actual-source Karazhan tests passed in all three expansion builds, including
+  Classic's inactive Aran detector, cast/aura lifetime and map guards, permitted
+  stationary actions, native movement-effect suppression and Prince scope.
+  Shared avoidance tests exercise the actual search and destination-validation
+  code, including the configured entry ID and unsafe-nearest-healer regressions.
 
 ## Remaining before the full requested scope is complete
 
@@ -157,6 +176,7 @@ No new log file, per-bot scan thread or SQL migration is introduced by the chang
 listed here. Existing sampled combat diagnostics already observe the new action
 names/outcomes. Pending summon revival is functional state, not removable
 diagnostic instrumentation. Existing diagnostic caps/lifecycle policy remain.
+The one-second Aran decision is functional combat state, not a diagnostic cache.
 
 The 10,000-bot Classic soak was stopped through the normal console signal; the
 server logged `Halting process...` at 19:16:48 local on 2026-09-05. Shutdown also

@@ -6,6 +6,16 @@
 
 namespace ai
 {
+    class AranFlameWreathHoldAction : public Action
+    {
+    public:
+        AranFlameWreathHoldAction(PlayerbotAI* ai) : Action(ai, "aran hold position") {}
+        bool Execute(Event& event) override;
+        bool isUseful() override;
+        bool ShouldReactionInterruptMovement() const override { return true; }
+        static bool IsHolding(PlayerbotAI* ai);
+    };
+
     class KarazhanEnableDungeonStrategyAction : public ChangeAllStrategyAction
     {
     public:

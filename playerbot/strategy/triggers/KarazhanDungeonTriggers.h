@@ -4,6 +4,12 @@
 
 namespace ai
 {
+    class AranFlameWreathTrigger : public Trigger
+    {
+    public:
+        AranFlameWreathTrigger(PlayerbotAI* ai) : Trigger(ai, "aran hold position", 1) {}
+        bool IsActive() override;
+    };
 	class KarazhanEnterDungeonTrigger : public EnterDungeonTrigger
 	{
 	public:

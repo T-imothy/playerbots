@@ -19,6 +19,32 @@ CastSpellAction::CastSpellAction(PlayerbotAI* ai, std::string spell)
     }
 }
 
+bool CastSpellAction::HasMovementEffect()
+{
+    RefreshSpellId();
+    const SpellEntry* spell = sServerFacade.LookupSpellInfo(spellId);
+    if (!spell) return false;
+    for (unsigned effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+        switch (spell->Effect[effect])
+        {
+            case SPELL_EFFECT_CHARGE:
+            case SPELL_EFFECT_LEAP:
+            case SPELL_EFFECT_TELEPORT_UNITS:
+            case SPELL_EFFECT_TELEPORT_UNITS_FACE_CASTER:
+#ifndef MANGOSBOT_ZERO
+            case SPELL_EFFECT_LEAP_BACK:
+            case SPELL_EFFECT_CHARGE_DEST:
+#endif
+#ifdef MANGOSBOT_TWO
+            case SPELL_EFFECT_JUMP:
+            case SPELL_EFFECT_JUMP_DEST:
+#endif
+                return true;
+            default: break;
+        }
+    return false;
+}
+
 bool CastSpellAction::Execute(Event& event)
 {
     RefreshSpellId();

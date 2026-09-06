@@ -5,6 +5,58 @@
 
 using namespace ai;
 
+bool AranFlameWreathValue::Calculate()
+{
+#ifndef MANGOSBOT_ZERO
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
+        bot->GetMapId() != 532 || !bot->IsInCombat()) return false;
+    Unit* boss = nullptr;
+    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (unit && unit->GetEntry() == 16524 && unit->IsInWorld() && unit->GetMap() == bot->GetMap() &&
+            unit->IsAlive() && unit->IsInCombat()) { boss = unit; break; }
+    }
+    if (!boss) return false;
+    // Stop during the native cast, before a moving bot can cross the new ring.
+    const Spell* spell = boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    if (spell && spell->m_spellInfo->Id == 30004 && spell->getState() != SPELL_STATE_FINISHED) return true;
+    if (bot->HasAura(29946)) return true;
+    if (bot->GetGroup())
+        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->getSource();
+            if (member && member->IsInWorld() && member->IsAlive() && member->GetMap() == bot->GetMap() &&
+                member->HasAura(29946)) return true;
+        }
+#endif
+    return false;
+}
+
+bool AranFlameWreathHoldAction::IsHolding(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    return bot->IsInWorld() && bot->IsAlive() && !bot->HasCharmer() && !bot->IsBeingTeleported() &&
+        bot->GetMapId() == 532 && bot->IsInCombat() &&
+        ai->GetAiObjectContext()->GetValue<bool>("aran flame wreath")->Get();
+}
+
+bool AranFlameWreathHoldAction::isUseful()
+{
+    return IsHolding(ai) && (!bot->IsStopped() ||
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+}
+
+bool AranFlameWreathHoldAction::Execute(Event& event)
+{
+    if (!IsHolding(ai)) return false;
+    // Native movement cancellation only. Keep valid stationary casts/heals;
+    // never cancel the wreath aura or alter the core's crossing/explosion rule.
+    ai->StopMoving();
+    SetDuration(100);
+    return true;
+}
+
 bool NetherspitePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 {
     Player* bot = ai->GetBot();

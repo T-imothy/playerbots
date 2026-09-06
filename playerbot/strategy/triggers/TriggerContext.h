@@ -342,6 +342,7 @@ namespace ai
             creators["end netherspite fight"] = [](PlayerbotAI* ai) { return new NetherspiteEndFightTrigger(ai); };
             creators["void zone too close"] = [](PlayerbotAI* ai) { return new VoidZoneTooCloseTrigger(ai); };
             creators["netherspite beam position"] = [](PlayerbotAI* ai) { return new NetherspiteBeamPositionTrigger(ai); };
+            creators["aran hold position"] = [](PlayerbotAI* ai) { return new AranFlameWreathTrigger(ai); };
 
             creators["start prince malchezaar fight"] = [](PlayerbotAI* ai) { return new PrinceMalchezaarStartFightTrigger(ai); };
             creators["end prince malchezaar fight"] = [](PlayerbotAI* ai) { return new PrinceMalchezaarEndFightTrigger(ai); };

@@ -9,6 +9,12 @@
 
 using namespace ai;
 
+bool AranFlameWreathTrigger::IsActive()
+{
+    AranFlameWreathHoldAction action(ai);
+    return action.isUseful();
+}
+
 bool NetherspiteBeamPositionTrigger::IsActive()
 {
     EncounterPosition plan;
@@ -18,11 +24,19 @@ bool NetherspiteBeamPositionTrigger::IsActive()
 
 bool PrinceMalchezaarTooCloseTrigger::IsActive()
 {
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
+        bot->GetMapId() != 532 || !bot->IsInCombat()) return false;
     PullStrategy* strategy = PullStrategy::Get(ai);
     if (strategy && strategy->HasPullStarted())
         return false;
-    Unit* target = AI_VALUE(Unit*, "tank target");
-    if (!target) target = AI_VALUE(Unit*, "current target");
+    Unit* target = nullptr;
+    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (unit && unit->GetEntry() == 15690 && unit->IsInWorld() && unit->GetMap() == bot->GetMap() &&
+            unit->IsAlive() && unit->IsInCombat()) { target = unit; break; }
+    }
+    if (!target) return false;
     if (bot->HasAura(30843) || (EnfeeblePart() && target && target->GetVictim() != bot) || MeleeWaitCheck(target)) 
         return true;
     if (ai->IsRanged(bot, true))
@@ -52,12 +66,12 @@ bool PrinceMalchezaarTooCloseTrigger::EnfeeblePart()
 {
     Group* group = bot->GetGroup();
     if (!group)
-        return AI_VALUE(Unit*, "master target");
+        return false;
 
     for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
     {
         Player* member = ref->getSource();
-        if (!member || !sServerFacade.IsAlive(member))
+        if (!member || !member->IsInWorld() || member->GetMap() != bot->GetMap() || !sServerFacade.IsAlive(member))
             continue;
 
         if (member->HasAura(30843))

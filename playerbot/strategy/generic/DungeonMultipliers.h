@@ -6,6 +6,12 @@ class Action;
 
 namespace ai
 {
+    class PreserveAranFlameWreathMultiplier : public Multiplier
+    {
+    public:
+        PreserveAranFlameWreathMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve aran flame wreath") {}
+        float GetValue(Action* action) override;
+    };
     class PreserveMechanarPositionMultiplier : public Multiplier
     {
     public:

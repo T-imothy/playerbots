@@ -17,6 +17,13 @@ namespace ai
     bool ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan);
     float NativeEncounterSpellRadius(uint32 id, unsigned depth = 0);
 
+    class AranFlameWreathValue : public BoolCalculatedValue
+    {
+    public:
+        AranFlameWreathValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "aran flame wreath", 1) {}
+        bool Calculate() override;
+    };
+
     class MechanarPositionValue : public CalculatedValue<EncounterPosition>
     {
     public:

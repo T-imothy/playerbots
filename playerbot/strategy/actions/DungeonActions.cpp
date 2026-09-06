@@ -120,6 +120,8 @@ bool MoveAwayFromHazard::IsHazardNearby(const WorldPosition& point, const std::l
 
 bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, uint32 creatureId)
 {
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() || !creatureId)
+        return false;
     // Get the active attacking creatures
     std::list<Creature*> creatures;
     size_t closestCreatureIdx = 0;
@@ -127,14 +129,15 @@ bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, uint32 cre
 
     // Iterate through the near creatures
     std::list<Unit*> units;
-    MaNGOS::AllCreaturesOfEntryInRangeCheck u_check(bot, creatureID, range);
+    MaNGOS::AllCreaturesOfEntryInRangeCheck u_check(bot, creatureId, range);
     MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(units, u_check);
     Cell::VisitAllObjects(bot, searcher, range);
 
     for (Unit* unit : units)
     {
         Creature* creature = (Creature*)unit;
-        if (creature)
+        if (creature && creature->IsInWorld() && creature->IsAlive() && creature->GetMap() == bot->GetMap() &&
+            (ignoreVictim || creature->GetVictim() != bot))
         {
             creatures.push_back(creature);
 
@@ -159,8 +162,8 @@ bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, uint32 cre
     auto it = creatures.begin();
     advance(it, closestCreatureIdx);
     Creature* closestCreature = *it;
-    // Remove the closest creature from the list to prevent checking it twice
-    creatures.erase(it);
+    // Retain it in candidate validation: a healer's location can be inside this
+    // very hazard. Removing it here made the healer shortcut falsely look safe.
 
     // Generate the initial angle directly behind the bot looking at the closest creature
     WorldPosition botPosition(bot);
@@ -176,7 +179,7 @@ bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, uint32 cre
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->getSource();
-            if (!member || !sServerFacade.IsAlive(member))
+            if (!member || !member->IsInWorld() || member->GetMap() != bot->GetMap() || !sServerFacade.IsAlive(member))
                 continue;
 
             if (ai->IsHeal(member, true))
@@ -189,13 +192,15 @@ bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, uint32 cre
         if (!points.empty())
         {
             points.sort([botPosition](WorldPosition i, WorldPosition j) { return botPosition.fDist(i) < botPosition.fDist(j); });
-            WorldPosition* validPoint = &points.front();
-            if (IsValidPoint(points.front(), creatures, hazards))
+            unsigned checked = 0;
+            for (const WorldPosition& point : points)
             {
-                if (MoveTo(bot->GetMapId(), validPoint->getX(), validPoint->getY(), validPoint->getZ(), false, IsReaction(), false, false))
+                if (++checked > 8) break;
+                if (IsValidPoint(point, creatures, hazards) &&
+                    MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(), false, IsReaction(), false, false))
                 {
                     if (IsReaction())
-                        WaitForReach(validPoint->distance(botPosition));
+                        WaitForReach(point.distance(botPosition));
                     return true;
                 }
             }

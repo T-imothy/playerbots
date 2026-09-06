@@ -7,8 +7,18 @@
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 #include "playerbot/strategy/actions/MechanarDungeonActions.h"
+#include "playerbot/strategy/actions/GenericSpellActions.h"
 
 using namespace ai;
+
+float PreserveAranFlameWreathMultiplier::GetValue(Action* action)
+{
+    if (!action || !AranFlameWreathHoldAction::IsHolding(ai)) return 1.0f;
+    if (dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action)) return 0.0f;
+    // Charge/Blink/Disengage are spell actions, not ordinary movement actions.
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    return spell && spell->HasMovementEffect() ? 0.0f : 1.0f;
+}
 
 float PreserveMechanarPositionMultiplier::GetValue(Action* action)
 {
