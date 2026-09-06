@@ -84,11 +84,19 @@ wipe/reset, dispel, knockback, tank/off-tank and after-kill Living Bomb tests.
   threshold, not an unconditional stop on that boss's shield. Do not claim either
   existing generic check completely handles this encounter.
 - Native 21087 carries mechanic-immunity misc value 17 in every dev world.
-  Standard CC actions still go through native cast checks. Explicit CC target
-  selection takes a marked target before checking its castability; that selection
-  path and the general non-damage effect-immunity fold remain audit leads. No
-  immunity or encounter aura has been removed or bypassed here.
+  Standard CC actions still go through native cast checks. The marked-target
+  selector now checks native castability before committing to the player's mark;
+  the mark retains precedence over automatic heuristics. The general non-damage
+  effect-immunity fold now ignores empty slots and preserves genuinely usable
+  partial effects. Both previous failures were reproduced in actual-code tests.
+  Owned-CC lifecycle checks no longer retain a dead/removed/off-map old target as
+  a blocker. No immunity or encounter aura has been removed or bypassed here.
 - Threat/history corrections are shared, not a fabricated MC threat model:
   missing/changed targets safely reset history, percentage overflow is prevented,
   and live native threat tables are read unchanged. This does not substitute for
   actual tank/off-tank, knockback, wipe/reset and role tests.
+
+The string `CanCastSpell` overload currently forwards zero for its effect-mask
+argument; this behavior predates the diagnostics commit inspected here. That
+broader API/caller compatibility question remains open and is not silently
+changed with the narrowly tested non-damage fold.

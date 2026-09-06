@@ -4519,8 +4519,22 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
         {
             if (!immune)
             {
+                bool hasEffect = false;
+                bool allEffectsImmune = true;
                 for (int32 i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; i++)
-                    immune = target->IsImmuneToSpellEffect(spellInfo, SpellEffectIndex(i), false);
+                {
+                    if (!spellInfo->Effect[i])
+                        continue;
+                    hasEffect = true;
+                    if (!target->IsImmuneToSpellEffect(spellInfo, SpellEffectIndex(i), false))
+                    {
+                        allEffectsImmune = false;
+                        break;
+                    }
+                }
+                // Empty trailing slots cannot erase an immunity result, but
+                // an actual usable effect still permits a partial application.
+                immune = hasEffect && allEffectsImmune;
             }
 
             if (immune)

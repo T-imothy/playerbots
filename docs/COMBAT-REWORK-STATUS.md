@@ -182,6 +182,22 @@ combat scheduling or Wrath-only ability scheduling is added to Classic/TBC.
 
 ## Validation completed so far
 
+- Non-damage cast eligibility no longer overwrites a native immunity result
+  with an unused trailing effect. It rejects a spell when all populated effects
+  are immune, but preserves a spell with an actually usable partial effect.
+  Native spell-level and per-effect immunity APIs, subsequent `CheckCast`,
+  damage-spell handling and existing effect-mask forwarding are unchanged.
+- Marked CC now honors native castability before committing to a target, while
+  still letting the player's mark override automatic health/DoT/target heuristics.
+  Normal reach-spell handling can close distance/LOS; it does not bypass the
+  eventual cast check. Automatic tank-distance checks use native map/phase and
+  lifecycle boundaries. Existing owned CC on a live eligible target still
+  prevents another assignment; a stale/dead/off-map old target cannot block it.
+- Actual-code tests reproduced the empty-effect immunity overwrite, marked-CC
+  castability bypass and stale owned-CC veto. Corrected combinations pass in all
+  three expansion modes, including partial immunity, explicit mark precedence,
+  automatic exclusions, death, removal, instance/phase changes and teleportation.
+
 - Shared interrupt selection now checks native immunity only for actual
   interrupt/stun/silence effects and accepts an effect that can work even when
   an unrelated secondary effect is immune. Existing native cast-interruptibility
@@ -278,6 +294,8 @@ logs, not output files. They add no diagnostic scan, counter, table or worker,
 and do not alter general calculated-value cache cadence. Keep this functional
 history when optional diagnostics are disabled; no runtime savings are claimed.
 Per-effect interrupt candidate checks also add no diagnostic output or worker.
+Non-damage immunity and CC eligibility corrections likewise add no diagnostic
+output, background scan, SQL state or new persistent cache.
 
 The 10,000-bot Classic soak was stopped through the normal console signal; the
 server logged `Halting process...` at 19:16:48 local on 2026-09-05. Shutdown also

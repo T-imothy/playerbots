@@ -21,12 +21,20 @@ public:
     virtual void CheckAttacker(Unit* creature, ThreatManager* threatManager)
     {
         Player* bot = ai->GetBot();
+        if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported() || !bot->IsAlive() ||
+            !creature || !creature->IsInWorld() || !creature->IsAlive() || !bot->IsInMap(creature))
+            return;
 
         AiObjectContext* context = ai->GetAiObjectContext();
 
-        if (AI_VALUE(Unit*,"rti cc target") && AI_VALUE(Unit*,"rti cc target")->GetObjectGuid() == creature->GetObjectGuid())
+        Unit* markedTarget = AI_VALUE(Unit*, "rti cc target");
+        if (markedTarget && markedTarget->GetObjectGuid() == creature->GetObjectGuid())
         {
-            result = creature;
+            // The mark overrides automatic CC heuristics, not spellbook,
+            // resource, cooldown or native immunity rules. Normal reach-spell
+            // handling may close distance/LOS before the eventual cast check.
+            if (ai->CanCastSpell(spell, creature, 0, nullptr, true, true))
+                result = creature;
             return;
         }
 
@@ -55,7 +63,7 @@ public:
         if (creature->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE) && !(spell == "fear" || spell == "banish"))
             return;
 
-        if (!ai->CanCastSpell(spell, creature, true, nullptr, false, true))
+        if (!ai->CanCastSpell(spell, creature, 0, nullptr, false, true))
             return;
 
         // If we have rti cc none but have cc strategy, then we'll cc something we're able to
@@ -67,7 +75,8 @@ public:
             for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
             {
                 Player *member = sObjectMgr.GetPlayer(itr->guid);
-                if(!member || !sServerFacade.IsAlive(member) || member == bot || bot->GetMapId() != member->GetMapId())
+                if (!member || !member->IsInWorld() || !sServerFacade.IsAlive(member) ||
+                    member->IsBeingTeleported() || member == bot || !bot->IsInMap(member))
                     continue;
 
                 if (!ai->IsTank(member))
@@ -93,16 +102,16 @@ private:
 
 Unit* CcTargetValue::Calculate()
 {
+    if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported())
+        return nullptr;
+
     std::list<ObjectGuid> possible = AI_VALUE(std::list<ObjectGuid>,"possible targets no los");
 
     for (std::list<ObjectGuid>::iterator i = possible.begin(); i != possible.end(); ++i)
     {
         ObjectGuid guid = *i;
         Unit* add = ai->GetUnit(guid);
-        if (!add)
-            continue;
-
-        if (!ai->IsSafe(add))
+        if (!add || !add->IsInWorld() || !add->IsAlive() || !bot->IsInMap(add))
             continue;
 
         if (ai->HasMyAura(qualifier, add))
