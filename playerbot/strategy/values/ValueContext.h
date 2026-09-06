@@ -120,6 +120,7 @@ namespace ai
             creators["netherspite position"] = [](PlayerbotAI* ai) { return new NetherspitePositionValue(ai); };
             creators["onyxia position"] = [](PlayerbotAI* ai) { return new OnyxiaPositionValue(ai); };
             creators["molten core position"] = [](PlayerbotAI* ai) { return new MoltenCorePositionValue(ai); };
+            creators["mechanar position"] = [](PlayerbotAI* ai) { return new MechanarPositionValue(ai); };
             creators["active spell"] = [](PlayerbotAI* ai) { return new ActiveSpellValue(ai); };
             creators["craft"] = [](PlayerbotAI* ai) { return new CraftValue(ai); };
             creators["collision"] = [](PlayerbotAI* ai) { return new CollisionValue(ai); };

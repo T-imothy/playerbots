@@ -388,6 +388,7 @@ namespace ai
             creators["disable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarDisableFightStrategyAction(ai); };
             creators["move away from magmadar"] = [](PlayerbotAI* ai) { return new MagmadarMoveAwayAction(ai); };
             creators["molten core safe position"] = [](PlayerbotAI* ai) { return new MoltenCorePositionAction(ai); };
+            creators["mechanar safe position"] = [](PlayerbotAI* ai) { return new MechanarPositionAction(ai); };
 
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };
             creators["move to mc rune"] = [](PlayerbotAI* ai) { return new MoveToMCRuneAction(ai); };

@@ -2,9 +2,19 @@
 #include "DungeonActions.h"
 #include "ChangeStrategyAction.h"
 #include "UseItemAction.h"
+#include "playerbot/strategy/values/EncounterPositionValue.h"
 
 namespace ai
 {
+    class MechanarPositionAction : public MovementAction
+    {
+    public:
+        MechanarPositionAction(PlayerbotAI* ai) : MovementAction(ai, "mechanar safe position") {}
+        bool Execute(Event& event) override;
+        bool isUseful() override;
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+
     class MechanarEnableDungeonStrategyAction : public ChangeAllStrategyAction
     {
     public:

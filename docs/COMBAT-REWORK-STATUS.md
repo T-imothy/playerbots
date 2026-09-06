@@ -71,6 +71,11 @@ claim that every encounter has been implemented or played successfully**.
   Escape candidates must clear the combined danger areas and native path/height
   checks. At most eight path candidates per cached decision; no manufactured
   safe location when none is reachable. Other MC mechanics remain under review.
+- Mechanar (TBC/Wrath): Capacitus opposite-polarity separation and native Nether
+  Charge avoidance use actual spell radii and live, timer-bearing summons.
+  Combined danger areas, safe-position holding, same-map/height/lifetime checks
+  and eight-path-query limits apply. Classic returns an inactive decision.
+  This does not implement same-charge stacking bonuses or every Mechanar boss.
 - Shared spell actions reject passive talents/procs instead of casting them;
   target-map validation uses the actual map instance, not just the map number.
 - Wrath DK: apply owned Blood Plague/Frost Fever, use the secondary target for
@@ -142,6 +147,12 @@ omission, not deletion of this NPC's individual gossip options. The core testing
 branches now require those baseline modules by default and reject cached OFF
 settings. Restored-module native builds pass; production was not deployed.
 The four existing dual-spec tables were inspected read-only, not rebuilt/deleted.
+The native module save hook also consumed action-button dirty states before the
+normal core saver ran, contradicting its default-table-mirroring comment. The
+Classic/TBC correction explicitly mirrors the active bar in the existing save
+transaction. An operator-only, once-receipted repair script preserves current
+single-spec bars when reactivating a previously omitted module; it is not an
+automatic world update and has not been applied to production.
 
 New test programs: `encounter_geometry_test.cpp`, `encounter_runtime_regression.py`,
 `combat_policy_regression.py`, and `threat_transfer_regression.py`. Geometry,

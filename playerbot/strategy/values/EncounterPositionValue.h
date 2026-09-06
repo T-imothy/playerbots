@@ -15,6 +15,14 @@ namespace ai
     };
 
     bool ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan);
+    float NativeEncounterSpellRadius(uint32 id, unsigned depth = 0);
+
+    class MechanarPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        MechanarPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "mechanar position", 2) {}
+        EncounterPosition Calculate() override;
+    };
 
     class MoltenCorePositionValue : public CalculatedValue<EncounterPosition>
     {

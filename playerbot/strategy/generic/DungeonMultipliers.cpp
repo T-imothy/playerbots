@@ -6,8 +6,17 @@
 #include "playerbot/strategy/actions/AttackAction.h"
 #include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
+#include "playerbot/strategy/actions/MechanarDungeonActions.h"
 
 using namespace ai;
+
+float PreserveMechanarPositionMultiplier::GetValue(Action* action)
+{
+    if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
+        dynamic_cast<MechanarPositionAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    EncounterPosition plan;
+    return MechanarPositionAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
 
 float PreserveMoltenCorePositionMultiplier::GetValue(Action* action)
 {

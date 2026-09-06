@@ -5,8 +5,24 @@
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
 #include "HazardsValue.h"
+#include "playerbot/ServerFacade.h"
+#include "Spells/SpellMgr.h"
 
 using namespace ai;
+
+float ai::NativeEncounterSpellRadius(uint32 id, unsigned depth)
+{
+    const SpellEntry* spell = sServerFacade.LookupSpellInfo(id);
+    if (!spell) return 0;
+    float radius = 0;
+    for (unsigned effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+    {
+        radius = std::max(radius, GetSpellRadius(sSpellRadiusStore.LookupEntry(spell->EffectRadiusIndex[effect])));
+        if (depth < 2 && spell->EffectTriggerSpell[effect] && spell->EffectTriggerSpell[effect] != id)
+            radius = std::max(radius, NativeEncounterSpellRadius(spell->EffectTriggerSpell[effect], depth + 1));
+    }
+    return radius;
+}
 
 bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan)
 {

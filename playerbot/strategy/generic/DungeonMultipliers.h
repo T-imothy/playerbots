@@ -6,6 +6,12 @@ class Action;
 
 namespace ai
 {
+    class PreserveMechanarPositionMultiplier : public Multiplier
+    {
+    public:
+        PreserveMechanarPositionMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve mechanar safe position") {}
+        float GetValue(Action* action) override;
+    };
     class PreserveMoltenCorePositionMultiplier : public Multiplier
     {
     public:

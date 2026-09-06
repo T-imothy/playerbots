@@ -1,9 +1,16 @@
 #pragma once
 #include "DungeonTriggers.h"
 #include "GenericTriggers.h"
+#include "playerbot/strategy/actions/MechanarDungeonActions.h"
 
 namespace ai
 {
+    class MechanarPositionTrigger : public Trigger
+    {
+    public:
+        MechanarPositionTrigger(PlayerbotAI* ai) : Trigger(ai, "mechanar safe position", 1) {}
+        bool IsActive() override { MechanarPositionAction action(ai); return action.isUseful(); }
+    };
 	class MechanarEnterDungeonTrigger : public EnterDungeonTrigger
 	{
 	public:
