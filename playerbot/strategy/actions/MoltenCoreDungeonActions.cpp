@@ -11,8 +11,7 @@ namespace
     unsigned MoltenCoreTargetPriority(uint32 boss, uint32 target)
     {
         // These entries and native mechanics match all three CMaNGOS scripts.
-        // Garr's banish/explosion assignments and Ragnaros phases are NOT
-        // represented by this simple add-priority policy.
+        // Garr's banish/explosion assignments are not represented here.
         switch (boss)
         {
             case 12118: return target == 12119 ? 1 : 0; // Lucifron's protectors
@@ -21,6 +20,7 @@ namespace
             case 12018: // Majordomo ends on add deaths; the boss has death prevention.
                 return target == 11663 ? 2 : (target == 11664 ? 1 : 0);
             case 11988: return target == 11988 ? 1 : 0; // Core Ragers cannot die while Golemagg lives.
+            case 11502: return target == 12143 ? 1 : 0; // Ragnaros's native Sons of Flame.
             default: return 0;
         }
     }
@@ -32,17 +32,24 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
         bot->GetMapId() != 409 || !bot->IsInCombat() || ai->IsHeal(bot) || ai->IsTank(bot)) return nullptr;
 
     Unit* boss = nullptr;
+    bool ragSons = false;
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
     {
         Unit* unit = ai->GetUnit(guid);
         if (!unit || !unit->IsInWorld() || !bot->IsInMap(unit) || !unit->IsAlive() || !unit->IsInCombat()) continue;
         const uint32 entry = unit->GetEntry();
-        if (entry != 12118 && entry != 12259 && entry != 12098 && entry != 12018 && entry != 11988) continue;
+        if (entry == 12143) ragSons = true;
+        if (entry != 12118 && entry != 12259 && entry != 12098 && entry != 12018 && entry != 11988 && entry != 11502) continue;
         // Ambiguous multi-boss pulls should retain ordinary player/assist policy.
         if (boss && boss != unit) return nullptr;
         boss = unit;
     }
-    if (!boss || boss->GetVictim() == bot) return nullptr;
+    if (boss && (boss->GetVictim() == bot || (ragSons && boss->GetEntry() != 11502))) return nullptr;
+    // Submerged Ragnaros is correctly absent from attackable-target values.
+    // His live, engaged sons identify the add wave without bypassing the
+    // native submerged flag, guessing a phase timer or scanning the world.
+    const uint32 bossEntry = boss ? boss->GetEntry() : (ragSons ? 11502 : 0);
+    if (!bossEntry) return nullptr;
 
     auto valid = [this](Unit* unit)
     {
@@ -64,7 +71,7 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
     {
         Unit* unit = ai->GetUnit(guid);
         if (!unit) continue;
-        const unsigned candidatePriority = MoltenCoreTargetPriority(boss->GetEntry(), unit->GetEntry());
+        const unsigned candidatePriority = MoltenCoreTargetPriority(bossEntry, unit->GetEntry());
         if (!candidatePriority || !valid(unit)) continue;
         if (!selected || candidatePriority > priority || (candidatePriority == priority &&
             (unit == current || (selected != current && bot->GetDistance(unit) < bot->GetDistance(selected)))))

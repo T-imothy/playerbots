@@ -15,7 +15,7 @@ code=r'''
 #include "__GEOMETRY__"
 using uint32=unsigned;using ObjectGuid=unsigned;
 struct Map {bool regular=true;bool IsRegularDifficulty(){return regular;}};
-struct Unit {unsigned entry=0,guid=1;bool world=true,alive=true,combat=true;Map* map=nullptr;
+struct Unit {unsigned entry=0,guid=1,phase=1;bool world=true,alive=true,combat=true;Map* map=nullptr;
  float x=0,y=0,z=0;std::set<unsigned> auras;Unit* victim=nullptr;
  unsigned GetEntry(){return entry;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}
  bool IsInCombat(){return combat;}Map* GetMap(){return map;}unsigned GetObjectGuid(){return guid;}
@@ -23,6 +23,7 @@ struct Unit {unsigned entry=0,guid=1;bool world=true,alive=true,combat=true;Map*
  bool HasAura(unsigned id){return auras.count(id);}Unit* GetVictim(){return victim;}};
 struct Group;
 struct Player:Unit {bool charmed=false,teleport=false;unsigned mapId=554,instance=1;Group* group=nullptr;
+ bool IsInMap(Unit* unit){return map==unit->map&&phase==unit->phase;}
  bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}
  unsigned GetInstanceId(){return instance;}Group* GetGroup(){return group;}};
 struct GroupReference {Player* source=nullptr;GroupReference* following=nullptr;
@@ -61,6 +62,9 @@ int main(){
  other.auras={39088};assert(!value.Calculate().active);other.auras={39091};
  other.alive=false;assert(!value.Calculate().active);other.alive=true;
  other.map=&otherMap;assert(!value.Calculate().active);other.map=&map;
+ other.phase=2;assert(!value.Calculate().active);other.phase=1;
+ other.teleport=true;assert(!value.Calculate().active);other.teleport=false;
+ boss.phase=2;assert(!value.Calculate().active);boss.phase=1;
  other.z=20;assert(!value.Calculate().active);other.z=0;
  bot.charmed=true;assert(!value.Calculate().active);bot.charmed=false;
  bot.teleport=true;assert(!value.Calculate().active);bot.teleport=false;
@@ -70,6 +74,7 @@ int main(){
  bot.auras.clear();other.auras.clear();Unit charge;charge.entry=20405;charge.map=&map;charge.auras={37670};
  nativeCharges={&charge};plan=value.Calculate();assert(plan.active && encounter::Distance2d(plan.destination,{0,0,0})>=17);
  charge.auras.clear();assert(!value.Calculate().active);charge.auras={37670};
+ charge.phase=2;assert(!value.Calculate().active);charge.phase=1;
  charge.alive=false;assert(!value.Calculate().active);charge.alive=true;charge.map=&otherMap;
  assert(!value.Calculate().active);charge.map=&map;charge.x=19;
  plan=value.Calculate();assert(plan.active && plan.destination.x==0 && plan.destination.y==0); // safe hold

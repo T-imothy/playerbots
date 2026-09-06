@@ -15,7 +15,7 @@ Unit* PathaleonAddsAction::GetTarget()
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
     {
         Unit* unit = ai->GetUnit(guid);
-        if (unit && unit->GetEntry() == 19220 && unit->IsInWorld() && unit->GetMap() == bot->GetMap() &&
+        if (unit && unit->GetEntry() == 19220 && unit->IsInWorld() && bot->IsInMap(unit) &&
             unit->IsAlive() && unit->IsInCombat()) { boss = unit; break; }
     }
     // Keep the current boss tank on the boss. Respect the configured raid mark.
@@ -30,9 +30,10 @@ Unit* PathaleonAddsAction::GetTarget()
         Unit* unit = ai->GetUnit(guid);
         // The shared list can reintroduce CC targets as a last resort. Encounter
         // priority must never turn that fallback into an instruction to break CC.
-        if (!unit || unit->GetEntry() != 21062 || !unit->IsInWorld() || unit->GetMap() != bot->GetMap() ||
+        if (!unit || unit->GetEntry() != 21062 || !unit->IsInWorld() || !bot->IsInMap(unit) ||
             !unit->IsAlive() || !unit->IsInCombat() || PossibleAttackTargetsValue::HasBreakableCC(unit, bot) ||
-            PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot)) continue;
+            PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot) ||
+            !PossibleAttackTargetsValue::IsValid(unit, bot, sPlayerbotAIConfig.sightDistance, false, true)) continue;
         if (unit == marked) return unit;
         if (unit == current) retained = unit;
         if (!nearest || bot->GetDistance(unit) < bot->GetDistance(nearest)) nearest = unit;
@@ -58,7 +59,7 @@ bool MechanarPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
     Unit* boss = ai->GetUnit(plan.boss);
     return boss && (boss->GetEntry() == 19219 || boss->GetEntry() == 19221 || boss->GetEntry() == 19220) &&
-        boss->IsInWorld() && boss->GetMap() == bot->GetMap() &&
+        boss->IsInWorld() && bot->IsInMap(boss) &&
         boss->IsAlive() && boss->IsInCombat();
 }
 

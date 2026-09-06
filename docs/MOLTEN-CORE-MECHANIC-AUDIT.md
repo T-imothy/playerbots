@@ -16,12 +16,12 @@ That comparison does not establish identical player spells, gear or difficulty.
 | Shazzrah | Native explosion 19712 plus remaining curse/counterspell/defensive effects | Ranged/healer spacing, excluding current boss victim | Validate all dispel/interrupt/curse interactions and teleport recovery |
 | Golemagg | Boss 11988; rager 11672; ragers have death prevention and heal 17683 below 50%, die through boss-death event; boss quake at 10% | Eligible DPS targets Golemagg; all tank/off-tank roles unchanged | Native Magma Splash stack management, ranged fallback positioning, off-tank coordination and burn transition |
 | Sulfuron | Boss 12098; priest 11662; native heal 19775, SW:P 19776 and Immolate 20294 | Eligible DPS prioritizes free, engaged healing priests | Interrupt coverage/coordination and dispel behavior; existing native casts still decide success |
-| Majordomo | Boss 12018 cannot die normally; eight add deaths end encounter; healer 11663/elite 11664; reflection 20619/21075; later sheep immunity 21087 | DPS prioritizes free healers, then elites; never retargets tanks or breaks assigned CC | Reflection-aware action filtering, late-wave CC immunity behavior, tank assignments and native gossip/event progression |
-| Ragnaros | Boss 11502; submerged aura 21859 and untargetable flag; sons 12143; normal threat loss on Wrath 20566; Magma Blast 20565 if not tanked | Existing normal target admission rejects untargetable boss; ordinary combat remains | Explicit phase/son assignment, native knockback recovery, mana-user spacing, tank return and wipe/reset checks |
+| Majordomo | Boss 12018 cannot die normally; eight add deaths end encounter; healer 11663/elite 11664; reflection 20619/21075; later sheep immunity 21087 | DPS prioritizes free healers, then elites; shared cast policy now withholds native-reflectable spells at school reflect chance >=50%; marked CC checks native castability | Melee shield response/active-cast timing, tank assignments, actual late-wave sheep checks and native gossip/event progression |
+| Ragnaros | Boss 11502; submerged aura 21859 and untargetable flag; sons 12143; normal threat loss on Wrath 20566; Magma Blast 20565 if not tanked | DPS prioritizes eligible engaged sons, including when submerged Ragnaros is absent from attackers; no fabricated phase timer or untargetability bypass | Tank/CC assignment, native knockback recovery, mana-user spacing, tank return and wipe/reset checks |
 
 ## Target policy boundaries
 
-The new MC action only handles the five explicitly mapped target policies above.
+The new MC action handles the six explicitly mapped target policies above.
 It uses existing attackers/possible-target values and `AttackAction`, not world
 scans, fabricated threat, teleportation or core boss changes. Native attack
 validation is repeated before selection. Tank/healer roles and the current boss
@@ -31,7 +31,7 @@ excluded even when the generic target list offers them as a fallback. Ties retai
 the current target; generic DPS assist is suppressed only while this valid
 encounter target exists, preventing an add/boss oscillation.
 
-No new Garr or Ragnaros routine is claimed by that action. A CMaNGOS script using
+No full Garr or Ragnaros routine is claimed by that action. A CMaNGOS script using
 an immunity/death-prevention flag is not permission to remove it. Donor AC MC
 code was consulted for comparison only; no donor aura cheats or boss changes
 were imported.
@@ -56,11 +56,12 @@ were imported.
   bomb aura. It now follows native carrier lifetime with noncombat dispatch and
   movement arbitration; tests cover post-kill/despawn, nearby carriers, phase,
   interruption, native-radius inputs and the existing eight-path-query bound.
-- Separate open audit lead: `AttackersValue.cpp` constructs the shared-value key
+- Resolved follow-up: `AttackersValue.cpp` constructed the shared-value key
   with `"attackers" + !qualifier.empty() ? ...`, whose precedence does not build
-  the intended key. Changing that enables a previously ineffective cache-sharing
-  path; its owner/lifecycle/target-validity behavior needs review before enabling
-  it. It is not silently included in the MC changes or claimed fixed.
+  the intended key. The ineffective shortcut and its undocumented `ShareTargets`
+  setting have now been retired, not enabled. The established owner/group/master
+  collector is retained, including each bot's attackers, duel and pet threats.
+  Tests cover the malformed expression and actual aggregation/fallback control.
 
 No new database changes or diagnostics are required by these implementations.
 Controlled regressions do not replace real pulls, player commands, CC assignments,
@@ -79,7 +80,9 @@ wipe/reset, dispel, knockback, tank/off-tank and after-kill Living Bomb tests.
 - Majordomo's native 20619 is a reflect aura with base points 49; core aura
   amounts and `GetReflectChance` support the 50% reflect mechanic. Existing
   `CastSpellAction::isUseful` only declines reflectable casts above 50%, so this
-  does NOT provide a full Majordomo reflection policy. Native 21075 is a damage
+  did NOT provide a full Majordomo reflection policy. The follow-up uses >=50%
+  with the same native school/reflectability checks; non-reflectable spells are
+  still eligible. This does not interrupt an already-started spell. Native 21075 is a damage
   shield with base points 99; ordinary melee safety uses a 10%-of-bot-max-health
   threshold, not an unconditional stop on that boss's shield. Do not claim either
   existing generic check completely handles this encounter.

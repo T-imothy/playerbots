@@ -8,13 +8,13 @@ using namespace ai;
 EncounterPosition OnyxiaPositionValue::Calculate()
 {
     EncounterPosition result;
-    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->GetMapId() != 249 || !bot->IsInCombat())
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() || bot->GetMapId() != 249 || !bot->IsInCombat())
     { breath = 0; breathUntil = 0; return result; }
     Unit* boss = nullptr;
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
     {
         Unit* unit = ai->GetUnit(guid);
-        if (unit && unit->IsInWorld() && unit->GetMap() == bot->GetMap() && unit->IsAlive() &&
+        if (unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->IsAlive() &&
             unit->GetEntry() == 10184 && unit->IsInCombat()) { boss = unit; break; }
     }
     if (!boss) { breath = 0; breathUntil = 0; return result; }
@@ -78,7 +78,7 @@ EncounterPosition OnyxiaPositionValue::Calculate()
         for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->getSource();
-            if (member && member != bot && member->IsInWorld() && member->GetMap() == bot->GetMap() && member->IsAlive())
+            if (member && member != bot && member->IsInWorld() && !member->IsBeingTeleported() && bot->IsInMap(member) && member->IsAlive())
                 neighbors.push_back({member->GetPositionX(), member->GetPositionY(), member->GetPositionZ()});
         }
         float nearest = 1000;

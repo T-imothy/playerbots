@@ -5,6 +5,20 @@
 
 using namespace ai;
 
+namespace
+{
+    bool IsOnyxiaAddEntry(uint32 entry)
+    {
+        if (entry == 11262) return true;
+#ifdef MANGOSBOT_TWO
+        // Wrath's native summon 68968 creates entry 36561. The level-60
+        // Classic/TBC encounter does not have these phase-two lair guards.
+        if (entry == 36561) return true;
+#endif
+        return false;
+    }
+}
+
 bool OnyxiaPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 {
     Player* bot = ai->GetBot();
@@ -12,7 +26,7 @@ bool OnyxiaPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("onyxia position")->Get();
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
     Unit* boss = ai->GetUnit(plan.boss);
-    if (!boss || !boss->IsInWorld() || boss->GetMap() != bot->GetMap() || !boss->IsAlive() || !boss->IsInCombat()) return false;
+    if (!boss || !boss->IsInWorld() || !bot->IsInMap(boss) || !boss->IsAlive() || !boss->IsInCombat()) return false;
     // An off-tank assigned to adds must be allowed to chase them, not get
     // dragged back to the boss's flank. A breath escape still takes precedence.
     Unit* current = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
@@ -31,10 +45,7 @@ bool OnyxiaPositionAction::isUseful()
 bool OnyxiaPositionAction::Execute(Event& event)
 {
     EncounterPosition plan;
-    if (!GetPlan(ai, plan) || !ai->CanMove()) return false;
-    const WorldPosition here(bot);
-    const WorldPosition destination(plan.map, plan.destination.x, plan.destination.y, plan.destination.z);
-    if (!here.canPathTo(destination, bot)) return false;
+    if (!GetPlan(ai, plan) || !ai->CanMove() || !ValidateEncounterDestination(ai, plan)) return false;
     return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
 }
 
@@ -46,7 +57,7 @@ Unit* OnyxiaAddsAction::GetTarget()
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
     {
         Unit* unit = ai->GetUnit(guid);
-        if (unit && unit->IsInWorld() && unit->GetMap() == bot->GetMap() && unit->GetEntry() == 10184 &&
+        if (unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->GetEntry() == 10184 &&
             unit->IsAlive() && unit->IsInCombat())
         { boss = unit; break; }
     }
@@ -54,18 +65,19 @@ Unit* OnyxiaAddsAction::GetTarget()
     const bool airborne = boss->IsLevitating() || boss->GetPositionZ() - bot->GetPositionZ() > 10;
     if (!airborne && !ai->IsTank(bot)) return nullptr;
     Unit* marked = AI_VALUE(Unit*, "rti target");
-    if (marked && marked->GetEntry() != 11262) return nullptr;
+    if (marked && !IsOnyxiaAddEntry(marked->GetEntry())) return nullptr;
     Unit* current = AI_VALUE(Unit*, "current target");
     Unit* nearest = nullptr;
     Unit* retained = nullptr;
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
     {
         Unit* unit = ai->GetUnit(guid);
-        if (!unit || !unit->IsInWorld() || unit->GetMap() != bot->GetMap() || !unit->IsAlive() || !unit->IsInCombat()) continue;
+        if (!unit || !unit->IsInWorld() || !bot->IsInMap(unit) || !unit->IsAlive() || !unit->IsInCombat()) continue;
         // Shared target lists can reintroduce CC targets as a last resort.
         // Encounter add priority must not turn that into an instruction to break CC.
-        if (unit->GetEntry() != 11262 || PossibleAttackTargetsValue::HasBreakableCC(unit, bot) ||
-            PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot)) continue;
+        if (!IsOnyxiaAddEntry(unit->GetEntry()) || PossibleAttackTargetsValue::HasBreakableCC(unit, bot) ||
+            PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot) ||
+            !PossibleAttackTargetsValue::IsValid(unit, bot, sPlayerbotAIConfig.sightDistance, false, true)) continue;
         if (unit == marked) return unit;
         if (unit == current) retained = unit;
         if (!nearest || bot->GetDistance(unit) < bot->GetDistance(nearest)) nearest = unit;

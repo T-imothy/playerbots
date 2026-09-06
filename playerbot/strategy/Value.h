@@ -276,8 +276,10 @@ namespace ai
         virtual std::string Format() override
         {
             CreatureDataPair const* creatureDataPair = this->Calculate();
+            if (!creatureDataPair)
+                return "<none>";
             CreatureInfo const* bmTemplate = ObjectMgr::GetCreatureTemplate(creatureDataPair->second.id);
-            return creatureDataPair ? bmTemplate->Name : "<none>";
+            return bmTemplate ? bmTemplate->Name : "<none>";
         }
     };
 
@@ -294,6 +296,8 @@ namespace ai
             for (std::list<CreatureDataPair const*>::iterator i = cdPairs.begin(); i != cdPairs.end(); ++i)
             {
                 CreatureDataPair const* cdPair = *i;
+                if (!cdPair)
+                    continue;
                 out << cdPair->first << ",";
             }
             out << "}";

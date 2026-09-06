@@ -48,7 +48,7 @@ EncounterPosition BossCastPositionValue::Calculate()
     {
         Unit* boss = ai->GetUnit(guid);
         if (!boss || !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() || boss->HasCharmer() ||
-            boss->GetMap() != bot->GetMap() || bot->GetDistance(boss) > 100 ||
+            !bot->IsInMap(boss) || bot->GetDistance(boss) > 100 ||
             std::fabs(boss->GetPositionZ() - here.z) > 8) continue;
         const Spell* spell = boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
         if (!spell || !spell->m_spellInfo || spell->getState() == SPELL_STATE_FINISHED) continue;

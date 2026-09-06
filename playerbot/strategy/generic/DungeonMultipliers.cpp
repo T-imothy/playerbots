@@ -47,13 +47,16 @@ float PreserveMechanarPositionMultiplier::GetValue(Action* action)
 
 float PreserveMoltenCorePositionMultiplier::GetValue(Action* action)
 {
+    if (!action) return 1.0f;
     if (action && action->getName() == "dps assist")
     {
         MoltenCorePriorityTargetAction priority(ai);
         if (priority.GetTarget()) return 0.0f;
     }
-    if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
-        dynamic_cast<MoltenCorePositionAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<MoltenCorePositionAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
     EncounterPosition plan;
     return MoltenCorePositionAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
 }
@@ -77,8 +80,12 @@ float PreserveNetherspitePositionMultiplier::GetValue(Action* action)
 {
     // Class casts and hazard escapes remain available. Generic chasing/fleeing/
     // following must not fight the encounter position on the very next update.
-    if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) || dynamic_cast<NetherspitePositionAction*>(action) ||
-        dynamic_cast<MoveAwayFromHazard*>(action) || dynamic_cast<VoidZoneMoveAwayAction*>(action)) return 1.0f;
+    if (!action) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<NetherspitePositionAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action) &&
+        !dynamic_cast<VoidZoneMoveAwayAction*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
     EncounterPosition plan;
     return NetherspitePositionAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
 }

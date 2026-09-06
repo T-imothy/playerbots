@@ -45,13 +45,13 @@ EncounterPosition NetherspitePositionValue::Calculate()
 {
     EncounterPosition result;
 #ifndef MANGOSBOT_ZERO
-    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         bot->GetMapId() != 532 || !bot->IsInCombat() || !bot->GetGroup()) return result;
     Unit* boss = nullptr;
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
     {
         Unit* unit = ai->GetUnit(guid);
-        if (unit && unit->IsInWorld() && unit->GetMap() == bot->GetMap() &&
+        if (unit && unit->IsInWorld() && bot->IsInMap(unit) &&
             unit->GetEntry() == 15689 && unit->IsAlive() && unit->IsInCombat()) { boss = unit; break; }
     }
     // The native shadowform marks banish, when there are no beams to intercept.
@@ -70,7 +70,7 @@ EncounterPosition NetherspitePositionValue::Calculate()
         MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(nearby, check);
         Cell::VisitAllObjects(bot, searcher, 100.0f);
         for (Unit* portal : nearby)
-            if (portal && portal->IsInWorld() && portal->GetMap() == bot->GetMap() && portal->IsAlive())
+            if (portal && portal->IsInWorld() && bot->IsInMap(portal) && portal->IsAlive())
             {
                 portals[color] = portal;
                 portalPoints[color] = {portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ()};
@@ -83,7 +83,7 @@ EncounterPosition NetherspitePositionValue::Calculate()
     for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
     {
         Player* player = ref->getSource();
-        if (!player || !player->IsInWorld() || player->GetMap() != bot->GetMap() ||
+        if (!player || !player->IsInWorld() || !bot->IsInMap(player) ||
             !player->IsAlive() || player->IsBeingTeleported() || !player->GetSession() ||
             player->GetDistance(boss) > 100 || player->HasCharmer()) continue;
         encounter::BeamMember member;

@@ -38,96 +38,11 @@ std::list<ObjectGuid> AttackersValue::Calculate()
         return result;
     }
 
-    if (sPlayerbotAIConfig.shareTargets)
-    {
-        // Try to get the value from nearby friendly bots.
-        std::list<ObjectGuid> nearGuids = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest friendly players")->Get();
-        for (auto& i : nearGuids)
-        {
-            Player* player = sObjectMgr.GetPlayer(i);
-
-            if (!player)
-                continue;
-
-            if (player == bot)
-                continue;
-
-            if (!ai->IsSafe(player))
-                continue;
-
-            if (sServerFacade.GetDistance2d(bot, player) > 10.0f)
-                continue;
-
-            PlayerbotAI* botAi = player->GetPlayerbotAI();
-
-            if (!botAi)
-                continue;
-
-            std::string valueName = "attackers" + !qualifier.empty() ? "::" + qualifier : "";
-
-            // Ignore bots without the value.
-            if (!PHAS_AI_VALUE(valueName))
-                continue;
-
-            UntypedValue* pValue = botAi->GetAiObjectContext()->GetUntypedValue(valueName);
-
-            AttackersValue* pAttackersValue = dynamic_cast<AttackersValue*>(pValue);
-
-            if (!pAttackersValue)
-                continue;
-
-            // Ignore expired values.
-            if (pAttackersValue->Expired())
-                continue;
-
-            if (pAttackersValue->calculatePos.sqDistance2d(bot) > 100.0f)
-                continue;
-
-            // Make the value expire at the same time as the copied value.
-            lastCheckTime = pAttackersValue->lastCheckTime;
-
-            calculatePos = pAttackersValue->calculatePos;
-
-            result = PAI_VALUE(std::list<ObjectGuid>, valueName);
-
-            std::vector<std::string> specificTargetNames = { "current target","old target","attack target","pull target" };
-            Unit* target;
-
-            //Remove bot specific targets of the other bot.
-            for (auto& targetName : specificTargetNames)
-            {
-                target = (targetName == "attack target") ? ai->GetUnit(PAI_VALUE(ObjectGuid, targetName)) : PAI_VALUE(Unit*, targetName);
-                if (target)
-                    result.remove(target->GetObjectGuid());
-            }
-
-            //Add bot specific targets of this bot.
-            for (auto& targetName : specificTargetNames)
-            {
-                target = (targetName == "attack target") ? ai->GetUnit(AI_VALUE(ObjectGuid, targetName)) : AI_VALUE(Unit*, targetName);
-                if (target)
-                    result.push_back(target->GetObjectGuid());
-            }
-
-            //Validate these targets.
-            std::list<ObjectGuid> filter;
-
-            for (auto& guid : result)
-            {
-                target = ai->GetUnit(guid);
-
-                if (!IsValid(target, bot, bot))
-                    filter.push_back(guid);
-            }
-
-            for(auto& guid : filter)
-                result.remove(guid);
-
-            return result;
-        }
-    }
-    
-    calculatePos = bot;
+    // Keep the established owner/group/master aggregation below. The retired
+    // ShareTargets shortcut queried "::<qualifier>", never "attackers".
+    // Merely correcting that key would enable foreign-owner caches and could
+    // drop this bot's attackers, duel and pet threats. Remove the ineffective
+    // lookup instead of making that unsafe shortcut part of combat behavior.
 
     std::set<Unit*> targets;
 

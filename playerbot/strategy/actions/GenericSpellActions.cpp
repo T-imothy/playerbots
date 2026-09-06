@@ -236,7 +236,7 @@ bool CastSpellAction::isUseful()
     if (!spellTarget)
         return false;
 
-    if (!spellTarget->IsInWorld() || spellTarget->GetMap() != bot->GetMap())
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !spellTarget->IsInWorld() || !bot->IsInMap(spellTarget))
         return false;
 
     const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
@@ -268,8 +268,9 @@ bool CastSpellAction::isUseful()
             }
         }
 
-        // If target is more likely than not to reflect and our spell is reflectable, don't cast
-        if (spellTarget->GetReflectChance(GetSpellSchoolMask(pSpellInfo)) > 50.0f && IsReflectableSpell(pSpellInfo))
+        // At even odds or worse, do not cast a reflectable spell. Use the
+        // native school-specific chance and reflectability, not a boss ID.
+        if (spellTarget->GetReflectChance(GetSpellSchoolMask(pSpellInfo)) >= 50.0f && IsReflectableSpell(pSpellInfo))
             return false;
     }
 

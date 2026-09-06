@@ -19,7 +19,7 @@ bool BossCastPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
     Unit* boss = ai->GetUnit(plan.boss);
     if (!boss || !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() || boss->HasCharmer() ||
-        boss->GetMap() != bot->GetMap() || bot->GetDistance(boss) > 100 ||
+        !bot->IsInMap(boss) || bot->GetDistance(boss) > 100 ||
         std::fabs(boss->GetPositionZ() - bot->GetPositionZ()) > 8) return false;
     const Spell* spell = boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
     if (!spell || !spell->m_spellInfo || spell->getState() == SPELL_STATE_FINISHED || spell->m_spellInfo->Id != plan.spell) return false;

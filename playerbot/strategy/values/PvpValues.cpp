@@ -55,8 +55,6 @@ CreatureDataPair const* BgMasterValue::NearestBm(bool allowDead)
 
     for (auto& bmPair : bmPairs)
     {
-        ObjectGuid bmGuid(HIGHGUID_UNIT, bmPair->second.id, bmPair->first);
-
         if (!bmPair)
             continue;
 
@@ -78,6 +76,8 @@ CreatureDataPair const* BgMasterValue::NearestBm(bool allowDead)
             continue;
 
         FactionTemplateEntry const* bmFactionEntry = sFactionTemplateStore.LookupEntry(bmTemplate->Faction);
+        if (!bmFactionEntry)
+            continue;
 
         //Is the unit hostile?
         if (ai->getReaction(bmFactionEntry) < REP_NEUTRAL)

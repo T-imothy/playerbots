@@ -18,7 +18,7 @@ EncounterPosition MechanarPositionValue::Calculate()
     {
         Unit* unit = ai->GetUnit(guid);
         if (unit && (unit->GetEntry() == 19219 || unit->GetEntry() == 19221 || unit->GetEntry() == 19220) &&
-            unit->IsInWorld() && unit->GetMap() == bot->GetMap() &&
+            unit->IsInWorld() && bot->IsInMap(unit) &&
             unit->IsAlive() && unit->IsInCombat()) { boss = unit; break; }
     }
     if (!boss) return plan;
@@ -36,7 +36,7 @@ EncounterPosition MechanarPositionValue::Calculate()
         for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->getSource();
-            if (member && member != bot && member->IsInWorld() && member->GetMap() == bot->GetMap() &&
+            if (member && member != bot && member->IsInWorld() && !member->IsBeingTeleported() && bot->IsInMap(member) &&
                 member->IsAlive() && member->HasAura(opposite)) add(member, NativeEncounterSpellRadius(opposite));
         }
     // Charges are native creature summons, not DynamicObjects. Their lifetime
@@ -51,7 +51,7 @@ EncounterPosition MechanarPositionValue::Calculate()
         MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(hazards, check);
         Cell::VisitAllObjects(bot, searcher, 40.0f);
         for (Unit* hazard : hazards)
-            if (hazard && hazard->IsInWorld() && hazard->GetMap() == bot->GetMap() && hazard->IsAlive() &&
+            if (hazard && hazard->IsInWorld() && bot->IsInMap(hazard) && hazard->IsAlive() &&
                 hazard->HasAura(flames ? 35281 : 37670))
             {
                 // Raging Flames fixates and retargets in the native script. A

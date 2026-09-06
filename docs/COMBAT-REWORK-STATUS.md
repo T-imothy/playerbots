@@ -262,6 +262,37 @@ combat scheduling or Wrath-only ability scheduling is added to Classic/TBC.
 
 ## Remaining before the full requested scope is complete
 
+### Latest tested source follow-up (2026-09-06)
+
+- Ragnaros DPS selects live engaged Sons of Flame even while the submerged boss
+  is absent from the native attackers list. Ordinary target admission, player
+  marks/commands, tank/healer roles, CC and ambiguous-pull fallback are preserved.
+- Wrath-only Onyxian Lair Guards (native summon 68968 -> creature 36561) join
+  eligible add selection. Classic/TBC do not acquire this Wrath encounter rule.
+  This is target selection, not a claim of complete guard/boss mechanic support.
+- Native reflectable spell decisions include the 50% boundary (Majordomo), still
+  using the current school-specific reflection chance and core reflectability.
+  This is pre-cast selection, not cancellation of an already launched spell.
+- Netherspite now rechecks native phase/instance/lifecycle for boss, portals and
+  beam participants, excludes charmed bots, and checks fresh hazards/path safety
+  immediately before movement. Actual value/action tests cover human precedence,
+  exhaustion without aura removal, phase switches, disappearance and path limits.
+- Native map/phase guards are also applied to the reviewed Aran/Prince, Mechanar,
+  Onyxia and boss-cast position paths. Onyxia/Pathaleon add priorities repeat
+  normal native attack/assigned-CC eligibility instead of trusting an old list.
+- Movement-effect spells cannot undo a current MC or Netherspite safe-position
+  decision; normal stationary spells, attacks and hazard escape remain eligible.
+- Removed the ineffective foreign-attacker cache lookup rather than enabling its
+  unsafe shortcut. Existing owner/group/master aggregation and duel/pet sources
+  remain. The unused undocumented `AiPlayerbot.ShareTargets` setting is retired;
+  old configs containing it need no rewrite. No new shared cache was introduced.
+- Battlemaster selection safely skips missing records/templates/factions, and
+  creature-data diagnostic formatting handles null records and missing templates.
+  These guards are not attributed to any production crash without a matching dump.
+
+These are passing controlled actual-source tests, not completed raid clears.
+The complete raid/dungeon/class checklist below remains open.
+
 - Boss-by-boss, mechanic-by-mechanic review against each CMaNGOS expansion's
   actual scripts; the earlier inventory is not that complete semantic audit.
 - Finish remaining MC, Karazhan and Mechanar mechanics; review new Onyxia and

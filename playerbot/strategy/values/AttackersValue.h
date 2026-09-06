@@ -43,7 +43,6 @@ namespace ai
 
         static bool InCombat(Unit* target, Player* player, bool checkPullTargets = true);
 
-        WorldPosition calculatePos;
     };
 
     // List of attackers that are currently targeting the bot

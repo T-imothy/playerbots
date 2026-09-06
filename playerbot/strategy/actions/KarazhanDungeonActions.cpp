@@ -14,7 +14,7 @@ bool AranFlameWreathValue::Calculate()
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
     {
         Unit* unit = ai->GetUnit(guid);
-        if (unit && unit->GetEntry() == 16524 && unit->IsInWorld() && unit->GetMap() == bot->GetMap() &&
+        if (unit && unit->GetEntry() == 16524 && unit->IsInWorld() && bot->IsInMap(unit) &&
             unit->IsAlive() && unit->IsInCombat()) { boss = unit; break; }
     }
     if (!boss) return false;
@@ -26,7 +26,7 @@ bool AranFlameWreathValue::Calculate()
         for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->getSource();
-            if (member && member->IsInWorld() && member->IsAlive() && member->GetMap() == bot->GetMap() &&
+            if (member && member->IsInWorld() && member->IsAlive() && !member->IsBeingTeleported() && bot->IsInMap(member) &&
                 member->HasAura(29946)) return true;
         }
 #endif
@@ -66,7 +66,7 @@ bool NetherspitePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan
     Unit* boss = ai->GetUnit(plan.boss);
     Unit* portal = ai->GetUnit(plan.source);
     if (!boss || !portal || !boss->IsInWorld() || !portal->IsInWorld() ||
-        boss->GetMap() != bot->GetMap() || portal->GetMap() != bot->GetMap() ||
+        !bot->IsInMap(boss) || !bot->IsInMap(portal) ||
         !boss->IsAlive() || !boss->IsInCombat() || !portal->IsAlive() || boss->HasAura(38542)) return false;
     const float oldZ = plan.destination.z;
     bot->UpdateAllowedPositionZ(plan.destination.x, plan.destination.y, plan.destination.z);
@@ -82,10 +82,7 @@ bool NetherspitePositionAction::isUseful()
 bool NetherspitePositionAction::Execute(Event& event)
 {
     EncounterPosition plan;
-    if (!GetPlan(ai, plan) || !ai->CanMove()) return false;
-    const WorldPosition here(bot);
-    const WorldPosition destination(plan.map, plan.destination.x, plan.destination.y, plan.destination.z);
-    if (!here.canPathTo(destination, bot)) return false;
+    if (!GetPlan(ai, plan) || !ai->CanMove() || !ValidateEncounterDestination(ai, plan)) return false;
     // Use ordinary pathfinding and the native portal SpellScript. No aura
     // grants, removals, boss weakening, teleportation or no-path movement.
     return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);

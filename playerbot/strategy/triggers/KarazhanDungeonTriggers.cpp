@@ -33,7 +33,7 @@ bool PrinceMalchezaarTooCloseTrigger::IsActive()
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
     {
         Unit* unit = ai->GetUnit(guid);
-        if (unit && unit->GetEntry() == 15690 && unit->IsInWorld() && unit->GetMap() == bot->GetMap() &&
+        if (unit && unit->GetEntry() == 15690 && unit->IsInWorld() && bot->IsInMap(unit) &&
             unit->IsAlive() && unit->IsInCombat()) { target = unit; break; }
     }
     if (!target) return false;
@@ -71,7 +71,7 @@ bool PrinceMalchezaarTooCloseTrigger::EnfeeblePart()
     for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
     {
         Player* member = ref->getSource();
-        if (!member || !member->IsInWorld() || member->GetMap() != bot->GetMap() || !sServerFacade.IsAlive(member))
+        if (!member || !member->IsInWorld() || member->IsBeingTeleported() || !bot->IsInMap(member) || !sServerFacade.IsAlive(member))
             continue;
 
         if (member->HasAura(30843))

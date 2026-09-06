@@ -9,6 +9,8 @@ methods = []
 for filename, cls in (("MechanarDungeonActions.cpp", "PathaleonAddsAction"),
                       ("OnyxiasLairDungeonActions.cpp", "OnyxiaAddsAction")):
     text = (root / "playerbot/strategy/actions" / filename).read_text()
+    if filename == 'OnyxiasLairDungeonActions.cpp':
+        methods.append(block(text, 'bool IsOnyxiaAddEntry('))
     methods.append(block(text, f"Unit* {cls}::GetTarget("))
     methods.append(block(text, f"bool {cls}::isUseful("))
 mc = (root / 'playerbot/strategy/actions/MoltenCoreDungeonActions.cpp').read_text()
@@ -80,12 +82,16 @@ template<class T>void CheckSelection(T& action,Player& bot,PlayerbotAI& ai,Unit&
  ai.possible={2};
  add.breakCC=true;assert(!action.GetTarget());add.breakCC=false;
  add.hardCC=true;assert(!action.GetTarget());add.hardCC=false;
+ add.assignedCC=true;assert(!action.GetTarget());add.assignedCC=false;
+ add.attackable=false;assert(!action.GetTarget());add.attackable=true;
+ add.phase=2;assert(!action.GetTarget());add.phase=1;
  add.alive=false;assert(!action.GetTarget());add.alive=true;
  add.combat=false;assert(!action.GetTarget());add.combat=true;
  Map* original=add.map;add.map=&other;assert(!action.GetTarget());add.map=original;
  boss.victim=&bot;assert(!action.GetTarget());boss.victim=nullptr;
  boss.combat=false;assert(!action.GetTarget());boss.combat=true;
  boss.map=&other;assert(!action.GetTarget());boss.map=original;
+ boss.phase=2;assert(!action.GetTarget());boss.phase=1;
  ai.healer=true;assert(!action.GetTarget());ai.healer=false;
  bot.charmed=true;assert(!action.GetTarget());bot.charmed=false;
  bot.teleport=true;assert(!action.GetTarget());bot.teleport=false;
@@ -104,6 +110,13 @@ int main(){
 #endif
  bot.mapId=249;boss.entry=10184;add.entry=second.entry=11262;boss.levitating=true;
  OnyxiaAddsAction onyxia{&bot,&ai};CheckSelection(onyxia,bot,ai,boss,add,second,other);
+ add.entry=second.entry=36561;ai.current=nullptr;
+#ifdef MANGOSBOT_TWO
+ CheckSelection(onyxia,bot,ai,boss,add,second,other);
+#else
+ assert(!onyxia.GetTarget());
+#endif
+ add.entry=second.entry=11262;
  boss.levitating=false;assert(!onyxia.GetTarget()); // ground phase DPS stays on boss
  ai.tank=true;assert(onyxia.GetTarget());boss.victim=&bot;assert(!onyxia.GetTarget());
  // MC support is present in all three eras, with native role/target admission.
@@ -145,8 +158,22 @@ int main(){
  assert(mc.GetTarget()==&boss);ai.tank=true;assert(!mc.GetTarget());ai.tank=false;
  ai.marked=&add;assert(!mc.GetTarget());ai.marked=nullptr;
  boss.attackable=false;assert(!mc.GetTarget());boss.attackable=true;
- // Garr/Ragnaros are not silently assigned a made-up policy by this feature.
+ // Garr is not assigned a made-up banish/tank policy by this feature.
  boss.entry=12057;assert(!mc.GetTarget());boss.entry=11502;assert(!mc.GetTarget());
+ // Native submerged boss can disappear from attackers; live sons still need killing.
+ add.entry=second.entry=12143;ai.attackers={2,3};ai.possible={2,3};ai.current=&add;
+ assert(mc.GetTarget()==&add&&!mc.isUseful());
+ add.breakCC=true;assert(mc.GetTarget()==&second);add.breakCC=false;
+ ai.marked=&add;assert(!mc.GetTarget());ai.marked=nullptr;
+ ai.commanded=2;assert(!mc.GetTarget());ai.commanded=0;
+ ai.attackers={};assert(!mc.GetTarget());ai.attackers={2};
+ add.combat=false;assert(!mc.GetTarget());add.combat=true;
+ add.world=false;assert(!mc.GetTarget());add.world=true;
+ add.phase=2;assert(!mc.GetTarget());add.phase=1;
+ ai.tank=true;assert(!mc.GetTarget());ai.tank=false;
+ ai.healer=true;assert(!mc.GetTarget());ai.healer=false;
+ ai.attackers={1,2};boss.attackable=false;assert(mc.GetTarget()==&add);boss.attackable=true;
+ boss.entry=12118;assert(!mc.GetTarget()); // unrelated boss/son pull is ambiguous
  boss.entry=12118;add.entry=12119;second.entry=12098;ai.attackers={1,3};
  assert(!mc.GetTarget()); // ambiguous multi-boss combat retains ordinary handling
  std::cout<<"PASS: actual encounter add selection: CC, marks, roles, stable target, death, transition, instance, expansion\n";

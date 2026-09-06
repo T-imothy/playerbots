@@ -31,7 +31,7 @@ constexpr int CURRENT_GENERIC_SPELL=1,SPELL_STATE_FINISHED=2,IDLE_MOTION_TYPE=0;
 struct SpellEntry {unsigned Id=0;};
 struct Spell {SpellEntry* m_spellInfo=nullptr;int state=0;int getState()const{return state;}};
 struct Map {};
-struct Unit {unsigned entry=0,guid=1;bool world=true,alive=true,combat=true,charmed=false;Map* map=nullptr;
+struct Unit {unsigned entry=0,guid=1,phase=1;bool world=true,alive=true,combat=true,charmed=false;Map* map=nullptr;
  float x=0,y=0,z=0;Spell* current=nullptr;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}
  bool HasCharmer(){return charmed;}unsigned GetEntry(){return entry;}Map* GetMap(){return map;}
@@ -41,6 +41,7 @@ struct Unit {unsigned entry=0,guid=1;bool world=true,alive=true,combat=true,char
  float GetDistance(Unit* u){return GetDistance(u->x,u->y,u->z);}};
 struct Motion {int kind=0;int GetCurrentMovementGeneratorType(){return kind;}};
 struct Player:Unit {bool teleport=false,stopped=true;unsigned mapId=532,instance=1;Motion motion;
+ bool IsInMap(Unit* unit){return map==unit->map&&phase==unit->phase;}
  bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}unsigned GetInstanceId(){return instance;}
  bool IsStopped(){return stopped;}Motion* GetMotionMaster(){return &motion;}};
 namespace ai {
@@ -108,6 +109,7 @@ int main(){
  boss.alive=false;assert(!action.Execute(event));boss.alive=true;
  boss.combat=false;assert(!action.Execute(event));boss.combat=true;
  boss.map=&otherMap;assert(!action.Execute(event));boss.map=&map;
+ boss.phase=2;assert(!action.Execute(event)&&!load().active);boss.phase=1;load();
  boss.charmed=true;assert(!action.Execute(event));boss.charmed=false;
  bot.instance=2;assert(!action.Execute(event));bot.instance=1;
  bot.teleport=true;assert(!load().active && !action.Execute(event));bot.teleport=false;

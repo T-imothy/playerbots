@@ -36,7 +36,7 @@ enum {SPELL_EFFECT_CHARGE=96,SPELL_EFFECT_LEAP=29,SPELL_EFFECT_TELEPORT_UNITS=5,
 struct SpellEntry {unsigned Id=0;unsigned Effect[3]={0,0,0};};
 struct Spell {SpellEntry* m_spellInfo=nullptr;int state=0;int getState()const{return state;}};
 struct Map {};
-struct Unit {unsigned entry=0;bool world=true,alive=true,combat=true,creature=true;Map* map=nullptr;
+struct Unit {unsigned entry=0,phase=1;bool world=true,alive=true,combat=true,creature=true;Map* map=nullptr;
  Unit* victim=nullptr;Spell* current=nullptr;std::set<unsigned> auras;float x=0,health=100;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}
  bool IsCreature(){return creature;}float GetHealthPercent(){return health;}
@@ -46,6 +46,7 @@ struct Unit {unsigned entry=0;bool world=true,alive=true,combat=true,creature=tr
 struct Motion {int kind=0;int GetCurrentMovementGeneratorType(){return kind;}};
 struct Group;
 struct Player:Unit {bool charmed=false,teleport=false,stopped=true;unsigned mapId=532;Group* group=nullptr;Motion motion;
+ bool IsInMap(Unit* unit){return map==unit->map&&phase==unit->phase;}
  bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}
  Group* GetGroup(){return group;}bool IsStopped(){return stopped;}Motion* GetMotionMaster(){return &motion;}};
 struct GroupReference {Player* player=nullptr;GroupReference* following=nullptr;
@@ -88,6 +89,9 @@ int main(){
  assert(value.Calculate());cast.state=SPELL_STATE_FINISHED;assert(!value.Calculate());
  boss.current=nullptr;member.auras={29946};assert(value.Calculate());
  member.map=&otherMap;assert(!value.Calculate());member.map=&map;
+ member.phase=2;assert(!value.Calculate());member.phase=1;
+ member.teleport=true;assert(!value.Calculate());member.teleport=false;
+ boss.phase=2;assert(!value.Calculate());boss.phase=1;
  member.alive=false;assert(!value.Calculate());member.alive=true;
  member.auras.clear();assert(!value.Calculate());bot.auras={29946};assert(value.Calculate());
  boss.combat=false;assert(!value.Calculate());boss.combat=true;
