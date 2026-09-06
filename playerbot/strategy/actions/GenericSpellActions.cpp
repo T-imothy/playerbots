@@ -4,6 +4,7 @@
 #include "UseItemAction.h"
 #include "playerbot/CombatDiagnostics.h"
 #include "EncounterSpellPolicy.h"
+#include "playerbot/strategy/Trigger.h"
 
 using namespace ai;
 
@@ -632,14 +633,25 @@ bool InterruptCurrentSpellAction::isUseful()
 
 bool InterruptCurrentSpellAction::Execute(Event& event)
 {
+    const bool cancelOverheal = event.getSource() == "heal target full health";
+    if (cancelOverheal)
+    {
+        // An action can wait in the queue while health or the active cast changes.
+        Trigger* trigger = ai->GetAiObjectContext()->GetTrigger("heal target full health");
+        if (!trigger || !trigger->IsActive())
+            return false;
+    }
     bool interrupted = false;
     for (int type = CURRENT_MELEE_SPELL; type < CURRENT_CHANNELED_SPELL; type++)
     {
+        if (cancelOverheal && type != CURRENT_GENERIC_SPELL)
+            continue;
         Spell* currentSpell = bot->GetCurrentSpell((CurrentSpellTypes)type);
         if (currentSpell && currentSpell->CanBeInterrupted())
         {
+            const uint32 spellId = currentSpell->m_spellInfo->Id;
             bot->InterruptSpell((CurrentSpellTypes)type);
-            ai->SpellInterrupted(currentSpell->m_spellInfo->Id);
+            ai->SpellInterrupted(spellId);
             interrupted = true;
         }
     }

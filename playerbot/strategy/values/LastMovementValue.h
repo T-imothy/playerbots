@@ -19,6 +19,7 @@ namespace ai
             lastFollow = other.lastFollow;
             lastAreaTrigger = other.lastAreaTrigger;
             lastTransportEntry = other.lastTransportEntry;
+            lastFlee = other.lastFlee;
             lastPath = other.lastPath;
             lastMoveShort = other.lastMoveShort;
             nextTeleport = other.nextTeleport;
