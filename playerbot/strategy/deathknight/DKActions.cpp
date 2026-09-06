@@ -5,6 +5,27 @@
 
 using namespace ai;
 
+bool CastPestilenceAction::isUseful()
+{
+#ifdef MANGOSBOT_TWO
+    if (!CastSpellAction::isUseful()) return false;
+    Unit* source = GetTarget();
+    Aura* plague = ai->GetAura(55078, source, true);
+    Aura* fever = ai->GetAura(55095, source, true);
+    if (!plague && !fever) return false;
+    if (bot->HasAura(63334) && ((plague && plague->GetHolder()->GetAuraDuration() < 3000) ||
+        (fever && fever->GetHolder()->GetAuraDuration() < 3000))) return true;
+    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
+    {
+        Unit* target = ai->GetUnit(guid);
+        if (!target || target == source || !target->IsInWorld() || target->GetMap() != bot->GetMap() ||
+            !target->IsAlive() || source->GetDistance(target) > 10.0f) continue;
+        if ((plague && !ai->GetAura(55078, target, true)) || (fever && !ai->GetAura(55095, target, true))) return true;
+    }
+#endif
+    return false;
+}
+
 bool CastRaiseDeadAction::isPossible()
 {
 	if (!CastBuffSpellAction::isPossible())

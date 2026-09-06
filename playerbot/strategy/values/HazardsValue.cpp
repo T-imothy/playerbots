@@ -66,7 +66,7 @@ bool Hazard::GetPosition(PlayerbotAI* ai, WorldPosition& outPosition)
         outPosition = position = WorldPosition(object);
         return true;
     }
-    else if(position)
+    else if (guid.IsEmpty() && position)
     {
         outPosition = position;
         return true;
@@ -83,7 +83,10 @@ bool Hazard::IsExpired() const
 bool Hazard::IsValid(PlayerbotAI* ai) const
 {
     const WorldObject* object = GetObject(ai);
-    return (object || position) && !IsExpired();
+    // Object hazards end with the object. Its remembered coordinates must not
+    // turn a despawned void zone into a permanent invisible obstacle.
+    return !IsExpired() && (guid.IsEmpty() ? bool(position) :
+        object && object->IsInWorld() && object->GetMap() == ai->GetBot()->GetMap());
 }
 
 const WorldObject* Hazard::GetObject(PlayerbotAI* ai) const
@@ -97,6 +100,11 @@ const WorldObject* Hazard::GetObject(PlayerbotAI* ai) const
         else if (guid.IsGameObject())
         {
             return ai->GetGameObject(guid);
+        }
+        else if (guid.IsDynamicObject())
+        {
+            Player* bot = ai->GetBot();
+            return bot->IsInWorld() ? bot->GetMap()->GetDynamicObject(guid) : nullptr;
         }
     }
 

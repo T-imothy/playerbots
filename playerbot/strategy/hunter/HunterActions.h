@@ -74,10 +74,10 @@ public:
     BEGIN_RANGED_SPELL_ACTION(CastScorpidStingAction, "scorpid sting")
     END_SPELL_ACTION()
 
-    class MisdirectionOnPartyTankAction : public BuffOnTankAction
+    class MisdirectionOnPartyTankAction : public TankThreatTransferAction
     {
     public:
-        MisdirectionOnPartyTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "misdirection") {}
+        MisdirectionOnPartyTankAction(PlayerbotAI* ai) : TankThreatTransferAction(ai, "misdirection") {}
     };
 
     class CastAspectOfTheMonkeyAction : public CastBuffSpellAction

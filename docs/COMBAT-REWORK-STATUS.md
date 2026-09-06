@@ -51,10 +51,43 @@ claim that every encounter has been implemented or played successfully**.
 | Warlock | Destruction Chaos Bolt, owned Haunt for Affliction, Metamorphosis under the existing Demonology boost policy. Remove obsolete Wrath raid Demonic Sacrifice scheduling and restore raid pet maintenance, preferring a learned Felguard. Classic/TBC sacrifice policy is unchanged. |
 | Druid | Cat-form/combo-gated Savage Roar; Nourish prefers an owned periodic heal using the same test as our core spell script; Wild Growth for group injury. Restoration form prerequisites and existing heal fallbacks remain. |
 
-Mage/DK donor comparisons are not silently classified as fixed. Their earlier
-class-audit corrections remain inherited; further proc/rune/channel policy work
-is still open. No DK implementation is added to Classic/TBC. Older DBCs may have
-NPC spells with Wrath-like names; that does not enable these player actions.
+### Additional encounter and class corrections
+
+- Native hazardous ground-area detection inside combat in dungeons/raids:
+  hostile periodic damage only; reject friendly heals, farsight, expired objects,
+  excessive radii, other maps and native attack-ineligible targets. No outdoor
+  scan is introduced. Object hazards expire with their actual object; hazard
+  movement retries are not suppressed simply because the last action moved.
+- Onyxia: deep-breath avoidance uses the core's spell-target positions; ground
+  flank positioning avoids front/tail while excluding the active tank; targeted
+  fireball spreading holds separation; eligible roles target engaged whelps.
+  Native height/path checks reject invalid destinations. This is not a claim
+  of complete egg, lair-guard or every heroic/raid-size mechanic coverage.
+- Netherspite (TBC/Wrath): replace aura grants/removals with actual beam
+  positioning. Stable role assignments respect human blockers, exhaustion,
+  stack limits, banish and portal lifetime. No boss weakening or teleportation.
+- Molten Core: Geddon Living Bomb separation and Inferno/Armageddon radius
+  avoidance, plus Shazzrah ranged/healer separation, use native spell radii.
+  Escape candidates must clear the combined danger areas and native path/height
+  checks. At most eight path candidates per cached decision; no manufactured
+  safe location when none is reachable. Other MC mechanics remain under review.
+- Shared spell actions reject passive talents/procs instead of casting them;
+  target-map validation uses the actual map instance, not just the map number.
+- Wrath DK: apply owned Blood Plague/Frost Fever, use the secondary target for
+  secondary disease actions, spread diseases only where missing (or refresh
+  under the native glyph rule), register Killing Machine, and gate Empower Rune
+  Weapon on depleted rune cooldowns/runic power/native castability.
+- Wrath Arcane Blast builds up to four stacks rather than stopping after one,
+  with the existing low-mana boundary. Older expansion behavior is unchanged.
+- TBC/Wrath Misdirection and Wrath Tricks automatic combat support uses a live
+  group tank, preferring the current enemy's tank victim. It rejects self,
+  controlled/dead/other-map/non-group targets and already-active caster auras.
+  Existing hunter pull preparation remains available out of combat; explicit
+  manual cast commands keep their own targeting path.
+
+These are source implementations with controlled tests, not demonstrated raid
+clears or optimal DPS. Further proc/channel/encounter review remains open. No DK
+combat scheduling or Wrath-only ability scheduling is added to Classic/TBC.
 
 ## Validation completed so far
 
@@ -74,14 +107,14 @@ NPC spells with Wrath-like names; that does not enable these player actions.
 
 - Boss-by-boss, mechanic-by-mechanic review against each CMaNGOS expansion's
   actual scripts; the earlier inventory is not that complete semantic audit.
-- Implement/adapt the Onyxia placeholder strategy, legitimate Netherspite beam
-  handling replacing aura shortcuts, remaining MC bosses, and missing Karazhan
-  and Mechanar mechanics. Do not remove cheats and falsely call the raid supported.
+- Finish remaining MC, Karazhan and Mechanar mechanics; review new Onyxia and
+  Netherspite behavior in actual encounter play. Do not treat a partial boss
+  strategy or generic hazard detector as complete raid support.
 - Review/implement the other missing raid/dungeon libraries from the complete
   coverage matrix. Preserve normal/heroic, raid-size, expansion, threat, CC,
   movement, admission and spell rules; reject donor boss weakening/aura cheats.
 - Resolve remaining class comparison leads (Vigilance/assigned support,
-  Misdirection/Tricks, proc and channel clipping, rune/disease policy, etc.) against
+  proc and channel clipping, further rune/disease policy, etc.) against
   native APIs and actual reachable behavior; do not treat name differences as bugs.
 - Final exact-revision builds, matching EXE/PDB checks, dev installation and
   GitHub verification. Keep runtime files stopped/unchanged until installation is
@@ -100,3 +133,18 @@ server logged `Halting process...` at 19:16:48 local on 2026-09-05. Shutdown als
 reported existing hunter-trap owner-reference warnings. Those are separate
 investigation leads, not proof that the newly edited code caused a crash (it was
 not running in that process).
+
+## Additional baseline regression found during this work
+
+Classic/TBC dev builds and the current production crash/summon package omitted
+the module framework, dual spec and training dummies. This is a build-feature
+omission, not deletion of this NPC's individual gossip options. The core testing
+branches now require those baseline modules by default and reject cached OFF
+settings. Restored-module native builds pass; production was not deployed.
+The four existing dual-spec tables were inspected read-only, not rebuilt/deleted.
+
+New test programs: `encounter_geometry_test.cpp`, `encounter_runtime_regression.py`,
+`combat_policy_regression.py`, and `threat_transfer_regression.py`. Geometry,
+actual hazard predicates, all-three-expansion resource/disease predicates and
+actual threat-transfer selection tests pass. Existing summon/class/placement/
+diagnostic suites also pass. These do not replace client encounter testing.

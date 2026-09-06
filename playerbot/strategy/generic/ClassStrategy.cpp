@@ -478,6 +478,9 @@ void OffdpsRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
 
 void ClassStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    if (ai->GetBot()->getClass() == CLASS_HUNTER)
+        triggers.push_back(new TriggerNode("tank threat transfer",
+            NextAction::array(0, new NextAction("misdirection on party tank", ACTION_HIGH + 2), NULL)));
     triggers.push_back(new TriggerNode(
         "invalid target",
         NextAction::array(0, new NextAction("select new target", ACTION_EMERGENCY), NULL)));
@@ -945,6 +948,12 @@ void OffdpsRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
 
 void ClassStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    if (ai->GetBot()->getClass() == CLASS_HUNTER)
+        triggers.push_back(new TriggerNode("tank threat transfer",
+            NextAction::array(0, new NextAction("misdirection on party tank", ACTION_HIGH + 2), NULL)));
+    if (ai->GetBot()->getClass() == CLASS_ROGUE)
+        triggers.push_back(new TriggerNode("tank threat transfer",
+            NextAction::array(0, new NextAction("tricks of the trade", ACTION_HIGH + 2), NULL)));
     triggers.push_back(new TriggerNode(
         "invalid target",
         NextAction::array(0, new NextAction("select new target", ACTION_EMERGENCY), NULL)));

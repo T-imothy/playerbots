@@ -227,10 +227,10 @@ namespace ai
         std::string GetReachActionName() override { return "reach melee"; }
     };
 
-    class CastTricksOfTheTradeOnPartyAction : public BuffOnPartyAction 
+    class CastTricksOfTheTradeOnPartyAction : public TankThreatTransferAction
     {
     public:
-        CastTricksOfTheTradeOnPartyAction(PlayerbotAI* ai) : BuffOnPartyAction(ai, "tricks of the trade") {}
+        CastTricksOfTheTradeOnPartyAction(PlayerbotAI* ai) : TankThreatTransferAction(ai, "tricks of the trade") {}
     };
 
     class CastCloakOfShadowsAction : public CastCureSpellAction

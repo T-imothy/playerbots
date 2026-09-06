@@ -1,9 +1,17 @@
 #pragma once
 #include "DungeonTriggers.h"
 #include "GenericTriggers.h"
+#include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 
 namespace ai
 {
+    class MoltenCorePositionTrigger : public Trigger
+    {
+    public:
+        MoltenCorePositionTrigger(PlayerbotAI* ai) : Trigger(ai, "molten core safe position", 1) {}
+        bool IsActive() override { MoltenCorePositionAction action(ai); return action.isUseful(); }
+    };
+
     class MoltenCoreEnterDungeonTrigger : public EnterDungeonTrigger
     {
     public:

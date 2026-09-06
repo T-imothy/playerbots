@@ -2,8 +2,45 @@
 #include "DungeonMultipliers.h"
 #include "playerbot/strategy/actions/DungeonActions.h"
 #include "playerbot/strategy/actions/ReachTargetActions.h"
+#include "playerbot/strategy/actions/KarazhanDungeonActions.h"
+#include "playerbot/strategy/actions/AttackAction.h"
+#include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
+#include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 
 using namespace ai;
+
+float PreserveMoltenCorePositionMultiplier::GetValue(Action* action)
+{
+    if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
+        dynamic_cast<MoltenCorePositionAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    EncounterPosition plan;
+    return MoltenCorePositionAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
+
+float PreserveOnyxiaPositionMultiplier::GetValue(Action* action)
+{
+    if (action && (action->getName() == "dps assist" || action->getName() == "tank assist"))
+    {
+        OnyxiaAddsAction adds(ai);
+        if (adds.GetTarget()) return 0.0f;
+    }
+    if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
+        dynamic_cast<OnyxiaPositionAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    EncounterPosition plan;
+    if (!OnyxiaPositionAction::GetPlan(ai, plan)) return 1.0f;
+    if (!plan.exclusive) return dynamic_cast<SetBehindTargetAction*>(action) ? 0.0f : 1.0f;
+    return 0.0f;
+}
+
+float PreserveNetherspitePositionMultiplier::GetValue(Action* action)
+{
+    // Class casts and hazard escapes remain available. Generic chasing/fleeing/
+    // following must not fight the encounter position on the very next update.
+    if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) || dynamic_cast<NetherspitePositionAction*>(action) ||
+        dynamic_cast<MoveAwayFromHazard*>(action) || dynamic_cast<VoidZoneMoveAwayAction*>(action)) return 1.0f;
+    EncounterPosition plan;
+    return NetherspitePositionAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
 
 float PreventMoveAwayFromCreatureOnReachToCastMultiplier::GetValue(Action* action)
 {

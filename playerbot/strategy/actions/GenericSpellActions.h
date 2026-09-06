@@ -347,6 +347,14 @@ namespace ai
         virtual std::string GetTargetQualifier() override { return GetSpellName(); }
     };
 
+    class TankThreatTransferAction : public BuffOnTankAction
+    {
+    public:
+        TankThreatTransferAction(PlayerbotAI* ai, std::string spell) : BuffOnTankAction(ai, spell) {}
+        Unit* GetTarget() override;
+        bool isUseful() override;
+    };
+
     class CastShootAction : public CastSpellAction
     {
     public:

@@ -1,8 +1,23 @@
 #pragma once
 #include "DungeonTriggers.h"
+#include "playerbot/strategy/actions/OnyxiasLairDungeonActions.h"
 
 namespace ai
 {
+    class OnyxiaPositionTrigger : public Trigger
+    {
+    public:
+        OnyxiaPositionTrigger(PlayerbotAI* ai) : Trigger(ai, "onyxia safe position", 1) {}
+        bool IsActive() override { OnyxiaPositionAction action(ai); return action.isUseful(); }
+    };
+
+    class OnyxiaAddsTrigger : public Trigger
+    {
+    public:
+        OnyxiaAddsTrigger(PlayerbotAI* ai) : Trigger(ai, "onyxia attack adds", 1) {}
+        bool IsActive() override { OnyxiaAddsAction action(ai); return action.isUseful(); }
+    };
+
     class OnyxiasLairEnterDungeonTrigger : public EnterDungeonTrigger
     {
     public:

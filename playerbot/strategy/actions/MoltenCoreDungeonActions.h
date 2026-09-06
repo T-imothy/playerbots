@@ -2,9 +2,19 @@
 #include "DungeonActions.h"
 #include "ChangeStrategyAction.h"
 #include "UseItemAction.h"
+#include "playerbot/strategy/values/EncounterPositionValue.h"
 
 namespace ai
 {
+    class MoltenCorePositionAction : public MovementAction
+    {
+    public:
+        MoltenCorePositionAction(PlayerbotAI* ai) : MovementAction(ai, "molten core safe position") {}
+        bool Execute(Event& event) override;
+        bool isUseful() override;
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+
     class MoltenCoreEnableDungeonStrategyAction : public ChangeAllStrategyAction
     {
     public:

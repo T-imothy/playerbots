@@ -7,9 +7,22 @@ using namespace ai;
 
 void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("molten core safe position",
+        NextAction::array(0, new NextAction("molten core safe position", 105.0f), NULL)));
     triggers.push_back(new TriggerNode(
         "start magmadar fight",
         NextAction::array(0, new NextAction("enable magmadar fight strategy", 100.0f), NULL)));
+}
+
+void MoltenCoreDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("molten core safe position",
+        NextAction::array(0, new NextAction("molten core safe position", 105.0f), NULL)));
+}
+
+void MoltenCoreDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveMoltenCorePositionMultiplier(ai));
 }
 
 void MoltenCoreDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

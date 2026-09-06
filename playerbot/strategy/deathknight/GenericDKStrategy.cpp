@@ -197,7 +197,7 @@ void GenericDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 
 	triggers.push_back(new TriggerNode(
 		"icy touch on attacker",
-		NextAction::array(0, new NextAction("icy touch", ACTION_HIGH + 1), NULL)));
+        NextAction::array(0, new NextAction("icy touch on attacker", ACTION_HIGH + 1), NULL)));
 
 	triggers.push_back(new TriggerNode(
 		"icy touch",
@@ -209,7 +209,7 @@ void GenericDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 
 	triggers.push_back(new TriggerNode(
 		"plague strike on attacker",
-		NextAction::array(0, new NextAction("plague strike", ACTION_HIGH + 1), NULL)));
+        NextAction::array(0, new NextAction("plague strike on attacker", ACTION_HIGH + 1), NULL)));
 
 	triggers.push_back(new TriggerNode(
 		"melee high aoe",

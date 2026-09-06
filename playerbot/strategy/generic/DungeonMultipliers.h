@@ -6,6 +6,27 @@ class Action;
 
 namespace ai
 {
+    class PreserveMoltenCorePositionMultiplier : public Multiplier
+    {
+    public:
+        PreserveMoltenCorePositionMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve molten core safe position") {}
+        float GetValue(Action* action) override;
+    };
+
+    class PreserveOnyxiaPositionMultiplier : public Multiplier
+    {
+    public:
+        PreserveOnyxiaPositionMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve onyxia safe position") {}
+        float GetValue(Action* action) override;
+    };
+
+    class PreserveNetherspitePositionMultiplier : public Multiplier
+    {
+    public:
+        PreserveNetherspitePositionMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve netherspite beam position") {}
+        float GetValue(Action* action) override;
+    };
+
     class PreventMoveAwayFromCreatureOnReachToCastMultiplier : public Multiplier
     {
     public:

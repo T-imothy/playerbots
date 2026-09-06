@@ -305,6 +305,20 @@ bool SpellTrigger::IsActive()
 	return GetTarget();
 }
 
+bool TankThreatTransferTrigger::IsActive()
+{
+    if (!bot->IsInWorld() || !bot->IsInCombat() || !bot->GetGroup()) return false;
+    const char* key = nullptr;
+#ifndef MANGOSBOT_ZERO
+    if (bot->getClass() == CLASS_HUNTER) key = "misdirection on party tank";
+#endif
+#ifdef MANGOSBOT_TWO
+    if (bot->getClass() == CLASS_ROGUE) key = "tricks of the trade";
+#endif
+    Action* action = key ? ai->GetAiObjectContext()->GetAction(key) : nullptr;
+    return action && action->isUseful() && action->isPossible();
+}
+
 bool SpellCanBeCastedTrigger::IsActive()
 {
 	Unit* target = GetTarget();

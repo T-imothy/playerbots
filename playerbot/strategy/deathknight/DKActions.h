@@ -75,6 +75,8 @@ namespace ai
 	};
 	//debuff
 	BEGIN_MELEE_DEBUFF_ACTION(CastPestilenceAction, "pestilence")
+        bool isUseful() override;
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
 	END_SPELL_ACTION()
 
 	//debuff
@@ -83,6 +85,7 @@ namespace ai
 
 	//debuff it
 	BEGIN_RANGED_DEBUFF_ACTION(CastIcyTouchAction, "icy touch")
+        bool isUseful() override { return CastSpellAction::isUseful() && !ai->HasAura("frost fever", GetTarget(), false, true); }
 	END_SPELL_ACTION()
 
 
@@ -90,10 +93,14 @@ namespace ai
 	{
 	public:
 		CastIcyTouchOnAttackerAction(PlayerbotAI* ai) : CastRangedDebuffSpellOnAttackerAction(ai, "icy touch") {}
+        std::string GetTargetName() override { return "attacker without my aura"; }
+        std::string GetTargetQualifier() override { return "frost fever"; }
+        bool isUseful() override { return CastSpellAction::isUseful() && !ai->HasAura("frost fever", GetTarget(), false, true); }
 	};
 
 	//debuff ps
 	BEGIN_MELEE_DEBUFF_ACTION(CastPlagueStrikeAction, "plague strike")
+        bool isUseful() override { return CastSpellAction::isUseful() && !ai->HasAura("blood plague", GetTarget(), false, true); }
 	END_SPELL_ACTION()
 
 
@@ -101,6 +108,9 @@ namespace ai
 	{
 	public:
 		CastPlagueStrikeOnAttackerAction(PlayerbotAI* ai) : CastMeleeDebuffSpellOnAttackerAction(ai, "plague strike") {}
+        std::string GetTargetName() override { return "attacker without my aura"; }
+        std::string GetTargetQualifier() override { return "blood plague"; }
+        bool isUseful() override { return CastSpellAction::isUseful() && !ai->HasAura("blood plague", GetTarget(), false, true); }
 	};
 
 	//debuff

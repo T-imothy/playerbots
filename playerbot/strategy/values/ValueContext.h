@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ActiveSpellValue.h"
+#include "EncounterPositionValue.h"
 #include "NearestGameObjects.h"
 #include "LogLevelValue.h"
 #include "NearestNpcsValue.h"
@@ -116,6 +117,9 @@ namespace ai
     public:
         ValueContext()
         {
+            creators["netherspite position"] = [](PlayerbotAI* ai) { return new NetherspitePositionValue(ai); };
+            creators["onyxia position"] = [](PlayerbotAI* ai) { return new OnyxiaPositionValue(ai); };
+            creators["molten core position"] = [](PlayerbotAI* ai) { return new MoltenCorePositionValue(ai); };
             creators["active spell"] = [](PlayerbotAI* ai) { return new ActiveSpellValue(ai); };
             creators["craft"] = [](PlayerbotAI* ai) { return new CraftValue(ai); };
             creators["collision"] = [](PlayerbotAI* ai) { return new CollisionValue(ai); };
@@ -146,6 +150,7 @@ namespace ai
             creators["party tank without aura"] = [](PlayerbotAI* ai) { return new PartyTankWithoutAuraValue(ai); };
             creators["party member without my aura"] = [](PlayerbotAI* ai) { return new PartyMemberWithoutMyAuraValue(ai); };
             creators["attacker without aura"] = [](PlayerbotAI* ai) { return new AttackerWithoutAuraTargetValue(ai); };
+            creators["attacker without my aura"] = [](PlayerbotAI* ai) { return new AttackerWithoutAuraTargetValue(ai, true); };
             creators["party member to heal"] = [](PlayerbotAI* ai) { return new PartyMemberToHeal(ai); };
             creators["party member to resurrect"] = [](PlayerbotAI* ai) { return new PartyMemberToResurrect(ai); };
             creators["party member to soulstone"] = [](PlayerbotAI* ai) { return new PartyMemberToSoulstone(ai); };

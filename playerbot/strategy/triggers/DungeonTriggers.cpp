@@ -101,28 +101,14 @@ bool CloseToHazardTrigger::IsActive()
                 {
                     closeToHazard = true;
                 }
-            }
-
-            // Cache the hazards
-            Hazard hazard(possibleHazardGuid, hazardDuration, hazardRadius);
-            SET_AI_VALUE(Hazard, "add hazard", std::move(hazard));
-        }
-    }
-
-    // Don't trigger if the bot is moving
-    if (closeToHazard)
-    {
-        const Action* lastExecutedAction = ai->GetLastExecutedAction(BotState::BOT_STATE_COMBAT);
-        if (lastExecutedAction)
-        {
-            const MovementAction* movementAction = dynamic_cast<const MovementAction*>(lastExecutedAction);
-            if (movementAction)
-            {
-                closeToHazard = false;
+                Hazard hazard(possibleHazardGuid, hazardDuration, hazardRadius);
+                SET_AI_VALUE(Hazard, "add hazard", std::move(hazard));
             }
         }
     }
 
+    // A previous movement action does not prove the bot escaped: it can have
+    // failed, stopped, or entered a newly spawned hazard. Recheck actual position.
     return closeToHazard;
 }
 

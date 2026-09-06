@@ -3,22 +3,50 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    class EmpowerRuneWeaponTrigger : public Trigger
+    {
+    public:
+        EmpowerRuneWeaponTrigger(PlayerbotAI* ai) : Trigger(ai, "empower weapon", 2) {}
+        bool IsActive() override
+        {
+            if (!bot->IsInCombat() || !ai->HasSpell("empower rune weapon") || bot->GetPower(POWER_RUNIC_POWER) > 600) return false;
+            unsigned depleted = 0;
+            for (uint8 rune = 0; rune < 6; ++rune) if (bot->GetRuneCooldown(rune) >= 3000) ++depleted;
+            return depleted >= 4 && ai->CanCastSpell("empower rune weapon", bot, 0);
+        }
+    };
+#endif
     
     BUFF_TRIGGER(HornOfWinterTrigger, "horn of winter");
     BUFF_TRIGGER(BoneShieldTrigger, "bone shield");
     BUFF_TRIGGER(ImprovedIcyTalonsTrigger, "improved icy talons");
-    DEBUFF_TRIGGER(PlagueStrikeDebuffTrigger, "plague strike");
-    DEBUFF_TRIGGER(IcyTouchDebuffTrigger, "icy touch");
+    class PlagueStrikeDebuffTrigger : public DebuffTrigger
+    {
+    public:
+        PlagueStrikeDebuffTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "blood plague", 1, true) {}
+        std::string getName() override { return "plague strike"; }
+    };
+    class IcyTouchDebuffTrigger : public DebuffTrigger
+    {
+    public:
+        IcyTouchDebuffTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "frost fever", 1, true) {}
+        std::string getName() override { return "icy touch"; }
+    };
 
 		class PlagueStrikeDebuffOnAttackerTrigger : public DebuffOnAttackerTrigger
 	{
 	public:
-		PlagueStrikeDebuffOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "plague strike") {}
+        PlagueStrikeDebuffOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "blood plague") { checkIsOwner = true; }
+        std::string getName() override { return "plague strike on attacker"; }
+        Value<Unit*>* GetTargetValue() override { return context->GetValue<Unit*>("attacker without my aura", "blood plague"); }
 	};
 		class IcyTouchDebuffOnAttackerTrigger : public DebuffOnAttackerTrigger
 	{
 	public:
-		IcyTouchDebuffOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "icy touch") {}
+        IcyTouchDebuffOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "frost fever") { checkIsOwner = true; }
+        std::string getName() override { return "icy touch on attacker"; }
+        Value<Unit*>* GetTargetValue() override { return context->GetValue<Unit*>("attacker without my aura", "frost fever"); }
 	};
 
     class DKPresenceTrigger : public BuffTrigger {
@@ -76,10 +104,10 @@ namespace ai
 		StrangulateInterruptSpellTrigger(PlayerbotAI* ai) : InterruptSpellTrigger(ai, "strangulate") {}
 	};
 
-    class KillingMachineTrigger : public BoostTrigger
+    class KillingMachineTrigger : public HasAuraTrigger
     {
     public:
-		KillingMachineTrigger(PlayerbotAI* ai) : BoostTrigger(ai, "killing machine") {}
+        KillingMachineTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "killing machine") {}
     };
 
     class MindFreezeOnEnemyHealerTrigger : public InterruptEnemyHealerTrigger

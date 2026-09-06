@@ -77,6 +77,9 @@ void FrostDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
     GenericDKStrategy::InitCombatTriggers(triggers);
 
+    triggers.push_back(new TriggerNode("killing machine",
+        NextAction::array(0, new NextAction("frost strike", ACTION_HIGH + 2), NULL)));
+
     triggers.push_back(new TriggerNode(
         "empower weapon",
         NextAction::array(0, new NextAction("empower weapon", ACTION_NORMAL + 4), NULL)));

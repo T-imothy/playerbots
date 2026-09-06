@@ -361,6 +361,13 @@ namespace ai
         std::string lowerSpell;
     };
 
+    class TankThreatTransferTrigger : public Trigger
+    {
+    public:
+        TankThreatTransferTrigger(PlayerbotAI* ai) : Trigger(ai, "tank threat transfer", 2) {}
+        bool IsActive() override;
+    };
+
     class BuffOnTankTrigger : public BuffTrigger
     {
     public:

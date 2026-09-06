@@ -3,6 +3,13 @@
 
 namespace ai
 {
+    class HostileGroundDamageTrigger : public Trigger
+    {
+    public:
+        HostileGroundDamageTrigger(PlayerbotAI* ai) : Trigger(ai, "hostile ground damage", 1) {}
+        bool IsActive() override;
+    };
+
     class EnterDungeonTrigger : public Trigger
     {
     public:

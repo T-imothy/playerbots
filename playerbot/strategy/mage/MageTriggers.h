@@ -88,6 +88,14 @@ namespace ai
     {
     public:
         ArcaneBlastTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "arcane blast") {}
+#ifdef MANGOSBOT_TWO
+        bool IsActive() override
+        {
+            if (!ai->HasSpell("arcane blast") || AI_VALUE2(uint8, "mana", "self target") <= sPlayerbotAIConfig.lowMana) return false;
+            Aura* stacks = ai->GetAura(36032, bot);
+            return !stacks || stacks->GetStackAmount() < 4;
+        }
+#endif
     };
 
     class CounterspellInterruptSpellTrigger : public InterruptSpellTrigger

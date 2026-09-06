@@ -73,6 +73,10 @@ namespace ai
             TriggerFactoryInternal()  
             {
                 creators["bone shield"] = [](PlayerbotAI* ai) { return new BoneShieldTrigger(ai); };
+                creators["killing machine"] = [](PlayerbotAI* ai) { return new KillingMachineTrigger(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["empower weapon"] = [](PlayerbotAI* ai) { return new EmpowerRuneWeaponTrigger(ai); };
+#endif
                 creators["pestilence"] = [](PlayerbotAI* ai) { return new PestilenceTrigger(ai); };
                 creators["blood strike"] = [](PlayerbotAI* ai) { return new BloodStrikeTrigger(ai); };
 				creators["plague strike"] = [](PlayerbotAI* ai) { return new PlagueStrikeDebuffTrigger(ai); };

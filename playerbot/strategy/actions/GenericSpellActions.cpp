@@ -69,6 +69,8 @@ bool CastSpellAction::Execute(Event& event)
         // path. Dynamic mount selection is still resolved by the normal value.
         if (!spellId || !sServerFacade.LookupSpellInfo(spellId))
             return false;
+        if (IsPassiveSpell(sServerFacade.LookupSpellInfo(spellId)))
+            return false;
 
         if (GetTargetName() == "current target" && (!bot->GetCurrentSpell(CURRENT_MELEE_SPELL) && !bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL)))
         {
@@ -93,10 +95,36 @@ bool CastSpellAction::Execute(Event& event)
     return executed;
 }
 
+Unit* TankThreatTransferAction::GetTarget()
+{
+    if (!bot->GetGroup()) return nullptr;
+    Unit* enemy = context->GetValue<Unit*>("current target")->Get();
+    Unit* tank = enemy && enemy->IsInWorld() && enemy->GetMap() == bot->GetMap() ? enemy->GetVictim() : nullptr;
+    if (tank && tank->IsPlayer() && tank != bot && tank->IsAlive() && tank->IsInWorld() &&
+        tank->GetMap() == bot->GetMap() && static_cast<Player*>(tank)->GetGroup() == bot->GetGroup() && ai->IsTank(static_cast<Player*>(tank)))
+        return tank;
+    return BuffOnTankAction::GetTarget();
+}
+
+bool TankThreatTransferAction::isUseful()
+{
+    // Keep manual cast commands separate. Automatic threat support belongs on
+    // a living group tank, not an arbitrary healer or the transferring bot.
+    if (!bot->IsInWorld() || !bot->GetGroup() || bot->HasCharmer() || ai->IsTank(bot) ||
+        ai->HasAura(GetSpellName(), bot)) return false;
+    Unit* target = GetTarget();
+    if (!target || target == bot || !target->IsPlayer() || !target->IsInWorld() ||
+        !target->IsAlive() || target->HasCharmer() || target->GetMap() != bot->GetMap() ||
+        static_cast<Player*>(target)->GetGroup() != bot->GetGroup() || !ai->IsTank(static_cast<Player*>(target))) return false;
+    return CastSpellAction::isUseful();
+}
+
 bool CastSpellAction::isPossible()
 {
     RefreshSpellId();
     if (!spellId || !sServerFacade.LookupSpellInfo(spellId))
+        return false;
+    if (IsPassiveSpell(sServerFacade.LookupSpellInfo(spellId)))
         return false;
 
     if (spellName == "mount")
@@ -167,6 +195,10 @@ bool CastSpellAction::isUseful()
     // cached HasSpell path is invalidated by spellbook/talent changes.
     if (!spellId || !sServerFacade.LookupSpellInfo(spellId) || !ai->HasSpell(spellId))
         return false;
+    // A learned talent/proc can appear in the spellbook without being an
+    // activated ability. Its effects are applied by the core, not recast by AI.
+    if (IsPassiveSpell(sServerFacade.LookupSpellInfo(spellId)))
+        return false;
 
     if (ai->IsInVehicle() && !ai->IsInVehicle(false, false, true))
         return false;
@@ -178,7 +210,7 @@ bool CastSpellAction::isUseful()
     if (!spellTarget)
         return false;
 
-    if (!spellTarget->IsInWorld() || spellTarget->GetMapId() != bot->GetMapId())
+    if (!spellTarget->IsInWorld() || spellTarget->GetMap() != bot->GetMap())
         return false;
 
     const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);

@@ -6,6 +6,8 @@ using namespace ai;
 
 void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("hostile ground damage",
+        NextAction::array(0, new NextAction("move away from hazard", 110.0f), NULL)));
     triggers.push_back(new TriggerNode(
         "enter naxxramas",
         NextAction::array(0, new NextAction("enable naxxramas strategy", 100.0f), NULL)));
@@ -78,4 +80,10 @@ void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "leave mechanar",
         NextAction::array(0, new NextAction("disable mechanar strategy", 100.0f), NULL)));
+}
+
+void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("hostile ground damage",
+        NextAction::array(0, new NextAction("move away from hazard", 110.0f), NULL)));
 }
