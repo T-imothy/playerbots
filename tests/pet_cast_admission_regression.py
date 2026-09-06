@@ -64,6 +64,8 @@ struct Session {unsigned calls=0;std::vector<unsigned> values;void HandlePetActi
 struct Player:Unit {Pet* pet=nullptr;bool teleport=false;Session session;Pet* GetPet(){return pet;}
  bool IsBeingTeleported(){return teleport;}Session* GetSession(){return &session;}};
 bool autocast=false;bool IsAutocastable(unsigned){return autocast;}
+bool encounterPause=false;
+namespace ai {bool ShouldAvoidEncounterOffense(Player*,Unit* caster,const SpellEntry* spell,Unit*){return caster&&spell&&encounterPause&&!spell->positive;}}
 struct Spell {static unsigned checks,constructions,lastFlags;static SpellCastResult result;static Unit* checkedTarget;
  struct Targets{Unit* unit=nullptr;void setUnitTarget(Unit* u){unit=u;}}m_targets;
  Spell(Pet*,const SpellEntry*,unsigned flags){++constructions;lastFlags=flags;}
@@ -107,6 +109,9 @@ int main(){
   Spell::result=opener;assert(ai.CanCastPetSpell(1,&target,&result)&&result==opener);
   pet.attackNow=false;assert(!ai.CanCastPetSpell(1,&target));pet.attackNow=true;}
  Spell::result=SPELL_CAST_OK;pet.possessed=true;assert(ai.CanCastPetSpell(1,&target)&&Spell::lastFlags==TRIGGERED_NORMAL_COMBAT_CAST);pet.possessed=false;
+ encounterPause=true;assert(!ai.CastPetSpell(1,&target)&&bot.session.calls==0);
+ entry.positive=true;assert(ai.CastPetSpell(1,&target)&&bot.session.calls==1);entry.positive=false;
+ bot.session.calls=0;encounterPause=false;
  assert(ai.CastPetSpell(1,&target)&&bot.session.calls==1&&bot.session.values[0]==2&&bot.session.values[2]==3);
  assert(bot.session.values[1]==((ACT_PASSIVE<<24)|1u));
  autocast=true;assert(ai.CastPetSpell(1,&target)&&bot.session.values[1]==((ACT_DISABLED<<24)|1u));

@@ -2,11 +2,17 @@
 #include "playerbot/playerbot.h"
 #include "GenericActions.h"
 #include "playerbot/PlayerbotFactory.h"
+#include "EncounterSpellPolicy.h"
 
 using namespace ai;
 
 bool MeleeAction::isUseful()
 {
+    if (HasEncounterDamagePause(bot))
+    {
+        StopUnsafeEncounterOffense(bot, bot);
+        return false;
+    }
     // do not allow if can't attack from vehicle
     if (ai->IsInVehicle() && !ai->IsInVehicle(false, false, true))
         return false;

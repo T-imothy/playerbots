@@ -350,6 +350,7 @@ namespace ai
             creators["suppression device close"] = [](PlayerbotAI* ai) { return new SuppressionDeviceCloseTrigger(ai); };
             creators["corrupted healing cast"] = [](PlayerbotAI* ai) { return new CorruptedHealingCastTrigger(ai); };
             creators["unsafe reflected cast"] = [](PlayerbotAI* ai) { return new UnsafeReflectedCastTrigger(ai); };
+            creators["unsafe encounter offense"] = [](PlayerbotAI* ai) { return new UnsafeEncounterOffenseTrigger(ai); };
             creators["blackwing lair safe position"] = [](PlayerbotAI* ai) { return new BlackwingLairPositionTrigger(ai); };
             creators["naxxramas safe position"] = [](PlayerbotAI* ai) { return new NaxxramasPositionTrigger(ai); };
 

@@ -4881,11 +4881,17 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     if (!target)
         target = bot;
 
+    if (!bot->IsInWorld() || !target->IsInWorld() || !bot->IsInMap(target))
+        return false;
+
     Pet* pet = bot->GetPet();
     if (pet && pet->HasSpell(spellId))
     {
         return CastPetSpell(spellId, target);
     }
+
+    if (ai::ShouldAvoidEncounterOffense(bot, bot, pSpellInfo, target))
+        return false;
 
     aiObjectContext->GetValue<LastMovement&>("last movement")->Get().Set(NULL);
     aiObjectContext->GetValue<time_t>("stay time")->Set(0);
@@ -4930,7 +4936,10 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         return false;
     }
 
-    Spell *spell = new Spell(bot, pSpellInfo, false);
+    // SpellStart transfers lifetime to the native event queue. Until then,
+    // every rejected cast must release its temporary spell.
+    std::unique_ptr<Spell> pendingSpell(new Spell(bot, pSpellInfo, false));
+    Spell* spell = pendingSpell.get();
 
     SpellCastTargets targets;
     if ((pSpellInfo->Targets & TARGET_FLAG_ITEM) || spellId == 1804)
@@ -4941,7 +4950,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         if (bot->GetTradeData())
         {
             bot->GetTradeData()->SetSpell(spellId);
-			delete spell;
+            pendingSpell.reset();
             return true;
         }
     }
@@ -5008,7 +5017,6 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         // always fail when jumping
         if (IsJumping() || bot->IsFalling())
         {
-            spell->cancel();
             return false;
         }
 
@@ -5022,7 +5030,6 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
                 SetAIInternalUpdateDelay(sPlayerbotAIConfig.globalCoolDown);
             }
 
-            spell->cancel();
             return false;
         }
     }
@@ -5061,6 +5068,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     }
 
 
+    pendingSpell.release();
     SpellCastResult spellSuccess = spell->SpellStart(&targets);
 
     if (pSpellInfo->Effect[0] == SPELL_EFFECT_OPEN_LOCK ||
@@ -5114,7 +5122,10 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
 bool PlayerbotAI::CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarget, bool waitForSpell, uint32* outSpellDuration)
 {
     const SpellEntry* pSpellInfo = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
-    if (!pSpellInfo || !goTarget || !goTarget->IsInWorld() || goTarget->GetMapId() != bot->GetMapId())
+    if (!pSpellInfo || !bot->IsInWorld() || !goTarget || !goTarget->IsInWorld() || !bot->IsInMap(goTarget))
+        return false;
+
+    if (ai::ShouldAvoidEncounterOffense(bot, bot, pSpellInfo, nullptr))
         return false;
 
     aiObjectContext->GetValue<LastMovement&>("last movement")->Get().Set(NULL);
@@ -5157,7 +5168,10 @@ bool PlayerbotAI::CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarg
         return false;
     }
 
-    Spell* spell = new Spell(bot, pSpellInfo, false);
+    // SpellStart transfers lifetime to the native event queue. Until then,
+    // every rejected cast must release its temporary spell.
+    std::unique_ptr<Spell> pendingSpell(new Spell(bot, pSpellInfo, false));
+    Spell* spell = pendingSpell.get();
 
     SpellCastTargets targets;
     if (pSpellInfo->Targets & TARGET_FLAG_DEST_LOCATION)
@@ -5208,7 +5222,6 @@ bool PlayerbotAI::CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarg
         // always fail when jumping
         if (IsJumping() || bot->IsFalling())
         {
-            spell->cancel();
             return false;
         }
 
@@ -5222,11 +5235,11 @@ bool PlayerbotAI::CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarg
                 SetAIInternalUpdateDelay(sPlayerbotAIConfig.globalCoolDown);
             }
 
-            spell->cancel();
             return false;
         }
     }
 
+    pendingSpell.release();
     SpellCastResult spellSuccess = spell->SpellStart(&targets);
     if (spellSuccess != SPELL_CAST_OK)
         return false;
@@ -5270,6 +5283,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
         return false; // This overload cannot transmit its destination/gameobject to a pet.
     }
 
+    if (ai::ShouldAvoidEncounterOffense(bot, bot, pSpellInfo, nullptr))
+        return false;
+
     aiObjectContext->GetValue<LastMovement&>("last movement")->Get().Set(NULL);
     aiObjectContext->GetValue<time_t>("stay time")->Set(0);
 
@@ -5307,7 +5323,10 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
         return false;
     }
 
-    Spell* spell = new Spell(bot, pSpellInfo, false);
+    // SpellStart transfers lifetime to the native event queue. Until then,
+    // every rejected cast must release its temporary spell.
+    std::unique_ptr<Spell> pendingSpell(new Spell(bot, pSpellInfo, false));
+    Spell* spell = pendingSpell.get();
 
     SpellCastTargets targets;
     if ((pSpellInfo->Targets & TARGET_FLAG_ITEM) || spellId == 1804)
@@ -5318,7 +5337,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
         if (bot->GetTradeData())
         {
             bot->GetTradeData()->SetSpell(spellId);
-            delete spell;
+            pendingSpell.reset();
             return true;
         }
     }
@@ -5348,7 +5367,6 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
         // always fail when jumping
         if (IsJumping() || bot->IsFalling())
         {
-            spell->cancel();
             return false;
         }
 
@@ -5362,12 +5380,14 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
                 SetAIInternalUpdateDelay(sPlayerbotAIConfig.globalCoolDown);
             }
 
-            spell->cancel();
             return false;
         }
     }
 
-    spell->SpellStart(&targets);
+    pendingSpell.release();
+    const SpellCastResult spellSuccess = spell->SpellStart(&targets);
+    if (spellSuccess != SPELL_CAST_OK)
+        return false;
 
     if (pSpellInfo->Effect[0] == SPELL_EFFECT_OPEN_LOCK ||
         pSpellInfo->Effect[0] == SPELL_EFFECT_SKINNING)
@@ -5479,6 +5499,9 @@ bool PlayerbotAI::CastPetSpell(uint32 spellId, Unit* target)
     Pet* pet = bot->GetPet();
     if (CanCastPetSpell(spellId, target))
     {
+        if (ai::ShouldAvoidEncounterOffense(bot, pet, sServerFacade.LookupSpellInfo(spellId), target))
+            return false;
+
         auto IsAutocastActive = [&pet, &spellId]() -> bool
         {
             for (AutoSpellList::iterator i = pet->m_autospells.begin(); i != pet->m_autospells.end(); ++i)

@@ -2,10 +2,14 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
 from behavior_regression import block
 
 repo=Path(__file__).resolve().parents[1]
 source=(repo/'playerbot/strategy/actions/MovementActions.cpp').read_text()
+if '--before-empty-move' in sys.argv:
+    source=subprocess.check_output(['git','-c','safe.directory='+repo.as_posix(),'-C',str(repo),
+        'show','8e74916a:playerbot/strategy/actions/MovementActions.cpp'],text=True)
 methods='\n'.join(block(source, marker) for marker in ('bool MovementAction::BuildSafeHazardPath(', 'bool MovementAction::DispatchMovement('))
 safety=(repo/'playerbot/strategy/actions/MovementPathSafety.h').read_text().replace('#pragma once','').replace('#include "playerbot/strategy/values/HazardsValue.h"','')
 code=r'''
@@ -64,6 +68,11 @@ int main(){
  TravelPath invalid=route;invalid.path.back().x=std::numeric_limits<float>::quiet_NaN();
  assert(!action.DispatchMovement(invalid,true,false));invalid=route;invalid.path.back().map=2;
  assert(!action.DispatchMovement(invalid,true,false));assert(bot.motion.clears==0);
+ // Clipping can leave only the current position although the original target
+ // was distant. Do not dispatch a zero-length native spline for that result.
+ TravelPath clipped{{{1,-10,0,0}}};assert(!action.DispatchMovement(clipped,true,false));
+ clipped.path.back().x=-9.99f;assert(!action.DispatchMovement(clipped,true,false));
+ assert(bot.motion.clears==0&&bot.motion.points==0);
  assert(action.DispatchMovement(route,true,false));assert(bot.motion.points==1&&bot.motion.generated&&bot.motion.paths==0);
  ai.hazards={{{1,0,0,0},2}};action.detour=true;
  assert(action.DispatchMovement(route,true,false));assert(bot.motion.paths==1&&bot.motion.route.size()==3&&bot.motion.route[1].y==3);

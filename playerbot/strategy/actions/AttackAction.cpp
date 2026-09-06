@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "AttackAction.h"
+#include "EncounterSpellPolicy.h"
 #include "MotionGenerators/MovementGenerator.h"
 #include "AI/BaseAI/CreatureAI.h"
 #include "playerbot/LootObjectStack.h"
@@ -78,6 +79,11 @@ bool AttackRTITargetAction::isUseful()
 
 bool AttackAction::Attack(Player* requester, Unit* target)
 {
+    if (HasEncounterDamagePause(bot))
+    {
+        StopUnsafeEncounterOffense(bot, bot);
+        return false;
+    }
     MotionMaster &mm = *bot->GetMotionMaster();
 	if (mm.GetCurrentMovementGeneratorType() == TAXI_MOTION_TYPE || (bot->IsFlying() && WorldPosition(bot).currentHeight() > 10.0f))
     {

@@ -33,6 +33,7 @@ struct PlayerbotAI {bool learned=true;bool HasSpell(unsigned){return learned;}
 bool ShouldAvoidCorruptedHealing(Player*,const SpellEntry*,Unit*){return false;}
 bool ShouldAvoidEncounterDispel(PlayerbotAI*,const SpellEntry*,Unit*){return false;}
 bool ShouldAvoidEncounterTaunt(PlayerbotAI*,const SpellEntry*,Unit*){return false;}
+bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*){return false;}
 struct Facade {SpellEntry spell;bool found=true;const SpellEntry* LookupSpellInfo(unsigned id){return id&&found?&spell:nullptr;}}sServerFacade;
 struct CastSpellAction {Player* bot;PlayerbotAI* ai;Unit* target;unsigned spellId=1;float range=30;
  std::string spellName="spell";bool useful=true;void RefreshSpellId(){}Unit* GetTarget(){return target;}bool isUseful();};

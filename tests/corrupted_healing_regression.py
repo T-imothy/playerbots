@@ -80,6 +80,7 @@ struct CombatDiagnostics{static bool Select(PlayerbotAI*){return false;}
 namespace ai{bool ShouldAvoidCorruptedHealing(Player*,const SpellEntry*,Unit*);
  bool denyDispel=false;bool ShouldAvoidEncounterDispel(PlayerbotAI*,const SpellEntry*,Unit*){return denyDispel;}
  bool denyTaunt=false;bool ShouldAvoidEncounterTaunt(PlayerbotAI*,const SpellEntry*,Unit*){return denyTaunt;}
+ bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*){return false;}
  bool HasCorruptedHealingCast(Player*);bool InterruptCorruptedHealingCast(Player*);}
 __POLICY__
 using namespace ai;

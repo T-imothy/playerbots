@@ -1008,6 +1008,12 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     }))
         return false;
 
+    // Clipping may leave just the mover's current position even when the
+    // original destination was distant. Let the caller stop/retry instead of
+    // sending a zero-length native point spline.
+    if (WorldPosition(mover).distance(path.back()) < 0.05f)
+        return false;
+
     ForcedMovement moveMode = masterWalking ? FORCED_MOVEMENT_WALK : FORCED_MOVEMENT_RUN;
 #ifndef MANGOSBOT_ZERO
     if (bot->IsFlying())
