@@ -35,7 +35,7 @@ Unit* DungeonAddTargetAction::GetTarget()
         // A marked shielded boss can be intentional (for example Chaos Theory).
         // Do not discard that command merely because damage is currently immune.
         return unit && unit->IsInWorld() && unit->IsAlive() && bot->IsInMap(unit) && !unit->HasCharmer() &&
-            !PossibleTargetsValue::IsFriendly(unit, bot) && bot->GetDistance(unit) <= sPlayerbotAIConfig.sightDistance;
+            !sServerFacade.IsFriendlyTo(unit, bot) && bot->GetDistance(unit) <= sPlayerbotAIConfig.sightDistance;
     };
     if (commanded(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"))) || commanded(AI_VALUE(Unit*, "rti target"))) return nullptr;
     Unit* owner = nullptr;

@@ -46,8 +46,8 @@ struct PlayerbotAI {Player*bot;bool real=false,healer=false,tank=false;
 struct Config{float sightDistance=60;}sPlayerbotAIConfig;
 struct PossibleTargetsValue {
  static bool IsValid(Unit*u,Player*,bool ignoreLos){assert(!ignoreLos);return u->attackable&&u->freeAttack&&!u->friendly;}
- static bool IsFriendly(Unit*u,Player*){return u->friendly;}
 };
+struct ServerFacade{bool IsFriendlyTo(Unit*u,Player*){return u->friendly;}}sServerFacade;
 struct PossibleAttackTargetsValue {
  static bool IsPossibleTarget(Unit*u,Player*p,float range,bool ignoreCC){assert(!ignoreCC);return !u->immune&&!u->assignedCC&&p->GetDistance(u)<=range;}
  static bool HasBreakableCC(Unit*u,Player*){return u->breakCC;}
