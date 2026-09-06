@@ -19,6 +19,8 @@ namespace ai
     uint32 NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast);
     bool IsBossEscapeMap(uint32 map);
     uint32 BurningAdrenalineAura(Unit* unit);
+    bool BlackwingLairBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
+        std::vector<encounter::Circle>& threats);
     uint32 NaxxramasBurstAura(Unit* unit);
     float NaxxramasBurstRadius(uint32 aura);
     bool NaxxramasBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,

@@ -39,6 +39,11 @@ phase transitions, construct assignments and wipe recovery.
 
 ### Vaelastrasz Burning Adrenaline: implemented and regression-tested
 
+The execution path now rebuilds burst circles from current group positions
+before moving to a cached destination. A newly nearby player or native height
+adjustment can invalidate that destination; the bot waits for a valid plan
+instead of executing stale separation. No teleport or direct threat edit.
+
 All three cores' `Aura::HandlePeriodicTriggerSpell` removal hooks for 18173 and
 23620 cast the friendly explosion 23478 and self-kill 23644. The debuff's data
 trigger is health drain 23619, not the explosion. All three dev DBs agree on

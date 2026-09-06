@@ -58,6 +58,16 @@ claim that every encounter has been implemented or played successfully**.
 
 ### Additional encounter and class corrections
 
+- Pet spell feasibility now uses the actual pet caster and native cast checks,
+  with ownership/lifecycle guards and native hostile spell-opener behavior
+  preserved. Unsupported pet destination/gameobject commands are rejected.
+- Wrath cleansing-totem actions and presence checks use the merged native spell;
+  Classic/TBC keep separate disease/poison spells. Legacy strategy names remain.
+- Coordinate spell sight checks use native linear-distance units; battleground
+  squared-distance calls are unchanged. See `PET-AND-TOTEM-ADMISSION-AUDIT.md`.
+- Vael destinations are rechecked against current group positions immediately
+  before movement, including after native height/path adjustment; Naxx and BWL
+  ignore members that no longer belong to the same group.
 - BWL Burning Adrenaline uses the native aura-removal explosion and radius for
   separation, with active-tank protection, aura-lifetime cleanup, group/phase
   guards, bounded native paths and movement arbitration. All-three-expansion

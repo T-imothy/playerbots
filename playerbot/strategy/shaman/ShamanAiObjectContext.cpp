@@ -331,6 +331,9 @@ namespace ai
                 creators["nature resistance totem"] = [](PlayerbotAI* ai) { return new CastNatureResistanceTotemAction(ai); };
                 creators["disease cleansing totem"] = [](PlayerbotAI* ai) { return new CastDiseaseCleansingTotemAction(ai); };
                 creators["poison cleansing totem"] = [](PlayerbotAI* ai) { return new CastPoisonCleansingTotemAction(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["cleansing totem"] = [](PlayerbotAI* ai) { return new CastCleansingTotemAction(ai); };
+#endif
                 creators["wind shear"] = [](PlayerbotAI* ai) { return new CastWindShearAction(ai); };
                 creators["wind shear on enemy healer"] = [](PlayerbotAI* ai) { return new CastWindShearOnEnemyHealerAction(ai); };
                 creators["rockbiter weapon"] = [](PlayerbotAI* ai) { return new CastRockbiterWeaponAction(ai); };

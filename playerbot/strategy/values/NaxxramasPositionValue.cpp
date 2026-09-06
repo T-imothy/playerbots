@@ -36,7 +36,7 @@ bool ai::NaxxramasBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
     {
         Player* member = ref->getSource();
         if (!member || member == bot || !member->IsInWorld() || !member->IsAlive() ||
-            member->IsBeingTeleported() || member->HasCharmer() || !bot->IsInMap(member) ||
+            member->IsBeingTeleported() || member->HasCharmer() || member->GetGroup() != bot->GetGroup() || !bot->IsInMap(member) ||
             std::fabs(member->GetPositionZ() - here.z) >= 8) continue;
         const uint32 aura = NaxxramasBurstAura(member);
         if (!ownAura && !aura) continue;

@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/triggers/GenericTriggers.h"
+#include "ShamanTotemSpells.h"
 
 namespace ai
 {
@@ -277,7 +278,7 @@ namespace ai
 
             if (ai->HasStrategy("totem water cleansing", BotState::BOT_STATE_COMBAT))
             {
-                return !AI_VALUE2(bool, "has totem", "disease cleansing totem");
+                return !AI_VALUE2(bool, "has totem", DiseaseCleansingTotemName());
             }
             else if (ai->HasStrategy("totem water resistance", BotState::BOT_STATE_COMBAT))
             {
@@ -293,14 +294,14 @@ namespace ai
             }
             else if (ai->HasStrategy("totem water poison", BotState::BOT_STATE_COMBAT))
             {
-                return !AI_VALUE2(bool, "has totem", "poison cleansing totem");
+                return !AI_VALUE2(bool, "has totem", PoisonCleansingTotemName());
             }
             else
             {
                 return !AI_VALUE2(bool, "has totem", "healing stream totem") &&
                        !AI_VALUE2(bool, "has totem", "mana spring totem") &&
-                       !AI_VALUE2(bool, "has totem", "poison cleansing totem") &&
-                       !AI_VALUE2(bool, "has totem", "disease cleansing totem") &&
+                       !AI_VALUE2(bool, "has totem", PoisonCleansingTotemName()) &&
+                       !AI_VALUE2(bool, "has totem", DiseaseCleansingTotemName()) &&
                        !AI_VALUE2(bool, "has totem", "mana tide totem") &&
                        !AI_VALUE2(bool, "has totem", "fire resistance totem");
             }

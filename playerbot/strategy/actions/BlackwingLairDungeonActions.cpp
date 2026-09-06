@@ -30,7 +30,9 @@ bool BlackwingLairPositionAction::isUseful()
 
 bool BlackwingLairPositionAction::Execute(Event& event)
 {
-    EncounterPosition plan;
-    if (!GetPlan(ai, plan) || !ai->CanMove() || !ValidateEncounterDestination(ai, plan)) return false;
+    EncounterPosition plan, current;
+    std::vector<encounter::Circle> threats;
+    if (!GetPlan(ai, plan) || !ai->CanMove() || !BlackwingLairBurstThreats(ai, current, threats) ||
+        !ValidateEncounterDestination(ai, plan) || !encounter::OutsideCircles(plan.destination, threats)) return false;
     return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
 }

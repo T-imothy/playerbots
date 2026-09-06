@@ -9,6 +9,7 @@ value = (root / 'playerbot/strategy/values/BlackwingLairPositionValue.cpp').read
 action = (root / 'playerbot/strategy/actions/BlackwingLairDungeonActions.cpp').read_text()
 multiplier = (root / 'playerbot/strategy/generic/DungeonMultipliers.cpp').read_text()
 methods = '\n'.join((block(value, 'uint32 ai::BurningAdrenalineAura('),
+                     block(value, 'bool ai::BlackwingLairBurstThreats('),
                      block(value, 'EncounterPosition BlackwingLairPositionValue::Calculate('),
                      block(action, 'bool BlackwingLairPositionAction::GetPlan('),
                      block(action, 'bool BlackwingLairPositionAction::isUseful('),
@@ -44,7 +45,9 @@ namespace ai{struct EncounterPosition{bool active=false,exclusive=true;unsigned 
  encounter::Point destination;};}
 using namespace ai;
 struct Cached{EncounterPosition value;EncounterPosition Get(){return value;}};
-struct Context{Cached cached;template<class T>Cached* GetValue(const char*){return &cached;}};
+struct AttackerCache{std::list<ObjectGuid> value;std::list<ObjectGuid>& Get(){return value;}};
+struct Context{Cached cached;AttackerCache attackers;template<class T>auto* GetValue(const char*){
+ if constexpr(std::is_same_v<T,EncounterPosition>)return &cached;else return &attackers;}};
 struct PlayerbotAI{Player* bot;Context context;std::list<ObjectGuid> attackers;std::map<unsigned,Unit*> units;
  bool validPath=true,canMove=true;unsigned checked=0,moves=0;Player* GetBot(){return bot;}
  Context* GetAiObjectContext(){return &context;}bool CanMove(){return canMove;}
@@ -58,6 +61,7 @@ namespace ai{
  float NativeEncounterSpellRadius(unsigned id){++radiusQueries;lastRadius=id;return radius;}
  bool ValidateEncounterDestination(PlayerbotAI* ai,EncounterPosition&){++ai->checked;return ai->validPath;}
  uint32 BurningAdrenalineAura(Unit*);
+ bool BlackwingLairBurstThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
  struct BlackwingLairPositionValue{Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
  struct BlackwingLairPositionAction:MovementAction{PlayerbotAI* ai;Player* bot;
   BlackwingLairPositionAction(PlayerbotAI* a):ai(a),bot(a->bot){}
@@ -73,16 +77,18 @@ int main(){
  Map map,otherMap;Player bot,ally;bot.map=ally.map=&map;bot.guid=1;ally.guid=2;ally.x=1;
  Group group,otherGroup;GroupReference ref{&ally};group.first=&ref;bot.group=ally.group=&group;
  Unit boss;boss.entry=13020;boss.guid=3;boss.map=&map;
- PlayerbotAI ai{&bot};ai.units={{1,&bot},{2,&ally},{3,&boss}};ai.attackers={3};
+ PlayerbotAI ai{&bot};ai.units={{1,&bot},{2,&ally},{3,&boss}};ai.context.attackers.value={3};
  BlackwingLairPositionValue value{&bot,&ai};BlackwingLairPositionAction action(&ai);EncounterPosition plan;Event event;
  auto get=[&](){ai.context.cached.value=value.Calculate();return BlackwingLairPositionAction::GetPlan(&ai,plan);};
  assert(!get());bot.auras={23620};assert(get()&&plan.source==bot.guid&&plan.spell==23620&&lastRadius==23478);
  assert(encounter::Distance2d(plan.destination,{ally.x,0,0})>=12&&action.isUseful());
  assert(action.Execute(event)&&ai.moves==1);
+ ally.x=plan.destination.x;ally.y=plan.destination.y;
+ assert(!action.Execute(event)&&ai.moves==1);ally.x=1;ally.y=0; // Fresh position invalidates old destination.
  ai.validPath=false;assert(!action.Execute(event)&&ai.moves==1);ai.checked=0;assert(!get()&&ai.checked<=8);ai.validPath=true;
  assert(get());boss.victim=&bot;assert(!BlackwingLairPositionAction::GetPlan(&ai,plan)&&!get()); // Fresh tank protection.
  boss.victim=&ally;assert(get()); // Native victim change allows former tank to separate.
- boss.alive=false;boss.combat=false;bot.combat=false;ai.attackers.clear();ai.units.erase(3);assert(get());
+ boss.alive=false;boss.combat=false;bot.combat=false;ai.context.attackers.value.clear();ai.units.erase(3);assert(get());
  // Aura removal, not boss lifetime, ends post-kill separation.
  bot.auras.clear();assert(!BlackwingLairPositionAction::GetPlan(&ai,plan)&&!get());
  ally.auras={18173};assert(get()&&plan.source==ally.guid&&plan.spell==18173);
@@ -91,7 +97,7 @@ int main(){
  ally.phase=2;assert(!get());ally.phase=1;ally.map=&otherMap;assert(!get());ally.map=&map;
  ally.alive=false;assert(!get());ally.alive=true;ally.z=20;assert(!get());ally.z=0;
  ally.x=60;assert(!get());ally.x=1;
- assert(get());ally.group=&otherGroup;assert(!BlackwingLairPositionAction::GetPlan(&ai,plan));ally.group=&group;
+ assert(get());ally.group=&otherGroup;assert(!BlackwingLairPositionAction::GetPlan(&ai,plan)&&!get());ally.group=&group;
  assert(get());++bot.instance;assert(!BlackwingLairPositionAction::GetPlan(&ai,plan));--bot.instance;
  bot.teleport=true;assert(!get());bot.teleport=false;bot.charmed=true;assert(!get());bot.charmed=false;
  bot.mapId=0;assert(!get());bot.mapId=469;bot.alive=false;assert(!get());bot.alive=true;

@@ -524,6 +524,7 @@ public:
     bool CastSpell(uint32 spellId, Unit* target, Item* itemTarget = nullptr, bool waitForSpell = true, uint32* outSpellDuration = nullptr);
     bool CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarget = nullptr, bool waitForSpell = true, uint32* outSpellDuration = nullptr);
     bool CastSpell(uint32 spellId, float x, float y, float z, Item* itemTarget = nullptr, bool waitForSpell = true, uint32* outSpellDuration = nullptr);
+    bool CanCastPetSpell(uint32 spellId, Unit* target, SpellCastResult* checkResult = nullptr);
     bool CastPetSpell(uint32 spellId, Unit* target);
     bool CastVehicleSpell(uint32 spellId, Unit* target, float projectileSpeed, bool needTurn);
     bool CastVehicleSpell(uint32 spellId, float x, float y, float z);

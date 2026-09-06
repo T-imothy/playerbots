@@ -11,14 +11,15 @@ uint32 ai::BurningAdrenalineAura(Unit* unit)
     return unit->HasAura(23620) ? 23620 : 0;
 }
 
-EncounterPosition BlackwingLairPositionValue::Calculate()
+bool ai::BlackwingLairBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
+    std::vector<encounter::Circle>& threats)
 {
-    EncounterPosition plan;
+    Player* bot = ai->GetBot();
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
-        bot->HasCharmer() || bot->GetMapId() != 469 || !bot->GetGroup()) return plan;
+        bot->HasCharmer() || bot->GetMapId() != 469 || !bot->GetGroup()) return false;
 
     Unit* boss = nullptr;
-    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
     {
         Unit* unit = ai->GetUnit(guid);
         if (unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->IsAlive() &&
@@ -27,15 +28,14 @@ EncounterPosition BlackwingLairPositionValue::Calculate()
     // Do not drag the dragon through the raid. The active tank retains normal
     // positioning; other players avoid that carrier. Once native threat changes
     // the victim, the former tank can separate without a fabricated taunt.
-    if (boss && boss->GetVictim() == bot) return plan;
+    if (boss && boss->GetVictim() == bot) return false;
 
     const uint32 ownAura = BurningAdrenalineAura(bot);
     // The explosion is in Aura::HandlePeriodicTriggerSpell's removal hook,
     // not EffectTriggerSpell of the debuff (which points at its health drain).
     const float radius = NativeEncounterSpellRadius(23478);
-    if (!std::isfinite(radius) || radius <= 0 || radius > 45) return plan;
+    if (!std::isfinite(radius) || radius <= 0 || radius > 45) return false;
     const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
-    std::vector<encounter::Circle> threats;
     plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
     if (boss) plan.boss = boss->GetObjectGuid();
     if (ownAura) { plan.spell = ownAura; plan.source = bot->GetObjectGuid(); }
@@ -43,7 +43,7 @@ EncounterPosition BlackwingLairPositionValue::Calculate()
     {
         Player* member = ref->getSource();
         if (!member || member == bot || !member->IsInWorld() || !member->IsAlive() ||
-            member->IsBeingTeleported() || member->HasCharmer() || !bot->IsInMap(member) ||
+            member->IsBeingTeleported() || member->HasCharmer() || member->GetGroup() != bot->GetGroup() || !bot->IsInMap(member) ||
             std::fabs(member->GetPositionZ() - here.z) >= 8) continue;
         const uint32 aura = BurningAdrenalineAura(member);
         if (!ownAura && !aura) continue;
@@ -51,18 +51,25 @@ EncounterPosition BlackwingLairPositionValue::Calculate()
         if (!ownAura && (plan.source.IsEmpty() || member->GetObjectGuid() < plan.source))
         { plan.spell = aura; plan.source = member->GetObjectGuid(); }
     }
-    if (threats.empty()) return plan;
+    if (threats.empty()) return false;
     bool relevant = ownAura != 0;
     for (const auto& threat : threats)
         relevant = relevant || encounter::Distance2d(here, threat.center) < threat.radius + 8;
-    if (!relevant) return plan;
+    return relevant;
+}
 
+EncounterPosition BlackwingLairPositionValue::Calculate()
+{
+    EncounterPosition plan;
+    std::vector<encounter::Circle> threats;
+    if (!BlackwingLairBurstThreats(ai, plan, threats)) return plan;
+    const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
     unsigned checked = 0;
     for (const auto& point : encounter::EscapeCircles(here, threats))
     {
         if (++checked > 8) break;
         plan.active = true; plan.destination = point;
-        if (ValidateEncounterDestination(ai, plan)) return plan;
+        if (ValidateEncounterDestination(ai, plan) && encounter::OutsideCircles(plan.destination, threats)) return plan;
     }
     plan.active = false;
     return plan;
