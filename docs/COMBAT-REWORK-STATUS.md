@@ -58,6 +58,13 @@ claim that every encounter has been implemented or played successfully**.
 
 ### Additional encounter and class corrections
 
+- Righteous Defense now uses its native friendly group recipient in TBC/Wrath,
+  including matching movement prerequisites and fresh dispatch admission.
+  Existing tank taunts can respond to Ebonroc's boss-owned debuff in all eras;
+  fresh dispatch checks prevent queued taunt-back after a successful swap.
+- Heavy new encounter position values use the legacy interval value that
+  actually caches for one second. Global combat-value timing is unchanged.
+  See `TANK-TARGET-AND-PLANNER-AUDIT.md` for reproduced behavior and test limits.
 - TBC/Wrath Magtheridon DPS coordinate native cube clicks/channels with stable
   assignment, occupied-human-cube and exhaustion guards, role preservation,
   normal paths and reset/group cleanup. Native phase-three Debris warnings

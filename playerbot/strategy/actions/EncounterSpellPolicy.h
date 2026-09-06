@@ -13,4 +13,6 @@ namespace ai
     bool InterruptCorruptedHealingCast(Player* bot);
     bool IsProtectedEncounterDispel(Unit* target, uint32 dispelType);
     bool ShouldAvoidEncounterDispel(PlayerbotAI* ai, const SpellEntry* spell, Unit* target);
+    bool ShouldSwapEncounterTank(PlayerbotAI* ai, Unit* enemy);
+    bool ShouldAvoidEncounterTaunt(PlayerbotAI* ai, const SpellEntry* spell, Unit* enemy);
 }

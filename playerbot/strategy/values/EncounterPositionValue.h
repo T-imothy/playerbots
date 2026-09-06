@@ -37,35 +37,36 @@ namespace ai
     class MagtheridonPositionValue : public CalculatedValue<EncounterPosition>
     {
     public:
-        MagtheridonPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "magtheridon cube position", 1) {}
+        // CalculatedValue's legacy interval is halved; 2 caches for one second.
+        MagtheridonPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "magtheridon cube position", 2) {}
         EncounterPosition Calculate() override;
     };
 
     class GruulPositionValue : public CalculatedValue<EncounterPosition>
     {
     public:
-        GruulPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "gruul spread position", 1) {}
+        GruulPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "gruul spread position", 2) {}
         EncounterPosition Calculate() override;
     };
 
     class NaxxramasPositionValue : public CalculatedValue<EncounterPosition>
     {
     public:
-        NaxxramasPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "naxxramas position", 1) {}
+        NaxxramasPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "naxxramas position", 2) {}
         EncounterPosition Calculate() override;
     };
 
     class BlackwingLairPositionValue : public CalculatedValue<EncounterPosition>
     {
     public:
-        BlackwingLairPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "blackwing lair position", 1) {}
+        BlackwingLairPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "blackwing lair position", 2) {}
         EncounterPosition Calculate() override;
     };
 
     class BossCastPositionValue : public CalculatedValue<EncounterPosition>
     {
     public:
-        BossCastPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "boss cast position", 1) {}
+        BossCastPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "boss cast position", 2) {}
         EncounterPosition Calculate() override;
     };
 

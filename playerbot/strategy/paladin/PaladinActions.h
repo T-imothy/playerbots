@@ -575,11 +575,13 @@ namespace ai
 		CastHandOfReckoningAction(PlayerbotAI* ai) : CastSpellAction(ai, "hand of reckoning") {}
 	};
 
-	class CastRighteousDefenseAction : public CastSpellAction
-	{
-	public:
-		CastRighteousDefenseAction(PlayerbotAI* ai) : CastSpellAction(ai, "righteous defense") {}
-	};
+    class CastRighteousDefenseAction : public CastSpellAction
+    {
+    public:
+        CastRighteousDefenseAction(PlayerbotAI* ai) : CastSpellAction(ai, "righteous defense") {}
+        std::string GetTargetName() override { return "righteous defense target"; }
+        bool Execute(Event& event) override { return GetTarget() && CastSpellAction::Execute(event); }
+    };
 
 	class CastCleansePoisonAction : public CastCureSpellAction
 	{

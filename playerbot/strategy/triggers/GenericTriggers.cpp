@@ -5,6 +5,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/AoeValues.h"
+#include "playerbot/strategy/actions/EncounterSpellPolicy.h"
 
 #include <regex>
 
@@ -64,7 +65,7 @@ bool LoseAggroTrigger::IsActive()
                 if(targetsTarget && targetsTarget->IsPlayer())
                 {
                     Player* targetsPlayerTarget = (Player*)targetsTarget;
-                    return !ai->IsTank(targetsPlayerTarget);
+                    return !ai->IsTank(targetsPlayerTarget) || ShouldSwapEncounterTank(ai, target);
                 }
             }
         }

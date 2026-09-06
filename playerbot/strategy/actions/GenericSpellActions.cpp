@@ -104,6 +104,8 @@ bool CastSpellAction::Execute(Event& event)
             return false;
         if (ShouldAvoidEncounterDispel(ai, sServerFacade.LookupSpellInfo(spellId), GetTarget()))
             return false;
+        if (ShouldAvoidEncounterTaunt(ai, sServerFacade.LookupSpellInfo(spellId), GetTarget()))
+            return false;
 
         if (GetTargetName() == "current target" && (!bot->GetCurrentSpell(CURRENT_MELEE_SPELL) && !bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL)))
         {
@@ -250,6 +252,8 @@ bool CastSpellAction::isUseful()
     if (ShouldAvoidCorruptedHealing(bot, pSpellInfo, spellTarget))
         return false;
     if (ShouldAvoidEncounterDispel(ai, pSpellInfo, spellTarget))
+        return false;
+    if (ShouldAvoidEncounterTaunt(ai, pSpellInfo, spellTarget))
         return false;
     if (pSpellInfo)
     {
