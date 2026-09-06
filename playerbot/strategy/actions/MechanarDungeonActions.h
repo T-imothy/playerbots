@@ -2,10 +2,19 @@
 #include "DungeonActions.h"
 #include "ChangeStrategyAction.h"
 #include "UseItemAction.h"
+#include "AttackAction.h"
 #include "playerbot/strategy/values/EncounterPositionValue.h"
 
 namespace ai
 {
+    class PathaleonAddsAction : public AttackAction
+    {
+    public:
+        PathaleonAddsAction(PlayerbotAI* ai) : AttackAction(ai, "pathaleon attack adds") {}
+        Unit* GetTarget() override;
+        bool isUseful() override;
+    };
+
     class MechanarPositionAction : public MovementAction
     {
     public:

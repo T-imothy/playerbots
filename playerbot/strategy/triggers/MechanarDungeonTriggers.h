@@ -5,6 +5,12 @@
 
 namespace ai
 {
+    class PathaleonAddsTrigger : public Trigger
+    {
+    public:
+        PathaleonAddsTrigger(PlayerbotAI* ai) : Trigger(ai, "pathaleon attack adds", 1) {}
+        bool IsActive() override { PathaleonAddsAction action(ai); return action.isUseful(); }
+    };
     class MechanarPositionTrigger : public Trigger
     {
     public:

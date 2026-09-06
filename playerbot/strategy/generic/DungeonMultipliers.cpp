@@ -12,6 +12,11 @@ using namespace ai;
 
 float PreserveMechanarPositionMultiplier::GetValue(Action* action)
 {
+    if (action && (action->getName() == "dps assist" || action->getName() == "tank assist"))
+    {
+        PathaleonAddsAction adds(ai);
+        if (adds.GetTarget()) return 0.0f;
+    }
     if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
         dynamic_cast<MechanarPositionAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
     EncounterPosition plan;

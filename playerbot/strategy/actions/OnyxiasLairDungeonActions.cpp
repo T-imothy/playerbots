@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "OnyxiasLairDungeonActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 
 using namespace ai;
 
@@ -39,27 +40,37 @@ bool OnyxiaPositionAction::Execute(Event& event)
 
 Unit* OnyxiaAddsAction::GetTarget()
 {
-    if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId() != 249 || !bot->IsInCombat() || ai->IsHeal(bot)) return nullptr;
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
+        bot->GetMapId() != 249 || !bot->IsInCombat() || ai->IsHeal(bot)) return nullptr;
     Unit* boss = nullptr;
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
     {
         Unit* unit = ai->GetUnit(guid);
-        if (unit && unit->IsInWorld() && unit->GetMap() == bot->GetMap() && unit->GetEntry() == 10184 && unit->IsAlive())
+        if (unit && unit->IsInWorld() && unit->GetMap() == bot->GetMap() && unit->GetEntry() == 10184 &&
+            unit->IsAlive() && unit->IsInCombat())
         { boss = unit; break; }
     }
     if (!boss || boss->GetVictim() == bot) return nullptr;
     const bool airborne = boss->IsLevitating() || boss->GetPositionZ() - bot->GetPositionZ() > 10;
     if (!airborne && !ai->IsTank(bot)) return nullptr;
+    Unit* marked = AI_VALUE(Unit*, "rti target");
+    if (marked && marked->GetEntry() != 11262) return nullptr;
+    Unit* current = AI_VALUE(Unit*, "current target");
     Unit* nearest = nullptr;
+    Unit* retained = nullptr;
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
     {
         Unit* unit = ai->GetUnit(guid);
         if (!unit || !unit->IsInWorld() || unit->GetMap() != bot->GetMap() || !unit->IsAlive() || !unit->IsInCombat()) continue;
-        // This list already applies the shared crowd-control/attackability rules.
-        if (unit->GetEntry() != 11262) continue;
+        // Shared target lists can reintroduce CC targets as a last resort.
+        // Encounter add priority must not turn that into an instruction to break CC.
+        if (unit->GetEntry() != 11262 || PossibleAttackTargetsValue::HasBreakableCC(unit, bot) ||
+            PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot)) continue;
+        if (unit == marked) return unit;
+        if (unit == current) retained = unit;
         if (!nearest || bot->GetDistance(unit) < bot->GetDistance(nearest)) nearest = unit;
     }
-    return nearest;
+    return retained ? retained : nearest;
 }
 
 bool OnyxiaAddsAction::isUseful()

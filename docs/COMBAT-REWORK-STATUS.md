@@ -76,6 +76,17 @@ claim that every encounter has been implemented or played successfully**.
   Combined danger areas, safe-position holding, same-map/height/lifetime checks
   and eight-path-query limits apply. Classic returns an inactive decision.
   This does not implement same-charge stacking bonuses or every Mechanar boss.
+- Mechanar positioning also observes Sepethrea's actual Raging Flames aura and
+  current fixation target, with a running buffer for the chased bot. It combines
+  nearby flame danger areas and replaces the competing fixed-distance flee
+  trigger. Pathaleon ranged/healer positioning uses native silence/explosion
+  radii and normal/heroic difficulty, without pulling the boss tank/melee away.
+- Pathaleon add priority selects engaged Nether Wraiths, leaving the boss tank
+  and healing roles alone. Both it and Onyxia add priority explicitly reject
+  crowd-controlled targets (the shared list can reintroduce them as a fallback),
+  honor configured raid-target marks, retain a valid current add, and reject
+  charm, teleport, death and different-instance targets. Normal AttackAction is
+  used; this is not direct damage, fabricated threat or forced CC removal.
 - Shared spell actions reject passive talents/procs instead of casting them;
   target-map validation uses the actual map instance, not just the map number.
 - Wrath DK: apply owned Blood Plague/Frost Fever, use the secondary target for
@@ -116,6 +127,11 @@ combat scheduling or Wrath-only ability scheduling is added to Classic/TBC.
   Classic/TBC/Wrath diagnostics probes. Static Naxx registration checks passed.
 - No new encounter play tests have been performed. No damage/healing gain or
   performance improvement percentage is established by these tests.
+- Actual-source Mechanar decisions passed all three expansion fixtures for
+  polarity, charge lifetime, flame fixation, caster-only normal/heroic radii,
+  map/control/life guards and the eight-path-query bound. Add-target tests passed
+  for CC fallback exclusion, marked/current target precedence, role assignment,
+  instance/transition/life guards and Classic exclusion of Pathaleon behavior.
 
 ## Remaining before the full requested scope is complete
 

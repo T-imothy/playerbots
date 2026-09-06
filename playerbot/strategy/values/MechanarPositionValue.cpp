@@ -17,7 +17,8 @@ EncounterPosition MechanarPositionValue::Calculate()
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
     {
         Unit* unit = ai->GetUnit(guid);
-        if (unit && unit->GetEntry() == 19219 && unit->IsInWorld() && unit->GetMap() == bot->GetMap() &&
+        if (unit && (unit->GetEntry() == 19219 || unit->GetEntry() == 19221 || unit->GetEntry() == 19220) &&
+            unit->IsInWorld() && unit->GetMap() == bot->GetMap() &&
             unit->IsAlive() && unit->IsInCombat()) { boss = unit; break; }
     }
     if (!boss) return plan;
@@ -31,7 +32,7 @@ EncounterPosition MechanarPositionValue::Calculate()
     // The native heroic script assigns these auras. Normal mode and uncharged
     // players do not acquire synthetic polarity or a made-up stacking bonus.
     const uint32 opposite = bot->HasAura(39088) ? 39091 : bot->HasAura(39091) ? 39088 : 0;
-    if (opposite && bot->GetGroup())
+    if (boss->GetEntry() == 19219 && opposite && bot->GetGroup())
         for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->getSource();
@@ -40,14 +41,33 @@ EncounterPosition MechanarPositionValue::Calculate()
         }
     // Charges are native creature summons, not DynamicObjects. Their lifetime
     // and explosion radius come from the actual timer/pulse spells.
-    const float radius = std::max(NativeEncounterSpellRadius(35151), NativeEncounterSpellRadius(37670));
-    std::list<Unit*> charges;
-    MaNGOS::AllCreaturesOfEntryInRangeCheck check(bot, 20405, 40.0f);
-    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(charges, check);
-    Cell::VisitAllObjects(bot, searcher, 40.0f);
-    for (Unit* charge : charges)
-        if (charge && charge->IsInWorld() && charge->GetMap() == bot->GetMap() && charge->IsAlive() &&
-            charge->HasAura(37670)) add(charge, radius);
+    if (boss->GetEntry() == 19219 || boss->GetEntry() == 19221)
+    {
+        const bool flames = boss->GetEntry() == 19221;
+        const float radius = flames ? NativeEncounterSpellRadius(35281) :
+            std::max(NativeEncounterSpellRadius(35151), NativeEncounterSpellRadius(37670));
+        std::list<Unit*> hazards;
+        MaNGOS::AllCreaturesOfEntryInRangeCheck check(bot, flames ? 20481 : 20405, 40.0f);
+        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(hazards, check);
+        Cell::VisitAllObjects(bot, searcher, 40.0f);
+        for (Unit* hazard : hazards)
+            if (hazard && hazard->IsInWorld() && hazard->GetMap() == bot->GetMap() && hazard->IsAlive() &&
+                hazard->HasAura(flames ? 35281 : 37670))
+            {
+                // Raging Flames fixates and retargets in the native script. A
+                // chased bot needs a running buffer, not a threat reset or taunt.
+                const float lead = flames && hazard->GetVictim() == bot ? 6.0f : 0.0f;
+                add(hazard, radius > 0 ? radius + lead : 0);
+            }
+    }
+    else if (ai->IsRanged(bot) || ai->IsHeal(bot))
+    {
+        // Stay outside native close-range silence/explosion while still casting.
+        // Do not make the tank or melee run away from Pathaleon to avoid damage.
+        float radius = NativeEncounterSpellRadius(36022);
+        if (!bot->GetMap()->IsRegularDifficulty()) radius = std::max(radius, NativeEncounterSpellRadius(15453));
+        add(boss, radius);
+    }
     if (threats.empty()) return plan;
     bool relevant = false;
     for (const auto& circle : threats)
