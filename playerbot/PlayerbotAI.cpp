@@ -5821,6 +5821,8 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string spell)
 
 bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
 {
+    if (!bot || !bot->IsInWorld() || !target || !target->IsInWorld() || !bot->IsInMap(target))
+        return false;
     bool isFriend = sServerFacade.IsFriendlyTo(bot, target);
 	for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
 	{
@@ -5839,11 +5841,17 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
 			if (!isPositiveSpell && !isFriend)
 				continue;
 
-			if (sPlayerbotAIConfig.dispelAuraDuration && aura->GetAuraDuration() && aura->GetAuraDuration() < (int32)sPlayerbotAIConfig.dispelAuraDuration)
-			    return false;
+            if (!canDispel(entry, dispelType))
+                continue;
 
-			if (canDispel(entry, dispelType))
-				return true;
+            // Skip only this nearly-expired candidate, not every other aura on
+            // the target. Negative native durations denote permanent auras.
+            const int32 remaining = aura->GetAuraDuration();
+            if (sPlayerbotAIConfig.dispelAuraDuration && remaining > 0 &&
+                remaining < (int32)sPlayerbotAIConfig.dispelAuraDuration)
+                continue;
+
+            return true;
 		}
 	}
 	return false;

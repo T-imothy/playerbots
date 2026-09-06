@@ -38,6 +38,16 @@ were imported.
 
 ## Shared issues discovered during this review
 
+- The common dispel scan returned false for every remaining aura after finding
+  one nearly-expired effect, even an unrelated dispel type. Corrected to skip
+  only that candidate, keep scanning and preserve native permanent durations.
+  The old source reproduced the failure in a standalone actual-code test; the
+  correction applies to all classes using this helper, not just an MC boss.
+  Normal cast success, resistances and the existing dispel policy remain native.
+- Mage cure strategies already provide a Remove Lesser Curse fallback in earlier
+  expansions; hunters already schedule learned Tranquilizing Shot on an enrage
+  trigger in all eras. Those are not missing action implementations. Actual raid
+  timing/coordination and target selection still need encounter validation.
 - AoE position used uninitialized bounds when the first selected GUID vanished
   before its second resolution. This is corrected and covered by actual-source
   tests for first/all GUID disappearance, lifecycle, instance/phase and count

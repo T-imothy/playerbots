@@ -58,6 +58,13 @@ claim that every encounter has been implemented or played successfully**.
 
 ### Additional encounter and class corrections
 
+- Shared dispel eligibility skips a nearly-expired aura rather than stopping the
+  scan and ignoring every other removable effect. Wrong dispel types cannot veto
+  a valid later candidate; permanent negative-duration auras are not mistaken
+  for nearly-expired effects. Existing friendliness, spell/effect positivity,
+  name exclusions and duration configuration remain; native casting decides
+  actual removal. World/map/phase guards reject invalid target contexts. The
+  regression reproduced the old false negative before the fix.
 - Shared AoE target selection revalidates world/life/map/phase membership. AoE
   position bounds initialize from the first still-resolved target, not the first
   cached GUID; when every target disappears, return no position. Target counts
