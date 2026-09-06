@@ -302,13 +302,27 @@ RandomPlayerbotMgr::RandomPlayerbotMgr()
         guildsDeleted = false;
         arenaTeamsDeleted = false;
 
+        const auto eventLoadStart = std::chrono::steady_clock::now();
+        sLog.outString("Loading saved random-bot events...");
         const std::vector<uint32>& availableBots = GetBots();
+        uint32 eventsLoaded = 0;
+        auto lastEventProgress = eventLoadStart;
 
         for (auto& bot : availableBots)
         {
             if(GetEventValue(bot,"login"))
                 SetEventValue(bot, "login", 0, 0);
+            ++eventsLoaded;
+            const auto now = std::chrono::steady_clock::now();
+            if (now - lastEventProgress >= std::chrono::seconds(5))
+            {
+                sLog.outString("Loading saved random-bot events: %u/%u bots (%.1f seconds elapsed)",
+                    eventsLoaded, uint32(availableBots.size()), std::chrono::duration<double>(now - eventLoadStart).count());
+                lastEventProgress = now;
+            }
         }
+        sLog.outString("Saved random-bot events loaded: %u bots in %.1f seconds", eventsLoaded,
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - eventLoadStart).count());
 
 #ifndef MANGOSBOT_ZERO
         // load random bot team members
@@ -325,7 +339,9 @@ RandomPlayerbotMgr::RandomPlayerbotMgr()
         }
 #endif
         // sync event timers
+        sLog.outString("Synchronizing saved random-bot event timers...");
         SyncEventTimers();
+        sLog.outString("Saved random-bot event timers synchronized.");
 
         for (uint32 i = 0; i < sMapStore.GetNumRows(); ++i)
         {
@@ -3100,7 +3116,27 @@ void RandomPlayerbotMgr::PrepareTeleportCache()
 
     sLog.outString("Enhancing RPG teleport cache");
 
+    const auto cacheStart = std::chrono::steady_clock::now();
+    auto lastProgress = cacheStart;
+    auto reportProgress = [&](const char* phase, uint32 completed, uint32 total, bool force = false)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (force || now - lastProgress >= std::chrono::seconds(5))
+        {
+            const double elapsed = std::chrono::duration<double>(now - cacheStart).count();
+            sLog.outString("RPG teleport cache: %s %u/%u (%.1f seconds elapsed)", phase, completed, total, elapsed);
+            lastProgress = now;
+        }
+    };
+
     std::map<uint32, std::map<uint32, std::vector<std::string>>> areaNames;
+
+    uint32 areaTotal = 0;
+    for (const auto& race : rpgLocsCacheLevel)
+        for (const auto& level : race.second)
+            areaTotal += uint32(level.second.size());
+    uint32 areaDone = 0;
+    reportProgress("area names", 0, areaTotal, true);
 
     for (uint32 level = 1; level < sPlayerbotAIConfig.randomBotMaxLevel + 1; level++)
     {
@@ -3109,6 +3145,7 @@ void RandomPlayerbotMgr::PrepareTeleportCache()
             for (auto p : rpgLocsCacheLevel[r][level])
             {
                 areaNames[level][r].push_back(WorldPosition(p).getAreaName(true, true));
+                reportProgress("area names", ++areaDone, areaTotal);
             }
         }
     }
@@ -3117,8 +3154,13 @@ void RandomPlayerbotMgr::PrepareTeleportCache()
     std::vector<std::pair<std::pair<uint32, uint32>, GuidPosition>> innPoints;
 
     //Static portals.
-    for (auto& goData : WorldPosition().getGameObjectsNear(0, 0))
+    reportProgress("area names", areaDone, areaTotal, true);
+    const auto gameObjects = WorldPosition().getGameObjectsNear(0, 0);
+    uint32 gameObjectsDone = 0;
+    reportProgress("portals", 0, uint32(gameObjects.size()), true);
+    for (auto& goData : gameObjects)
     {
+        reportProgress("portals", ++gameObjectsDone, uint32(gameObjects.size()));
         GuidPosition go(goData);
 
         auto data = sGOStorage.LookupEntry<GameObjectInfo>(go.GetEntry());
@@ -3149,8 +3191,13 @@ void RandomPlayerbotMgr::PrepareTeleportCache()
     }
 
     //Creatures.
-    for (auto& creatureData : WorldPosition().getCreaturesNear(0, 0))
+    reportProgress("portals", gameObjectsDone, uint32(gameObjects.size()), true);
+    const auto creatures = WorldPosition().getCreaturesNear(0, 0);
+    uint32 creaturesDone = 0;
+    reportProgress("NPC destinations", 0, uint32(creatures.size()), true);
+    for (auto& creatureData : creatures)
     {
+        reportProgress("NPC destinations", ++creaturesDone, uint32(creatures.size()));
         CreatureInfo const* cInfo = ObjectMgr::GetCreatureTemplate(creatureData->second.id);
 
         if (!cInfo)
@@ -3195,6 +3242,9 @@ void RandomPlayerbotMgr::PrepareTeleportCache()
     
     for (auto innPoint : innPoints)
         innCacheLevel[innPoint.first.first][innPoint.first.second].push_back(std::make_pair(innPoint.second, innPoint.second));
+
+    reportProgress("NPC destinations", creaturesDone, uint32(creatures.size()), true);
+    sLog.outString("RPG teleport cache ready: %u added destinations, %u inn destinations", uint32(newPoints.size()), uint32(innPoints.size()));
 }
 
 void RandomPlayerbotMgr::PrintTeleportCache()
