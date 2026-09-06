@@ -125,12 +125,21 @@ namespace ai
         T GetLastValue() { return lastValue; }
         time_t GetLastTime() { return lastChangeTime; }
 
-        virtual T GetDelta() { T lVal = lastValue; time_t lTime = lastChangeTime; if (lastChangeTime == time(0)) return Get() - Get(); return (Get() - lVal) / float(time(0) - lTime); }
+        virtual T GetDelta()
+        {
+            const T previousValue = lastValue;
+            const time_t previousTime = lastChangeTime;
+            const T current = Get();
+            const time_t elapsed = time(0) - previousTime;
+            return !previousTime || elapsed <= 0 ? current - current : (current - previousValue) / float(elapsed);
+        }
 
-        virtual void Reset() override { CalculatedValue<T>::Reset(); lastChangeTime = time(0); }
+        // The next sample establishes a new baseline; do not compare against
+        // the previous target/state or an uninitialized lastValue after Reset.
+        virtual void Reset() override { CalculatedValue<T>::Reset(); lastChangeTime = 0; }
         virtual bool Protected() override { return true; }
     protected:
-        T lastValue;
+        T lastValue{};
         uint32 minChangeInterval = 0; //Change will not be checked untill this interval has passed.
         time_t lastChangeTime;
     };
@@ -139,17 +148,42 @@ namespace ai
     {
     public:
         LogCalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) : MemoryCalculatedValue<T>(ai, name, checkInterval) {};
-        virtual bool UpdateChange() override { if (MemoryCalculatedValue<T>::UpdateChange()) return false; valueLog.push_back(std::make_pair(this->value, time(0))); if (valueLog.size() > logLength) valueLog.pop_front(); return true; }
+        virtual bool UpdateChange() override
+        {
+            if (!MemoryCalculatedValue<T>::UpdateChange())
+                return false;
+
+            valueLog.push_back(std::make_pair(this->value, time(0)));
+            if (valueLog.size() > logLength)
+                valueLog.pop_front();
+            return true;
+        }
 
         virtual T Get() override { return MemoryCalculatedValue<T>::Get(); }
 
         std::list<std::pair<T, time_t>> ValueLog() { return valueLog; }
 
-        std::pair<T, time_t> GetLogOn(time_t t) { auto log = std::find_if(valueLog.rbegin(), valueLog.rend(), [t](std::pair<T, time_t> p) {return p.second < t; }); if (log == valueLog.rend()) return valueLog.front(); return *log; }
-        T GetValueOn(time_t t) { return GetLogOn(t)->first; }
-        T GetTimeOn(time_t t) { return GetTimeOn(t)->second; }
+        std::pair<T, time_t> GetLogOn(time_t t)
+        {
+            if (valueLog.empty())
+                Get();
+            auto log = std::find_if(valueLog.rbegin(), valueLog.rend(),
+                [t](const std::pair<T, time_t>& p) { return p.second <= t; });
+            return log == valueLog.rend() ? valueLog.front() : *log;
+        }
+        T GetValueOn(time_t t) { return GetLogOn(t).first; }
+        time_t GetTimeOn(time_t t) { return GetLogOn(t).second; }
 
-        virtual T GetDelta(uint32 window) { std::pair<T, time_t> log = GetLogOn(time(0) - window); if (log.second == time(0)) return Get() - Get(); return (Get() - log.first) / float(time(0) - log.second); }
+        virtual T GetDelta(uint32 window)
+        {
+            // Calculate first: a target change can clear this history inside
+            // Calculate(), and diagnostics may ask for delta before any Get().
+            const T current = Get();
+            const time_t now = time(0);
+            const std::pair<T, time_t> log = GetLogOn(now - window);
+            const time_t elapsed = now - log.second;
+            return elapsed <= 0 ? current - current : (current - log.first) / float(elapsed);
+        }
 
         virtual void Reset() override { MemoryCalculatedValue<T>::Reset(); valueLog.clear(); }
     protected:

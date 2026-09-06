@@ -182,6 +182,28 @@ combat scheduling or Wrath-only ability scheduling is added to Classic/TBC.
 
 ## Validation completed so far
 
+- Shared threat history now records accepted changed samples instead of skipping
+  them, seeds first/delta-only reads safely and rebaselines on target changes.
+  Friendly target proxies are resolved to their current enemy before recording
+  its GUID; missing, dead, removed or cross-instance targets are rejected through
+  native world/map checks (including phase on TBC/Wrath). Tank membership reads
+  also reject teleporting/removed/cross-phase members. This changes bot decisions,
+  not native threat generation. Relative threat safely saturates at 255 instead
+  of wrapping, with zero-denominator and nonfinite guards.
+- The shared memory-value reset now initializes its next baseline; historical
+  getters no longer dereference an empty log or malformed pair expression. The
+  original configured sampling intervals and 10/30-entry limits remain. The
+  position-history consumer refreshes its value and stops at the requested time
+  window, so much older movement cannot mask current immobility. Existing stuck
+  thresholds and real-player-group exclusions remain untouched. This warrants
+  checking autonomous wandering/recovery as well as combat in dev.
+- Actual-source deterministic tests reproduce the old history append inversion,
+  threat percentage overflow and movement-window failure before their respective
+  fixes. Corrected history, threat lifecycle/proxy switches, absent targets,
+  first-use debug, clock rollback, count bounds and movement-window cases pass
+  under all three expansion modes. Native full builds are separately required;
+  these defects are not established causes of any reported production crash.
+
 - Intermediate native x64 RelWithDebInfo builds succeeded for Classic, TBC and
   Wrath. Later edits require a final build of the exact committed revisions.
 - Actual-source controlled C++ tests passed for convenience summon rejection,
@@ -243,6 +265,10 @@ The one-second native boss-cast position is also functional state, not optional
 logging instrumentation. These changes introduce no additional diagnostic output.
 MC target priority, post-combat bomb handling and AoE lifetime checks likewise add
 no logs, counters, worker or SQL table. They are gameplay decisions, not diagnostics.
+Threat and movement-history corrections reuse existing bounded functional value
+logs, not output files. They add no diagnostic scan, counter, table or worker,
+and do not alter general calculated-value cache cadence. Keep this functional
+history when optional diagnostics are disabled; no runtime savings are claimed.
 
 The 10,000-bot Classic soak was stopped through the normal console signal; the
 server logged `Halting process...` at 19:16:48 local on 2026-09-05. Shutdown also

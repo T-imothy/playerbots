@@ -19,25 +19,32 @@ uint32 DistanceMovedSinceValue::Calculate()
     uint32 minTimePassed = stoi(getQualifier());
 
     LogCalculatedValue<WorldPosition>* posVal = dynamic_cast<LogCalculatedValue<WorldPosition>*>(context->GetUntypedValue("current position"));
+    if (!posVal)
+        return 0;
 
+    posVal->Get();
+    const auto history = posVal->ValueLog();
+    const time_t cutoff = time(0) - minTimePassed;
     bool hasEnoughData = false;
-    uint32 maxSqDistance = 0.0;
+    float maxSqDistance = 0.0f;
 
-    for (auto tPos : posVal->ValueLog())
+    // Walk back only as far as the last known position at the window boundary.
+    // Older movement must not hide a bot that has been stuck since then.
+    for (auto i = history.rbegin(); i != history.rend(); ++i)
     {
-        uint32 timePassed = time(0) - tPos.second;
-
-        if (timePassed > minTimePassed)
-            hasEnoughData = true;
-
-        uint32 distance = tPos.first.sqDistance(bot);
-
+        float distance = i->first.sqDistance(bot);
         if (distance > maxSqDistance)
             maxSqDistance = distance;
+
+        if (i->second <= cutoff)
+        {
+            hasEnoughData = true;
+            break;
+        }
     }
 
     if (!hasEnoughData)
         return 0;
 
-    return sqrt(maxSqDistance);
+    return static_cast<uint32>(sqrt(maxSqDistance));
 }

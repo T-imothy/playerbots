@@ -5,16 +5,45 @@
 #include "playerbot/ServerFacade.h"
 #include "Combat/ThreatManager.h"
 
+#include <algorithm>
+#include <cmath>
+
 using namespace ai;
+
+namespace
+{
+    Unit* ResolveThreatTarget(Player* player, Unit* target)
+    {
+        if (!player || !player->IsInWorld() || player->IsBeingTeleported() ||
+            !target || !target->IsInWorld() || !player->IsInMap(target))
+            return nullptr;
+
+        if (target->GetTypeId() == TYPEID_PLAYER && static_cast<Player*>(target)->IsBeingTeleported())
+            return nullptr;
+
+        // A friendly selection is a proxy for its enemy, not a guarantee that
+        // it still has one. Recheck native map/instance/phase after resolving.
+        if (target->IsFriend(player))
+            target = target->GetTarget();
+
+        if (!target || !target->IsInWorld() || !target->IsAlive() || !player->IsInMap(target) ||
+            target->GetObjectGuid().IsPlayer() || target->IsFriend(player))
+            return nullptr;
+
+        return target;
+    }
+}
 
 float MyThreatValue::Calculate()
 {
-    Unit* target = AI_VALUE(Unit*, qualifier);
-    
-    if (target->GetObjectGuid() != lastTarget) //Reset history if we switched target.
+    Unit* target = ResolveThreatTarget(bot, AI_VALUE(Unit*, qualifier));
+    const ObjectGuid targetGuid = target ? target->GetObjectGuid() : ObjectGuid();
+
+    // Follow the actual enemy rather than the GUID of a friendly target proxy.
+    if (targetGuid != lastTarget)
         LogCalculatedValue::Reset();
 
-    lastTarget = target->GetObjectGuid();
+    lastTarget = targetGuid;
       
     return ThreatValue::GetThreat(bot, target);
 }
@@ -46,26 +75,13 @@ uint8 ThreatValue::Calculate()
         return maxThreat;
     }
 
-    Unit* target = AI_VALUE(Unit*, qualifier);
-
-    if (target && target->IsFriend(bot))
-        target = target->GetTarget();
-
-    return Calculate(target);
+    return Calculate(AI_VALUE(Unit*, qualifier));
 }
 
 float ThreatValue::GetThreat(Player* player, Unit* target)
 {
-    if (!target || target->GetMapId() != player->GetMapId())
-        return 0;
-
-    if (dynamic_cast<Player*>(target) && (dynamic_cast<Player*>(target))->IsBeingTeleported())
-        return 0;
-
-    if (target->IsFriend(player))
-        target = target->GetTarget();
-
-    if (target->GetObjectGuid().IsPlayer())
+    target = ResolveThreatTarget(player, target);
+    if (!target)
         return 0;
 
     float botThreat = sServerFacade.GetThreatManager(target).getThreat(player);
@@ -75,16 +91,15 @@ float ThreatValue::GetThreat(Player* player, Unit* target)
 
 float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
 {
+    if (!ai)
+        return 0;
+
+    Player* bot = ai->GetBot();
+    target = ResolveThreatTarget(bot, target);
     if (!target)
         return 0;
 
-    if (target->IsFriend(ai->GetBot()))
-        target = target->GetTarget();
-
-    if (target->GetObjectGuid().IsPlayer())
-        return 0;
-
-    Group* group = ai->GetBot()->GetGroup();
+    Group* group = bot->GetGroup();
     if (!group)
         return 0;
 
@@ -93,7 +108,8 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
     for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
     {
         Player* player = gref->getSource();
-        if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player) || player == ai->GetBot())
+        if (!player || !player->IsInWorld() || !sServerFacade.IsAlive(player) || player->IsBeingTeleported() ||
+            !bot->IsInMap(player) || player == bot)
             continue;
 
         if (ai->IsTank(player))
@@ -109,16 +125,8 @@ float ThreatValue::GetTankThreat(PlayerbotAI* ai, Unit* target)
 
 uint8 ThreatValue::Calculate(Unit* target)
 {
+    target = ResolveThreatTarget(bot, target);
     if (!target)
-        return 0;
-
-    if (target->IsFriend(bot))
-        target = target->GetTarget();
-
-    if (!target)
-        return 0;
-
-    if (target->GetObjectGuid().IsPlayer())
         return 0;
 
     Group* group = bot->GetGroup();
@@ -137,7 +145,7 @@ uint8 ThreatValue::Calculate(Unit* target)
         maxThreat = AI_VALUE2(float, "tank threat", qualifier);
     }
 
-    if (maxThreat < 0)
+    if (!std::isfinite(botThreat) || !std::isfinite(maxThreat) || maxThreat < 0)
         return 0;
 
     // calculate normal threat for fleeing targets
@@ -149,8 +157,10 @@ uint8 ThreatValue::Calculate(Unit* target)
         return 100;
 
     // return low threat if mob if fleeing
-    if (maxThreat > 0 && fleeing)
+    if (fleeing || maxThreat == 0)
         return 0;
 
-    return botThreat * 100 / maxThreat;
+    // Preserve the existing byte-valued API without wrapping high threat back
+    // below the high-threat threshold, or dividing by zero outside combat.
+    return static_cast<uint8>(std::min(255.0, std::max(0.0, double(botThreat) * 100.0 / maxThreat)));
 }
