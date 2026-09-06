@@ -138,3 +138,10 @@ for path in ("actions/ActionContext.h", "triggers/TriggerContext.h", "generic/Ka
 strategy = (base / "generic/KarazhanDungeonStrategies.cpp").read_text()
 assert "KarazhanDungeonStrategy::InitReactionMultipliers" in strategy
 assert "KarazhanDungeonStrategy::InitCombatMultipliers" in strategy
+header = (base / "generic/KarazhanDungeonStrategies.h").read_text()
+kara = block(header, "class KarazhanDungeonStrategy")
+nether = block(header, "class NetherspiteFightStrategy")
+for method in ("InitCombatTriggers", "InitReactionTriggers", "InitCombatMultipliers", "InitReactionMultipliers"):
+    assert kara.count(method + "(") == 1, f"Karazhan must declare {method} exactly once"
+assert nether.count("InitCombatMultipliers(") == 1
+assert "InitReactionMultipliers(" not in nether
