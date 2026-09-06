@@ -9,13 +9,22 @@ namespace ai
     {
         bool active = false;
         bool exclusive = true;
-        uint32 map = 0, instance = 0;
+        uint32 map = 0, instance = 0, spell = 0;
         ObjectGuid boss, source;
         encounter::Point destination;
     };
 
     bool ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan);
     float NativeEncounterSpellRadius(uint32 id, unsigned depth = 0);
+    uint32 NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast);
+    bool IsBossEscapeMap(uint32 map);
+
+    class BossCastPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        BossCastPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "boss cast position", 1) {}
+        EncounterPosition Calculate() override;
+    };
 
     class AranFlameWreathValue : public BoolCalculatedValue
     {

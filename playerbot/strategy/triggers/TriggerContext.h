@@ -302,6 +302,7 @@ namespace ai
             // Dungeon Triggers
             creators["enter onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnterDungeonTrigger(ai); };
             creators["hostile ground damage"] = [](PlayerbotAI* ai) { return new HostileGroundDamageTrigger(ai); };
+            creators["boss cast safe position"] = [](PlayerbotAI* ai) { return new BossCastPositionTrigger(ai); };
             creators["tank threat transfer"] = [](PlayerbotAI* ai) { return new TankThreatTransferTrigger(ai); };
             creators["leave onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairLeaveDungeonTrigger(ai); };
             creators["enter molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreEnterDungeonTrigger(ai); };

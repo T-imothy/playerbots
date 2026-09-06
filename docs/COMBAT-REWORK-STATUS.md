@@ -95,12 +95,24 @@ claim that every encounter has been implemented or played successfully**.
 - Prince retreat checks now require the actual live engaged Prince, not an
   arbitrary current/tank target. Only same-instance living group members count
   for Enfeeble; an unrelated master target is no longer treated as that debuff.
+- Native cast escape/hold for Aran Arcane Explosion and Murmur Sonic Boom in
+  TBC/Wrath, plus Wrath Loken Lightning Nova, Leviathan Mk II Shock Blast and Ick
+  Poison Nova. Runtime damage-spell radii, actual cast lifetime, bounded native
+  paths, same-instance guards and normal movement/reaction APIs are used. No
+  matching cast means ordinary combat resumes; Flame Wreath holding wins an
+  overlap. See `NATIVE-BOSS-CAST-POLICY.md` for native-source mappings and limits.
 - Shared creature avoidance honors its requested creature ID (the configurable
   list previously searched for its base class's zero entry), rejects dead,
   other-instance and controlled/transition cases, and matches the trigger's
   victim policy. Safe-healer shortcuts now validate against the closest hazard
   too and try other nearby healers within an eight-candidate bound. Existing
   native LOS/path checks and radial fallback are retained.
+- Configured multi-creature avoidance now uses the existing native multi-entry
+  query and validates a destination against the combined entries, including
+  neighbors beyond the initial danger radius. One escape cannot deliberately
+  select a point inside another collected hazard merely due to entry-list order.
+  Single-entry actions also include nearby same-entry destination hazards. This
+  is on-demand movement work, not a new persistent/background scanner.
 - Shared spell actions reject passive talents/procs instead of casting them;
   target-map validation uses the actual map instance, not just the map number.
 - Wrath DK: apply owned Blood Plague/Frost Fever, use the secondary target for
@@ -151,6 +163,10 @@ combat scheduling or Wrath-only ability scheduling is added to Classic/TBC.
   stationary actions, native movement-effect suppression and Prince scope.
   Shared avoidance tests exercise the actual search and destination-validation
   code, including the configured entry ID and unsafe-nearest-healer regressions.
+- Actual-source native cast escape/hold tests pass for all three expansion gates,
+  including dummy-to-damage dispatch, difficulty variants, interrupted/completed
+  casts, reset/transition/map guards, movement arbitration and eight-query limits.
+  The shared avoidance tests also cover combined entries and single-query use.
 
 ## Remaining before the full requested scope is complete
 
@@ -177,6 +193,8 @@ listed here. Existing sampled combat diagnostics already observe the new action
 names/outcomes. Pending summon revival is functional state, not removable
 diagnostic instrumentation. Existing diagnostic caps/lifecycle policy remain.
 The one-second Aran decision is functional combat state, not a diagnostic cache.
+The one-second native boss-cast position is also functional state, not optional
+logging instrumentation. These changes introduce no additional diagnostic output.
 
 The 10,000-bot Classic soak was stopped through the normal console signal; the
 server logged `Halting process...` at 19:16:48 local on 2026-09-05. Shutdown also

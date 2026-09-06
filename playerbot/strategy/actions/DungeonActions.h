@@ -1,10 +1,21 @@
 #pragma once
 #include "MovementActions.h"
 #include "playerbot/strategy/values/HazardsValue.h"
+#include "playerbot/strategy/values/EncounterPositionValue.h"
 
 
 namespace ai
 {
+    class BossCastPositionAction : public MovementAction
+    {
+    public:
+        BossCastPositionAction(PlayerbotAI* ai) : MovementAction(ai, "boss cast safe position") {}
+        bool Execute(Event& event) override;
+        bool isUseful() override;
+        bool ShouldReactionInterruptCast() const override;
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+
     class MoveAwayFromHazard : public MovementAction
     {
     public:
@@ -50,6 +61,7 @@ namespace ai
         bool HasCreaturesNearby(const WorldPosition& point, const std::list<Creature*>& creatures) const;
         bool IsHazardNearby(const WorldPosition& point, const std::list<HazardPosition>& hazards) const;
         bool CreatureSearchHelperFunction(Event& event, uint32 creatureId);
+        bool CreatureSearchHelperFunction(Event& event, const std::set<uint32>& creatureIds);
 
     protected:
         uint32 creatureID;

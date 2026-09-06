@@ -9,6 +9,58 @@
 
 using namespace ai;
 
+bool BossCastPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
+        !bot->IsInCombat() || !IsBossEscapeMap(bot->GetMapId())) return false;
+    if (bot->GetMapId() == 532 && ai->GetAiObjectContext()->GetValue<bool>("aran flame wreath")->Get()) return false;
+    plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("boss cast position")->Get();
+    if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
+    Unit* boss = ai->GetUnit(plan.boss);
+    if (!boss || !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() || boss->HasCharmer() ||
+        boss->GetMap() != bot->GetMap() || bot->GetDistance(boss) > 100 ||
+        std::fabs(boss->GetPositionZ() - bot->GetPositionZ()) > 8) return false;
+    const Spell* spell = boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    if (!spell || !spell->m_spellInfo || spell->getState() == SPELL_STATE_FINISHED || spell->m_spellInfo->Id != plan.spell) return false;
+    const uint32 damage = NativeBossEscapeSpell(plan.map, boss->GetEntry(), plan.spell);
+    if (!damage) return false;
+    const float radius = NativeEncounterSpellRadius(damage);
+    const encounter::Point center{boss->GetPositionX(), boss->GetPositionY(), boss->GetPositionZ()};
+    // A cached point must still clear the live caster. End the hold immediately
+    // on cast completion/interruption, reset, map change or invalid spell data.
+    return std::isfinite(radius) && radius > 0 && radius <= 35 &&
+        std::isfinite(plan.destination.x) && std::isfinite(plan.destination.y) && std::isfinite(plan.destination.z) &&
+        encounter::Distance2d(plan.destination, center) >= radius + 2;
+}
+
+bool BossCastPositionAction::isUseful()
+{
+    EncounterPosition plan;
+    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f ||
+        !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+}
+
+bool BossCastPositionAction::ShouldReactionInterruptCast() const
+{
+    EncounterPosition plan;
+    // Stopping an old chase at an already safe point need not cancel a heal.
+    return GetPlan(ai, plan) && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
+}
+
+bool BossCastPositionAction::Execute(Event& event)
+{
+    EncounterPosition plan;
+    if (!GetPlan(ai, plan) || !ai->CanMove() || !ValidateEncounterDestination(ai, plan)) return false;
+    if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= 1.5f)
+    {
+        ai->StopMoving();
+        SetDuration(100);
+        return true;
+    }
+    return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
+}
+
 bool MoveAwayFromHazard::Execute(Event& event)
 {
     const std::list<HazardPosition>& hazards = AI_VALUE(std::list<HazardPosition>, "hazards");
@@ -120,7 +172,14 @@ bool MoveAwayFromHazard::IsHazardNearby(const WorldPosition& point, const std::l
 
 bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, uint32 creatureId)
 {
-    if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() || !creatureId)
+    if (!creatureId) return false;
+    return CreatureSearchHelperFunction(event, std::set<uint32>{creatureId});
+}
+
+bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, const std::set<uint32>& creatureIds)
+{
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() || creatureIds.empty() ||
+        !std::isfinite(range) || range <= 0)
         return false;
     // Get the active attacking creatures
     std::list<Creature*> creatures;
@@ -129,9 +188,17 @@ bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, uint32 cre
 
     // Iterate through the near creatures
     std::list<Unit*> units;
-    MaNGOS::AllCreaturesOfEntryInRangeCheck u_check(bot, creatureId, range);
-    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(units, u_check);
-    Cell::VisitAllObjects(bot, searcher, range);
+    // A destination outside the current danger radius can be inside a second
+    // creature's radius. Collect nearby entries together before choosing a path.
+    // This remains an on-demand action, not a new background grid scan.
+    const float searchRange = std::min(150.0f, range * 3 + 10.0f);
+    std::vector<uint32> entries;
+    for (const uint32 entry : creatureIds)
+        if (entry) entries.push_back(entry);
+    if (entries.empty()) return false;
+    MaNGOS::AllCreaturesMatchingOneEntryInRange u_check(bot, entries, searchRange);
+    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesMatchingOneEntryInRange> searcher(units, u_check);
+    Cell::VisitAllObjects(bot, searcher, searchRange);
 
     for (Unit* unit : units)
     {
@@ -327,12 +394,6 @@ bool MoveAwayFromCreature::IsHazardNearby(const WorldPosition& point, const std:
 
 bool MoveAwayFromSpecificCreatures::Execute(Event& event)
 {
-    std::set<uint32>&creatureIDList = AI_VALUE(std::set<uint32>&, "avoid creature list");
-    for (const uint32 creatureToCheck : creatureIDList)
-    {
-        bool result = CreatureSearchHelperFunction(event, creatureToCheck);
-        if (result)
-            return result;
-    }
-    return false;
+    const std::set<uint32>& creatureIDList = AI_VALUE(std::set<uint32>&, "avoid creature list");
+    return CreatureSearchHelperFunction(event, creatureIDList);
 }

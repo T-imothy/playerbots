@@ -6,11 +6,18 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/values/HazardsValue.h"
 #include "playerbot/strategy/actions/MovementActions.h"
+#include "playerbot/strategy/actions/DungeonActions.h"
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
 
 using namespace ai;
+
+bool BossCastPositionTrigger::IsActive()
+{
+    BossCastPositionAction action(ai);
+    return action.isUseful();
+}
 
 bool EnterDungeonTrigger::IsActive()
 {

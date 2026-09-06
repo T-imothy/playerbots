@@ -1,11 +1,14 @@
 
 #include "playerbot/playerbot.h"
 #include "DungeonStrategy.h"
+#include "DungeonMultipliers.h"
 
 using namespace ai;
 
 void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("boss cast safe position",
+        NextAction::array(0, new NextAction("boss cast safe position", 105.0f), NULL)));
     triggers.push_back(new TriggerNode("hostile ground damage",
         NextAction::array(0, new NextAction("move away from hazard", 110.0f), NULL)));
     triggers.push_back(new TriggerNode(
@@ -84,6 +87,18 @@ void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("boss cast safe position",
+        NextAction::array(0, new NextAction("boss cast safe position", 105.0f), NULL)));
     triggers.push_back(new TriggerNode("hostile ground damage",
         NextAction::array(0, new NextAction("move away from hazard", 110.0f), NULL)));
+}
+
+void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveBossCastPositionMultiplier(ai));
+}
+
+void DungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveBossCastPositionMultiplier(ai));
 }

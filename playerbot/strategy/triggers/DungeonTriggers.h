@@ -3,6 +3,13 @@
 
 namespace ai
 {
+    class BossCastPositionTrigger : public Trigger
+    {
+    public:
+        BossCastPositionTrigger(PlayerbotAI* ai) : Trigger(ai, "boss cast safe position", 1) {}
+        bool IsActive() override;
+    };
+
     class HostileGroundDamageTrigger : public Trigger
     {
     public:
