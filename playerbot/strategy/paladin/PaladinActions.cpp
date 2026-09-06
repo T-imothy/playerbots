@@ -55,7 +55,7 @@ bool CastPaladinAuraAction::isUseful()
 bool CastPaladinAuraAction::isPossible()
 {
     const std::string aura = SelectPaladinAura(ai);
-    return !aura.empty() && ai->CanCastSpell(aura, bot);
+    return !aura.empty() && ai->CanCastSpell(aura, bot, 0);
 }
 
 bool CastPaladinAuraAction::Execute(Event& event)

@@ -39,7 +39,7 @@ struct PlayerbotAI{Player* bot;Context context;std::set<std::string> own,other;b
  Player* GetBot(){return bot;}Context* GetAiObjectContext(){return &context;}
  bool HasMyAura(std::string name,Player*){return own.count(name);}
  bool HasAura(std::string name,Player*){return own.count(name)||other.count(name);}
- bool HasCheat(BotCheatMask){return fast;}bool CanCastSpell(std::string,Player*){return canCast;}
+ bool HasCheat(BotCheatMask){return fast;}bool CanCastSpell(std::string,Player*,unsigned effectMask){assert(effectMask==0);return canCast;}
  bool CastSpell(std::string name,Player*,void*,bool triggered,unsigned* duration){assert(!triggered);++attempts;castName=name;
  if(!castOK)return false;assert(duration);*duration=1777;own.insert(name);return true;}
  bool CastSpell(unsigned id,Player*,void*,bool triggered,unsigned* duration){assert(!triggered);++attempts;castId=id;*duration=2200;return castOK;}};
