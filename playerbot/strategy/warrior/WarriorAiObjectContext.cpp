@@ -201,6 +201,9 @@ namespace ai
                 creators["shield bash"] = [](PlayerbotAI* ai) { return new CastShieldBashAction(ai); };
                 creators["shield block"] = [](PlayerbotAI* ai) { return new CastShieldBlockAction(ai); };
                 creators["bloodrage"] = [](PlayerbotAI* ai) { return new CastBloodrageAction(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["enraged regeneration"] = [](PlayerbotAI* ai) { return new CastEnragedRegenerationAction(ai); };
+#endif
                 creators["battle stance"] = [](PlayerbotAI* ai) { return new CastBattleStanceAction(ai); };
                 creators["heroic strike"] = [](PlayerbotAI* ai) { return new CastHeroicStrikeAction(ai); };
                 creators["intimidating shout"] = [](PlayerbotAI* ai) { return new CastIntimidatingShoutAction(ai); };

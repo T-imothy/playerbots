@@ -228,6 +228,9 @@ namespace ai
                 creators["ferocious bite"] = [](PlayerbotAI* ai) { return new FerociousBiteTrigger(ai); };
                 creators["claw"] = [](PlayerbotAI* ai) { return new SpellCanBeCastedTrigger(ai, "claw"); };
                 creators["rip"] = [](PlayerbotAI* ai) { return new RipTrigger(ai, 3); };
+#ifdef MANGOSBOT_TWO
+                creators["savage roar"] = [](PlayerbotAI* ai) { return new SavageRoarTrigger(ai); };
+#endif
                 creators["enrage"] = [](PlayerbotAI* ai) { return new EnrageTrigger(ai); };
                 creators["demoralizing roar"] = [](PlayerbotAI* ai) { return new DemoralizingRoarTrigger(ai); };
                 creators["lacerate"] = [](PlayerbotAI* ai) { return new LacerateTrigger(ai); };
@@ -304,6 +307,12 @@ namespace ai
                 creators["mark of the wild on party"] = [](PlayerbotAI* ai) { return new CastMarkOfTheWildOnPartyAction(ai); };
                 creators["gift of the wild on party"] = [](PlayerbotAI* ai) { return new CastGiftOfTheWildOnPartyAction(ai); };
                 creators["regrowth"] = [](PlayerbotAI* ai) { return new CastRegrowthAction(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["nourish"] = [](PlayerbotAI* ai) { return new CastNourishAction(ai); };
+                creators["savage roar"] = [](PlayerbotAI* ai) { return new CastSavageRoarAction(ai); };
+                creators["nourish on party"] = [](PlayerbotAI* ai) { return new CastNourishOnPartyAction(ai); };
+                creators["wild growth on party"] = [](PlayerbotAI* ai) { return new CastWildGrowthOnPartyAction(ai); };
+#endif
                 creators["swiftmend"] = [](PlayerbotAI* ai) { return new CastSwiftmendAction(ai); };
                 creators["rejuvenation"] = [](PlayerbotAI* ai) { return new CastRejuvenationAction(ai); };
                 creators["healing touch"] = [](PlayerbotAI* ai) { return new CastHealingTouchAction(ai); };

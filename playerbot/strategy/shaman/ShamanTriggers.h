@@ -3,6 +3,25 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    BOOST_TRIGGER(FeralSpiritTrigger, "feral spirit");
+    class ElementalFlameShockTrigger : public DebuffTrigger
+    {
+    public:
+        ElementalFlameShockTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "flame shock", 1, true) {}
+    };
+    class LavaBurstTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        LavaBurstTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "lava burst") {}
+        bool IsActive() override
+        {
+            Unit* target = GetTarget();
+            return target && ai->HasAura("flame shock", target, false, true) &&
+                SpellCanBeCastedTrigger::IsActive();
+        }
+    };
+#endif
     class ShamanWeaponTrigger : public BuffTrigger 
     {
     public:

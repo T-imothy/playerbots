@@ -1087,6 +1087,10 @@ void ProtectionPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     PaladinStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "shield of righteousness",
+        NextAction::array(0, new NextAction("shield of righteousness", ACTION_NORMAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "lose aggro",
         NextAction::array(0, new NextAction("hand of reckoning", ACTION_PASSTROUGH), NULL)));
 

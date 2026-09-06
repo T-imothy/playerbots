@@ -239,6 +239,9 @@ namespace ai
                 creators["viper sting"] = [](PlayerbotAI* ai) { return new ViperStingTrigger(ai); };
                 creators["aimed shot"] = [](PlayerbotAI* ai) { return new AimedShotTrigger(ai); };
                 creators["arcane shot"] = [](PlayerbotAI* ai) { return new ArcaneShotTrigger(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["kill shot"] = [](PlayerbotAI* ai) { return new KillShotTrigger(ai); };
+#endif
                 creators["bestial wrath"] = [](PlayerbotAI* ai) { return new BestialWrathBoostTrigger(ai); };
                 creators["silencing shot interrupt"] = [](PlayerbotAI* ai) { return new SilencingShotInterruptTrigger(ai); };
                 creators["silencing shot on enemy healer"] = [](PlayerbotAI* ai) { return new SilencingShotInterruptHealerTrigger(ai); };
@@ -258,6 +261,9 @@ namespace ai
                 creators["chimera shot"] = [](PlayerbotAI* ai) { return new CastChimeraShotAction(ai); };
                 creators["explosive shot"] = [](PlayerbotAI* ai) { return new CastExplosiveShotAction(ai); };
                 creators["arcane shot"] = [](PlayerbotAI* ai) { return new CastArcaneShotAction(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["kill shot"] = [](PlayerbotAI* ai) { return new CastKillShotAction(ai); };
+#endif
                 creators["tranquilizing shot"] = [](PlayerbotAI* ai) { return new CastTranquilizingShotAction(ai); };
                 creators["concussive shot"] = [](PlayerbotAI* ai) { return new CastConcussiveShotAction(ai); };
                 creators["distracting shot"] = [](PlayerbotAI* ai) { return new CastDistractingShotAction(ai); };

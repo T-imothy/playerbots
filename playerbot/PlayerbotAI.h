@@ -388,6 +388,8 @@ public:
     void HandleMasterIncomingPacket(const WorldPacket& packet);
     void HandleMasterOutgoingPacket(const WorldPacket& packet);
 	void HandleTeleportAck();
+    void QueueSummonRevival(uint32 mapId, float x, float y, float z);
+    void CompleteSummonRevival();
     uint32 GetTransitionGeneration() const { return transitionGeneration.load(std::memory_order_acquire); }
     bool IsTransitionContextCurrent(uint32 generation, uint32 mapId, uint32 instanceId) const;
     static void RecordDiscardedTransitionWork();
@@ -724,6 +726,14 @@ protected:
     // queues without touching mutable AI state.
     std::atomic<uint32> transitionGeneration{1};
     std::atomic<bool> urgentTransitionPending{false};
+    struct PendingSummonRevival
+    {
+        bool active = false;
+        uint32 mapId = 0;
+        float x = 0, y = 0, z = 0;
+        time_t expires = 0;
+    };
+    PendingSummonRevival pendingSummonRevival;
     struct PendingTransitionState
     {
         uint32 triggerId = 0;

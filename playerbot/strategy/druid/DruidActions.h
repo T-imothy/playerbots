@@ -3,6 +3,33 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    BUFF_ACTION(CastSavageRoarAction, "savage roar");
+    template<class Base>
+    class CastNourishWithHotAction : public Base
+    {
+    public:
+        CastNourishWithHotAction(PlayerbotAI* ai) : Base(ai, "nourish") {}
+        bool isUseful() override
+        {
+            if (!Base::isUseful())
+                return false;
+            Unit* target = this->GetTarget();
+            if (!target)
+                return false;
+            // Use the same owned periodic-heal test as CMaNGOS's Nourish
+            // spell script. Existing Regrowth/Rejuvenation remain fallbacks.
+            for (const auto aura : target->GetAurasByType(SPELL_AURA_PERIODIC_HEAL))
+                if (aura->GetSpellProto()->SpellFamilyName == SPELLFAMILY_DRUID &&
+                    aura->GetCasterGuid() == this->bot->GetObjectGuid())
+                    return true;
+            return false;
+        }
+    };
+    using CastNourishAction = CastNourishWithHotAction<CastHealingSpellAction>;
+    using CastNourishOnPartyAction = CastNourishWithHotAction<HealPartyMemberAction>;
+    HEAL_PARTY_ACTION(CastWildGrowthOnPartyAction, "wild growth");
+#endif
 	class CastFaerieFireAction : public CastRangedDebuffSpellAction
 	{
 	public:

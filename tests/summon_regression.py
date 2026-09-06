@@ -40,13 +40,13 @@ struct Map {bool allowed=true;bool CanEnter(Player*){return allowed;}};
 struct Player {
     uint32 id=0;std::string name;Group* group=nullptr;int mapId=1;float x=0;
     bool alive=true,world=true,teleporting=false,taxi=false,transport=false,combat=false,real=true,knows=true,los=true,teleportOk=true;
-    int summonRequests=0,teleports=0;Session session;Map map;ObjectGuid selection;
+    int summonRequests=0,teleports=0;Session session;Map map;Map* sharedMap=nullptr;ObjectGuid selection;
     int getClass(){return CLASS_WARLOCK;}bool HasSpell(int){return knows;}
     bool IsAlive(){return alive;}bool IsInWorld(){return world;}bool IsBeingTeleported(){return teleporting;}
     bool IsTaxiFlying(){return taxi;}bool GetTransport(){return transport;}bool IsInCombat(){return combat;}
     Group* GetGroup(){return group;}const char* GetName(){return name.c_str();}
     ObjectGuid GetObjectGuid(){return {id};}ObjectGuid GetSelectionGuid(){return selection;}
-    Session* GetSession(){return &session;}Map* GetMap(){return &map;}
+    Session* GetSession(){return &session;}Map* GetMap(){return sharedMap ? sharedMap : &map;}
     float GetDistance(Player* other){return std::abs(x-other->x);}
     bool IsWithinDistInMap(Player* other,float distance){return mapId==other->mapId && GetDistance(other)<=distance;}
     bool IsWithinLOSInMap(Player* other){return other->los;}
@@ -88,12 +88,14 @@ int main(){
     reset();target.alive=false;reject();
     reset();caster.knows=false;reject();
     reset();caster.map.allowed=false;reject();
+    reset();target.sharedMap=&caster.map;caster.map.allowed=false;
+    assert(action.CastSummonPlayer(&target,"summon Impala",handled));assert(target.summonRequests==1);
     reset();target.group=nullptr;reject();
     reset();target.real=false;assert(action.CastSummonPlayer(&h1,"summon Impala",handled));assert(target.teleports==1 && target.summonRequests==0);
     reset();target.real=false;target.teleportOk=false;reject();
     reset();assert(!action.CastSummonPlayer(&target,"summon imp",handled));assert(!handled);
     reset();assert(!action.CastSummonPlayer(&target,"notsummon Impala",handled));assert(!handled);
-    std::cout<<"PASS: actual summon command helper, 16 eligibility/direction cases\n";
+    std::cout<<"PASS: actual summon command helper, 17 eligibility/direction cases\n";
 }
 '''.replace('__BODY__', body)
 with tempfile.TemporaryDirectory(prefix='mantech-summon-') as tmp:

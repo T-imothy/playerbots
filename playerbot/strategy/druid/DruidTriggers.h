@@ -1,8 +1,22 @@
 #pragma once
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 
-namespace ai 
+namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    class SavageRoarTrigger : public BuffTrigger
+    {
+    public:
+        SavageRoarTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "savage roar") {}
+        bool IsActive() override
+        {
+            const uint32 spellId = AI_VALUE2(uint32, "spell id", spell);
+            if (!spellId || !ai->HasSpell(spellId) || !bot->IsSpellReady(spellId))
+                return false;
+            return bot->GetShapeshiftForm() == FORM_CAT && bot->GetComboPoints() > 0 && BuffTrigger::IsActive();
+        }
+    };
+#endif
     class MarkOfTheWildOnPartyTrigger : public BuffOnPartyTrigger 
     {
     public:

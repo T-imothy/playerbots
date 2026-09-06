@@ -3,6 +3,15 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    BOOST_TRIGGER(MetamorphosisTrigger, "metamorphosis");
+    CAN_CAST_TRIGGER(ChaosBoltTrigger, "chaos bolt");
+    class HauntTrigger : public DebuffTrigger
+    {
+    public:
+        HauntTrigger(PlayerbotAI* ai) : DebuffTrigger(ai, "haunt", 1, true) {}
+    };
+#endif
     DEFLECT_TRIGGER(ShadowWardTrigger, "shadow ward");
 
 	class DemonArmorTrigger : public BuffTrigger

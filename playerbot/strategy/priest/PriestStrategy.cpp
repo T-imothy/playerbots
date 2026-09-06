@@ -1229,6 +1229,9 @@ void PriestOffdpsRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tr
 void PriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode(
+        "critical aoe heal",
+        NextAction::array(0, new NextAction("divine hymn", ACTION_CRITICAL_HEAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "critical health",

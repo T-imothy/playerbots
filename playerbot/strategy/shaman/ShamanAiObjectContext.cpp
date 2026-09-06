@@ -271,6 +271,11 @@ namespace ai
                 creators["party member cleanse spirit disease"] = [](PlayerbotAI* ai) { return new PartyMemberCleanseSpiritDiseaseTrigger(ai); };
                 creators["shock"] = [](PlayerbotAI* ai) { return new ShockTrigger(ai); };
                 creators["flame shock"] = [](PlayerbotAI* ai) { return new FlameShockTrigger(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["lava burst"] = [](PlayerbotAI* ai) { return new LavaBurstTrigger(ai); };
+                creators["feral spirit"] = [](PlayerbotAI* ai) { return new FeralSpiritTrigger(ai); };
+                creators["elemental flame shock"] = [](PlayerbotAI* ai) { return new ElementalFlameShockTrigger(ai); };
+#endif
                 creators["frost shock snare"] = [](PlayerbotAI* ai) { return new FrostShockSnareTrigger(ai); };
                 creators["heroism"] = [](PlayerbotAI* ai) { return new HeroismTrigger(ai); };
                 creators["bloodlust"] = [](PlayerbotAI* ai) { return new BloodlustTrigger(ai); };
@@ -360,6 +365,10 @@ namespace ai
                 creators["frost shock"] = [](PlayerbotAI* ai) { return new CastFrostShockAction(ai); };
                 creators["chain lightning"] = [](PlayerbotAI* ai) { return new CastChainLightningAction(ai); };
                 creators["lightning bolt"] = [](PlayerbotAI* ai) { return new CastLightningBoltAction(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["lava burst"] = [](PlayerbotAI* ai) { return new CastLavaBurstAction(ai); };
+                creators["feral spirit"] = [](PlayerbotAI* ai) { return new CastFeralSpiritAction(ai); };
+#endif
                 creators["thunderstorm"] = [](PlayerbotAI* ai) { return new CastThunderstormAction(ai); };
                 creators["heroism"] = [](PlayerbotAI* ai) { return new CastHeroismAction(ai); };
                 creators["bloodlust"] = [](PlayerbotAI* ai) { return new CastBloodlustAction(ai); };

@@ -3,6 +3,10 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    BUFF_ACTION_U(CastDivineHymnAction, "divine hymn", ai->IsHeal(bot) && CastBuffSpellAction::isUseful());
+    HEAL_PARTY_ACTION(CastPenanceOnPartyAction, "penance");
+#endif
     // disc
     BUFF_ACTION(CastPowerWordFortitudeAction, "power word: fortitude");
     BUFF_PARTY_ACTION(CastPowerWordFortitudeOnPartyAction, "power word: fortitude");

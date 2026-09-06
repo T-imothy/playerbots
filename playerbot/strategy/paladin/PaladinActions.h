@@ -3,6 +3,11 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    // Avoid imposing Divine Plea's healing penalty on a healing-role bot.
+    BUFF_ACTION_U(CastDivinePleaAction, "divine plea", !ai->IsHeal(bot) && CastBuffSpellAction::isUseful());
+    MELEE_ACTION(CastShieldOfRighteousnessAction, "shield of righteousness");
+#endif
 	// seals
 	BUFF_ACTION(CastSealOfRighteousnessAction, "seal of righteousness");
 	BUFF_ACTION(CastSealOfJusticeAction, "seal of justice");

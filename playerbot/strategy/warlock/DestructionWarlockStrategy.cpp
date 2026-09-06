@@ -752,6 +752,10 @@ void DestructionWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
     WarlockStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "chaos bolt",
+        NextAction::array(0, new NextAction("chaos bolt", ACTION_NORMAL + 3), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "backlash",
         NextAction::array(0, new NextAction("shadow bolt", ACTION_HIGH + 2), NULL)));
 

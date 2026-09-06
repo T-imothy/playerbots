@@ -4,6 +4,34 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    BUFF_ACTION(CastHungerForBloodAction, "hunger for blood");
+#endif
+#if defined(MANGOSBOT_ONE) || defined(MANGOSBOT_TWO)
+    class CastEnvenomAction : public CastMeleeSpellAction
+    {
+    public:
+        CastEnvenomAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "envenom") {}
+        bool isUseful() override
+        {
+            if (!CastMeleeSpellAction::isUseful())
+                return false;
+            // Match the core's Envenom damage selector: only our own Deadly
+            // Poison doses count. Do not spend four combo points on no poison
+            // (or one dose) merely because the core allows the cast.
+            Unit* target = GetTarget();
+            if (!target || !bot->GetComboPoints())
+                return false;
+            for (const auto aura : target->GetAurasByType(SPELL_AURA_PERIODIC_DAMAGE))
+                if (aura->GetSpellProto()->SpellFamilyName == SPELLFAMILY_ROGUE &&
+                    (aura->GetSpellProto()->SpellFamilyFlags & uint64(0x10000)) &&
+                    aura->GetCasterGuid() == bot->GetObjectGuid() &&
+                    aura->GetStackAmount() >= bot->GetComboPoints())
+                    return true;
+            return false;
+        }
+    };
+#endif
     BUFF_ACTION(CastColdBloodAction, "cold blood");
 
     BUFF_ACTION_U(CastPreparationAction, "preparation", !bot->IsSpellReady(14177) || !bot->IsSpellReady(2983) || !bot->IsSpellReady(2094));

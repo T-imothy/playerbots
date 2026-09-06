@@ -3,6 +3,21 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    class HungerForBloodTrigger : public BuffTrigger
+    {
+    public:
+        HungerForBloodTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "hunger for blood") {}
+        bool IsActive() override
+        {
+            const uint32 spellId = AI_VALUE2(uint32, "spell id", spell);
+            if (!spellId || !ai->HasSpell(spellId) || !bot->IsSpellReady(spellId))
+                return false;
+            Unit* target = AI_VALUE(Unit*, "current target");
+            return target && target->HasAuraState(AURA_STATE_BLEEDING) && BuffTrigger::IsActive();
+        }
+    };
+#endif
     class KickInterruptSpellTrigger : public InterruptSpellTrigger
     {
     public:

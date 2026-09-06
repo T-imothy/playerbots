@@ -770,6 +770,13 @@ void DisciplinePriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
     PriestStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "party member low health",
+        NextAction::array(0, new NextAction("penance on party", ACTION_MEDIUM_HEAL + 3), NULL)));
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("penance on party", ACTION_CRITICAL_HEAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "protect party member",
         NextAction::array(0, new NextAction("pain suppression on party", ACTION_EMERGENCY), NULL)));
 

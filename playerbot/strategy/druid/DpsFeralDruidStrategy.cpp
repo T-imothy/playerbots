@@ -1078,6 +1078,9 @@ NextAction** DpsFeralDruidStrategy::GetDefaultCombatActions()
 void DpsFeralDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     DruidStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode(
+        "savage roar",
+        NextAction::array(0, new NextAction("savage roar", ACTION_HIGH + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "rebirth",

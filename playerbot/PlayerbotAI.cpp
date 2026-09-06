@@ -1278,6 +1278,27 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 	DoNextAction(minimal);
 }
 
+void PlayerbotAI::QueueSummonRevival(uint32 mapId, float x, float y, float z)
+{
+    pendingSummonRevival = {true, mapId, x, y, z, time(nullptr) + 30};
+}
+
+void PlayerbotAI::CompleteSummonRevival()
+{
+    const PendingSummonRevival pending = pendingSummonRevival;
+    pendingSummonRevival = {};
+    // A rejected/fallback worldport must not resurrect at the source or home
+    // bind. Only consume this request after reaching its accepted destination.
+    if (!pending.active || time(nullptr) > pending.expires || IsRealPlayer() ||
+        !bot->IsInWorld() || bot->IsBeingTeleported() || bot->IsAlive() ||
+        bot->GetMapId() != pending.mapId ||
+        !bot->IsWithinDist3d(pending.x, pending.y, pending.z, 1.0f) || !IsSafe(bot))
+        return;
+
+    bot->ResurrectPlayer(1.0f, false);
+    bot->SpawnCorpseBones();
+}
+
 void PlayerbotAI::HandleTeleportAck()
 {
     if (IsRealPlayer() && bot->IsBeingTeleportedFar())
@@ -1343,6 +1364,7 @@ void PlayerbotAI::HandleTeleportAck()
     if (IsRealPlayer())
         bot->SendHeartBeat();
 
+    CompleteSummonRevival();
     Reset();
 }
 

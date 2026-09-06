@@ -433,6 +433,10 @@ void AssassinationRogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
 
     triggers.push_back(new TriggerNode(
         "eviscerate",
+        NextAction::array(0, new NextAction("envenom", ACTION_HIGH + 3), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "eviscerate",
         NextAction::array(0, new NextAction("eviscerate", ACTION_HIGH + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -825,6 +829,13 @@ void AssassinationRoguePoisonsRaidStrategy::InitNonCombatTriggers(std::list<Trig
 void AssassinationRogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     RogueStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode(
+        "hunger for blood",
+        NextAction::array(0, new NextAction("hunger for blood", ACTION_HIGH + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "eviscerate",
+        NextAction::array(0, new NextAction("envenom", ACTION_HIGH + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "eviscerate",

@@ -764,6 +764,10 @@ void AfflictionWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     WarlockStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "haunt",
+        NextAction::array(0, new NextAction("haunt", ACTION_NORMAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "low mana",
         NextAction::array(0, new NextAction("dark pact", ACTION_HIGH + 2), NULL)));
 

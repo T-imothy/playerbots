@@ -5,6 +5,10 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    BUFF_ACTION(CastFeralSpiritAction, "feral spirit");
+    SPELL_ACTION(CastLavaBurstAction, "lava burst");
+#endif
     BUFF_ACTION(CastGhostWolfAction, "ghost wolf");
     class CastLesserHealingWaveAction : public CastHealingSpellAction 
     {

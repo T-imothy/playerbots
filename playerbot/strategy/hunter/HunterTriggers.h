@@ -4,6 +4,10 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    // Native CheckCast supplies the execute-health, range and cooldown rules.
+    CAN_CAST_TRIGGER(KillShotTrigger, "kill shot");
+#endif
     HAS_AURA_TRIGGER_TIME(FeignDeathTrigger, "feign death", 2);
 
     BEGIN_TRIGGER(HunterNoStingsActiveTrigger, Trigger)

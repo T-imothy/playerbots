@@ -6,6 +6,9 @@ using namespace ai;
 
 void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode(
+        "enter naxxramas",
+        NextAction::array(0, new NextAction("enable naxxramas strategy", 100.0f), NULL)));
     // Add this combat triggers in case the bot gets summoned into the dungeon and goes straight into combat
     triggers.push_back(new TriggerNode(
         "enter onyxia's lair",
@@ -30,6 +33,12 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode(
+        "enter naxxramas",
+        NextAction::array(0, new NextAction("enable naxxramas strategy", 100.0f), NULL)));
+    triggers.push_back(new TriggerNode(
+        "leave naxxramas",
+        NextAction::array(0, new NextAction("disable naxxramas strategy", 100.0f), NULL)));
     triggers.push_back(new TriggerNode(
         "enter onyxia's lair",
         NextAction::array(0, new NextAction("enable onyxia's lair strategy", 100.0f), NULL)));

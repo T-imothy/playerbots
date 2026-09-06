@@ -387,7 +387,9 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                             continue;
                         ++membersAroundSummoner;
                     }
-                    if (!bot->GetMap()->CanEnter(target))
+                    // CanEnter rejects players already on this map; a same-map
+                    // summon needs no map admission, only the normal teleport.
+                    if (bot->GetMap() != target->GetMap() && !bot->GetMap()->CanEnter(target))
                         return false;
                     if (membersAroundSummoner >= 2)
                     {

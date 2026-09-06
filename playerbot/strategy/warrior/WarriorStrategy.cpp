@@ -660,6 +660,10 @@ void WarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     ClassStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "low health",
+        NextAction::array(0, new NextAction("enraged regeneration", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "victory rush",
         NextAction::array(0, new NextAction("victory rush", ACTION_HIGH), NULL)));
 }

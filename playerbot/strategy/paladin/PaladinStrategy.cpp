@@ -1249,6 +1249,10 @@ void PaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     ClassStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
+        "low mana",
+        NextAction::array(0, new NextAction("divine plea", ACTION_HIGH + 3), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "critical health",
         NextAction::array(0, new NextAction("lay on hands", ACTION_EMERGENCY + 2), NULL)));
 }

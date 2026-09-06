@@ -1311,6 +1311,9 @@ void EnhancementShamanBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerN
 void EnhancementShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode(
+        "feral spirit",
+        NextAction::array(0, new NextAction("feral spirit", ACTION_HIGH + 3), NULL)));
 }
 
 void EnhancementShamanBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -948,15 +948,14 @@ void DemonologyWarlockBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerN
 {
     DemonologyWarlockBuffStrategy::InitNonCombatTriggers(triggers);
     WarlockBuffRaidStrategy::InitNonCombatTriggers(triggers);
-
-    triggers.push_back(new TriggerNode(
-        "demonic sacrifice",
-        NextAction::array(0, new NextAction("demonic sacrifice raid", ACTION_HIGH), NULL)));
 }
 
 void DemonologyWarlockBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     WarlockBoostStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode(
+        "metamorphosis",
+        NextAction::array(0, new NextAction("metamorphosis", ACTION_HIGH + 3), NULL)));
 }
 
 void DemonologyWarlockBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1096,10 +1095,12 @@ void DemonologyWarlockPetRaidStrategy::InitCombatTriggers(std::list<TriggerNode*
 
 void DemonologyWarlockPetRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    /* NO PET BECAUSE OF DEMONIC SACRIFICE
+    // Wrath removed Demonic Sacrifice; keep the normal pet maintenance.
     DemonologyWarlockPetStrategy::InitNonCombatTriggers(triggers);
     WarlockPetRaidStrategy::InitNonCombatTriggers(triggers);
-    */
+    triggers.push_back(new TriggerNode(
+        "no pet",
+        NextAction::array(0, new NextAction("summon felguard", ACTION_NORMAL + 2), NULL)));
 }
 
 void DemonologyWarlockCursesStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

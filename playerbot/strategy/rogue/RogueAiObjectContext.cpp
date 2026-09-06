@@ -212,6 +212,9 @@ namespace ai
                 creators["hemorrhage"] = [](PlayerbotAI* ai) { return new SpellCanBeCastedTrigger(ai, "hemorrhage"); };
                 creators["killing spree"] = [](PlayerbotAI* ai) { return new RogueBoostBuffTrigger(ai, "killing spree"); };
                 creators["eviscerate"] = [](PlayerbotAI* ai) { return new EviscerateTrigger(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["hunger for blood"] = [](PlayerbotAI* ai) { return new HungerForBloodTrigger(ai); };
+#endif
                 creators["blade flurry"] = [](PlayerbotAI* ai) { return new RogueBoostBuffTrigger(ai, "blade flurry"); };
                 //creators["tricks of the trade on tank"] = [](PlayerbotAI* ai) { return new TricksOfTheTradeOnTankTrigger(ai); };
                 creators["cloak of shadows"] = [](PlayerbotAI* ai) { return new CloakOfShadowsTrigger(ai); };
@@ -247,6 +250,12 @@ namespace ai
                 creators["rupture"] = [](PlayerbotAI* ai) { return new CastRuptureAction(ai); };
                 creators["slice and dice"] = [](PlayerbotAI* ai) { return new CastSliceAndDiceAction(ai); };
                 creators["eviscerate"] = [](PlayerbotAI* ai) { return new CastEviscerateAction(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["hunger for blood"] = [](PlayerbotAI* ai) { return new CastHungerForBloodAction(ai); };
+#endif
+#if defined(MANGOSBOT_ONE) || defined(MANGOSBOT_TWO)
+                creators["envenom"] = [](PlayerbotAI* ai) { return new CastEnvenomAction(ai); };
+#endif
                 creators["vanish"] = [](PlayerbotAI* ai) { return new CastVanishAction(ai); };
                 creators["evasion"] = [](PlayerbotAI* ai) { return new CastEvasionAction(ai); };
                 creators["kick"] = [](PlayerbotAI* ai) { return new CastKickAction(ai); };

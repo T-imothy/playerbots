@@ -5,6 +5,11 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    BUFF_ACTION(CastMetamorphosisAction, "metamorphosis");
+    SPELL_ACTION(CastChaosBoltAction, "chaos bolt");
+    RANGED_DEBUFF_ACTION(CastHauntAction, "haunt");
+#endif
 	SNARE_ACTION(CastDeathCoilSnareAction, "death coil");
 	ENEMY_HEALER_ACTION(CastDeathCoilOnHealerAction, "death coil");
 	SPELL_ACTION(CastDeathCoilAction, "death coil");

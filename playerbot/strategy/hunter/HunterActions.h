@@ -4,6 +4,10 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    BEGIN_RANGED_SPELL_ACTION(CastKillShotAction, "kill shot")
+    END_SPELL_ACTION()
+#endif
     BEGIN_RANGED_DEBUFF_ACTION(CastHuntersMarkAction, "hunter's mark")
     END_SPELL_ACTION()
 

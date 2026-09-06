@@ -9,7 +9,6 @@
 #include "Grids/CellImpl.h"
 
 #include "playerbot/strategy/values/PositionValue.h"
-#include "Entities/Transports.h"
 
 using namespace MaNGOS;
 
@@ -75,7 +74,7 @@ private:
 bool SummonAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    if (!requester || requester->IsBeingTeleported())
+    if (!requester || !requester->IsInWorld() || requester->IsBeingTeleported())
         return false;
 
     if (requester->GetSession()->GetSecurity() > SEC_PLAYER || sPlayerbotAIConfig.nonGmFreeSummon)
@@ -110,7 +109,8 @@ bool SummonAction::SummonUsingGos(Player* requester, Player *summoner, Player *p
             return Teleport(requester, summoner, player);
     }
 
-    ai->TellPlayerNoFacing(requester, summoner == bot ? "There is no meeting stone nearby" : "There is no meeting stone near you");
+    // This is a location probe: an innkeeper can still satisfy the request.
+    // Do not announce failure before trying the other supported route.
     return false;
 }
 
@@ -134,32 +134,8 @@ bool SummonAction::SummonUsingNpcs(Player* requester, Player *summoner, Player *
         Unit* unit = *tIter;
         if (unit && unit->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_INNKEEPER))
         {
-            if (!player->HasItemCount(6948, 1, false))
-            {
-                ai->TellPlayerNoFacing(requester, player == bot ? "I have no hearthstone" : "You have no hearthstone");
-                return false;
-            }
-
-            if (!sServerFacade.IsSpellReady(player, 8690))
-            {
-                ai->TellPlayerNoFacing(requester, player == bot ? "My hearthstone is not ready" : "Your hearthstone is not ready");
-                return false;
-            }
-
-            // Trigger cooldown
-            SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(8690);
-            if (!spellInfo)
-                return false;
-            Spell spell(player, spellInfo,
-#ifdef MANGOS
-                    0
-#endif
-#ifdef CMANGOS
-                    TRIGGERED_OLD_TRIGGERED
-#endif
-                    );
-            spell.SendSpellCooldown();
-
+            // A convenience summon is not a hearthstone cast. Neither require
+            // the item/readiness nor create or clear its genuine cooldown.
             return Teleport(requester, summoner, player);
         }
     }
@@ -170,6 +146,29 @@ bool SummonAction::SummonUsingNpcs(Player* requester, Player *summoner, Player *
 
 bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 {
+    if (!requester || !summoner || !player || player != bot || player->isRealPlayer() ||
+        !summoner->IsInWorld() || !player->IsInWorld() ||
+        !summoner->GetSession() || !player->GetSession() ||
+        summoner->GetSession()->isLogingOut() || player->GetSession()->isLogingOut())
+        return false;
+
+    // Never attach a passenger manually after starting a far teleport. That
+    // mixes world coordinates with transport offsets before the worldport ACK.
+    if (summoner->GetTransport() || player->GetTransport() ||
+        summoner->IsTaxiFlying() || player->IsTaxiFlying() ||
+        player->IsInCombat() || player->HasCharmer())
+    {
+        ai->TellPlayerNoFacing(requester, "I cannot be summoned while in combat, controlled, or travelling on a transport.");
+        return false;
+    }
+
+    // A near teleport cannot transfer between two instances of the same map.
+    // Let the regular instance-entry/transition system handle that case.
+    if (summoner->GetMapId() == player->GetMapId() && summoner->GetMap() != player->GetMap())
+        return false;
+    if (summoner->GetMap() != player->GetMap() && !summoner->GetMap()->CanEnter(player))
+        return false;
+
     if (!summoner->IsBeingTeleported() && !player->IsBeingTeleported() && summoner != player)
     {
         float followAngle = GetFollowAngle();
@@ -190,29 +189,23 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 
             if (summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
             {
-                if (sServerFacade.UnitIsDead(player) && sServerFacade.IsAlive(summoner))
+                bool const revive = sServerFacade.UnitIsDead(player) && sServerFacade.IsAlive(summoner);
+                if (revive)
                 {
                     if (!ai->IsSafe(player) || !ai->IsSafe(summoner))
                         return false;
-
-                    player->ResurrectPlayer(1.0f, false);
-                    player->SpawnCorpseBones();
-                    ai->TellPlayerNoFacing(requester, "I live, again!");
                 }
 
-                if (player->IsTaxiFlying())
+                // TeleportTo owns access checks, pets and transfer state. True
+                // means accepted (possibly delayed), not a completed worldport.
+                if (!player->TeleportTo(mapId, x, y, z, summoner->GetOrientation()))
                 {
-                    player->TaxiFlightInterrupt();
-                    player->GetMotionMaster()->MovementExpired();
+                    ai->TellPlayerNoFacing(requester, "The server refused the summon destination.");
+                    return false;
                 }
-
+                if (revive)
+                    ai->QueueSummonRevival(mapId, x, y, z);
                 player->GetMotionMaster()->Clear();
-                player->TeleportTo(mapId, x, y, z, 0);
-                if(player->isRealPlayer())
-                    player->SendHeartBeat();
-
-                if (summoner->GetTransport())
-                    summoner->GetTransport()->AddPassenger(player, false);
                     
                 if(ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))
                     SET_AI_VALUE2(PositionEntry, "pos", "stay", PositionEntry(x, y, z, mapId));

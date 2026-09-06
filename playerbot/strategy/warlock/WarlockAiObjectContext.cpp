@@ -236,6 +236,11 @@ namespace ai
                 creators["no curse"] = [](PlayerbotAI* ai) { return new NoCurseTrigger(ai); };
                 creators["no curse on attacker"] = [](PlayerbotAI* ai) { return new NoCurseOnAttackerTrigger(ai); };
                 creators["conflagrate"] = [](PlayerbotAI* ai) { return new ConflagrateTrigger(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["chaos bolt"] = [](PlayerbotAI* ai) { return new ChaosBoltTrigger(ai); };
+                creators["metamorphosis"] = [](PlayerbotAI* ai) { return new MetamorphosisTrigger(ai); };
+                creators["haunt"] = [](PlayerbotAI* ai) { return new HauntTrigger(ai); };
+#endif
                 creators["demonic sacrifice"] = [](PlayerbotAI* ai) { return new DemonicSacrificeTrigger(ai); };
                 creators["no imp"] = [](PlayerbotAI* ai) { return new NoImpTrigger(ai); };
                 creators["no voidwalker"] = [](PlayerbotAI* ai) { return new NoVoidwalkerTrigger(ai); };
@@ -257,6 +262,11 @@ namespace ai
             AiObjectContextInternal()
             {
                 creators["fel armor"] = [](PlayerbotAI* ai) { return new CastFelArmorAction(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["chaos bolt"] = [](PlayerbotAI* ai) { return new CastChaosBoltAction(ai); };
+                creators["metamorphosis"] = [](PlayerbotAI* ai) { return new CastMetamorphosisAction(ai); };
+                creators["haunt"] = [](PlayerbotAI* ai) { return new CastHauntAction(ai); };
+#endif
                 creators["demon armor"] = [](PlayerbotAI* ai) { return new CastDemonArmorAction(ai); };
                 creators["demon skin"] = [](PlayerbotAI* ai) { return new CastDemonSkinAction(ai); };
                 creators["create healthstone"] = [](PlayerbotAI* ai) { return new CastCreateHealthstoneAction(ai); };

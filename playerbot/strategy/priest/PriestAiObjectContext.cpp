@@ -244,6 +244,10 @@ namespace ai
                 creators["lesser heal on party"] = [](PlayerbotAI* ai) { return new CastLesserHealOnPartyAction(ai); };
                 creators["flash heal"] = [](PlayerbotAI* ai) { return new CastFlashHealAction(ai); };
                 creators["flash heal on party"] = [](PlayerbotAI* ai) { return new CastFlashHealOnPartyAction(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["penance on party"] = [](PlayerbotAI* ai) { return new CastPenanceOnPartyAction(ai); };
+                creators["divine hymn"] = [](PlayerbotAI* ai) { return new CastDivineHymnAction(ai); };
+#endif
                 creators["dispel magic"] = [](PlayerbotAI* ai) { return new CastDispelMagicAction(ai); };
                 creators["dispel magic on party"] = [](PlayerbotAI* ai) { return new CastDispelMagicOnPartyAction(ai); };
                 creators["dispel magic on target"] = [](PlayerbotAI* ai) { return new CastDispelMagicOnTargetAction(ai); };

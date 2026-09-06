@@ -289,6 +289,9 @@ namespace ai
                 creators["cleanse party member cure magic"] = [](PlayerbotAI* ai) { return new CleanseCurePartyMemberMagicTrigger(ai); };
                 creators["righteous fury"] = [](PlayerbotAI* ai) { return new RighteousFuryTrigger(ai); };
                 creators["holy shield"] = [](PlayerbotAI* ai) { return new HolyShieldTrigger(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["shield of righteousness"] = [](PlayerbotAI* ai) { return new ShieldOfRighteousnessTrigger(ai); };
+#endif
                 creators["hammer of justice on enemy healer"] = [](PlayerbotAI* ai) { return new HammerOfJusticeEnemyHealerTrigger(ai); };
                 creators["hammer of justice on snare target"] = [](PlayerbotAI* ai) { return new HammerOfJusticeSnareTrigger(ai); };
                 creators["divine favor"] = [](PlayerbotAI* ai) { return new DivineFavorTrigger(ai); };
@@ -398,6 +401,10 @@ namespace ai
                 creators["judgement of justice"] = [](PlayerbotAI* ai) { return new CastJudgementOfJusticeAction(ai); };
                 creators["hammer of wrath"] = [](PlayerbotAI* ai) { return new CastHammerOfWrathAction(ai); };
                 creators["holy shield"] = [](PlayerbotAI* ai) { return new CastHolyShieldAction(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["divine plea"] = [](PlayerbotAI* ai) { return new CastDivinePleaAction(ai); };
+                creators["shield of righteousness"] = [](PlayerbotAI* ai) { return new CastShieldOfRighteousnessAction(ai); };
+#endif
                 creators["hammer of the righteous"] = [](PlayerbotAI* ai) { return new CastHammerOfTheRighteousAction(ai); };
                 creators["righteous fury"] = [](PlayerbotAI* ai) { return new CastRighteousFuryAction(ai); };
                 creators["hammer of justice on enemy healer"] = [](PlayerbotAI* ai) { return new CastHammerOfJusticeOnEnemyHealerAction(ai); };

@@ -14,6 +14,11 @@ public:
         creators["tranquility"] = &tranquility;
         creators["swiftmend"] = &swiftmend;
         creators["swiftmend on party"] = &swiftmend_on_party;
+#ifdef MANGOSBOT_TWO
+        creators["nourish"] = &nourish;
+        creators["nourish on party"] = &nourish_on_party;
+        creators["wild growth on party"] = &wild_growth_on_party;
+#endif
     }
 
 private:
@@ -41,6 +46,9 @@ private:
             /*C*/ NULL);
     }
 #ifdef MANGOSBOT_TWO
+    ACTION_NODE_P(nourish, "nourish", "restoration caster form");
+    ACTION_NODE_P(nourish_on_party, "nourish on party", "restoration caster form");
+    ACTION_NODE_P(wild_growth_on_party, "wild growth on party", "restoration caster form");
     ACTION_NODE_P(tranquility, "tranquility", "restoration caster form");
 #else
     ACTION_NODE_P(tranquility, "tranquility", "caster form");
@@ -921,6 +929,16 @@ void RestorationDruidCureRaidStrategy::InitNonCombatTriggers(std::list<TriggerNo
 void RestorationDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     DruidStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "low health",
+        NextAction::array(0, new NextAction("nourish", ACTION_MEDIUM_HEAL + 2), NULL)));
+    triggers.push_back(new TriggerNode(
+        "party member low health",
+        NextAction::array(0, new NextAction("nourish on party", ACTION_MEDIUM_HEAL + 2), NULL)));
+    triggers.push_back(new TriggerNode(
+        "medium aoe heal",
+        NextAction::array(0, new NextAction("wild growth on party", ACTION_MEDIUM_HEAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "rebirth",

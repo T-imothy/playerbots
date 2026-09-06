@@ -3,6 +3,9 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    CAN_CAST_TRIGGER(ShieldOfRighteousnessTrigger, "shield of righteousness");
+#endif
     class NoPaladinAuraTrigger : public BuffTrigger
     {
     public:
