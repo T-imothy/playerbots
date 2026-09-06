@@ -37,6 +37,40 @@ phase transitions, construct assignments and wipe recovery.
 
 ## Other evidence collected; not complete bot routines
 
+### Vaelastrasz Burning Adrenaline: implemented and regression-tested
+
+All three cores' `Aura::HandlePeriodicTriggerSpell` removal hooks for 18173 and
+23620 cast the friendly explosion 23478 and self-kill 23644. The debuff's data
+trigger is health drain 23619, not the explosion. All three dev DBs agree on
+23478 radius index 13, and all three native radius DBCs resolve it to 10 yards.
+
+The BWL position value uses that native explosion radius plus the existing
+two-yard movement margin. Carriers separate from living same-map/phase group
+members; other bots avoid a nearby carrier, including human carriers. The active
+boss victim keeps its normal tank positioning instead of dragging the boss
+through the raid. After native threat changes, the former tank can separate.
+No taunt, threat transfer, aura removal or self-kill is fabricated by the AI.
+
+Separation survives boss death/combat exit until the actual aura disappears.
+The one-second value uses existing escape geometry and at most eight native path
+checks. Execute revalidates the plan, group membership and destination. Ordinary
+following/chasing/movement spells cannot undo a safe hold; stationary casts and
+hazard escapes remain available. This does not implement all Vael tank rotations,
+breath/facing rules or event initiation. Actual-value/action/multiplier tests
+cover all three expansions; client encounter testing remains required.
+
+### Frenzy removal: existing class support confirmed; no duplicate boss action
+
+All three HunterStrategy reaction branches already route `dispel enrage` to
+the registered Tranquilizing Shot spell action. The actual generic target trigger
+tests the aura's native dispel type; the spell action keeps learned/range/resource
+and cooldown checks. Read-only metadata from all three dev DBs confirms Magmadar
+19451, Flamegor 23342 and Chromaggus 23128 are DISPEL_ENRAGE (9), matching the
+19801 dispel effect. Chromaggus' final enrage 23537 is type 0 and must not be
+treated as removable. Wrath 19801 also has a magic-dispel effect; this is not
+silently backported to the older clients. Coordinated hunter shot assignments
+and successful live dispels are not established by registration/metadata alone.
+
 - Firemaw/Ebonroc/Flamegor Wing Buffet 23339 applies native -50% threat. Tank
   changes must use learned taunts and real threat, not direct threat assignment.
 - Ebonroc uses Shadow of Ebonroc 23340; Flamegor uses Frenzy 23342.

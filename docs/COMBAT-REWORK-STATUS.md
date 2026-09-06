@@ -58,6 +58,12 @@ claim that every encounter has been implemented or played successfully**.
 
 ### Additional encounter and class corrections
 
+- BWL Burning Adrenaline uses the native aura-removal explosion and radius for
+  separation, with active-tank protection, aura-lifetime cleanup, group/phase
+  guards, bounded native paths and movement arbitration. All-three-expansion
+  actual-value/action/multiplier tests pass. Existing Hunter Tranquilizing Shot
+  routing and native Magmadar/Flamegor/Chromaggus frenzy metadata were confirmed;
+  no duplicate boss-specific dispel or removable final-enrage rule was added.
 - BWL Nefarian priest call follows native aura 23401 and direct-heal proc rules:
   avoid harmful automatic direct heals, interrupt only an eligible ongoing heal,
   preserve Renew/shields/damage, and handle Wrath's native Penance/channel split
@@ -72,6 +78,11 @@ claim that every encounter has been implemented or played successfully**.
   recipient, and an unrelated self effect cannot rescue an immune target effect.
   Native CheckCast and final targeting remain authoritative. Tests use the
   actual wrapper/filter and each core's native mask helpers.
+- Spell allegiance prechecks now pass the real caster and target to native
+  `IsPositiveSpell`, preserving neutral/dual-purpose targeting instead of
+  misclassifying it as always positive. Strict friendly/enemy restrictions and
+  existing explicit neutral exceptions remain. Actual gate tests use each
+  expansion's native neutral-target classifier; this is not a new spell rule.
 - Shared dispel eligibility skips a nearly-expired aura rather than stopping the
   scan and ignoring every other removable effect. Wrong dispel types cannot veto
   a valid later candidate; permanent negative-duration auras are not mistaken

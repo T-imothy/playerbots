@@ -8,8 +8,20 @@
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 #include "playerbot/strategy/actions/MechanarDungeonActions.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
+#include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
 
 using namespace ai;
+
+float PreserveBlackwingLairPositionMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 469) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<BlackwingLairPositionAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return BlackwingLairPositionAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
 
 float PreserveBossCastPositionMultiplier::GetValue(Action* action)
 {

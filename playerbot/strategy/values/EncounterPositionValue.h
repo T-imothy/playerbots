@@ -18,6 +18,14 @@ namespace ai
     float NativeEncounterSpellRadius(uint32 id, unsigned depth = 0);
     uint32 NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast);
     bool IsBossEscapeMap(uint32 map);
+    uint32 BurningAdrenalineAura(Unit* unit);
+
+    class BlackwingLairPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        BlackwingLairPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "blackwing lair position", 1) {}
+        EncounterPosition Calculate() override;
+    };
 
     class BossCastPositionValue : public CalculatedValue<EncounterPosition>
     {

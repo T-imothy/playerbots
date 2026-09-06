@@ -4472,7 +4472,10 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
         const bool neutralSpell = std::find(neutralSpells.begin(), neutralSpells.end(), spellid) != neutralSpells.end();
         if(!neutralSpell)
         {
-            const bool positiveSpell = IsPositiveSpell(spellInfo);
+            // Neutral target modes (for example Wrath Penance) are classified
+            // by the native helper using the real caster and target. Omitting
+            // them labels such a spell positive even against a hostile target.
+            const bool positiveSpell = IsPositiveSpell(spellInfo, bot, target);
             if (positiveSpell && sServerFacade.IsHostileTo(bot, target))
             {
                 if (checkResult)

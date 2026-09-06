@@ -4,11 +4,21 @@
 #include "MovementActions.h"
 #include "UseItemAction.h"
 #include "EncounterSpellPolicy.h"
+#include "playerbot/strategy/values/EncounterPositionValue.h"
 #include "playerbot/strategy/values/GuidPositionValues.h"
 
 namespace ai
 {
     const uint32 SPELL_DISARM_TRAP = 1842;
+
+    class BlackwingLairPositionAction : public MovementAction
+    {
+    public:
+        BlackwingLairPositionAction(PlayerbotAI* ai) : MovementAction(ai, "blackwing lair safe position") {}
+        bool Execute(Event& event) override;
+        bool isUseful() override;
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
 
     class StopCorruptedHealingAction : public Action
     {

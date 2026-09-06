@@ -1,10 +1,13 @@
 #include "playerbot/playerbot.h"
 #include "BlackwingLairDungeonStrategies.h"
+#include "DungeonMultipliers.h"
 
 using namespace ai;
 
 void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("blackwing lair safe position",
+        NextAction::array(0, new NextAction("blackwing lair safe position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("corrupted healing cast",
         NextAction::array(0, new NextAction("stop corrupted healing", ACTION_EMERGENCY + 1), NULL)));
     triggers.push_back(new TriggerNode(
@@ -14,12 +17,16 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
 
 void BlackwingLairDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("blackwing lair safe position",
+        NextAction::array(0, new NextAction("blackwing lair safe position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("corrupted healing cast",
         NextAction::array(0, new NextAction("stop corrupted healing", ACTION_EMERGENCY + 1), NULL)));
 }
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("blackwing lair safe position",
+        NextAction::array(0, new NextAction("blackwing lair safe position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode(
         "suppression device need stealth",
         NextAction::array(0, new NextAction("stealth for suppression device", ACTION_HIGH + 3), NULL)));
@@ -31,6 +38,16 @@ void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>
     triggers.push_back(new TriggerNode(
         "suppression device close",
         NextAction::array(0, new NextAction("disarm suppression device", ACTION_HIGH + 4), NULL)));
+}
+
+void BlackwingLairDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveBlackwingLairPositionMultiplier(ai));
+}
+
+void BlackwingLairDungeonStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveBlackwingLairPositionMultiplier(ai));
 }
 
 class SuppressionRoomPassiveMultiplier : public Multiplier

@@ -2,9 +2,17 @@
 #include "DungeonTriggers.h"
 #include "GenericTriggers.h"
 #include "playerbot/strategy/actions/EncounterSpellPolicy.h"
+#include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
 
 namespace ai
 {
+    class BlackwingLairPositionTrigger : public Trigger
+    {
+    public:
+        BlackwingLairPositionTrigger(PlayerbotAI* ai) : Trigger(ai, "blackwing lair safe position", 1) {}
+        bool IsActive() override { BlackwingLairPositionAction action(ai); return action.isUseful(); }
+    };
+
     class CorruptedHealingCastTrigger : public Trigger
     {
     public:

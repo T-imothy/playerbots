@@ -121,6 +121,7 @@ namespace ai
             creators["netherspite position"] = [](PlayerbotAI* ai) { return new NetherspitePositionValue(ai); };
             creators["onyxia position"] = [](PlayerbotAI* ai) { return new OnyxiaPositionValue(ai); };
             creators["molten core position"] = [](PlayerbotAI* ai) { return new MoltenCorePositionValue(ai); };
+            creators["blackwing lair position"] = [](PlayerbotAI* ai) { return new BlackwingLairPositionValue(ai); };
             creators["mechanar position"] = [](PlayerbotAI* ai) { return new MechanarPositionValue(ai); };
             creators["aran flame wreath"] = [](PlayerbotAI* ai) { return new AranFlameWreathValue(ai); };
             creators["boss cast position"] = [](PlayerbotAI* ai) { return new BossCastPositionValue(ai); };

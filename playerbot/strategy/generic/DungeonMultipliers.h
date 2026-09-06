@@ -6,6 +6,13 @@ class Action;
 
 namespace ai
 {
+    class PreserveBlackwingLairPositionMultiplier : public Multiplier
+    {
+    public:
+        PreserveBlackwingLairPositionMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve blackwing lair position") {}
+        float GetValue(Action* action) override;
+    };
+
     class PreserveBossCastPositionMultiplier : public Multiplier
     {
     public:
