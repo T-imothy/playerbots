@@ -81,7 +81,7 @@ GameObject* AssistSummoningRitualAction::GetRitual()
         if (!channel || !channel->m_spellInfo || channel->getState() == SPELL_STATE_FINISHED ||
             !IsNativeSummoningRitual(channel->m_spellInfo->Id)) continue;
         GameObject* ritual = owner->GetGameObject(channel->m_spellInfo->Id);
-        if (!ritual || !ritual->IsInWorld() || ritual->GetMap() != bot->GetMap() ||
+        if (!ritual || !ritual->IsInWorld() || !bot->IsInMap(ritual) ||
             ritual->GetOwnerGuid() != owner->GetObjectGuid() || !sServerFacade.isSpawned(ritual) ||
             ritual->GetLootState() == GO_JUST_DEACTIVATED || !ritual->GetGOInfo() ||
             ritual->GetGoType() != GAMEOBJECT_TYPE_SUMMONING_RITUAL ||

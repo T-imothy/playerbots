@@ -37,7 +37,7 @@ struct Session {bool logout=false;unsigned uses=0,lastGuid=0;bool isLogingOut(){
 struct Map {};
 struct GameObjectInfo {int type=18;struct {unsigned reqParticipants=3;}summoningRitual;};
 struct GameObject {unsigned guid=20,entry=36727,spell=698,owner=1,users=1;int loot=0,type=18;
- bool world=true,spawned=true,info=true;float x=0,interaction=5;Map* map=nullptr;GameObjectInfo data;
+ bool world=true,spawned=true,info=true,samePhase=true;float x=0,interaction=5;Map* map=nullptr;GameObjectInfo data;
  bool IsInWorld(){return world;}Map* GetMap(){return map;}unsigned GetEntry(){return entry;}
  unsigned GetObjectGuid(){return guid;}unsigned GetOwnerGuid(){return owner;}unsigned GetSpellId(){return spell;}
  int GetLootState(){return loot;}int GetGoType(){return type;}GameObjectInfo* GetGOInfo(){return info?&data:nullptr;}
@@ -55,6 +55,7 @@ struct Player {unsigned guid=1,mapId=0,instance=0,selection=0;int playerClass=CL
  bool IsInCombat(){return combat;}bool IsBeingTeleported(){return teleport;}bool IsTaxiFlying(){return taxi;}
  bool GetTransport(){return transport;}Session* GetSession(){return sessionExists?&session:nullptr;}
  Group* GetGroup(){return group;}Map* GetMap(){return map;}unsigned GetObjectGuid(){return guid;}
+ bool IsInMap(GameObject* g){return world&&g->world&&map==g->map&&g->samePhase;}
  unsigned GetMapId(){return mapId;}unsigned GetInstanceId(){return instance;}
  unsigned GetPhaseMask()const{return 1;}
  int getClass(){return playerClass;}bool HasSpell(unsigned id){return knows && id==698;}
@@ -129,6 +130,7 @@ int main(){using namespace ai;
  reset();helper.busy=true;assert(!assist.isUseful());
  reset();helper.sessionExists=false;assert(!assist.isUseful());
  reset();helper.map=&other;assert(!assist.isUseful());
+ reset();ritual.samePhase=false;helper.x=20;assert(!assist.isUseful()&&!assist.Execute(event)&&helperAI.moves==0);
  reset();warlock.selection=3;assert(!assist.isUseful());
  reset();warlock.channel=nullptr;assert(!assist.isUseful());
  reset();ritual.users=3;assert(!assist.isUseful());
