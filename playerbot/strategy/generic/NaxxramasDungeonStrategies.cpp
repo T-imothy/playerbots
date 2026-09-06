@@ -26,6 +26,11 @@ void NaxxramasDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& tri
         NextAction::array(0, new NextAction("naxxramas safe position", ACTION_EMERGENCY + 2), NULL)));
 }
 
+void NaxxramasDungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveNaxxramasPositionMultiplier(ai));
+}
+
 void NaxxramasDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new PreserveNaxxramasPositionMultiplier(ai));

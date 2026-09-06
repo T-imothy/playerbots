@@ -5,6 +5,52 @@
 
 namespace
 {
+    bool HasPoisonDispel(const SpellEntry* spell)
+    {
+        if (!spell) return false;
+        for (unsigned effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+            if (spell->Effect[effect] == SPELL_EFFECT_DISPEL &&
+                spell->EffectMiscValue[effect] >= 0 && spell->EffectMiscValue[effect] <= DISPEL_ZG_TICKET &&
+                (GetDispellMask(DispelType(spell->EffectMiscValue[effect])) & (1u << DISPEL_POISON))) return true;
+        return false;
+    }
+
+    bool ShouldPreserveHakkarPoison(PlayerbotAI* ai, const SpellEntry* spell, Unit* target)
+    {
+        Player* bot = ai->GetBot();
+        if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
+            bot->HasCharmer() || bot->GetMapId() != 309 || !spell) return false;
+        const bool direct = HasPoisonDispel(spell);
+        bool periodic = false;
+        for (unsigned effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+            if (spell->Effect[effect] == SPELL_EFFECT_APPLY_AURA &&
+                spell->EffectApplyAuraName[effect] == SPELL_AURA_PERIODIC_TRIGGER_SPELL &&
+                HasPoisonDispel(sServerFacade.LookupSpellInfo(spell->EffectTriggerSpell[effect]))) periodic = true;
+        // Classic/TBC use Poison Cleansing Totem; Wrath merges poison and
+        // disease into Cleansing Totem. Preserve the native era's actual spell.
+#ifdef MANGOSBOT_TWO
+        const bool totem = spell->Id == 8170;
+#else
+        const bool totem = spell->Id == 8166;
+#endif
+        if (!direct && !periodic && !totem) return false;
+        bool engaged = false;
+        for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
+        {
+            Unit* boss = ai->GetUnit(guid);
+            if (boss && boss->GetEntry() == 14834 && boss->IsInWorld() && bot->IsInMap(boss) &&
+                boss->IsAlive() && boss->IsInCombat()) { engaged = true; break; }
+        }
+        if (!engaged) return false;
+        // Native BloodSiphon chooses damage 24323 instead of healing 24322
+        // only while the player still has Poisonous Blood 24321.
+        if (direct && target && target->IsInWorld() && bot->IsInMap(target) &&
+            sServerFacade.IsFriendlyTo(bot, target) && target->HasAura(24321)) return true;
+        // A continuing cleanse would remove the poison after it is acquired.
+        // Existing effects and human actions are not removed or rewritten.
+        return periodic || totem;
+    }
+
     bool HasDiseaseDispel(const SpellEntry* spell)
     {
         if (!spell) return false;
@@ -37,6 +83,7 @@ bool ai::IsProtectedEncounterDispel(Unit* target, uint32 dispelType)
 
 bool ai::ShouldAvoidEncounterDispel(PlayerbotAI* ai, const SpellEntry* spell, Unit* target)
 {
+    if (ShouldPreserveHakkarPoison(ai, spell, target)) return true;
     Player* bot = ai->GetBot();
     if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         bot->GetMapId() != 533 || !spell) return false;

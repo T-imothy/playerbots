@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GenericActions.h"
+#include "EncounterCastActions.h"
 #include "EmoteAction.h"
 #include "AddLootAction.h"
 #include "LootAction.h"
@@ -411,6 +412,7 @@ namespace ai
             creators["stealth for suppression device"] = [](PlayerbotAI* ai) { return new StealthForSuppressionDeviceAction(ai); };
             creators["disarm suppression device"] = [](PlayerbotAI* ai) { return new DisarmSuppressionDeviceAction(ai); };
             creators["stop corrupted healing"] = [](PlayerbotAI* ai) { return new StopCorruptedHealingAction(ai); };
+            creators["stop unsafe reflected cast"] = [](PlayerbotAI* ai) { return new StopUnsafeReflectedCastAction(ai); };
             creators["blackwing lair safe position"] = [](PlayerbotAI* ai) { return new BlackwingLairPositionAction(ai); };
             creators["naxxramas safe position"] = [](PlayerbotAI* ai) { return new NaxxramasPositionAction(ai); };
 

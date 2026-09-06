@@ -1,5 +1,11 @@
 # Remaining encounter coverage — source inventory checkpoint
 
+Follow-up: [raid/dungeon fixes and mechanic backlog](RAID-DUNGEON-AUDIT-20260906.md)
+records the next audit pass, including database-driven instance evidence and
+correction of the registration-count limitation below. These historical counts
+include declared names from script metadata; they are not exclusively live C++
+registrations. In particular the four Wrath Vault placeholder files register no AI.
+
 The continuation enumerated native boss script registrations and read-only dev
 `creature_template` mappings in Classic, TBC and Wrath, then searched Playerbots
 for candidate name, entry and spell references. The CSV is in the task output:

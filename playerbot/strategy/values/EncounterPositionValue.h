@@ -28,6 +28,8 @@ namespace ai
         std::vector<encounter::Circle>& threats);
     bool MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
         std::vector<encounter::Circle>& threats);
+    bool MechanarThreats(PlayerbotAI* ai, EncounterPosition& plan,
+        std::vector<encounter::Circle>& threats);
     bool GruulShatterThreats(PlayerbotAI* ai, EncounterPosition& plan,
         std::vector<encounter::Circle>& threats);
     float SolarianBurstRadius();

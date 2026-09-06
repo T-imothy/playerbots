@@ -7,10 +7,10 @@ using namespace ai;
 bool ai::IsBossEscapeMap(uint32 map)
 {
 #ifndef MANGOSBOT_ZERO
-    if (map == 532 || map == 550 || map == 555) return true;
+    if (map == 532 || map == 550 || map == 553 || map == 555) return true;
 #endif
 #ifdef MANGOSBOT_TWO
-    if (map == 602 || map == 603 || map == 658) return true;
+    if (map == 602 || map == 603 || map == 604 || map == 658) return true;
 #endif
     return false;
 }
@@ -22,6 +22,11 @@ uint32 ai::NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast)
 #ifndef MANGOSBOT_ZERO
     if (map == 532 && entry == 16524 && cast == 29973) return cast; // Aran
     if (map == 550 && entry == 19516 && cast == 34162) return 34164; // Void Reaver Pounding channel
+    if (map == 553 && entry == 17978) // Thorngrin: channel ticks carry the damage radius.
+    {
+        if (cast == 34659) return 34660;
+        if (cast == 39131) return 39132;
+    }
     if (map == 555 && entry == 18708) // Murmur: native SpellEffects dummy dispatch
     {
         if (cast == 33923) return 33666;
@@ -31,6 +36,7 @@ uint32 ai::NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast)
 #ifdef MANGOSBOT_TWO
     if (map == 602 && entry == 28923 && (cast == 52960 || cast == 59835)) return cast; // Loken
     if (map == 603 && entry == 33432 && cast == 63631) return cast; // Leviathan Mk II
+    if (map == 604 && entry == 29304 && (cast == 55081 || cast == 59842)) return cast; // Slad'ran
     if (map == 658 && entry == 36476 && cast == 68989) return cast; // Ick
 #endif
     return 0;

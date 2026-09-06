@@ -19,6 +19,7 @@ namespace ai
     {
     public:
         MechanarPositionAction(PlayerbotAI* ai) : MovementAction(ai, "mechanar safe position") {}
+        bool ShouldReactionInterruptCast() const override;
         bool Execute(Event& event) override;
         bool isUseful() override;
         static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);

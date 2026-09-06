@@ -12,6 +12,7 @@ namespace ai
         OnyxiaPositionAction(PlayerbotAI* ai) : MovementAction(ai, "onyxia safe position") {}
         bool Execute(Event& event) override;
         bool isUseful() override;
+        bool ShouldReactionInterruptCast() const override;
         static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
     };
 

@@ -78,3 +78,31 @@ bool ai::InterruptCorruptedHealingCast(Player* bot)
         }
     return interrupted;
 }
+
+bool ai::HasUnsafeReflectedCast(Player* bot)
+{
+    if (!bot || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() ||
+        bot->IsBeingTeleported() || bot->HasCharmer()) return false;
+    const Spell* cast = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    // Reflection is determined by native spell handling. Do not recall a
+    // launched projectile or cancel a channel that has already started.
+    if (!cast || cast->getState() != SPELL_STATE_CASTING || !cast->m_spellInfo ||
+        !IsReflectableSpell(cast->m_spellInfo)) return false;
+    Unit* target = cast->m_targets.getUnitTarget();
+    return target && target != bot && target->IsInWorld() && target->IsAlive() &&
+        bot->IsInMap(target) && !sServerFacade.IsFriendlyTo(bot, target) &&
+        target->GetReflectChance(GetSpellSchoolMask(cast->m_spellInfo)) >= 50.0f;
+}
+
+bool ai::InterruptUnsafeReflectedCast(Player* bot)
+{
+    // Recheck at execution: a queued reflection event can outlive the shield
+    // or refer to a different cast after an earlier interruption.
+    if (!HasUnsafeReflectedCast(bot)) return false;
+    Spell* cast = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    if (!cast->CanBeInterrupted()) return false;
+    const uint32 spell = cast->m_spellInfo->Id;
+    bot->InterruptSpell(CURRENT_GENERIC_SPELL);
+    if (PlayerbotAI* ai = bot->GetPlayerbotAI()) ai->SpellInterrupted(spell);
+    return true;
+}

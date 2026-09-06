@@ -40,6 +40,11 @@ void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>
         NextAction::array(0, new NextAction("disarm suppression device", ACTION_HIGH + 4), NULL)));
 }
 
+void BlackwingLairDungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveBlackwingLairPositionMultiplier(ai));
+}
+
 void BlackwingLairDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new PreserveBlackwingLairPositionMultiplier(ai));

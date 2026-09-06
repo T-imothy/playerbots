@@ -7,24 +7,24 @@
 
 using namespace ai;
 
-EncounterPosition MechanarPositionValue::Calculate()
+bool ai::MechanarThreats(PlayerbotAI* ai, EncounterPosition& plan,
+    std::vector<encounter::Circle>& threats)
 {
-    EncounterPosition plan;
+    Player* bot = ai->GetBot();
 #ifndef MANGOSBOT_ZERO
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
-        bot->GetMapId() != 554 || !bot->IsInCombat()) return plan;
+        bot->GetMapId() != 554 || !bot->IsInCombat()) return false;
     Unit* boss = nullptr;
-    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
     {
         Unit* unit = ai->GetUnit(guid);
         if (unit && (unit->GetEntry() == 19219 || unit->GetEntry() == 19221 || unit->GetEntry() == 19220) &&
             unit->IsInWorld() && bot->IsInMap(unit) &&
             unit->IsAlive() && unit->IsInCombat()) { boss = unit; break; }
     }
-    if (!boss) return plan;
+    if (!boss) return false;
     plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId(); plan.boss = boss->GetObjectGuid();
     const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
-    std::vector<encounter::Circle> threats;
     const auto add = [&](Unit* center, float radius) {
         if (radius > 0 && radius <= 25 && std::fabs(center->GetPositionZ() - here.z) < 8)
             threats.push_back({{center->GetPositionX(), center->GetPositionY(), center->GetPositionZ()}, radius + 2});
@@ -54,13 +54,17 @@ EncounterPosition MechanarPositionValue::Calculate()
             if (hazard && hazard->IsInWorld() && bot->IsInMap(hazard) && hazard->IsAlive() &&
                 hazard->HasAura(flames ? 35281 : 37670))
             {
+                // Inferno's periodic payload is dispatched by native SpellAuras,
+                // not EffectTriggerSpell: its damage radius exceeds the trail.
+                const float activeRadius = flames && (hazard->HasAura(35268) || hazard->HasAura(39346)) ?
+                    std::max(radius, NativeEncounterSpellRadius(35283)) : radius;
                 // Raging Flames fixates and retargets in the native script. A
                 // chased bot needs a running buffer, not a threat reset or taunt.
                 const float lead = flames && hazard->GetVictim() == bot ? 6.0f : 0.0f;
-                add(hazard, radius > 0 ? radius + lead : 0);
+                add(hazard, activeRadius > 0 ? activeRadius + lead : 0);
             }
     }
-    else if (ai->IsRanged(bot) || ai->IsHeal(bot))
+    else if (boss->GetVictim() != bot && (ai->IsRanged(bot) || ai->IsHeal(bot)))
     {
         // Stay outside native close-range silence/explosion while still casting.
         // Do not make the tank or melee run away from Pathaleon to avoid damage.
@@ -68,19 +72,29 @@ EncounterPosition MechanarPositionValue::Calculate()
         if (!bot->GetMap()->IsRegularDifficulty()) radius = std::max(radius, NativeEncounterSpellRadius(15453));
         add(boss, radius);
     }
-    if (threats.empty()) return plan;
+    if (threats.empty()) return false;
     bool relevant = false;
     for (const auto& circle : threats)
         relevant = relevant || encounter::Distance2d(here, circle.center) < circle.radius + 5;
-    if (!relevant) return plan;
+    return relevant;
+#else
+    return false;
+#endif
+}
+
+EncounterPosition MechanarPositionValue::Calculate()
+{
+    EncounterPosition plan;
+    std::vector<encounter::Circle> threats;
+    if (!MechanarThreats(ai, plan, threats)) return plan;
+    const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
     unsigned checked = 0;
     for (const auto& point : encounter::EscapeCircles(here, threats))
     {
         if (++checked > 8) break;
         plan.active = true; plan.destination = point;
-        if (ValidateEncounterDestination(ai, plan)) return plan;
+        if (ValidateEncounterDestination(ai, plan) && encounter::OutsideCircles(plan.destination, threats)) return plan;
     }
     plan.active = false;
-#endif
     return plan;
 }

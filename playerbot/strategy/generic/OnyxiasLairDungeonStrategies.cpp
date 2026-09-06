@@ -40,6 +40,11 @@ void OnyxiaFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers
         NextAction::array(0, new NextAction("onyxia safe position", 100.0f), NULL)));
 }
 
+void OnyxiaFightStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveOnyxiaPositionMultiplier(ai));
+}
+
 void OnyxiaFightStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new PreserveOnyxiaPositionMultiplier(ai));

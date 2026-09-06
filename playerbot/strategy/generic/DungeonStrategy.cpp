@@ -7,6 +7,8 @@ using namespace ai;
 
 void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("unsafe reflected cast",
+        NextAction::array(0, new NextAction("stop unsafe reflected cast", ACTION_EMERGENCY + 1), NULL)));
     triggers.push_back(new TriggerNode("solarian burst position",
         NextAction::array(0, new NextAction("solarian burst position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("solarian priority target",
@@ -99,6 +101,8 @@ void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("unsafe reflected cast",
+        NextAction::array(0, new NextAction("stop unsafe reflected cast", ACTION_EMERGENCY + 1), NULL)));
     triggers.push_back(new TriggerNode("solarian burst position",
         NextAction::array(0, new NextAction("solarian burst position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("magtheridon cube",

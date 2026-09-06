@@ -22,6 +22,11 @@ void MoltenCoreDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& tr
         NextAction::array(0, new NextAction("molten core safe position", 105.0f), NULL)));
 }
 
+void MoltenCoreDungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveMoltenCorePositionMultiplier(ai));
+}
+
 void MoltenCoreDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new PreserveMoltenCorePositionMultiplier(ai));

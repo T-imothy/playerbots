@@ -10,6 +10,10 @@ from behavior_regression import block
 root = Path(__file__).resolve().parents[1]
 policy = (root / 'playerbot/strategy/actions/EncounterSpellPolicy.cpp').read_text()
 assert '#include "playerbot/ServerFacade.h"' in policy
+# Reflection has its own native-interface fixture; keep this harness scoped to
+# the corrupted-healing helpers and the actual common cast wrappers.
+for signature in ('bool ai::HasUnsafeReflectedCast(', 'bool ai::InterruptUnsafeReflectedCast('):
+    policy = policy.replace(block(policy, signature), '')
 policy = '\n'.join(line for line in policy.splitlines() if not line.startswith('#include'))
 generic = (root / 'playerbot/strategy/actions/GenericSpellActions.cpp').read_text()
 methods = '\n'.join(block(generic, name) for name in

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "HealthTriggers.h"
+#include "playerbot/strategy/actions/EncounterCastActions.h"
 #include "GenericTriggers.h"
 #include "LootTriggers.h"
 #include "GenericTriggers.h"
@@ -348,6 +349,7 @@ namespace ai
             creators["suppression device in sight"] = [](PlayerbotAI* ai) { return new SuppressionDeviceInSightTrigger(ai); };
             creators["suppression device close"] = [](PlayerbotAI* ai) { return new SuppressionDeviceCloseTrigger(ai); };
             creators["corrupted healing cast"] = [](PlayerbotAI* ai) { return new CorruptedHealingCastTrigger(ai); };
+            creators["unsafe reflected cast"] = [](PlayerbotAI* ai) { return new UnsafeReflectedCastTrigger(ai); };
             creators["blackwing lair safe position"] = [](PlayerbotAI* ai) { return new BlackwingLairPositionTrigger(ai); };
             creators["naxxramas safe position"] = [](PlayerbotAI* ai) { return new NaxxramasPositionTrigger(ai); };
 

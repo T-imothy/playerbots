@@ -39,6 +39,13 @@ bool OnyxiaPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 bool OnyxiaPositionAction::isUseful()
 {
     EncounterPosition plan;
+    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f ||
+        (plan.exclusive && (!bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)));
+}
+
+bool OnyxiaPositionAction::ShouldReactionInterruptCast() const
+{
+    EncounterPosition plan;
     return GetPlan(ai, plan) && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
 }
 
@@ -46,6 +53,13 @@ bool OnyxiaPositionAction::Execute(Event& event)
 {
     EncounterPosition plan;
     if (!GetPlan(ai, plan) || !ai->CanMove() || !ValidateEncounterDestination(ai, plan)) return false;
+    if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= 1.5f)
+    {
+        if (!plan.exclusive) return false;
+        ai->StopMoving();
+        SetDuration(100);
+        return true;
+    }
     return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
 }
 

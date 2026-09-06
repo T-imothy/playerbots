@@ -113,8 +113,10 @@ float PreserveMechanarPositionMultiplier::GetValue(Action* action)
         PathaleonAddsAction adds(ai);
         if (adds.GetTarget()) return 0.0f;
     }
-    if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
-        dynamic_cast<MechanarPositionAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<MechanarPositionAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
     EncounterPosition plan;
     return MechanarPositionAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
 }
@@ -142,8 +144,10 @@ float PreserveOnyxiaPositionMultiplier::GetValue(Action* action)
         OnyxiaAddsAction adds(ai);
         if (adds.GetTarget()) return 0.0f;
     }
-    if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
-        dynamic_cast<OnyxiaPositionAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<OnyxiaPositionAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
     EncounterPosition plan;
     if (!OnyxiaPositionAction::GetPlan(ai, plan)) return 1.0f;
     if (!plan.exclusive) return dynamic_cast<SetBehindTargetAction*>(action) ? 0.0f : 1.0f;

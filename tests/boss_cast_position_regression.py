@@ -5,6 +5,7 @@ The fixture cannot establish encounter success or replace real map path testing.
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
 from behavior_regression import block
 
 root = Path(__file__).resolve().parents[1]
@@ -18,7 +19,12 @@ extract = (
         "bool BossCastPositionAction::Execute(")),
     ("generic/DungeonMultipliers.cpp", ("float PreserveBossCastPositionMultiplier::GetValue(",)),
 )
-methods = "\n".join(block((base / path).read_text(), name) for path, names in extract for name in names)
+def source(path):
+    if '--before-dungeon-escapes' in sys.argv and path == 'values/BossCastPositionValue.cpp':
+        return subprocess.check_output(['git','-c','safe.directory='+root.as_posix(),'-C',str(root),
+            'show','88f43c09:playerbot/strategy/'+path],text=True)
+    return (base / path).read_text()
+methods = "\n".join(block(source(path), name) for path, names in extract for name in names)
 code = r'''
 #include <cassert>
 #include <list>
@@ -50,7 +56,8 @@ namespace ai {
  struct EncounterPosition {bool active=false;unsigned map=0,instance=0,boss=0,spell=0;encounter::Point destination;};
  bool IsBossEscapeMap(unsigned);unsigned NativeBossEscapeSpell(unsigned,unsigned,unsigned);
  const Spell* CurrentBossEscapeCast(Player*,Unit*);
- std::map<unsigned,float> radii{{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15},{34164,18}};
+ std::map<unsigned,float> radii{{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15},{34164,18},
+ {34660,15},{39132,15},{55081,15},{59842,15}};
  float NativeEncounterSpellRadius(unsigned id){return radii[id];}
 }
 template<class T>struct Stored {T value{};T Get(){return value;}};
@@ -92,7 +99,7 @@ int main(){
  MoveAwayFromHazard hazard(&ai);CastSpellAction heal,charge;charge.movement=true;Event event;
  auto load=[&](){return ai.context.plan.value=value.Calculate();};
 #ifdef MANGOSBOT_ZERO
- for(unsigned id:{532u,550u,555u,602u,603u,658u})assert(!IsBossEscapeMap(id));
+ for(unsigned id:{532u,550u,553u,555u,602u,603u,604u,658u})assert(!IsBossEscapeMap(id));
  assert(!load().active && ai.checked==0);assert(!action.isUseful() && !action.Execute(event));
  assert(multiplier.GetValue(&chase)==1 && multiplier.GetValue(&charge)==1 && ai.context.reads==0);
  assert(NativeBossEscapeSpell(532,16524,29973)==0);
@@ -144,13 +151,26 @@ int main(){
  assert(load().active);boss.channel=nullptr;assert(!action.Execute(event));boss.current=&cast;
  assert(load().active);entry.Id=34172;assert(!action.Execute(event)&&!load().active); // Orb isn't a caster-centred escape.
 #ifdef MANGOSBOT_TWO
- const unsigned cases[][3]={{602,28923,52960},{602,28923,59835},{603,33432,63631},{658,36476,68989}};
+ const unsigned cases[][3]={{602,28923,52960},{602,28923,59835},{603,33432,63631},{658,36476,68989},{604,29304,55081},{604,29304,59842}};
  for(const auto& c:cases){bot.mapId=c[0];boss.entry=c[1];entry.Id=c[2];plan=load();
   assert(plan.active && encounter::Distance2d(plan.destination,{0,0,0})>=radii[c[2]]+2);}
 #else
- assert(!IsBossEscapeMap(602) && !IsBossEscapeMap(603) && !IsBossEscapeMap(658));
+ assert(!IsBossEscapeMap(602) && !IsBossEscapeMap(603) && !IsBossEscapeMap(604) && !IsBossEscapeMap(658));
  assert(!NativeBossEscapeSpell(602,28923,52960));
 #endif
+ // Botanica's Hellfire channel has a zero-radius parent and distinct native
+ // normal/heroic damage payloads. Hold only for the actual ongoing channel.
+ bot.mapId=553;boss.entry=17978;boss.current=nullptr;boss.channel=&cast;bot.x=bot.y=0;
+ for(unsigned id:{34659u,39131u}){
+  entry.Id=id;cast.state=0;
+  assert(IsBossEscapeMap(553));plan=load();assert(plan.active);
+  assert(encounter::Distance2d(plan.destination,{0,0,0})>=17);
+  assert(NativeBossEscapeSpell(553,17978,id)==(id==34659?34660:39132));
+  assert(!NativeBossEscapeSpell(554,17978,id)&&!NativeBossEscapeSpell(553,1,id));
+  assert(action.Execute(event));cast.state=SPELL_STATE_FINISHED;
+  assert(!action.Execute(event)&&multiplier.GetValue(&chase)==1);
+ }
+ cast.state=0;load();boss.channel=nullptr;assert(!action.Execute(event));
 #endif
  std::cout<<"PASS: actual native cast/difficulty/expansion/radius selection, bounded escape, safe hold, cast lifetime and movement arbitration\n";
 }

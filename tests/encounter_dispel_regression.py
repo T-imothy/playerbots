@@ -2,10 +2,13 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
 from behavior_regression import block
 
 root=Path(__file__).resolve().parents[1]
 policy=(root/'playerbot/strategy/actions/EncounterDispelPolicy.cpp').read_text()
+if '--before-hakkar' in sys.argv:
+    policy=subprocess.check_output(['git','-c','safe.directory='+root.as_posix(),'-C',str(root),'show','88f43c09:playerbot/strategy/actions/EncounterDispelPolicy.cpp'],text=True)
 policy='\n'.join(line for line in policy.splitlines() if not line.startswith('#include'))
 selector=(root/'playerbot/strategy/values/PartyMemberToDispel.cpp').read_text()
 trigger=(root/'playerbot/strategy/triggers/CureTriggers.cpp').read_text()
@@ -110,6 +113,28 @@ int main(){
  SpellEntry malformed=cure;malformed.EffectMiscValue[0]=32;assert(!ShouldAvoidEncounterDispel(&ai,&malformed,&infected));
  malformed.EffectMiscValue[0]=31;assert(!ShouldAvoidEncounterDispel(&ai,&malformed,&infected));
  malformed.EffectMiscValue[0]=-1;assert(!ShouldAvoidEncounterDispel(&ai,&malformed,&infected));
+ // Hakkar's native Blood Siphon requires the poison to remain on its recipient.
+ bot.map=infected.map=healthy.map=boss.map=309;boss.entry=14834;ai.context.attackers.value={1};infected.auras={24321};
+ SpellEntry poison=cure;poison.Id=526;poison.EffectMiscValue[0]=DISPEL_POISON;
+ assert(ShouldAvoidEncounterDispel(&ai,&poison,&infected)&&ShouldAvoidEncounterDispel(&ai,&cleanse,&infected));
+ assert(!ShouldAvoidEncounterDispel(&ai,&cure,&infected)&&!ShouldAvoidEncounterDispel(&ai,&magic,&infected));
+ assert(!ShouldAvoidEncounterDispel(&ai,&poison,&healthy));
+ selector.qualifier="4,cleanse";assert(selector.Calculate()==&healthy);
+ SpellEntry periodicPoison;periodicPoison.Id=2893;periodicPoison.Effect[0]=SPELL_EFFECT_APPLY_AURA;
+ periodicPoison.EffectApplyAuraName[0]=SPELL_AURA_PERIODIC_TRIGGER_SPELL;periodicPoison.EffectTriggerSpell[0]=526;
+ sServerFacade.spells[526]=poison;
+ assert(ShouldAvoidEncounterDispel(&ai,&periodicPoison,&healthy));
+ SpellEntry poisonTotem;poisonTotem.Id=8166;
+#ifdef MANGOSBOT_TWO
+ assert(!ShouldAvoidEncounterDispel(&ai,&poisonTotem,&bot));poisonTotem.Id=8170;
+#else
+ assert(!ShouldAvoidEncounterDispel(&ai,&totem,&bot));
+#endif
+ assert(ShouldAvoidEncounterDispel(&ai,&poisonTotem,&bot));
+ boss.combat=false;assert(!ShouldAvoidEncounterDispel(&ai,&poison,&infected)&&!ShouldAvoidEncounterDispel(&ai,&poisonTotem,&bot));boss.combat=true;
+ boss.phase=2;assert(!ShouldAvoidEncounterDispel(&ai,&poison,&infected));boss.phase=1;
+ boss.entry=1;assert(!ShouldAvoidEncounterDispel(&ai,&poison,&infected));boss.entry=14834;
+ infected.auras.clear();assert(!ShouldAvoidEncounterDispel(&ai,&poison,&infected));
  std::cout<<"PASS: actual native-mask dispel guard, multi-effect Cleanse, periodic/totem prevention and spell-aware party selection\n";
 }
 '''.replace('__POLICY__',policy).replace('__METHODS__',methods)

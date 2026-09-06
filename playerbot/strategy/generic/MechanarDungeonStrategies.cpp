@@ -22,6 +22,11 @@ void MechanarDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& trig
         NextAction::array(0, new NextAction("mechanar safe position", 105.0f), NULL)));
 }
 
+void MechanarDungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveMechanarPositionMultiplier(ai));
+}
+
 void MechanarDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new PreserveMechanarPositionMultiplier(ai));
