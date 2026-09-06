@@ -58,6 +58,20 @@ claim that every encounter has been implemented or played successfully**.
 
 ### Additional encounter and class corrections
 
+- BWL Nefarian priest call follows native aura 23401 and direct-heal proc rules:
+  avoid harmful automatic direct heals, interrupt only an eligible ongoing heal,
+  preserve Renew/shields/damage, and handle Wrath's native Penance/channel split
+  separately. Actual policy and complete casting-wrapper tests pass in all
+  three expansion modes. See `BLACKWING-LAIR-MECHANIC-AUDIT.md`; this does not
+  complete Nefarian or BWL.
+- Shared named-spell feasibility forwards the requested effect mask. Three
+  legacy boolean callers (generic cast trigger, pull and reach) explicitly use
+  the unspecified mask, retaining their intent. Unspecified unit masks use
+  native `GetCheckCastEffectMask`/`GetCheckCastSelfEffectMask`; immunity and
+  damage prechecks inspect only selected effects. An AoE center is not every
+  recipient, and an unrelated self effect cannot rescue an immune target effect.
+  Native CheckCast and final targeting remain authoritative. Tests use the
+  actual wrapper/filter and each core's native mask helpers.
 - Shared dispel eligibility skips a nearly-expired aura rather than stopping the
   scan and ignoring every other removable effect. Wrong dispel types cannot veto
   a valid later candidate; permanent negative-duration auras are not mistaken

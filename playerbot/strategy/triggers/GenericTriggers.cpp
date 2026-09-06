@@ -322,7 +322,7 @@ bool TankThreatTransferTrigger::IsActive()
 bool SpellCanBeCastedTrigger::IsActive()
 {
 	Unit* target = GetTarget();
-	return target && ai->CanCastSpell(spell, target, true);
+    return target && ai->CanCastSpell(spell, target, 0);
 }
 
 bool SpellNoCooldownTrigger::IsActive()

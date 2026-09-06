@@ -1,9 +1,17 @@
 #pragma once
 #include "DungeonTriggers.h"
 #include "GenericTriggers.h"
+#include "playerbot/strategy/actions/EncounterSpellPolicy.h"
 
 namespace ai
 {
+    class CorruptedHealingCastTrigger : public Trigger
+    {
+    public:
+        CorruptedHealingCastTrigger(PlayerbotAI* ai) : Trigger(ai, "corrupted healing cast", 1) {}
+        bool IsActive() override { return HasCorruptedHealingCast(bot); }
+    };
+
     class BlackwingLairEnterDungeonTrigger : public EnterDungeonTrigger
     {
     public:

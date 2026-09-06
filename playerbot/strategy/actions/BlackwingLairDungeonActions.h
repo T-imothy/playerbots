@@ -3,11 +3,22 @@
 #include "ChangeStrategyAction.h"
 #include "MovementActions.h"
 #include "UseItemAction.h"
+#include "EncounterSpellPolicy.h"
 #include "playerbot/strategy/values/GuidPositionValues.h"
 
 namespace ai
 {
     const uint32 SPELL_DISARM_TRAP = 1842;
+
+    class StopCorruptedHealingAction : public Action
+    {
+    public:
+        StopCorruptedHealingAction(PlayerbotAI* ai) : Action(ai, "stop corrupted healing", 0) {}
+        bool isUseful() override { return HasCorruptedHealingCast(bot); }
+        bool Execute(Event& event) override { return InterruptCorruptedHealingCast(bot); }
+        // Action's default reaction flags are false: only Execute may cancel
+        // a freshly checked harmful cast, not movement or an unrelated spell.
+    };
 
     class BlackwingLairEnableDungeonStrategyAction : public ChangeAllStrategyAction
     {

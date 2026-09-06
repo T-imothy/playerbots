@@ -3,6 +3,7 @@
 #include "GenericActions.h"
 #include "UseItemAction.h"
 #include "playerbot/CombatDiagnostics.h"
+#include "EncounterSpellPolicy.h"
 
 using namespace ai;
 
@@ -96,6 +97,10 @@ bool CastSpellAction::Execute(Event& event)
         if (!spellId || !sServerFacade.LookupSpellInfo(spellId))
             return false;
         if (IsPassiveSpell(sServerFacade.LookupSpellInfo(spellId)))
+            return false;
+
+        // The native class-call aura can arrive after action selection.
+        if (ShouldAvoidCorruptedHealing(bot, sServerFacade.LookupSpellInfo(spellId), GetTarget()))
             return false;
 
         if (GetTargetName() == "current target" && (!bot->GetCurrentSpell(CURRENT_MELEE_SPELL) && !bot->GetCurrentSpell(CURRENT_AUTOREPEAT_SPELL)))
@@ -240,6 +245,8 @@ bool CastSpellAction::isUseful()
         return false;
 
     const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
+    if (ShouldAvoidCorruptedHealing(bot, pSpellInfo, spellTarget))
+        return false;
     if (pSpellInfo)
     {
         // check if the damage we'd take from damage shields is too harmful, only for melee spells

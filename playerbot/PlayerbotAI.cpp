@@ -4374,7 +4374,7 @@ bool PlayerbotAI::HasSpell(uint32 spellid) const
 
 bool PlayerbotAI::CanCastSpell(std::string name, Unit* target, uint8 effectMask, Item* itemTarget, bool ignoreRange, bool ignoreInCombat, bool ignoreMount, SpellCastResult* checkResult)
 {
-    return CanCastSpell(aiObjectContext->GetValue<uint32>("spell id", name)->Get(), target, 0, true, itemTarget, ignoreRange, ignoreInCombat, ignoreMount, checkResult);
+    return CanCastSpell(aiObjectContext->GetValue<uint32>("spell id", name)->Get(), target, effectMask, true, itemTarget, ignoreRange, ignoreInCombat, ignoreMount, checkResult);
 }
 
 bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, bool checkHasSpell, Item* itemTarget, bool ignoreRange, bool ignoreInCombat, bool ignoreMount, SpellCastResult* checkResult)
@@ -4494,9 +4494,16 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
             }
         }
 
+        // Zero is the AI API's unspecified mask, not an empty native effect
+        // mask (which would label every spell positive). Use the same target
+        // selectors as Spell::CheckCast. An AoE center is not every recipient.
+        uint8 checkedEffectMask = effectMask ? effectMask : uint8(GetCheckCastEffectMask(spellInfo) |
+            (target == bot ? GetCheckCastSelfEffectMask(spellInfo) : 0));
         bool damage = false;
         for (int32 i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; i++)
         {
+            if (!(checkedEffectMask & (1 << i)) || !spellInfo->Effect[i])
+                continue;
             // direct damage
             if (spellInfo->Effect[(SpellEffectIndex)i] == SPELL_EFFECT_SCHOOL_DAMAGE)
             {
@@ -4514,7 +4521,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
             }
         }
 
-        bool immune = target->IsImmuneToSpell(spellInfo, false, effectMask, bot);
+        bool immune = checkedEffectMask && target->IsImmuneToSpell(spellInfo, target == bot, checkedEffectMask, bot);
         if (!damage)
         {
             if (!immune)
@@ -4523,7 +4530,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
                 bool allEffectsImmune = true;
                 for (int32 i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; i++)
                 {
-                    if (!spellInfo->Effect[i])
+                    if (!(checkedEffectMask & (1 << i)) || !spellInfo->Effect[i])
                         continue;
                     hasEffect = true;
                     if (!target->IsImmuneToSpellEffect(spellInfo, SpellEffectIndex(i), false))

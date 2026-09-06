@@ -5,9 +5,17 @@ using namespace ai;
 
 void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("corrupted healing cast",
+        NextAction::array(0, new NextAction("stop corrupted healing", ACTION_EMERGENCY + 1), NULL)));
     triggers.push_back(new TriggerNode(
         "suppression device close",
         NextAction::array(0, new NextAction("disarm suppression device", 80.0f), NULL)));
+}
+
+void BlackwingLairDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode("corrupted healing cast",
+        NextAction::array(0, new NextAction("stop corrupted healing", ACTION_EMERGENCY + 1), NULL)));
 }
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

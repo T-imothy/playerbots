@@ -18,6 +18,7 @@ struct Unit {bool effects[3]={true,false,false};unsigned checks=0;
  bool IsImmuneToSpellEffect(const SpellEntry*,SpellEffectIndex i,bool){++checks;return effects[i];}};
 bool useful(Unit* target,const SpellEntry* spellInfo,bool immune,int* checkResult){
  bool damage=false;
+ unsigned checkedEffectMask=7;
  __FOLD__
  return true;
 }

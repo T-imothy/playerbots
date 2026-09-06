@@ -182,7 +182,7 @@ bool PullAction::isPossible()
         Unit* target = strategy->GetTarget();
         if (!spellName.empty() && target)
         {
-            if (!ai->CanCastSpell(spellName, target, true, nullptr, true))
+            if (!ai->CanCastSpell(spellName, target, 0, nullptr, true))
             {
                 return false;
             }

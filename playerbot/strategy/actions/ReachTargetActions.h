@@ -92,7 +92,7 @@ namespace ai
                     if (!bot->IsNonMeleeSpellCasted(true, false, true))
                     {
                         // Check if the spell for which the reach action is used for can be casted
-                        if (!spellName.empty() && !ai->CanCastSpell(spellName, target, true, nullptr, true, true, true))
+                        if (!spellName.empty() && !ai->CanCastSpell(spellName, target, 0, nullptr, true, true, true))
                         {
                             return false;
                         }
