@@ -99,8 +99,10 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     if (plan.spell == 20475 && !plan.source.IsEmpty())
     {
         Unit* carrier = plan.source == bot->GetObjectGuid() ? bot : ai->GetUnit(plan.source);
-        if (carrier && carrier->IsInWorld() && bot->IsInMap(carrier) && carrier->IsAlive() && carrier->HasAura(20475))
-            return true;
+        if (!carrier || !carrier->IsPlayer() || !carrier->IsInWorld() || !bot->IsInMap(carrier) ||
+            !carrier->IsAlive() || !carrier->HasAura(20475) || carrier->HasCharmer()) return false;
+        Player* member = static_cast<Player*>(carrier);
+        return !member->IsBeingTeleported() && member->GetGroup() && member->GetGroup() == bot->GetGroup();
     }
     Unit* boss = ai->GetUnit(plan.boss);
     return boss && boss->IsInWorld() && bot->IsInMap(boss) && boss->IsAlive() && boss->IsInCombat();
@@ -114,7 +116,9 @@ bool MoltenCorePositionAction::isUseful()
 
 bool MoltenCorePositionAction::Execute(Event& event)
 {
-    EncounterPosition plan;
-    if (!GetPlan(ai, plan) || !ai->CanMove() || !ValidateEncounterDestination(ai, plan)) return false;
+    EncounterPosition plan, current;
+    std::vector<encounter::Circle> threats;
+    if (!GetPlan(ai, plan) || !ai->CanMove() || !MoltenCoreThreats(ai, current, threats) ||
+        !ValidateEncounterDestination(ai, plan) || !encounter::OutsideCircles(plan.destination, threats)) return false;
     return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
 }

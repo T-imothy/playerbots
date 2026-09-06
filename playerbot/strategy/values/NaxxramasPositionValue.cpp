@@ -8,7 +8,9 @@ uint32 ai::NaxxramasBurstAura(Unit* unit)
 {
     if (!unit) return 0;
     if (unit->HasAura(28169)) return 28169; // Grobbulus Mutating Injection
-    return unit->HasAura(27819) ? 27819 : 0; // Kel'Thuzad Detonate Mana
+    if (unit->HasAura(27819)) return 27819; // Kel'Thuzad Detonate Mana
+    if (unit->HasAura(28059)) return 28059; // Thaddius Positive Charge
+    return unit->HasAura(28084) ? 28084 : 0; // Thaddius Negative Charge
 }
 
 float ai::NaxxramasBurstRadius(uint32 aura)
@@ -17,7 +19,9 @@ float ai::NaxxramasBurstRadius(uint32 aura)
     // necessarily by EffectTriggerSpell in the aura's database record.
     if (aura == 28169)
         return std::max(NativeEncounterSpellRadius(28206), NativeEncounterSpellRadius(28322));
-    return aura == 27819 ? NativeEncounterSpellRadius(27820) : 0.0f;
+    if (aura == 27819) return NativeEncounterSpellRadius(27820);
+    if (aura == 28059) return NativeEncounterSpellRadius(28062);
+    return aura == 28084 ? NativeEncounterSpellRadius(28085) : 0.0f;
 }
 
 bool ai::NaxxramasBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
@@ -40,6 +44,10 @@ bool ai::NaxxramasBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
             std::fabs(member->GetPositionZ() - here.z) >= 8) continue;
         const uint32 aura = NaxxramasBurstAura(member);
         if (!ownAura && !aura) continue;
+        // Native Thaddius damage excludes recipients with the same charge.
+        // Uncharged players are still vulnerable; never invent a charge or
+        // remove the native stacking buff to make separation succeed.
+        if ((ownAura == 28059 || ownAura == 28084) && ownAura == aura) continue;
         const float memberRadius = NaxxramasBurstRadius(aura);
         if (aura && (!std::isfinite(memberRadius) || memberRadius <= 0 || memberRadius > 45)) continue;
         const float radius = std::max(ownRadius, memberRadius);
@@ -55,7 +63,8 @@ bool ai::NaxxramasBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
     {
         Unit* enemy = ai->GetUnit(guid);
         if (enemy && enemy->IsInWorld() && bot->IsInMap(enemy) && enemy->IsAlive() &&
-            enemy->IsInCombat() && (enemy->GetEntry() == 15931 || enemy->GetEntry() == 15990) &&
+            enemy->IsInCombat() && (enemy->GetEntry() == 15931 || enemy->GetEntry() == 15990 ||
+                enemy->GetEntry() == 15928) &&
             enemy->GetVictim() == bot) return false;
     }
     bool relevant = ownAura != 0;

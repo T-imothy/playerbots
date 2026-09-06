@@ -17,12 +17,17 @@ public:
 
 uint32 getIncomingdamage(Unit const* pTarget)
 {
-    uint32 damage = 0;
+    double damage = 0;
     for (auto const& pAttacker : pTarget->getAttackers())
         if (pAttacker->CanReachWithMeleeAttack(pTarget))
-            damage += uint32((pAttacker->GetFloatValue(UNIT_FIELD_MINDAMAGE) + pAttacker->GetFloatValue(UNIT_FIELD_MAXDAMAGE)) / 2);
+        {
+            const double hit = (double(pAttacker->GetFloatValue(UNIT_FIELD_MINDAMAGE)) + pAttacker->GetFloatValue(UNIT_FIELD_MAXDAMAGE)) / 2;
+            if (!std::isfinite(hit) || hit <= 0) continue;
+            damage += hit;
+            if (damage >= pTarget->GetHealth()) return pTarget->GetHealth();
+        }
 
-    return damage;
+    return uint32(damage);
 }
 
 bool compareByHealth(const Unit *u1, const Unit *u2)
@@ -30,19 +35,25 @@ bool compareByHealth(const Unit *u1, const Unit *u2)
     return u1->GetHealthPercent() < u2->GetHealthPercent();
 }
 
-bool compareByMissingHealth(const Unit* u1, const Unit* u2, bool incomingDamage = false)
-{
-    uint32 hp1 = u1->GetHealth() - (incomingDamage ? getIncomingdamage(u1) : 0);
-    uint32 hpmax1 = u1->GetMaxHealth();
-    uint32 hp2 = u2->GetHealth() - (incomingDamage ? getIncomingdamage(u2) : 0);
-    uint32 hpmax2 = u2->GetMaxHealth();
-    return (hpmax1 - hp1) > (hpmax2 - hp2);
-}
-
 Unit* PartyMemberToHeal::Calculate()
 {
     std::vector<Unit*> needHeals;
     std::vector<Unit*> tankTargets;
+    const bool preHealing = ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT);
+    // Freeze each candidate's forecast once for this selection. Rewalking its
+    // attackers in the sort comparator wastes work and can change comparisons.
+    std::map<Unit*, uint32> predictedHealth;
+    const auto forecast = [&](Unit* target) -> uint32 {
+        auto found = predictedHealth.find(target);
+        if (found != predictedHealth.end()) return found->second;
+        const uint32 health = target->GetHealth();
+        const uint32 damage = preHealing ? std::min(health, getIncomingdamage(target)) : 0;
+        return predictedHealth.emplace(target, health - damage).first->second;
+    };
+    const auto addCandidate = [&](Unit* target) {
+        if (std::find(needHeals.begin(), needHeals.end(), target) == needHeals.end())
+            needHeals.push_back(target);
+    };
     if (bot->GetSelectionGuid())
     {
         Unit* target = ai->GetUnit(bot->GetSelectionGuid());
@@ -52,16 +63,16 @@ Unit* PartyMemberToHeal::Calculate()
             target->GetHealthPercent() < 100 && 
             Check(target))
         {
-            needHeals.push_back(target);
+            addCandidate(target);
         }
     }
 
     if (GuidPosition rpgTarget = AI_VALUE(GuidPosition, "rpg target"))
     {
         Unit* target = rpgTarget.GetCreature(bot->GetInstanceId());
-        if (target && sServerFacade.IsFriendlyTo(bot, target) && target->GetHealthPercent() < 100)
+        if (Check(target) && target->GetHealthPercent() < 100)
         {
-            needHeals.push_back(target);
+            addCandidate(target);
         }
     }
 
@@ -89,27 +100,19 @@ Unit* PartyMemberToHeal::Calculate()
                 continue;
             }
 
-            // do not heal if they will not receive healing due to debuff
-            if (player->GetMaxNegativeAuraModifier(SPELL_AURA_MOD_HEALING_PCT) <= -100)
-                continue;
-
-            uint32 incomingDamage = 0;
-            if (ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT))
-                incomingDamage = getIncomingdamage(player);
-
-            uint8 health = (((player->GetHealth() - incomingDamage) * 100.0f) / player->GetMaxHealth());
+            uint8 health = uint8((double(forecast(player)) * 100.0) / player->GetMaxHealth());
             if (isTank || (health < sPlayerbotAIConfig.almostFullHealth && !IsTargetOfSpellCast(player, predicate)))
             { 
-                needHeals.push_back(player);
+                addCandidate(player);
             }
 
             Pet* pet = player->GetPet();
-            if (pet && CanHealPet(pet))
+            if (pet && CanHealPet(pet) && Check(pet))
             {
                 health = pet->GetHealthPercent();
-                if (health < sPlayerbotAIConfig.almostFullHealth || !IsTargetOfSpellCast(player, predicate))
+                if (health < sPlayerbotAIConfig.almostFullHealth && !IsTargetOfSpellCast(pet, predicate))
                 {
-                    needHeals.push_back(pet);
+                    addCandidate(pet);
                 }
             }
 
@@ -130,8 +133,10 @@ Unit* PartyMemberToHeal::Calculate()
         needHeals = tankTargets;
     }
 
-    bool preHealing = ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT);
-    sort(needHeals.begin(), needHeals.end(), [preHealing](const Unit* u1, const Unit* u2) { return compareByMissingHealth(u1, u2, preHealing); });
+    for (Unit* target : needHeals) forecast(target);
+    std::stable_sort(needHeals.begin(), needHeals.end(), [&](Unit* u1, Unit* u2) {
+        return (u1->GetMaxHealth() - predictedHealth.at(u1)) > (u2->GetMaxHealth() - predictedHealth.at(u2));
+    });
 
     int healerIndex = 0;
     if (!partyMembers.empty())
@@ -146,7 +151,7 @@ Unit* PartyMemberToHeal::Calculate()
             {
                 break;
             }
-            else if (ai->IsHeal(player) && player->GetPlayerbotAI())
+            else if (player->IsAlive() && bot->IsInMap(player) && ai->IsHeal(player) && player->GetPlayerbotAI() && player->GetMaxPower(POWER_MANA))
             {
                 float percent = (float)player->GetPower(POWER_MANA) / (float)player->GetMaxPower(POWER_MANA) * 100.0;
                 if (percent > sPlayerbotAIConfig.lowMana)
@@ -180,16 +185,17 @@ bool PartyMemberToHeal::Check(Unit* player)
         maxDist *= 0.5f;
     }
 
-    if (!player)
+    if (!player || !bot->IsInWorld() || !player->IsInWorld() || !player->IsAlive() ||
+        !player->GetMaxHealth() || !bot->IsInMap(player) || !sServerFacade.IsFriendlyTo(bot, player))
         return false;
 
     if (player->GetObjectGuid() == bot->GetObjectGuid())
         return false;
 
-    if (player->GetMapId() != bot->GetMapId())
+    if (player->IsPlayer() && static_cast<Player*>(player)->IsBeingTeleported())
         return false;
 
-    if (!player->IsInWorld())
+    if (player->GetMaxNegativeAuraModifier(SPELL_AURA_MOD_HEALING_PCT) <= -100)
         return false;
                                                      
     if (sServerFacade.GetDistance2d(bot, player) > maxDist)
@@ -203,11 +209,10 @@ std::vector<Player*> PartyMemberToHeal::GetPartyMembers()
     std::vector<Player*> partyMembers;
     if (ai->HasStrategy("focus heal targets", BotState::BOT_STATE_COMBAT))
     {
-        Unit* player = nullptr;
         const std::list<ObjectGuid> focusHealTargets = AI_VALUE(std::list<ObjectGuid>, "focus heal targets");
         for(const ObjectGuid& focusHealTarget : focusHealTargets)
         {
-            Player* player = (Player*)ai->GetUnit(focusHealTarget);
+            Player* player = dynamic_cast<Player*>(ai->GetUnit(focusHealTarget));
             if (player && player->IsInGroup(bot) && ai->IsSafe(player))
             {
                 partyMembers.push_back(player);

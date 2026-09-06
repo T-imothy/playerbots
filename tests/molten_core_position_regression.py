@@ -8,8 +8,10 @@ root = Path(__file__).resolve().parents[1]
 value = (root/'playerbot/strategy/values/MoltenCorePositionValue.cpp').read_text()
 action = (root/'playerbot/strategy/actions/MoltenCoreDungeonActions.cpp').read_text()
 methods = '\n'.join((block(value, 'bool Casting('),
+                     block(value, 'bool ai::MoltenCoreThreats('),
                      block(value, 'EncounterPosition MoltenCorePositionValue::Calculate('),
-                     block(action, 'bool MoltenCorePositionAction::GetPlan(')))
+                     block(action, 'bool MoltenCorePositionAction::GetPlan('),
+                     block(action, 'bool MoltenCorePositionAction::Execute(')))
 code = r'''
 #include <cassert>
 #include <set>
@@ -25,7 +27,8 @@ enum {SPELL_STATE_CASTING,SPELL_STATE_FINISHED};
 struct SpellEntry {unsigned Id=19695;};
 struct Spell {SpellEntry* m_spellInfo=nullptr;int state=SPELL_STATE_CASTING;int getState()const{return state;}};
 struct Map {};
-struct Unit {unsigned entry=0,phase=1;ObjectGuid guid;bool world=true,alive=true,combat=true;Map* map=nullptr;
+struct Unit {virtual ~Unit()=default;virtual bool IsPlayer(){return false;}bool charmed=false;bool HasCharmer(){return charmed;}
+ unsigned entry=0,phase=1;ObjectGuid guid;bool world=true,alive=true,combat=true;Map* map=nullptr;
  float x=0,y=0,z=0;std::set<unsigned> auras;Unit* victim=nullptr;Spell* cast=nullptr;
  unsigned GetEntry(){return entry;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}
  bool IsInCombat(){return combat;}Map* GetMap(){return map;}ObjectGuid GetObjectGuid(){return guid;}
@@ -34,7 +37,8 @@ struct Unit {unsigned entry=0,phase=1;ObjectGuid guid;bool world=true,alive=true
  Spell* GetCurrentSpell(CurrentSpellTypes type){return type==CURRENT_GENERIC_SPELL?cast:nullptr;}
 };
 struct Group;
-struct Player:Unit {bool charmed=false,teleport=false;unsigned mapId=409,instance=1;Group* group=nullptr;
+struct Player:Unit {bool teleport=false;unsigned mapId=409,instance=1;Group* group=nullptr;
+ bool IsPlayer()override{return true;}
  bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}
  unsigned GetInstanceId(){return instance;}Group* GetGroup(){return group;}
  bool IsInMap(Unit* other){return world&&other->world&&map==other->map&&phase==other->phase;}
@@ -46,10 +50,11 @@ namespace ai {
  struct EncounterPosition {bool active=false;unsigned map=0,instance=0,spell=0;ObjectGuid boss,source;encounter::Point destination;};
 }
 using namespace ai;
-struct Cached {EncounterPosition value;EncounterPosition Get(){return value;}};
-struct Context {Cached cached;template<class T>Cached* GetValue(const char*){return &cached;}};
+template<class T>struct Cached {T value;T Get(){return value;}};
+struct Context {Cached<EncounterPosition> cached;Cached<std::list<ObjectGuid>> attackers;
+ template<class T>Cached<T>* GetValue(const char*){if constexpr(std::is_same_v<T,EncounterPosition>)return &cached;else return &attackers;}};
 struct PlayerbotAI {Player* bot=nullptr;Context context;std::list<ObjectGuid> attackers;std::map<unsigned,Unit*> units;
- bool validPath=true,ranged=false,healer=false;unsigned checked=0;
+ bool validPath=true,ranged=false,healer=false,canMove=true;unsigned checked=0,moves=0;bool CanMove(){return canMove;}
  Player* GetBot(){return bot;}Context* GetAiObjectContext(){return &context;}
  bool IsRanged(Player*){return ranged;}bool IsHeal(Player*){return healer;}
  Unit* GetUnit(ObjectGuid guid){auto it=units.find(guid);return it==units.end()?nullptr:it->second;}
@@ -59,7 +64,11 @@ namespace ai {
  float NativeEncounterSpellRadius(unsigned id){return radii[id];} // controlled fixture, not replacement data
  bool ValidateEncounterDestination(PlayerbotAI* ai,EncounterPosition&){++ai->checked;return ai->validPath;}
  struct MoltenCorePositionValue {Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
- struct MoltenCorePositionAction {static bool GetPlan(PlayerbotAI*,EncounterPosition&);};
+ bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
+ struct Event{};
+ struct MoltenCorePositionAction {PlayerbotAI* ai;static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool Execute(Event&);
+ bool IsReaction(){return true;}
+ bool MoveTo(unsigned,float,float,float,bool idle,bool reaction,bool noPath,bool ignoreEnemies){assert(!idle&&reaction&&!noPath&&ignoreEnemies);++ai->moves;return true;}};
 }
 #define AI_VALUE(type,name) ai->attackers
 __METHODS__
@@ -67,18 +76,26 @@ int main(){
  Player bot,other;Map map,otherMap;bot.map=other.map=&map;bot.guid=2;other.guid=3;other.x=1;
  Unit boss;boss.entry=12056;boss.guid=1;boss.map=&map;
  PlayerbotAI ai;ai.bot=&bot;ai.attackers={1};ai.units={{1,&boss},{2,&bot},{3,&other}};
- Group group;GroupReference member{&other};group.first=&member;bot.group=&group;
+ Group group;GroupReference member{&other};group.first=&member;bot.group=other.group=&group;
  MoltenCorePositionValue value{&bot,&ai};EncounterPosition resolved;
- auto get=[&](){ai.context.cached.value=value.Calculate();return MoltenCorePositionAction::GetPlan(&ai,resolved);};
+ auto get=[&](){ai.context.attackers.value=ai.attackers;ai.context.cached.value=value.Calculate();return MoltenCorePositionAction::GetPlan(&ai,resolved);};
  assert(!get()); // no actual danger
  bot.auras={20475};assert(get()&&resolved.spell==20475&&resolved.source==bot.guid);
  assert(encounter::Distance2d(resolved.destination,{other.x,0,0})>=12);
+ MoltenCorePositionAction movement{&ai};Event event;assert(movement.Execute(event)&&ai.moves==1);
+ const auto saved=resolved.destination;other.x=saved.x;other.y=saved.y;
+ assert(!movement.Execute(event)&&ai.moves==1);other.x=1;other.y=0;
+ other.teleport=true;assert(!movement.Execute(event));other.teleport=false;
+ other.charmed=true;assert(!movement.Execute(event));other.charmed=false;
+ Group foreign;other.group=&foreign;assert(!movement.Execute(event));other.group=&group;
  // Boss death/despawn and combat exit do not erase a still-ticking native bomb.
  boss.alive=false;boss.combat=false;bot.combat=false;ai.attackers.clear();
  assert(get());ai.units.erase(1);assert(get());
  bot.auras.clear();assert(!MoltenCorePositionAction::GetPlan(&ai,resolved));assert(!get());
  // A nearby human/other bot's remaining bomb is also respected out of combat.
  other.auras={20475};assert(get()&&resolved.source==other.guid);
+ other.teleport=true;assert(!MoltenCorePositionAction::GetPlan(&ai,resolved)&&!get());other.teleport=false;
+ other.group=&foreign;assert(!get());other.group=&group;
  other.phase=2;assert(!MoltenCorePositionAction::GetPlan(&ai,resolved));assert(!get());other.phase=1;
  other.map=&otherMap;assert(!get());other.map=&map;
  other.alive=false;assert(!get());other.alive=true;
@@ -95,6 +112,7 @@ int main(){
  assert(get()&&encounter::Distance2d(resolved.destination,{0,0,0})>=12);
  boss.auras.clear();SpellEntry info;Spell cast;cast.m_spellInfo=&info;boss.cast=&cast;
  assert(get());cast.state=SPELL_STATE_FINISHED;assert(!get());boss.cast=nullptr;
+ cast.state=SPELL_STATE_CASTING;cast.m_spellInfo=nullptr;boss.cast=&cast;assert(!get());boss.cast=nullptr;
  boss.phase=2;boss.auras={19695};assert(!get());boss.phase=1;boss.auras.clear();
  // Shazzrah stays scoped to ranged/healer roles and excludes his current victim.
  boss.entry=12264;assert(!get());ai.ranged=true;assert(get());boss.victim=&bot;assert(!get());

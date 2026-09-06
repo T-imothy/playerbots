@@ -146,16 +146,17 @@ bool PartyMemberValue::Check(Unit* player)
         bot->IsWithinDistInMap(player, sPlayerbotAIConfig.sightDistance, false);
 }
 
-bool PartyMemberValue::IsTargetOfSpellCast(Player* target, SpellEntryPredicate &predicate)
+bool PartyMemberValue::IsTargetOfSpellCast(Unit* target, SpellEntryPredicate &predicate)
 {
     std::list<ObjectGuid> nearestPlayers = AI_VALUE(std::list<ObjectGuid>, "nearest friendly players");
     ObjectGuid targetGuid = target ? target->GetObjectGuid() : bot->GetObjectGuid();
-    ObjectGuid corpseGuid = target && target->GetCorpse() ? target->GetCorpse()->GetObjectGuid() : ObjectGuid();
+    Player* playerTarget = dynamic_cast<Player*>(target);
+    ObjectGuid corpseGuid = playerTarget && playerTarget->GetCorpse() ? playerTarget->GetCorpse()->GetObjectGuid() : ObjectGuid();
 
     for (std::list<ObjectGuid>::iterator i = nearestPlayers.begin(); i != nearestPlayers.end(); ++i)
     {
         Player* player = dynamic_cast<Player*>(ai->GetUnit(*i));
-        if (!player || player == bot)
+        if (!player || player == bot || !player->IsInWorld() || !bot->IsInMap(player) || player->IsBeingTeleported())
             continue;
 
         if (player->IsNonMeleeSpellCasted(true))
@@ -163,7 +164,7 @@ bool PartyMemberValue::IsTargetOfSpellCast(Player* target, SpellEntryPredicate &
             for (int type = CURRENT_GENERIC_SPELL; type < CURRENT_MAX_SPELL; type++) 
             {
                 Spell* spell = player->GetCurrentSpell((CurrentSpellTypes)type);
-                if (spell && predicate.Check(spell->m_spellInfo)) 
+                if (spell && spell->m_spellInfo && !spell->IsFinished() && predicate.Check(spell->m_spellInfo))
                 {
                     ObjectGuid unitTarget = spell->m_targets.getUnitTargetGuid();
                     if (unitTarget == targetGuid)

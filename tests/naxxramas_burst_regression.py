@@ -51,7 +51,7 @@ struct Action{virtual ~Action()=default;};struct MovementAction:Action{};struct 
 struct MoveAwayFromHazard:MovementAction{};struct VoidZoneMoveAwayAction:MovementAction{};
 struct CastSpellAction:Action{bool movement=false;bool HasMovementEffect(){return movement;}};
 namespace ai{
- std::map<unsigned,float> radii{{28206,20.0f},{28322,8.0f},{27820,10.0f}};
+ std::map<unsigned,float> radii{{28206,20.0f},{28322,8.0f},{27820,10.0f},{28062,13.0f},{28085,13.0f}};
  float NativeEncounterSpellRadius(unsigned id){return radii[id];}
  bool ValidateEncounterDestination(PlayerbotAI* ai,EncounterPosition&){++ai->checked;return ai->validPath;}
  uint32 NaxxramasBurstAura(Unit*);float NaxxramasBurstRadius(uint32);
@@ -97,6 +97,23 @@ int main(){
  assert(multiplier.GetValue(&action)==1&&multiplier.GetValue(&cast)==1&&multiplier.GetValue(&fissure)==1);
  cast.movement=true;assert(multiplier.GetValue(&cast)==0);ally.auras.clear();
  assert(multiplier.GetValue(&cast)==1&&multiplier.GetValue(&follow)==1&&!get());
+ // Thaddius's native charge damages both opposite-charge and uncharged
+ // recipients; matching charges may remain together and keep native buffs.
+ bot.auras={28059};ally.auras={28059};second.auras={28059};assert(!get());
+ ally.auras={28084};assert(get()&&plan.spell==28059);
+ assert(encounter::Distance2d(plan.destination,{ally.x,ally.y,ally.z})>=15);
+ assert(action.Execute(event));
+ bot.auras={28084};assert(!NaxxramasPositionAction::GetPlan(&ai,plan));
+ assert(get()); // second still has the opposite charge
+ bot.auras.clear();assert(get()); // no charge is not immunity to either payload
+ ally.auras.clear();second.auras.clear();assert(!get());
+ ally.auras={28059};assert(get()&&plan.source==ally.guid);
+ bot.auras={28059};assert(!NaxxramasPositionAction::GetPlan(&ai,plan));
+ second.auras={28084};assert(get());
+ boss.entry=15928;boss.alive=true;boss.combat=true;boss.victim=&bot;ai.context.attackers.value={boss.guid};
+ assert(!NaxxramasPositionAction::GetPlan(&ai,plan)&&!get()); // preserve the active tank
+ boss.victim=&ally;assert(get());boss.alive=false;ai.context.attackers.value.clear();assert(get());
+ bot.auras.clear();ally.auras.clear();second.auras.clear();assert(!get());
  std::cout<<"PASS: actual Naxx burst radii, mixed carriers, fresh destination, tanks, native path bounds and lifecycle\n";
 }
 '''.replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__METHODS__',methods)

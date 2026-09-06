@@ -26,6 +26,8 @@ namespace ai
     float NaxxramasBurstRadius(uint32 aura);
     bool NaxxramasBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
         std::vector<encounter::Circle>& threats);
+    bool MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
+        std::vector<encounter::Circle>& threats);
     bool GruulShatterThreats(PlayerbotAI* ai, EncounterPosition& plan,
         std::vector<encounter::Circle>& threats);
     float SolarianBurstRadius();

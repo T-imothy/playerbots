@@ -13,19 +13,20 @@ namespace
         for (CurrentSpellTypes type : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL})
         {
             const Spell* spell = unit->GetCurrentSpell(type);
-            if (spell && spell->m_spellInfo->Id == id && spell->getState() != SPELL_STATE_FINISHED) return true;
+            if (spell && spell->m_spellInfo && spell->m_spellInfo->Id == id && spell->getState() != SPELL_STATE_FINISHED) return true;
         }
         return false;
     }
 }
 
-EncounterPosition MoltenCorePositionValue::Calculate()
+bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
+    std::vector<encounter::Circle>& threats)
 {
-    EncounterPosition plan;
+    Player* bot = ai->GetBot();
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
-        bot->GetMapId() != 409) return plan;
+        bot->GetMapId() != 409) return false;
     Unit* boss = nullptr;
-    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
     {
         Unit* unit = ai->GetUnit(guid);
         if (unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->IsAlive() && unit->IsInCombat() &&
@@ -34,7 +35,6 @@ EncounterPosition MoltenCorePositionValue::Calculate()
     plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
     if (boss) plan.boss = boss->GetObjectGuid();
     const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
-    std::vector<encounter::Circle> threats;
     const auto add = [&](Unit* center, float radius) {
         if (radius > 0 && radius <= 45 && std::fabs(center->GetPositionZ() - here.z) < 8)
             threats.push_back({{center->GetPositionX(), center->GetPositionY(), center->GetPositionZ()}, radius + 2});
@@ -53,31 +53,40 @@ EncounterPosition MoltenCorePositionValue::Calculate()
     // boss life or a guessed encounter timer, controls separation and cleanup.
     const bool carryingBomb = bot->HasAura(20475);
     const float bombRadius = NativeEncounterSpellRadius(20475);
-    if (carryingBomb) { plan.spell = 20475; plan.source = bot->GetObjectGuid(); }
+    if (carryingBomb && bot->GetGroup()) { plan.spell = 20475; plan.source = bot->GetObjectGuid(); }
     if (bot->GetGroup())
         for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->getSource();
-            if (!member || member == bot || !member->IsInWorld() || !bot->IsInMap(member) || !member->IsAlive()) continue;
+            if (!member || member == bot || !member->IsInWorld() || !bot->IsInMap(member) || !member->IsAlive() ||
+                member->IsBeingTeleported() || member->HasCharmer() || member->GetGroup() != bot->GetGroup()) continue;
             const bool memberBomb = member->HasAura(20475);
             if (carryingBomb || memberBomb) add(member, bombRadius);
             if (!carryingBomb && memberBomb && (plan.source.IsEmpty() || member->GetObjectGuid() < plan.source))
             { plan.spell = 20475; plan.source = member->GetObjectGuid(); }
         }
-    if (threats.empty()) return plan;
+    if (threats.empty()) return false;
     // Do not freeze an unrelated bot on the other side of the room. Within the
     // danger/approach band, hold the safe position so ordinary chasing cannot undo it.
     bool relevant = carryingBomb;
     for (const auto& circle : threats)
         relevant = relevant || encounter::Distance2d(here, circle.center) < circle.radius + 8;
-    if (!relevant) return plan;
+    return relevant;
+}
+
+EncounterPosition MoltenCorePositionValue::Calculate()
+{
+    EncounterPosition plan;
+    std::vector<encounter::Circle> threats;
+    if (!MoltenCoreThreats(ai, plan, threats)) return plan;
+    const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
     const auto candidates = encounter::EscapeCircles(here, threats);
     unsigned checked = 0;
     for (const auto& point : candidates)
     {
         if (++checked > 8) break; // Bound native path queries per cached decision.
         plan.active = true; plan.destination = point;
-        if (ValidateEncounterDestination(ai, plan)) return plan;
+        if (ValidateEncounterDestination(ai, plan) && encounter::OutsideCircles(plan.destination, threats)) return plan;
     }
     plan.active = false;
     return plan;
