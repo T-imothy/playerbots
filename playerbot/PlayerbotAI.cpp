@@ -18,6 +18,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
 #include "CombatDiagnostics.h"
+#include "strategy/actions/EncounterSpellPolicy.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "PlayerbotSecurity.h"
 #include "Groups/Group.h"
@@ -5855,7 +5856,9 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
     if (!bot || !bot->IsInWorld() || !target || !target->IsInWorld() || !bot->IsInMap(target))
         return false;
     bool isFriend = sServerFacade.IsFriendlyTo(bot, target);
-	for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
+    if (isFriend && IsProtectedEncounterDispel(target, dispelType))
+        return false;
+    for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
 	{
 		Unit::AuraList const& auras = target->GetAurasByType((AuraType)type);
 		for (Unit::AuraList::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)

@@ -73,6 +73,7 @@ struct Event{std::string getSource(){return "test";}};
 struct CombatDiagnostics{static bool Select(PlayerbotAI*){return false;}
  static void Record(PlayerbotAI*,std::string,std::string,const char*,int,unsigned){}};
 namespace ai{bool ShouldAvoidCorruptedHealing(Player*,const SpellEntry*,Unit*);
+ bool denyDispel=false;bool ShouldAvoidEncounterDispel(PlayerbotAI*,const SpellEntry*,Unit*){return denyDispel;}
  bool HasCorruptedHealingCast(Player*);bool InterruptCorruptedHealingCast(Player*);}
 __POLICY__
 using namespace ai;
@@ -90,7 +91,8 @@ int main(){
  assert(!action.isUseful()&&!action.Execute(event)&&ai.casts==0);
  bot.corrupted=false;assert(action.isUseful());bot.corrupted=true;
  assert(!action.Execute(event)&&ai.casts==0);  // Aura arrived after selection.
- bot.corrupted=false;assert(action.isUseful()&&action.Execute(event)&&ai.casts==1);bot.corrupted=true;
+ bot.corrupted=false;assert(action.isUseful()&&action.Execute(event)&&ai.casts==1);
+ denyDispel=true;assert(!action.isUseful()&&!action.Execute(event)&&ai.casts==1);denyDispel=false;bot.corrupted=true;
  SpellEntry renew;renew.Effect[0]=SPELL_EFFECT_APPLY_AURA;renew.EffectApplyAuraName[0]=8;
  SpellEntry shield=renew;shield.EffectApplyAuraName[0]=69;
  assert(!ShouldAvoidCorruptedHealing(&bot,&renew,&target));assert(!ShouldAvoidCorruptedHealing(&bot,&shield,&target));

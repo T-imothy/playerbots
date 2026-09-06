@@ -14,10 +14,11 @@ enum {CLASS_ROGUE=4};
 struct Player {unsigned map=469;int cls=CLASS_ROGUE;bool world=true;
  int getClass(){return cls;}bool IsInWorld(){return world;}unsigned GetMapId(){return map;}};
 struct PlayerbotAI {Player bot;Player* GetBot(){return &bot;}};
-struct Action {std::string name;const std::string& getName(){return name;}};
-struct Multiplier {PlayerbotAI* ai;Multiplier(PlayerbotAI* a,const char*):ai(a){}virtual float GetValue(Action*){return 1;}};
+class Action; // Core declaration must not collide with the bot action.
+namespace ai{struct Action {std::string name;const std::string& getName(){return name;}};}
+struct Multiplier {PlayerbotAI* ai;Multiplier(PlayerbotAI* a,const char*):ai(a){}virtual float GetValue(ai::Action*){return 1;}};
 __CLASS__
-int main(){PlayerbotAI ai;SuppressionRoomPassiveMultiplier policy(&ai);Action fight{"melee"},device{"disarm suppression device"},follow{"follow"};
+int main(){PlayerbotAI ai;SuppressionRoomPassiveMultiplier policy(&ai);ai::Action fight{"melee"},device{"disarm suppression device"},follow{"follow"};
  assert(policy.GetValue(&fight)==0);assert(policy.GetValue(&device)==1);assert(policy.GetValue(&follow)==1);
  ai.bot.map=0;assert(policy.GetValue(&fight)==1);ai.bot.map=469;
  ai.bot.cls=1;assert(policy.GetValue(&fight)==1);ai.bot.cls=CLASS_ROGUE;

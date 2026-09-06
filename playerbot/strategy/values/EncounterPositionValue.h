@@ -19,6 +19,17 @@ namespace ai
     uint32 NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast);
     bool IsBossEscapeMap(uint32 map);
     uint32 BurningAdrenalineAura(Unit* unit);
+    uint32 NaxxramasBurstAura(Unit* unit);
+    float NaxxramasBurstRadius(uint32 aura);
+    bool NaxxramasBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
+        std::vector<encounter::Circle>& threats);
+
+    class NaxxramasPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        NaxxramasPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "naxxramas position", 1) {}
+        EncounterPosition Calculate() override;
+    };
 
     class BlackwingLairPositionValue : public CalculatedValue<EncounterPosition>
     {

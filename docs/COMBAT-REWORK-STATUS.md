@@ -207,6 +207,15 @@ combat scheduling or Wrath-only ability scheduling is added to Classic/TBC.
 
 ## Validation completed so far
 
+- Naxxramas burst separation now observes native Grobbulus injection and
+  Kel'Thuzad mana-detonation payload radii/lifetimes, with tank preservation,
+  bounded paths and fresh destination/group checks. Automatic disease dispels
+  cannot detonate injection; spell-aware party selection avoids repeatedly
+  choosing unsafe Cleanse recipients. New periodic disease-cleansing/totem casts
+  are withheld during Grobbulus. Existing pre-pull cleanses are not deleted.
+  See `NAXXRAMAS-MECHANIC-AUDIT.md` for evidence and explicit remaining limits.
+  These source-tested mechanics are partial Naxx coverage, not a full raid clear.
+
 - Non-damage cast eligibility no longer overwrites a native immunity result
   with an unused trailing effect. It rejects a spell when all populated effects
   are immune, but preserves a spell with an actually usable partial effect.

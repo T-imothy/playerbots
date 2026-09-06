@@ -9,8 +9,21 @@
 #include "playerbot/strategy/actions/MechanarDungeonActions.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
+#include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
 
 using namespace ai;
+
+float PreserveNaxxramasPositionMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 533) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<NaxxramasPositionAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action) &&
+        !dynamic_cast<VoidZoneMoveAwayAction*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return NaxxramasPositionAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
 
 float PreserveBlackwingLairPositionMultiplier::GetValue(Action* action)
 {

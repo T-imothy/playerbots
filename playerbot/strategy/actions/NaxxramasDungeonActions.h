@@ -2,9 +2,22 @@
 #include "DungeonActions.h"
 #include "ChangeStrategyAction.h"
 #include "UseItemAction.h"
+#include "MovementActions.h"
+#include "playerbot/strategy/values/EncounterPositionValue.h"
 
 namespace ai
 {
+    class NaxxramasPositionAction : public MovementAction
+    {
+    public:
+        NaxxramasPositionAction(PlayerbotAI* ai) : MovementAction(ai, "naxxramas safe position") {}
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool ShouldReactionInterruptCast() const override { return true; }
+        bool ShouldReactionInterruptMovement() const override { return true; }
+    };
+
     class NaxxramasEnableDungeonStrategyAction : public ChangeAllStrategyAction
     {
     public:

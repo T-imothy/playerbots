@@ -407,6 +407,7 @@ namespace ai
             creators["disarm suppression device"] = [](PlayerbotAI* ai) { return new DisarmSuppressionDeviceAction(ai); };
             creators["stop corrupted healing"] = [](PlayerbotAI* ai) { return new StopCorruptedHealingAction(ai); };
             creators["blackwing lair safe position"] = [](PlayerbotAI* ai) { return new BlackwingLairPositionAction(ai); };
+            creators["naxxramas safe position"] = [](PlayerbotAI* ai) { return new NaxxramasPositionAction(ai); };
 
             creators["enable netherspite fight strategy"] = [](PlayerbotAI* ai) { return new NetherspiteEnableFightStrategyAction(ai); };
             creators["disable netherspite fight strategy"] = [](PlayerbotAI* ai) { return new NetherspiteDisableFightStrategyAction(ai); };

@@ -282,7 +282,10 @@ namespace ai
         virtual std::string GetReachActionName() override { return "reach party member to heal"; }
         virtual std::string getName() override { return PartyMemberActionNameSupport::getName(); }
         virtual std::string GetTargetName() override { return "party member to dispel"; }
-        virtual std::string GetTargetQualifier() override { return std::to_string(dispelType); }
+        // Include the intended spell: e.g. Cleanse also removes disease when
+        // selected for poison/magic. The selector must not choose a target that
+        // the execution-time encounter guard will repeatedly reject.
+        virtual std::string GetTargetQualifier() override { return std::to_string(dispelType) + "," + GetSpellName(); }
 
     protected:
         uint32 dispelType;

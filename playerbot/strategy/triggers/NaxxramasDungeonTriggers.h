@@ -1,9 +1,17 @@
 #pragma once
 #include "DungeonTriggers.h"
 #include "GenericTriggers.h"
+#include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
 
 namespace ai
 {
+    class NaxxramasPositionTrigger : public Trigger
+    {
+    public:
+        NaxxramasPositionTrigger(PlayerbotAI* ai) : Trigger(ai, "naxxramas safe position", 1) {}
+        bool IsActive() override { NaxxramasPositionAction action(ai); return action.isUseful(); }
+    };
+
     class NaxxramasEnterDungeonTrigger : public EnterDungeonTrigger
     {
     public:

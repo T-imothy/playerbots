@@ -7,6 +7,8 @@ root=Path(__file__).resolve().parents[1]
 source=(root/'playerbot/PlayerbotAI.cpp').read_text()
 methods='\n'.join(block(source, marker) for marker in
                   ('bool PlayerbotAI::HasAuraToDispel(', 'bool PlayerbotAI::canDispel('))
+protection=block((root/'playerbot/strategy/actions/EncounterDispelPolicy.cpp').read_text(),
+                 'bool ai::IsProtectedEncounterDispel(')
 code=r'''
 #include <cassert>
 #include <cstring>
@@ -15,6 +17,8 @@ code=r'''
 #include <iostream>
 #include <vector>
 using uint32=unsigned;using int32=int;
+enum DispelType {DISPEL_NONE=0,DISPEL_MAGIC=1,DISPEL_CURSE=2,DISPEL_DISEASE=3,DISPEL_ALL=7,DISPEL_ZG_TICKET=10};
+unsigned GetDispellMask(DispelType type){return type==DISPEL_ALL?0x1e:(1u<<type);}
 #define strcmpi _stricmp
 enum AuraType {SPELL_AURA_NONE=0,TOTAL_AURAS=4};
 struct SpellEntry {unsigned Id=1,Dispel=2;const char* SpellName[1]={"curse"};bool positive=false,effectPositive=false;};
@@ -24,11 +28,15 @@ bool IsPositiveAuraEffect(const SpellEntry* spell,unsigned){return spell->effect
 struct Aura {SpellEntry* info=nullptr;int duration=15000;const SpellEntry* GetSpellProto()const{return info;}
  unsigned GetEffIndex()const{return 0;}int GetAuraDuration()const{return duration;}};
 struct Unit {using AuraList=std::list<Aura*>;AuraList lists[TOTAL_AURAS];bool friendly=true,world=true;unsigned map=1,phase=1;
+ bool injected=false;bool HasAura(unsigned id){return id==28169&&injected;}unsigned GetMapId(){return map;}
  bool IsInWorld(){return world;}bool IsInMap(Unit* other){return world&&other->world&&map==other->map&&phase==other->phase;}
  const AuraList& GetAurasByType(AuraType type){return lists[type];}};
 struct {uint32 dispelAuraDuration=2000;} sPlayerbotAIConfig;
 struct {bool IsFriendlyTo(Unit*,Unit* target){return target->friendly;}} sServerFacade;
 struct PlayerbotAI {Unit* bot;bool HasAuraToDispel(Unit*,uint32);bool canDispel(const SpellEntry*,uint32);};
+namespace ai{bool IsProtectedEncounterDispel(Unit*,uint32);}
+__PROTECTION__
+using namespace ai;
 __METHODS__
 int main(){
  Unit bot,target;PlayerbotAI ai{&bot};SpellEntry shortInfo,longInfo;shortInfo.Id=1;longInfo.Id=2;
@@ -51,10 +59,14 @@ int main(){
  assert(!ai.HasAuraToDispel(nullptr,2));target.world=false;assert(!ai.HasAuraToDispel(&target,2));target.world=true;
  target.map=2;assert(!ai.HasAuraToDispel(&target,2));target.map=1;
  target.phase=2;assert(!ai.HasAuraToDispel(&target,2));target.phase=1;
- bot.world=false;assert(!ai.HasAuraToDispel(&target,2));
+ bot.world=false;assert(!ai.HasAuraToDispel(&target,2));bot.world=true;
+ bot.map=target.map=533;target.injected=true;shortInfo.Dispel=DISPEL_DISEASE;
+ assert(!ai.HasAuraToDispel(&target,DISPEL_DISEASE)); // Another removable disease still cannot make random removal safe.
+ shortInfo.Dispel=DISPEL_CURSE;assert(ai.HasAuraToDispel(&target,DISPEL_CURSE));
+ target.injected=false;shortInfo.Dispel=DISPEL_DISEASE;assert(ai.HasAuraToDispel(&target,DISPEL_DISEASE));
  std::cout<<"PASS: actual dispel scan skips only ineligible aura; duration, ownership and lifecycle guards\n";
 }
-'''.replace('__METHODS__',methods)
+'''.replace('__METHODS__',methods).replace('__PROTECTION__',protection)
 for expansion in ('ZERO','ONE','TWO'):
     with tempfile.TemporaryDirectory(prefix='mantech-dispel-') as folder:
         tmp=Path(folder);(tmp/'test.cpp').write_text(code)
