@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/ServerFacade.h"
 #include "EncounterSpellPolicy.h"
 
 namespace

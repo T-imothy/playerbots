@@ -9,6 +9,7 @@ from behavior_regression import block
 
 root = Path(__file__).resolve().parents[1]
 policy = (root / 'playerbot/strategy/actions/EncounterSpellPolicy.cpp').read_text()
+assert '#include "playerbot/ServerFacade.h"' in policy
 policy = '\n'.join(line for line in policy.splitlines() if not line.startswith('#include'))
 generic = (root / 'playerbot/strategy/actions/GenericSpellActions.cpp').read_text()
 methods = '\n'.join(block(generic, name) for name in
