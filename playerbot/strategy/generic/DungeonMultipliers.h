@@ -6,6 +6,13 @@ class Action;
 
 namespace ai
 {
+    class PreserveDungeonAddTargetMultiplier : public Multiplier
+    {
+    public:
+        PreserveDungeonAddTargetMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve dungeon priority add") {}
+        float GetValue(Action* action) override;
+    };
+
     class PreserveSolarianPositionMultiplier : public Multiplier
     {
     public:

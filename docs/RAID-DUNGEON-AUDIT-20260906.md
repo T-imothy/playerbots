@@ -8,6 +8,14 @@ these tests. Areas 3–5 remain open at the full mechanic-by-mechanic level.
 
 ## Fixed behavior
 
+Subsequent continuation fixes add [Mandokir threat and Anzu casting holds](ENCOUNTER-CAST-HOLDS-20260906.md)
+and [boss-owned add priorities](DUNGEON-ADD-PRIORITY-20260906.md) for Steamrigger,
+Freywinn, Anzu and Anomalus. Keli'dan/Dalliah warning handling, Ymiron/Devourer
+damage pauses and cast lifetime safeguards are recorded in
+[the combat continuation](DAMAGE-PAUSE-CAST-LIFETIME-20260906.md).
+The register below describes full encounters; these specific fixes do not close
+their remaining group assignments or live gameplay validation.
+
 | Finding | Change | Expansion scope | Regression |
 | --- | --- | --- | --- |
 | A cast already underway could complete after its target gained a reflect shield | Dungeon combat/reaction hooks recheck the current generic spell and cancel only a native-reflectable hostile cast facing at least 50% school-specific reflection. Execution rechecks the shield and cast; launched spells, channels, friendly casts and uninterruptible casts are preserved. | All three | `reflected_cast_reaction_regression.py` |

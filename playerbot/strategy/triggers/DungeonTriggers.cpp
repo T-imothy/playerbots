@@ -14,6 +14,12 @@
 
 using namespace ai;
 
+bool DungeonAddTargetTrigger::IsActive()
+{
+    DungeonAddTargetAction action(ai);
+    return action.isUseful();
+}
+
 bool SolarianPositionTrigger::IsActive()
 {
     SolarianPositionAction action(ai);

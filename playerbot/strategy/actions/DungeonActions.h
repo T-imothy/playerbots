@@ -1,11 +1,20 @@
 #pragma once
 #include "MovementActions.h"
+#include "AttackAction.h"
 #include "playerbot/strategy/values/HazardsValue.h"
 #include "playerbot/strategy/values/EncounterPositionValue.h"
 
 
 namespace ai
 {
+    class DungeonAddTargetAction : public AttackAction
+    {
+    public:
+        DungeonAddTargetAction(PlayerbotAI* ai) : AttackAction(ai, "dungeon priority add") {}
+        Unit* GetTarget() override;
+        bool isUseful() override;
+    };
+
     class MagtheridonCubeAction : public MovementAction
     {
     public:

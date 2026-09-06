@@ -3,6 +3,13 @@
 
 namespace ai
 {
+    class DungeonAddTargetTrigger : public Trigger
+    {
+    public:
+        DungeonAddTargetTrigger(PlayerbotAI* ai) : Trigger(ai, "dungeon priority add", 1) {}
+        bool IsActive() override;
+    };
+
     class SolarianPositionTrigger : public Trigger
     {
     public:

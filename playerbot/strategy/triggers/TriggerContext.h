@@ -307,6 +307,7 @@ namespace ai
             creators["boss cast safe position"] = [](PlayerbotAI* ai) { return new BossCastPositionTrigger(ai); };
             creators["solarian burst position"] = [](PlayerbotAI* ai) { return new SolarianPositionTrigger(ai); };
             creators["solarian priority target"] = [](PlayerbotAI* ai) { return new SolarianPriorityTargetTrigger(ai); };
+            creators["dungeon priority add"] = [](PlayerbotAI* ai) { return new DungeonAddTargetTrigger(ai); };
             creators["magtheridon cube"] = [](PlayerbotAI* ai) { return new MagtheridonCubeTrigger(ai); };
             creators["gruul shatter spread"] = [](PlayerbotAI* ai) { return new GruulSpreadTrigger(ai); };
             creators["assist summoning ritual"] = [](PlayerbotAI* ai) { return new AssistSummoningRitualTrigger(ai); };

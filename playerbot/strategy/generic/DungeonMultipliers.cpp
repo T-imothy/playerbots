@@ -14,6 +14,13 @@
 
 using namespace ai;
 
+float PreserveDungeonAddTargetMultiplier::GetValue(Action* action)
+{
+    if (!action || action->getName() != "dps assist") return 1.0f;
+    DungeonAddTargetAction priority(ai);
+    return priority.GetTarget() ? 0.0f : 1.0f;
+}
+
 float PreserveSolarianPositionMultiplier::GetValue(Action* action)
 {
     if (!action || ai->GetBot()->GetMapId() != 550) return 1.0f;

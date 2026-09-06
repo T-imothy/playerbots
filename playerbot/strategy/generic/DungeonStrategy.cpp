@@ -7,6 +7,8 @@ using namespace ai;
 
 void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("dungeon priority add",
+        NextAction::array(0, new NextAction("dungeon priority add", 61.0f), NULL)));
     triggers.push_back(new TriggerNode("unsafe encounter offense",
         NextAction::array(0, new NextAction("stop unsafe encounter offense", ACTION_EMERGENCY + 3), NULL)));
     triggers.push_back(new TriggerNode("unsafe reflected cast",
@@ -121,6 +123,7 @@ void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveDungeonAddTargetMultiplier(ai));
     multipliers.push_back(new PreserveSolarianPositionMultiplier(ai));
     multipliers.push_back(new PreserveMagtheridonCubeMultiplier(ai));
     multipliers.push_back(new PreserveGruulSpreadMultiplier(ai));
