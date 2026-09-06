@@ -65,3 +65,30 @@ were imported.
 No new database changes or diagnostics are required by these implementations.
 Controlled regressions do not replace real pulls, player commands, CC assignments,
 wipe/reset, dispel, knockback, tank/off-tank and after-kill Living Bomb tests.
+
+## Follow-up native checks, 2026-09-06
+
+- Read-only `spell_template` queries in all three dev worlds confirm Sulfuron's
+  heal 19775 is a native heal effect. The shared interrupt helper previously
+  rejected every interrupt when any unrelated spell effect was immune. It now
+  checks actual interrupt/stun/silence candidates individually through native
+  `IsImmuneToSpell` (effect mask) and `IsImmuneToSpellEffect`, preserving native
+  `IsInterruptible` and subsequent cast checks. Actual-code fixtures reproduce
+  the failure and cover the correction, including removed targets and map/phase
+  boundaries. This is shared capability, not proof of coordinated raid kicks.
+- Majordomo's native 20619 is a reflect aura with base points 49; core aura
+  amounts and `GetReflectChance` support the 50% reflect mechanic. Existing
+  `CastSpellAction::isUseful` only declines reflectable casts above 50%, so this
+  does NOT provide a full Majordomo reflection policy. Native 21075 is a damage
+  shield with base points 99; ordinary melee safety uses a 10%-of-bot-max-health
+  threshold, not an unconditional stop on that boss's shield. Do not claim either
+  existing generic check completely handles this encounter.
+- Native 21087 carries mechanic-immunity misc value 17 in every dev world.
+  Standard CC actions still go through native cast checks. Explicit CC target
+  selection takes a marked target before checking its castability; that selection
+  path and the general non-damage effect-immunity fold remain audit leads. No
+  immunity or encounter aura has been removed or bypassed here.
+- Threat/history corrections are shared, not a fabricated MC threat model:
+  missing/changed targets safely reset history, percentage overflow is prevented,
+  and live native threat tables are read unchanged. This does not substitute for
+  actual tank/off-tank, knockback, wipe/reset and role tests.

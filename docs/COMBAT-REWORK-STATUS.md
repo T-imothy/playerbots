@@ -182,6 +182,14 @@ combat scheduling or Wrath-only ability scheduling is added to Classic/TBC.
 
 ## Validation completed so far
 
+- Shared interrupt selection now checks native immunity only for actual
+  interrupt/stun/silence effects and accepts an effect that can work even when
+  an unrelated secondary effect is immune. Existing native cast-interruptibility
+  requirements and normal action/cooldown/range/cast checks remain. Target
+  removal, death, map/phase changes and bot teleportation reject the read safely.
+  The previous veto was reproduced with the actual helper; corrected cases pass
+  in all three expansion fixtures. This is not a new raid interrupt coordinator.
+
 - Shared threat history now records accepted changed samples instead of skipping
   them, seeds first/delta-only reads safely and rebaselines on target changes.
   Friendly target proxies are resolved to their current enemy before recording
@@ -269,6 +277,7 @@ Threat and movement-history corrections reuse existing bounded functional value
 logs, not output files. They add no diagnostic scan, counter, table or worker,
 and do not alter general calculated-value cache cadence. Keep this functional
 history when optional diagnostics are disabled; no runtime savings are claimed.
+Per-effect interrupt candidate checks also add no diagnostic output or worker.
 
 The 10,000-bot Classic soak was stopped through the normal console signal; the
 server logged `Halting process...` at 19:16:48 local on 2026-09-05. Shutdown also

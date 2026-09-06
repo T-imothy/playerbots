@@ -5794,29 +5794,36 @@ bool PlayerbotAI::RemoveAura(const std::string& name)
 
 bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string spell)
 {
-	uint32 spellid = aiObjectContext->GetValue<uint32>("spell id", spell)->Get();
-	if (!spellid || !target->IsNonMeleeSpellCasted(true) || !target->IsInterruptible())
-		return false;
+    if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported() || !target ||
+        !target->IsInWorld() || !target->IsAlive() || !bot->IsInMap(target))
+        return false;
 
-	SpellEntry const *spellInfo = sServerFacade.LookupSpellInfo(spellid);
-	if (!spellInfo)
-		return false;
+    uint32 spellid = aiObjectContext->GetValue<uint32>("spell id", spell)->Get();
+    if (!spellid || !target->IsNonMeleeSpellCasted(true) || !target->IsInterruptible())
+        return false;
 
-	for (uint8 i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; i++)
-    {
-        if (target->IsImmuneToSpell(spellInfo, false, (1 << SpellEffectIndex(i)), bot) || target->IsImmuneToSpellEffect(spellInfo, SpellEffectIndex(i), false))
-            return false;
-	}
+    SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(spellid);
+    if (!spellInfo)
+        return false;
+
     for (uint8 i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; i++)
     {
-        if (spellInfo->Effect[i] == SPELL_EFFECT_INTERRUPT_CAST)
-            return true;
+        const bool interrupts = spellInfo->Effect[i] == SPELL_EFFECT_INTERRUPT_CAST ||
+            (spellInfo->Effect[i] == SPELL_EFFECT_APPLY_AURA &&
+                (spellInfo->EffectApplyAuraName[i] == SPELL_AURA_MOD_SILENCE ||
+                 spellInfo->EffectApplyAuraName[i] == SPELL_AURA_MOD_STUN));
+        if (!interrupts)
+            continue;
 
-        if ((spellInfo->Effect[i] == SPELL_EFFECT_APPLY_AURA) && (spellInfo->EffectApplyAuraName[i] == SPELL_AURA_MOD_SILENCE || spellInfo->EffectApplyAuraName[i] == SPELL_AURA_MOD_STUN))
+        // A resisted secondary effect does not veto a different, usable native
+        // interrupt effect. Ignore empty/damage-only slots and test each actual
+        // candidate with the core's effect mask and immunity functions.
+        if (!target->IsImmuneToSpell(spellInfo, false, (1 << SpellEffectIndex(i)), bot) &&
+            !target->IsImmuneToSpellEffect(spellInfo, SpellEffectIndex(i), false))
             return true;
     }
 
-	return false;
+    return false;
 }
 
 bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
