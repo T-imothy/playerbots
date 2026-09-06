@@ -13,6 +13,12 @@
 
 using namespace ai;
 
+bool MagtheridonCubeTrigger::IsActive()
+{
+    MagtheridonCubeAction action(ai);
+    return action.isUseful();
+}
+
 bool GruulSpreadTrigger::IsActive()
 {
     GruulSpreadAction action(ai);

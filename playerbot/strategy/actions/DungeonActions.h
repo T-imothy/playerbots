@@ -6,6 +6,18 @@
 
 namespace ai
 {
+    class MagtheridonCubeAction : public MovementAction
+    {
+    public:
+        MagtheridonCubeAction(PlayerbotAI* ai) : MovementAction(ai, "magtheridon cube") {}
+        bool Execute(Event& event) override;
+        bool isUseful() override;
+        bool isPossible() override;
+        bool ShouldReactionInterruptCast() const override;
+        static Unit* GetBoss(PlayerbotAI* ai);
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+
     class GruulSpreadAction : public MovementAction
     {
     public:

@@ -3,6 +3,13 @@
 
 namespace ai
 {
+    class MagtheridonCubeTrigger : public Trigger
+    {
+    public:
+        MagtheridonCubeTrigger(PlayerbotAI* ai) : Trigger(ai, "magtheridon cube", 1) {}
+        bool IsActive() override;
+    };
+
     class GruulSpreadTrigger : public Trigger
     {
     public:

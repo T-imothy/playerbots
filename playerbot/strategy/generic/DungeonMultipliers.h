@@ -6,6 +6,13 @@ class Action;
 
 namespace ai
 {
+    class PreserveMagtheridonCubeMultiplier : public Multiplier
+    {
+    public:
+        PreserveMagtheridonCubeMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve magtheridon cube") {}
+        float GetValue(Action* action) override;
+    };
+
     class PreserveGruulSpreadMultiplier : public Multiplier
     {
     public:

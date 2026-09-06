@@ -7,6 +7,8 @@ using namespace ai;
 
 void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("magtheridon cube",
+        NextAction::array(0, new NextAction("magtheridon cube", 108.0f), NULL)));
     triggers.push_back(new TriggerNode("gruul shatter spread",
         NextAction::array(0, new NextAction("gruul shatter spread", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("boss cast safe position",
@@ -40,6 +42,8 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("magtheridon cube",
+        NextAction::array(0, new NextAction("magtheridon cube", 108.0f), NULL)));
     triggers.push_back(new TriggerNode(
         "enter naxxramas",
         NextAction::array(0, new NextAction("enable naxxramas strategy", 100.0f), NULL)));
@@ -89,6 +93,8 @@ void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("magtheridon cube",
+        NextAction::array(0, new NextAction("magtheridon cube", 108.0f), NULL)));
     triggers.push_back(new TriggerNode("gruul shatter spread",
         NextAction::array(0, new NextAction("gruul shatter spread", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("boss cast safe position",
@@ -99,12 +105,14 @@ void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveMagtheridonCubeMultiplier(ai));
     multipliers.push_back(new PreserveGruulSpreadMultiplier(ai));
     multipliers.push_back(new PreserveBossCastPositionMultiplier(ai));
 }
 
 void DungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveMagtheridonCubeMultiplier(ai));
     multipliers.push_back(new PreserveGruulSpreadMultiplier(ai));
     multipliers.push_back(new PreserveBossCastPositionMultiplier(ai));
 }

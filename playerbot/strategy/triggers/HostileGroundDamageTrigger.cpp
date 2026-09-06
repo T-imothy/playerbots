@@ -23,12 +23,30 @@ namespace
             DynamicObject* area = static_cast<DynamicObject*>(object);
             // Do not mistake farsight, friendly ground heals, or raid-wide damage
             // for a local avoidable hazard. Native attack rules decide hostility.
-            if (area->GetType() != DYNAMIC_OBJECT_AREA_SPELL || area->GetRadius() <= 0 ||
+            if (area->GetType() != DYNAMIC_OBJECT_AREA_SPELL || !std::isfinite(area->GetRadius()) || area->GetRadius() <= 0 ||
                 area->GetRadius() > 25 || area->GetDuration() <= 0 || !area->IsEnemy(bot)) return false;
             const SpellEntry* spell = sServerFacade.LookupSpellInfo(area->GetSpellId());
-            if (!spell || area->GetEffIndex() >= MAX_EFFECT_INDEX || !area->CanAttackSpell(bot, spell, true)) return false;
+            if (!spell || area->GetEffIndex() >= MAX_EFFECT_INDEX) return false;
             const auto aura = spell->EffectApplyAuraName[area->GetEffIndex()];
-            return aura == SPELL_AURA_PERIODIC_DAMAGE || aura == SPELL_AURA_PERIODIC_DAMAGE_PERCENT || aura == SPELL_AURA_PERIODIC_LEECH;
+            bool delayedDamage = false;
+#ifndef MANGOSBOT_ZERO
+            // Native Magtheridon Debris is a warning dummy area. Its script
+            // casts 30631 at this area when it ends; waiting for periodic damage
+            // misses the only opportunity to leave. Do not classify arbitrary
+            // dummy effects as hazards or fabricate a post-despawn lifetime.
+            if (bot->GetMapId() == 544 && area->GetSpellId() == 30632 &&
+                area->GetEffIndex() == EFFECT_INDEX_0 && aura == SPELL_AURA_DUMMY)
+            {
+                Unit* owner = area->GetCaster();
+                if (!owner || !owner->IsInWorld() || !bot->IsInMap(owner) || owner->HasCharmer() ||
+                    owner->GetEntry() != 17257) return false;
+                spell = sServerFacade.LookupSpellInfo(30631);
+                if (!spell || spell->Effect[EFFECT_INDEX_0] != SPELL_EFFECT_SCHOOL_DAMAGE) return false;
+                delayedDamage = true;
+            }
+#endif
+            return (delayedDamage || aura == SPELL_AURA_PERIODIC_DAMAGE || aura == SPELL_AURA_PERIODIC_DAMAGE_PERCENT ||
+                aura == SPELL_AURA_PERIODIC_LEECH) && area->CanAttackSpell(bot, spell, true);
         }
     };
 }

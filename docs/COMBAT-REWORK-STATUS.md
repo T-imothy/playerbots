@@ -58,6 +58,12 @@ claim that every encounter has been implemented or played successfully**.
 
 ### Additional encounter and class corrections
 
+- TBC/Wrath Magtheridon DPS coordinate native cube clicks/channels with stable
+  assignment, occupied-human-cube and exhaustion guards, role preservation,
+  normal paths and reset/group cleanup. Native phase-three Debris warnings
+  feed the existing hostile-area avoidance before their delayed damage.
+  See `MAGTHERIDON-NATIVE-MECHANIC-AUDIT.md`; live five-beam behavior remains
+  untested and other Magtheridon mechanics remain under review.
 - TBC/Wrath Spellsteal now checks the same positive, non-passive, stealable
   aura-holder conditions as the native effect, both before scheduling and
   immediately before casting. Skip no-op attempts on non-stealable buffs;

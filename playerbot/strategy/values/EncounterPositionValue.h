@@ -28,6 +28,19 @@ namespace ai
     bool GruulShatterThreats(PlayerbotAI* ai, EncounterPosition& plan,
         std::vector<encounter::Circle>& threats);
 
+    bool HasMagtheridonChannel(Player* player);
+    bool IsMagtheridonNova(Unit* boss);
+    bool IsMagtheridonCubeUser(PlayerbotAI* ai, Player* player, Unit* boss);
+    bool IsMagtheridonCube(Player* player, GameObject* cube);
+    Unit* FindMagtheridonCubeTrigger(Player* player, GameObject* cube);
+
+    class MagtheridonPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        MagtheridonPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "magtheridon cube position", 1) {}
+        EncounterPosition Calculate() override;
+    };
+
     class GruulPositionValue : public CalculatedValue<EncounterPosition>
     {
     public:

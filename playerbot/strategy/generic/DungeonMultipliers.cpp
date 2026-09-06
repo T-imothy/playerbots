@@ -13,6 +13,20 @@
 
 using namespace ai;
 
+float PreserveMagtheridonCubeMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 544 || dynamic_cast<MagtheridonCubeAction*>(action) ||
+        dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    // Let the cube action cancel the native channel after Nova/reset. During
+    // it, neither class casts nor routine movement should cancel participation.
+    if (HasMagtheridonChannel(ai->GetBot())) return 0.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return MagtheridonCubeAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
+
 float PreserveGruulSpreadMultiplier::GetValue(Action* action)
 {
     if (!action || ai->GetBot()->GetMapId() != 565) return 1.0f;
