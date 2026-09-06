@@ -55,7 +55,7 @@ class SuppressionRoomPassiveMultiplier : public Multiplier
 public:
     SuppressionRoomPassiveMultiplier(PlayerbotAI* ai) : Multiplier(ai, "suppression room passive") {}
 
-    float GetValue(Action* action) override
+    float GetValue(ai::Action* action) override
     {
         if (!action)
             return 1.0f;

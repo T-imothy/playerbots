@@ -114,6 +114,9 @@ for era in ('ZERO', 'ONE', 'TWO'):
                         'test.cpp', '/Fe:test.exe'], cwd=tmp, check=True)
         subprocess.run([str(tmp / 'test.exe')], cwd=tmp, check=True)
 strategy = (root / 'playerbot/strategy/generic/BlackwingLairDungeonStrategies.cpp').read_text()
+# DungeonMultipliers includes core declarations with a global Action name.
+# The existing suppression-room override must remain explicitly in ai::.
+assert 'float GetValue(ai::Action* action) override' in strategy
 for state in ('Combat', 'NonCombat', 'Reaction'):
     assert 'blackwing lair safe position' in block(strategy, f'void BlackwingLairDungeonStrategy::Init{state}Triggers(')
 for state in ('Combat', 'NonCombat'):
