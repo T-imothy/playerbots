@@ -20,11 +20,16 @@ extract = (
     ("generic/DungeonMultipliers.cpp", ("float PreserveBossCastPositionMultiplier::GetValue(",)),
 )
 def source(path):
+    if '--before-aura-escape' in sys.argv and path in ('values/BossCastPositionValue.cpp', 'actions/DungeonActions.cpp'):
+        return subprocess.check_output(['git','-c','safe.directory='+root.as_posix(),'-C',str(root),
+            'show','ae802751:playerbot/strategy/'+path],text=True)
     if '--before-dungeon-escapes' in sys.argv and path == 'values/BossCastPositionValue.cpp':
         return subprocess.check_output(['git','-c','safe.directory='+root.as_posix(),'-C',str(root),
             'show','88f43c09:playerbot/strategy/'+path],text=True)
     return (base / path).read_text()
 methods = "\n".join(block(source(path), name) for path, names in extract for name in names)
+if 'uint32 ai::CurrentBossEscapeSpell(' in source('values/BossCastPositionValue.cpp'):
+    methods = block(source('values/BossCastPositionValue.cpp'), 'uint32 ai::CurrentBossEscapeSpell(') + '\n' + methods
 code = r'''
 #include <cassert>
 #include <list>
@@ -37,8 +42,13 @@ using uint32=unsigned;using ObjectGuid=unsigned;
 constexpr int CURRENT_GENERIC_SPELL=1,CURRENT_CHANNELED_SPELL=3,SPELL_STATE_FINISHED=2,IDLE_MOTION_TYPE=0;
 struct SpellEntry {unsigned Id=0;};
 struct Spell {SpellEntry* m_spellInfo=nullptr;int state=0;int getState()const{return state;}};
-struct Map {};
+struct Map {bool regular=true;
+#ifndef MANGOSBOT_ZERO
+ bool IsRegularDifficulty(){return regular;}
+#endif
+};
 struct Unit {unsigned entry=0,guid=1,phase=1;bool world=true,alive=true,combat=true,charmed=false;Map* map=nullptr;
+ unsigned aura=0;bool HasAura(unsigned id){return aura==id;}
  float x=0,y=0,z=0;Spell* current=nullptr;Spell* channel=nullptr;Unit* victim=nullptr;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}
  bool HasCharmer(){return charmed;}unsigned GetEntry(){return entry;}Map* GetMap(){return map;}
@@ -54,10 +64,11 @@ struct Player:Unit {bool teleport=false,stopped=true;unsigned mapId=532,instance
  bool IsStopped(){return stopped;}Motion* GetMotionMaster(){return &motion;}};
 namespace ai {
  struct EncounterPosition {bool active=false;unsigned map=0,instance=0,boss=0,spell=0;encounter::Point destination;};
- bool IsBossEscapeMap(unsigned);unsigned NativeBossEscapeSpell(unsigned,unsigned,unsigned);
+ bool IsBossEscapeMap(unsigned);unsigned NativeBossEscapeSpell(unsigned,unsigned,unsigned__DIFFICULTY__);
+ unsigned CurrentBossEscapeSpell(Player*,Unit*);
  const Spell* CurrentBossEscapeCast(Player*,Unit*);
  std::map<unsigned,float> radii{{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15},{34164,18},
- {34660,15},{39132,15},{55081,15},{59842,15}};
+ {34660,15},{39132,15},{55081,15},{59842,15},{33775,10},{37371,12},{36142,8}};
  float NativeEncounterSpellRadius(unsigned id){return radii[id];}
 }
 template<class T>struct Stored {T value{};T Get(){return value;}};
@@ -99,7 +110,7 @@ int main(){
  MoveAwayFromHazard hazard(&ai);CastSpellAction heal,charge;charge.movement=true;Event event;
  auto load=[&](){return ai.context.plan.value=value.Calculate();};
 #ifdef MANGOSBOT_ZERO
- for(unsigned id:{532u,550u,553u,555u,602u,603u,604u,658u})assert(!IsBossEscapeMap(id));
+ for(unsigned id:{532u,542u,550u,552u,553u,555u,602u,603u,604u,658u})assert(!IsBossEscapeMap(id));
  assert(!load().active && ai.checked==0);assert(!action.isUseful() && !action.Execute(event));
  assert(multiplier.GetValue(&chase)==1 && multiplier.GetValue(&charge)==1 && ai.context.reads==0);
  assert(NativeBossEscapeSpell(532,16524,29973)==0);
@@ -171,10 +182,33 @@ int main(){
   assert(!action.Execute(event)&&multiplier.GetValue(&chase)==1);
  }
  cast.state=0;load();boss.channel=nullptr;assert(!action.Execute(event));
+ // Keli'dan's instant warning has no current cast. Difficulty selects the
+ // native payload; expiry must invalidate an already queued movement action.
+ bot.mapId=542;boss.entry=17377;boss.aura=30940;boss.current=boss.channel=nullptr;
+ for(bool regular:{true,false}){
+  map.regular=regular;plan=load();assert(plan.active && plan.spell==30940);
+  assert(encounter::Distance2d(plan.destination,{0,0,0})>=(regular?12:14));
+  assert(action.Execute(event));boss.aura=0;
+  assert(!action.Execute(event)&&!load().active&&multiplier.GetValue(&chase)==1);
+  boss.aura=30940;
+ }
+ boss.entry=17378;assert(!load().active);boss.entry=17377;
+ bot.mapId=543;assert(!load().active);bot.mapId=542;
+ boss.combat=false;assert(!load().active);boss.combat=true;
+ ai.validPath=false;ai.checked=0;assert(!load().active&&ai.checked<=8);ai.validPath=true;
+ plan=load();boss.map=&otherMap;assert(!action.Execute(event));boss.map=&map;
+ boss.aura=0;entry.Id=33775;boss.current=&cast;assert(!load().active);
+ // Dalliah's periodic Whirlwind aura persists between ticks; her heal starts
+ // when that aura expires, and must not inherit the movement hold.
+ bot.mapId=552;boss.entry=20885;boss.aura=36142;boss.current=nullptr;
+ plan=load();assert(plan.active&&plan.spell==36142);
+ assert(encounter::Distance2d(plan.destination,{0,0,0})>=10&&action.Execute(event));
+ boss.aura=0;entry.Id=36144;boss.current=&cast;
+ assert(!action.Execute(event)&&!load().active&&multiplier.GetValue(&chase)==1);
 #endif
  std::cout<<"PASS: actual native cast/difficulty/expansion/radius selection, bounded escape, safe hold, cast lifetime and movement arbitration\n";
 }
-'''.replace('__GEOMETRY__', (base / 'EncounterGeometry.h').as_posix()).replace('__METHODS__', methods)
+'''.replace('__GEOMETRY__', (base / 'EncounterGeometry.h').as_posix()).replace('__METHODS__', methods).replace('__DIFFICULTY__', ',bool=true' if 'uint32 cast, bool regular' in source('values/BossCastPositionValue.cpp') else '')
 for expansion in ('ZERO', 'ONE', 'TWO'):
     with tempfile.TemporaryDirectory(prefix='mantech-boss-cast-test-') as tmp:
         tmp = Path(tmp)

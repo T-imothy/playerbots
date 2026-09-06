@@ -73,9 +73,13 @@ bool BossCastPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     if (!boss || !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() || boss->HasCharmer() ||
         !bot->IsInMap(boss) || bot->GetDistance(boss) > 100 ||
         std::fabs(boss->GetPositionZ() - bot->GetPositionZ()) > 8) return false;
-    const Spell* spell = CurrentBossEscapeCast(bot, boss);
-    if (!spell || !spell->m_spellInfo || spell->getState() == SPELL_STATE_FINISHED || spell->m_spellInfo->Id != plan.spell) return false;
-    const uint32 damage = NativeBossEscapeSpell(plan.map, boss->GetEntry(), plan.spell);
+    const uint32 spell = CurrentBossEscapeSpell(bot, boss);
+    if (!spell || spell != plan.spell) return false;
+    bool regular = true;
+#ifndef MANGOSBOT_ZERO
+    regular = bot->GetMap()->IsRegularDifficulty();
+#endif
+    const uint32 damage = NativeBossEscapeSpell(plan.map, boss->GetEntry(), plan.spell, regular);
     if (!damage) return false;
     const float radius = NativeEncounterSpellRadius(damage);
     const encounter::Point center{boss->GetPositionX(), boss->GetPositionY(), boss->GetPositionZ()};

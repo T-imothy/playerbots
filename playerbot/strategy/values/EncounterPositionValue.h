@@ -16,7 +16,8 @@ namespace ai
 
     bool ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan);
     float NativeEncounterSpellRadius(uint32 id, unsigned depth = 0);
-    uint32 NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast);
+    uint32 NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast, bool regular = true);
+    uint32 CurrentBossEscapeSpell(Player* bot, Unit* boss);
     const Spell* CurrentBossEscapeCast(Player* bot, Unit* boss);
     bool IsBossEscapeMap(uint32 map);
     uint32 BurningAdrenalineAura(Unit* unit);

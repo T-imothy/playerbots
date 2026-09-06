@@ -7,6 +7,7 @@
 #include "HazardsValue.h"
 #include "playerbot/ServerFacade.h"
 #include "Spells/SpellMgr.h"
+#include "playerbot/strategy/actions/MovementPathSafety.h"
 
 using namespace ai;
 
@@ -36,9 +37,21 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan)
     if (!std::isfinite(point.z) || std::fabs(point.z - originalZ) > 8.0f ||
         bot->GetDistance(point.x, point.y, point.z) > 60) return false;
     const WorldPosition destination(plan.map, point.x, point.y, point.z);
-    for (const auto& hazard : ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Get())
+    const auto hazards = ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Get();
+    for (const auto& hazard : hazards)
         if (destination.distance(hazard.first) < hazard.second + 1) return false;
-    return bot->GetDistance(point.x, point.y, point.z) <= 1.0f || WorldPosition(bot).canPathTo(destination, bot);
+    if (bot->GetDistance(point.x, point.y, point.z) <= 1.0f) return true;
+    // A safe endpoint can still require crossing a void zone. Check one bounded
+    // native normal route; incomplete/shortcut paths cannot establish safety.
+    const auto path = destination.getPathStepFrom(WorldPosition(bot), bot, true);
+    if (path.size() < 2 || path.size() > 256 || !destination.isPathTo(path, 1.0f, 2.0f)) return false;
+    WorldPosition previous(bot);
+    for (const WorldPosition& waypoint : path)
+    {
+        if (!IsHazardSafeSegment(previous, waypoint, hazards)) return false;
+        previous = waypoint;
+    }
+    return true;
 }
 
 EncounterPosition NetherspitePositionValue::Calculate()
