@@ -59,8 +59,13 @@ bool CastSpellAction::Execute(Event& event)
         {
             uint32 spellId = itr->first;
 
+            // Removed/disabled ranks remain in the spell map until save. Use
+            // the native learned-spell predicate before selecting a conjure rank.
+            if (!bot->HasSpell(spellId))
+                continue;
+
             const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
-            if (!pSpellInfo)
+            if (!pSpellInfo || IsPassiveSpell(pSpellInfo))
                 continue;
 
             std::string namepart = pSpellInfo->SpellName[0];

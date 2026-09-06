@@ -4,46 +4,69 @@
 
 using namespace ai;
 
-bool CastPaladinAuraAction::Execute(Event& event)
+std::string ai::SelectPaladinAura(PlayerbotAI* ai)
 {
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer()) return "";
     std::vector<std::string> altAuras;
     std::vector<std::string> haveAuras;
     altAuras.push_back("devotion aura");
     altAuras.push_back("retribution aura");
     altAuras.push_back("concentration aura");
+#ifndef MANGOSBOT_TWO
     altAuras.push_back("sanctity aura");
+#endif
     altAuras.push_back("shadow resistance aura");
     altAuras.push_back("fire resistance aura");
     altAuras.push_back("frost resistance aura");
+#ifndef MANGOSBOT_ZERO
     altAuras.push_back("crusader aura");
+#endif
 
     for (auto aura : altAuras)
     {
-        if (AI_VALUE2(uint32, "spell id", aura))
+        const uint32 spell = ai->GetAiObjectContext()->GetValue<uint32>("spell id", aura)->Get();
+        if (spell && bot->HasSpell(spell))
             haveAuras.push_back(aura);
     }
 
     if (haveAuras.empty())
     {
-        return false;
+        return "";
     }
+
+    for (const auto& aura : haveAuras)
+        if (ai->HasMyAura(aura, bot)) return "";
 
     for (auto aura : haveAuras)
     {
         if (!ai->HasAura(aura, bot))
-        {
-            uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
-            bool executed = ai->CastSpell(aura, bot, nullptr, false);
-            if (executed)
-            {
-                SetDuration(1.0f);
-            }
-
-            return executed;
-        }
+            return aura;
     }
 
-    return false;
+    return "";
+}
+
+bool CastPaladinAuraAction::isUseful()
+{
+    return !SelectPaladinAura(ai).empty();
+}
+
+bool CastPaladinAuraAction::isPossible()
+{
+    const std::string aura = SelectPaladinAura(ai);
+    return !aura.empty() && ai->CanCastSpell(aura, bot);
+}
+
+bool CastPaladinAuraAction::Execute(Event& event)
+{
+    const std::string aura = SelectPaladinAura(ai);
+    if (aura.empty()) return false;
+    uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
+    if (!ai->CastSpell(aura, bot, nullptr, false, &spellDuration)) return false;
+    if (ai->HasCheat(BotCheatMask::attackspeed)) spellDuration = 1;
+    SetDuration(spellDuration);
+    return true;
 }
 
 Unit* CastBlessingAction::GetTarget()

@@ -202,56 +202,7 @@ bool GreaterBlessingOnPartyTrigger::IsActive()
 
 bool NoPaladinAuraTrigger::IsActive()
 {
-    std::vector<std::string> altAuras;
-    std::vector<std::string> haveAuras;
-    altAuras.push_back("devotion aura");
-    altAuras.push_back("retribution aura");
-    altAuras.push_back("concentration aura");
-    altAuras.push_back("sanctity aura");
-    altAuras.push_back("shadow resistance aura");
-    altAuras.push_back("fire resistance aura");
-    altAuras.push_back("frost resistance aura");
-    altAuras.push_back("crusader aura");
-
-    for (auto aura : altAuras)
-    {
-        if (AI_VALUE2(uint32, "spell id", aura))
-        {
-            haveAuras.push_back(aura);
-        }
-    }
-
-    if (haveAuras.empty())
-    {
-        return false;
-    }
-
-    bool hasAura = false;
-    for (auto aura : haveAuras)
-    {
-        if (ai->HasMyAura(aura, bot))
-        {
-            hasAura = true;
-            break;
-        }
-    }
-
-    if (hasAura)
-    {
-        return false;
-    }
-
-    bool needAura = false;
-    for (auto aura : haveAuras)
-    {
-        if (!ai->HasAura(aura, bot))
-        {
-            needAura = true;
-            break;
-        }
-    }
-
-    return needAura;
+    return !SelectPaladinAura(ai).empty();
 }
 
 bool HammerOfJusticeOnEnemyTrigger::IsActive()

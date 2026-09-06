@@ -104,15 +104,18 @@ namespace ai
         virtual bool isUseful() override { return AI_VALUE2(bool, "combat", "self target"); }
     };
 
-    // Pick the aura that is not being used by another paladin
-	class CastPaladinAuraAction : public CastBuffSpellAction
-	{
-	public:
-		CastPaladinAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "paladin aura") {}
-		virtual bool isPossible() { return true; }
-		virtual bool isUseful() override { return true; }
-		virtual bool Execute(Event& event);
-	};
+    // Shared by the trigger and dispatcher so stale queued actions cannot
+    // replace the bot's already-active aura or choose an unavailable spell.
+    std::string SelectPaladinAura(PlayerbotAI* ai);
+
+    class CastPaladinAuraAction : public CastBuffSpellAction
+    {
+    public:
+        CastPaladinAuraAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "paladin aura") {}
+        bool isPossible() override;
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
 
     class CastDevotionAuraAction : public CastBuffSpellAction
     {

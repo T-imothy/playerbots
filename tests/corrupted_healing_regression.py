@@ -58,6 +58,7 @@ struct Player:Unit{bool alive=true,teleport=false,charmed=false,corrupted=true;u
  bool CanAssistSpell(Unit* u,const SpellEntry*){return u&&u->friendly;}Spell* GetCurrentSpell(CurrentSpellTypes s){return casts[s];}
  void InterruptSpell(CurrentSpellTypes s){++stops;casts[s]=nullptr;}
  unsigned GetMaxHealth(){return 1000;}void AttackStop(){}PlayerSpellMap& GetSpellMap(){return spellMap;}
+ bool HasSpell(unsigned id){return spellMap.count(id)!=0;}
  unsigned CanUseItem(const ItemPrototype*){return EQUIP_ERR_OK;}};
 struct Facade{std::map<unsigned,SpellEntry> spells;unsigned lookups=0;
  const SpellEntry* LookupSpellInfo(unsigned id){++lookups;auto i=spells.find(id);return i==spells.end()?nullptr:&i->second;}

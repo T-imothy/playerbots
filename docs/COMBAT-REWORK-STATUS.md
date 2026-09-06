@@ -32,6 +32,13 @@ claim that every encounter has been implemented or played successfully**.
 
 ### Shared Classic, TBC and Wrath
 
+- Paladin aura trigger/action selection now shares the existing owned/covered
+  aura policy, checks native learned spells and revalidates delayed execution.
+  Successful casts use the actual normal duration, not unconditional 1 ms.
+  This does not rewrite explicit named aura or specialization choices.
+- Mage food/water selection skips native removed/disabled spellbook records and
+  passive spells while retaining existing item eligibility. Actual-source tests
+  use each core's native HasSpell predicate. See `SUPPORT-SPELL-SELECTION-AUDIT.md`.
 - Inn summons no longer require a hearthstone or its readiness, apply its
   cooldown, or clear an existing genuine hearth cooldown. Meeting stones retain
   their existing no-hearth behavior. Inn/stone location restrictions remain.
