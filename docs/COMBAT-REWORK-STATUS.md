@@ -7,6 +7,29 @@ claim that every encounter has been implemented or played successfully**.
 
 ## Implemented source changes
 
+### Tempest Keep selected mechanics (TBC/Wrath only)
+
+- Solarian's native bomb payload is read from the native aura-expiry dispatch,
+  not confused with its application visual. Grouped carriers/non-carriers use
+  bounded native paths to separate, preserve the current tank and retain the
+  required separation through actual aura expiry, including after combat.
+  Fresh group positions, map/phase, movement permission and path checks prevent
+  stale holds; the pre-nerf jumping aura is not misclassified as this bomb.
+- Native Solarium Priest/Agent DPS priorities preserve player orders, CC,
+  tank/healer roles and current-target stability. Ownership follows the actual
+  physical spotlight summoner back to Solarian; no new world scan is used.
+- Curated boss-cast escape now recognizes native channeled spells as well as
+  generic casts. Void Reaver's Pounding uses the native damage radius and leaves
+  the current tank planted. It does not treat Arcane Orb or arbitrary AoEs as
+  caster-centered escapes. Earlier cast-registry tests remain included.
+- The native TBC/Wrath Solarian split required a separate safety correction:
+  unchecked indexing on failed spotlights, delayed callbacks surviving evade,
+  and normal melee state not restored at split completion. The testing cores
+  now use native validation/evade/combat timers with actual-callback regressions.
+  No normal boss damage, summon counts, timings or rewards were weakened.
+- These are partial TK mechanics. See `TEMPEST-KEEP-MECHANIC-AUDIT.md` for evidence,
+  tests and outstanding mechanics. They do not complete the whole requested scope.
+
 ### Shared Classic, TBC and Wrath
 
 - Inn summons no longer require a hearthstone or its readiness, apply its

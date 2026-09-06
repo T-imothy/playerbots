@@ -12,7 +12,7 @@ root=Path(__file__).resolve().parents[1]
 value=(root/'playerbot/strategy/Value.h').read_text()
 getter=block(value,'virtual T Get() override').replace('time(0)','fakeNow')
 header=(root/'playerbot/strategy/values/EncounterPositionValue.h').read_text()
-names=('Magtheridon','Gruul','Naxxramas','BlackwingLair','BossCast')
+names=('Solarian','Magtheridon','Gruul','Naxxramas','BlackwingLair','BossCast')
 for name in names:
     definition=block(header,f'class {name}PositionValue')
     assert re.search(r'CalculatedValue\(ai, "[^"]+", 2\)',definition),name

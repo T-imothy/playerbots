@@ -73,7 +73,7 @@ bool BossCastPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     if (!boss || !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() || boss->HasCharmer() ||
         !bot->IsInMap(boss) || bot->GetDistance(boss) > 100 ||
         std::fabs(boss->GetPositionZ() - bot->GetPositionZ()) > 8) return false;
-    const Spell* spell = boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    const Spell* spell = CurrentBossEscapeCast(bot, boss);
     if (!spell || !spell->m_spellInfo || spell->getState() == SPELL_STATE_FINISHED || spell->m_spellInfo->Id != plan.spell) return false;
     const uint32 damage = NativeBossEscapeSpell(plan.map, boss->GetEntry(), plan.spell);
     if (!damage) return false;

@@ -7,6 +7,10 @@ using namespace ai;
 
 void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("solarian burst position",
+        NextAction::array(0, new NextAction("solarian burst position", ACTION_EMERGENCY + 2), NULL)));
+    triggers.push_back(new TriggerNode("solarian priority target",
+        NextAction::array(0, new NextAction("solarian priority target", 61.0f), NULL)));
     triggers.push_back(new TriggerNode("magtheridon cube",
         NextAction::array(0, new NextAction("magtheridon cube", 108.0f), NULL)));
     triggers.push_back(new TriggerNode("gruul shatter spread",
@@ -42,6 +46,8 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("solarian burst position",
+        NextAction::array(0, new NextAction("solarian burst position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("magtheridon cube",
         NextAction::array(0, new NextAction("magtheridon cube", 108.0f), NULL)));
     triggers.push_back(new TriggerNode(
@@ -93,6 +99,8 @@ void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("solarian burst position",
+        NextAction::array(0, new NextAction("solarian burst position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("magtheridon cube",
         NextAction::array(0, new NextAction("magtheridon cube", 108.0f), NULL)));
     triggers.push_back(new TriggerNode("gruul shatter spread",
@@ -105,6 +113,7 @@ void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveSolarianPositionMultiplier(ai));
     multipliers.push_back(new PreserveMagtheridonCubeMultiplier(ai));
     multipliers.push_back(new PreserveGruulSpreadMultiplier(ai));
     multipliers.push_back(new PreserveBossCastPositionMultiplier(ai));
@@ -112,7 +121,13 @@ void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 
 void DungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveSolarianPositionMultiplier(ai));
     multipliers.push_back(new PreserveMagtheridonCubeMultiplier(ai));
     multipliers.push_back(new PreserveGruulSpreadMultiplier(ai));
     multipliers.push_back(new PreserveBossCastPositionMultiplier(ai));
+}
+
+void DungeonStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveSolarianPositionMultiplier(ai));
 }

@@ -127,6 +127,7 @@ namespace ai
             creators["mechanar position"] = [](PlayerbotAI* ai) { return new MechanarPositionValue(ai); };
             creators["aran flame wreath"] = [](PlayerbotAI* ai) { return new AranFlameWreathValue(ai); };
             creators["boss cast position"] = [](PlayerbotAI* ai) { return new BossCastPositionValue(ai); };
+            creators["solarian burst position"] = [](PlayerbotAI* ai) { return new SolarianPositionValue(ai); };
             creators["magtheridon cube position"] = [](PlayerbotAI* ai) { return new MagtheridonPositionValue(ai); };
             creators["righteous defense target"] = [](PlayerbotAI* ai) { return new RighteousDefenseTargetValue(ai); };
             creators["gruul spread position"] = [](PlayerbotAI* ai) { return new GruulPositionValue(ai); };

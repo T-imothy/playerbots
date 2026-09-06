@@ -304,6 +304,8 @@ namespace ai
             creators["enter onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnterDungeonTrigger(ai); };
             creators["hostile ground damage"] = [](PlayerbotAI* ai) { return new HostileGroundDamageTrigger(ai); };
             creators["boss cast safe position"] = [](PlayerbotAI* ai) { return new BossCastPositionTrigger(ai); };
+            creators["solarian burst position"] = [](PlayerbotAI* ai) { return new SolarianPositionTrigger(ai); };
+            creators["solarian priority target"] = [](PlayerbotAI* ai) { return new SolarianPriorityTargetTrigger(ai); };
             creators["magtheridon cube"] = [](PlayerbotAI* ai) { return new MagtheridonCubeTrigger(ai); };
             creators["gruul shatter spread"] = [](PlayerbotAI* ai) { return new GruulSpreadTrigger(ai); };
             creators["assist summoning ritual"] = [](PlayerbotAI* ai) { return new AssistSummoningRitualTrigger(ai); };

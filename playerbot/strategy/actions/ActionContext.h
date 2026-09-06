@@ -80,6 +80,7 @@
 #include "BlackwingLairDungeonActions.h"
 #include "KarazhanDungeonActions.h"
 #include "NaxxramasDungeonActions.h"
+#include "TempestKeepActions.h"
 #include "MechanarDungeonActions.h"
 
 #ifdef GenerateBotTests
@@ -392,6 +393,8 @@ namespace ai
             creators["molten core priority target"] = [](PlayerbotAI* ai) { return new MoltenCorePriorityTargetAction(ai); };
             creators["mechanar safe position"] = [](PlayerbotAI* ai) { return new MechanarPositionAction(ai); };
             creators["boss cast safe position"] = [](PlayerbotAI* ai) { return new BossCastPositionAction(ai); };
+            creators["solarian burst position"] = [](PlayerbotAI* ai) { return new SolarianPositionAction(ai); };
+            creators["solarian priority target"] = [](PlayerbotAI* ai) { return new SolarianPriorityTargetAction(ai); };
             creators["magtheridon cube"] = [](PlayerbotAI* ai) { return new MagtheridonCubeAction(ai); };
             creators["gruul shatter spread"] = [](PlayerbotAI* ai) { return new GruulSpreadAction(ai); };
             creators["assist summoning ritual"] = [](PlayerbotAI* ai) { return new AssistSummoningRitualAction(ai); };

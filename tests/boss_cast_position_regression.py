@@ -11,7 +11,8 @@ root = Path(__file__).resolve().parents[1]
 base = root / "playerbot/strategy"
 extract = (
     ("values/BossCastPositionValue.cpp", ("bool ai::IsBossEscapeMap(",
-        "uint32 ai::NativeBossEscapeSpell(", "EncounterPosition BossCastPositionValue::Calculate(")),
+        "uint32 ai::NativeBossEscapeSpell(", "const Spell* ai::CurrentBossEscapeCast(",
+        "EncounterPosition BossCastPositionValue::Calculate(")),
     ("actions/DungeonActions.cpp", ("bool BossCastPositionAction::GetPlan(",
         "bool BossCastPositionAction::isUseful(", "bool BossCastPositionAction::ShouldReactionInterruptCast(",
         "bool BossCastPositionAction::Execute(")),
@@ -27,15 +28,16 @@ code = r'''
 #include <iostream>
 #include "__GEOMETRY__"
 using uint32=unsigned;using ObjectGuid=unsigned;
-constexpr int CURRENT_GENERIC_SPELL=1,SPELL_STATE_FINISHED=2,IDLE_MOTION_TYPE=0;
+constexpr int CURRENT_GENERIC_SPELL=1,CURRENT_CHANNELED_SPELL=3,SPELL_STATE_FINISHED=2,IDLE_MOTION_TYPE=0;
 struct SpellEntry {unsigned Id=0;};
 struct Spell {SpellEntry* m_spellInfo=nullptr;int state=0;int getState()const{return state;}};
 struct Map {};
 struct Unit {unsigned entry=0,guid=1,phase=1;bool world=true,alive=true,combat=true,charmed=false;Map* map=nullptr;
- float x=0,y=0,z=0;Spell* current=nullptr;
+ float x=0,y=0,z=0;Spell* current=nullptr;Spell* channel=nullptr;Unit* victim=nullptr;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}
  bool HasCharmer(){return charmed;}unsigned GetEntry(){return entry;}Map* GetMap(){return map;}
- unsigned GetObjectGuid(){return guid;}Spell* GetCurrentSpell(int){return current;}
+ Unit* GetVictim(){return victim;}
+ unsigned GetObjectGuid(){return guid;}Spell* GetCurrentSpell(int slot){return slot==CURRENT_GENERIC_SPELL?current:channel;}
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}
  float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c));}
  float GetDistance(Unit* u){return GetDistance(u->x,u->y,u->z);}};
@@ -47,7 +49,8 @@ struct Player:Unit {bool teleport=false,stopped=true;unsigned mapId=532,instance
 namespace ai {
  struct EncounterPosition {bool active=false;unsigned map=0,instance=0,boss=0,spell=0;encounter::Point destination;};
  bool IsBossEscapeMap(unsigned);unsigned NativeBossEscapeSpell(unsigned,unsigned,unsigned);
- std::map<unsigned,float> radii{{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15}};
+ const Spell* CurrentBossEscapeCast(Player*,Unit*);
+ std::map<unsigned,float> radii{{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15},{34164,18}};
  float NativeEncounterSpellRadius(unsigned id){return radii[id];}
 }
 template<class T>struct Stored {T value{};T Get(){return value;}};
@@ -89,7 +92,7 @@ int main(){
  MoveAwayFromHazard hazard(&ai);CastSpellAction heal,charge;charge.movement=true;Event event;
  auto load=[&](){return ai.context.plan.value=value.Calculate();};
 #ifdef MANGOSBOT_ZERO
- for(unsigned id:{532u,555u,602u,603u,658u})assert(!IsBossEscapeMap(id));
+ for(unsigned id:{532u,550u,555u,602u,603u,658u})assert(!IsBossEscapeMap(id));
  assert(!load().active && ai.checked==0);assert(!action.isUseful() && !action.Execute(event));
  assert(multiplier.GetValue(&chase)==1 && multiplier.GetValue(&charge)==1 && ai.context.reads==0);
  assert(NativeBossEscapeSpell(532,16524,29973)==0);
@@ -132,6 +135,14 @@ int main(){
  plan=load();assert(plan.active && encounter::Distance2d(plan.destination,{0,0,0})>=36);
  entry.Id=38796;assert(NativeBossEscapeSpell(555,18708,38796)==38795 && load().active);
  assert(!NativeBossEscapeSpell(532,18708,33923) && !NativeBossEscapeSpell(555,1,33923));
+ // Native Pounding lives in the channeled slot, not CURRENT_GENERIC_SPELL.
+ bot.mapId=550;boss.entry=19516;entry.Id=34162;boss.current=nullptr;boss.channel=&cast;
+ assert(NativeBossEscapeSpell(550,19516,34162)==34164&&IsBossEscapeMap(550));
+ plan=load();assert(plan.active&&encounter::Distance2d(plan.destination,{0,0,0})>=20);
+ boss.victim=&bot;assert(!action.Execute(event)&&!load().active);boss.victim=nullptr;
+ plan=load();assert(plan.active);cast.state=SPELL_STATE_FINISHED;assert(!action.Execute(event)&&!load().active);cast.state=0;
+ assert(load().active);boss.channel=nullptr;assert(!action.Execute(event));boss.current=&cast;
+ assert(load().active);entry.Id=34172;assert(!action.Execute(event)&&!load().active); // Orb isn't a caster-centred escape.
 #ifdef MANGOSBOT_TWO
  const unsigned cases[][3]={{602,28923,52960},{602,28923,59835},{603,33432,63631},{658,36476,68989}};
  for(const auto& c:cases){bot.mapId=c[0];boss.entry=c[1];entry.Id=c[2];plan=load();

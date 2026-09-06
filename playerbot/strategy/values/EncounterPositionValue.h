@@ -17,6 +17,7 @@ namespace ai
     bool ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan);
     float NativeEncounterSpellRadius(uint32 id, unsigned depth = 0);
     uint32 NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast);
+    const Spell* CurrentBossEscapeCast(Player* bot, Unit* boss);
     bool IsBossEscapeMap(uint32 map);
     uint32 BurningAdrenalineAura(Unit* unit);
     bool BlackwingLairBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
@@ -27,6 +28,16 @@ namespace ai
         std::vector<encounter::Circle>& threats);
     bool GruulShatterThreats(PlayerbotAI* ai, EncounterPosition& plan,
         std::vector<encounter::Circle>& threats);
+    float SolarianBurstRadius();
+    bool SolarianBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
+        std::vector<encounter::Circle>& threats);
+
+    class SolarianPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        SolarianPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "solarian burst position", 2) {}
+        EncounterPosition Calculate() override;
+    };
 
     bool HasMagtheridonChannel(Player* player);
     bool IsMagtheridonNova(Unit* boss);

@@ -7,11 +7,24 @@
 #include "playerbot/strategy/values/HazardsValue.h"
 #include "playerbot/strategy/actions/MovementActions.h"
 #include "playerbot/strategy/actions/DungeonActions.h"
+#include "playerbot/strategy/actions/TempestKeepActions.h"
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
 
 using namespace ai;
+
+bool SolarianPositionTrigger::IsActive()
+{
+    SolarianPositionAction action(ai);
+    return action.isUseful();
+}
+
+bool SolarianPriorityTargetTrigger::IsActive()
+{
+    SolarianPriorityTargetAction action(ai);
+    return action.isUseful();
+}
 
 bool MagtheridonCubeTrigger::IsActive()
 {

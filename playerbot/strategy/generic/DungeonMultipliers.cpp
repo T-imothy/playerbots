@@ -10,8 +10,25 @@
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
 #include "playerbot/strategy/actions/NaxxramasDungeonActions.h"
+#include "playerbot/strategy/actions/TempestKeepActions.h"
 
 using namespace ai;
+
+float PreserveSolarianPositionMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 550) return 1.0f;
+    if (action->getName() == "dps assist")
+    {
+        SolarianPriorityTargetAction priority(ai);
+        if (priority.GetTarget()) return 0.0f;
+    }
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<SolarianPositionAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return SolarianPositionAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
 
 float PreserveMagtheridonCubeMultiplier::GetValue(Action* action)
 {

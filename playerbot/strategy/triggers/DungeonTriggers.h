@@ -3,6 +3,20 @@
 
 namespace ai
 {
+    class SolarianPositionTrigger : public Trigger
+    {
+    public:
+        SolarianPositionTrigger(PlayerbotAI* ai) : Trigger(ai, "solarian burst position", 1) {}
+        bool IsActive() override;
+    };
+
+    class SolarianPriorityTargetTrigger : public Trigger
+    {
+    public:
+        SolarianPriorityTargetTrigger(PlayerbotAI* ai) : Trigger(ai, "solarian priority target", 1) {}
+        bool IsActive() override;
+    };
+
     class MagtheridonCubeTrigger : public Trigger
     {
     public:
