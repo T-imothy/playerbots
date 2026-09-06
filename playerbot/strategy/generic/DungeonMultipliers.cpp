@@ -13,6 +13,13 @@
 
 using namespace ai;
 
+float PreserveKarazhanTargetMultiplier::GetValue(Action* action)
+{
+    if (!action || action->getName() != "dps assist") return 1.0f;
+    KarazhanPriorityTargetAction priority(ai);
+    return priority.GetTarget() ? 0.0f : 1.0f;
+}
+
 float PreserveNaxxramasPositionMultiplier::GetValue(Action* action)
 {
     if (!action || ai->GetBot()->GetMapId() != 533) return 1.0f;

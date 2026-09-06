@@ -20,7 +20,14 @@ Unit* PathaleonAddsAction::GetTarget()
     }
     // Keep the current boss tank on the boss. Respect the configured raid mark.
     if (!boss || boss->GetVictim() == bot) return nullptr;
+    auto validOrder = [this](Unit* unit)
+    {
+        return unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->IsAlive() &&
+            PossibleAttackTargetsValue::IsValid(unit, bot, sPlayerbotAIConfig.sightDistance, false, true);
+    };
+    if (validOrder(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target")))) return nullptr;
     Unit* marked = AI_VALUE(Unit*, "rti target");
+    if (!validOrder(marked)) marked = nullptr;
     if (marked && marked->GetEntry() != 21062) return nullptr;
     Unit* current = AI_VALUE(Unit*, "current target");
     Unit* nearest = nullptr;

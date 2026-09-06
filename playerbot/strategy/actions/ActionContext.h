@@ -414,6 +414,7 @@ namespace ai
             creators["move away from void zone"] = [](PlayerbotAI* ai) { return new VoidZoneMoveAwayAction(ai); };
             creators["netherspite beam position"] = [](PlayerbotAI* ai) { return new NetherspitePositionAction(ai); };
             creators["aran hold position"] = [](PlayerbotAI* ai) { return new AranFlameWreathHoldAction(ai); };
+            creators["karazhan priority target"] = [](PlayerbotAI* ai) { return new KarazhanPriorityTargetAction(ai); };
 
             creators["enable prince malchezaar fight strategy"] = [](PlayerbotAI* ai) { return new PrinceMalchezaarEnableFightStrategyAction(ai); };
             creators["disable prince malchezaar fight strategy"] = [](PlayerbotAI* ai) { return new PrinceMalchezaarDisableFightStrategyAction(ai); };

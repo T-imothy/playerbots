@@ -77,6 +77,9 @@ template<class T>void CheckSelection(T& action,Player& bot,PlayerbotAI& ai,Unit&
  // An explicit marked add wins even if our current add comes first in the list.
  ai.marked=&second;assert(action.GetTarget()==&second && action.isUseful());
  ai.marked=&boss;assert(!action.GetTarget());ai.marked=nullptr;
+ ai.commanded=1;assert(!action.GetTarget());ai.commanded=0;
+ Unit obsolete=boss;obsolete.world=false;ai.marked=&obsolete;assert(action.GetTarget()==&add);
+ obsolete.world=true;obsolete.map=&other;assert(action.GetTarget()==&add);ai.marked=nullptr;
  add.x=20;second.x=1;assert(action.GetTarget()==&add); // stable target, no nearest-target thrashing
  ai.current=nullptr;assert(action.GetTarget()==&second);add.x=1;second.x=20;
  ai.possible={2};

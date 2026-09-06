@@ -9,6 +9,12 @@
 
 using namespace ai;
 
+bool KarazhanPriorityTargetTrigger::IsActive()
+{
+    KarazhanPriorityTargetAction action(ai);
+    return action.isUseful();
+}
+
 bool AranFlameWreathTrigger::IsActive()
 {
     AranFlameWreathHoldAction action(ai);

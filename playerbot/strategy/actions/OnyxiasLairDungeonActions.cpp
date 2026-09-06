@@ -64,7 +64,14 @@ Unit* OnyxiaAddsAction::GetTarget()
     if (!boss || boss->GetVictim() == bot) return nullptr;
     const bool airborne = boss->IsLevitating() || boss->GetPositionZ() - bot->GetPositionZ() > 10;
     if (!airborne && !ai->IsTank(bot)) return nullptr;
+    auto validOrder = [this](Unit* unit)
+    {
+        return unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->IsAlive() &&
+            PossibleAttackTargetsValue::IsValid(unit, bot, sPlayerbotAIConfig.sightDistance, false, true);
+    };
+    if (validOrder(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target")))) return nullptr;
     Unit* marked = AI_VALUE(Unit*, "rti target");
+    if (!validOrder(marked)) marked = nullptr;
     if (marked && !IsOnyxiaAddEntry(marked->GetEntry())) return nullptr;
     Unit* current = AI_VALUE(Unit*, "current target");
     Unit* nearest = nullptr;

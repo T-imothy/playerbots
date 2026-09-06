@@ -2,8 +2,86 @@
 #include "playerbot/playerbot.h"
 #include "KarazhanDungeonActions.h"
 #include "playerbot/strategy/Action.h"
+#include "playerbot/strategy/values/PossibleTargetsValue.h"
+#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "Spells/SpellAuras.h"
 
 using namespace ai;
+
+Unit* KarazhanPriorityTargetAction::GetTarget()
+{
+#ifndef MANGOSBOT_ZERO
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
+        bot->GetMapId() != 532 || !bot->IsInCombat() || !bot->GetGroup() ||
+        ai->IsHeal(bot) || ai->IsTank(bot)) return nullptr;
+
+    Unit* boss = nullptr;
+    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || !unit->IsInWorld() || !bot->IsInMap(unit) || !unit->IsAlive() ||
+            !unit->IsInCombat() || unit->HasCharmer() ||
+            (unit->GetEntry() != 15688 && unit->GetEntry() != 15691)) continue;
+        if (boss && boss != unit) return nullptr;
+        boss = unit;
+    }
+    if (!boss || boss->GetVictim() == bot) return nullptr;
+
+    auto valid = [this](Unit* unit)
+    {
+        return unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->IsAlive() &&
+            PossibleTargetsValue::IsValid(unit, bot, false) &&
+            PossibleAttackTargetsValue::IsPossibleTarget(unit, bot, sPlayerbotAIConfig.sightDistance, false) &&
+            !PossibleAttackTargetsValue::HasBreakableCC(unit, bot) &&
+            !PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot);
+    };
+    // Retain explicit player targeting and raid-mark policy, including orders
+    // aimed at a passive object not yet represented in the attacker list.
+    if (valid(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"))) ||
+        valid(AI_VALUE(Unit*, "rti target"))) return nullptr;
+
+    const bool illhoof = boss->GetEntry() == 15688;
+    if (illhoof)
+    {
+        bool sacrifice = false;
+        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->getSource();
+            if (!member || !member->IsInWorld() || !member->IsAlive() || !bot->IsInMap(member) ||
+                member->IsBeingTeleported() || member->HasCharmer() || member->GetGroup() != bot->GetGroup()) continue;
+            const Aura* aura = ai->GetAura(30115, member);
+            if (aura && aura->GetCasterGuid() == boss->GetObjectGuid()) { sacrifice = true; break; }
+        }
+        if (!sacrifice) return nullptr;
+    }
+
+    Unit* selected = nullptr;
+    Unit* current = AI_VALUE(Unit*, "current target");
+    // Demon Chains are passive, so requiring a threat victim/IsInCombat would
+    // exclude the very object that must be destroyed. Reuse the existing nearby
+    // possible-target value and native attack admission, not a new world scan.
+    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets"))
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit) continue;
+        const uint32 entry = unit->GetEntry();
+        const bool priority = illhoof ? entry == 17248 :
+            (entry == 17096 || entry == 19781 || entry == 19782 || entry == 19783);
+        if (!priority || !valid(unit) || unit->GetSpawnerGuid() != boss->GetObjectGuid()) continue;
+        if (unit == current) return unit;
+        if (!selected || bot->GetDistance(unit) < bot->GetDistance(selected)) selected = unit;
+    }
+    return selected;
+#else
+    return nullptr;
+#endif
+}
+
+bool KarazhanPriorityTargetAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return target && target != AI_VALUE(Unit*, "current target");
+}
 
 bool AranFlameWreathValue::Calculate()
 {

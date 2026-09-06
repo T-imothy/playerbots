@@ -4,6 +4,13 @@
 
 namespace ai
 {
+    class KarazhanPriorityTargetTrigger : public Trigger
+    {
+    public:
+        KarazhanPriorityTargetTrigger(PlayerbotAI* ai) : Trigger(ai, "karazhan priority target", 1) {}
+        bool IsActive() override;
+    };
+
     class AranFlameWreathTrigger : public Trigger
     {
     public:

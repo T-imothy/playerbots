@@ -7,6 +7,8 @@ using namespace ai;
 
 void KarazhanDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("karazhan priority target",
+        NextAction::array(0, new NextAction("karazhan priority target", 90.0f), NULL)));
     triggers.push_back(new TriggerNode("aran hold position",
         NextAction::array(0, new NextAction("aran hold position", 110.0f), NULL)));
 	triggers.push_back(new TriggerNode(
@@ -26,6 +28,7 @@ void KarazhanDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& trig
 
 void KarazhanDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveKarazhanTargetMultiplier(ai));
     multipliers.push_back(new PreserveAranFlameWreathMultiplier(ai));
 }
 

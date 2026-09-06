@@ -2,10 +2,19 @@
 #include "DungeonActions.h"
 #include "ChangeStrategyAction.h"
 #include "UseItemAction.h"
+#include "AttackAction.h"
 #include "playerbot/strategy/values/EncounterPositionValue.h"
 
 namespace ai
 {
+    class KarazhanPriorityTargetAction : public AttackAction
+    {
+    public:
+        KarazhanPriorityTargetAction(PlayerbotAI* ai) : AttackAction(ai, "karazhan priority target") {}
+        Unit* GetTarget() override;
+        bool isUseful() override;
+    };
+
     class AranFlameWreathHoldAction : public Action
     {
     public:

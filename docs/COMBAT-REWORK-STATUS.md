@@ -58,6 +58,12 @@ claim that every encounter has been implemented or played successfully**.
 
 ### Additional encounter and class corrections
 
+- TBC/Wrath Karazhan DPS can prioritize Illhoof's actual boss-owned passive
+  Demon Chains during a current sacrifice and Curator's four native flare
+  variants. Preserve manual orders, marks, CC and tank/healer jobs; reuse normal
+  combat and core destruction mechanics. See `KARAZHAN-TARGET-AUDIT.md`.
+- Onyxia/Pathaleon add selection now preserves explicit attack orders as well as
+  marks, and a stale invalid mark no longer blocks otherwise valid add handling.
 - Pet spell feasibility now uses the actual pet caster and native cast checks,
   with ownership/lifecycle guards and native hostile spell-opener behavior
   preserved. Unsupported pet destination/gameobject commands are rejected.
