@@ -253,11 +253,14 @@ namespace ai
         }
     };
 
-	class CastSpellstealAction : public CastSpellAction
-	{
-	public:
-		CastSpellstealAction(PlayerbotAI* ai) : CastSpellAction(ai, "spellsteal") {}
-	};
+    class CastSpellstealAction : public CastSpellAction
+    {
+    public:
+        CastSpellstealAction(PlayerbotAI* ai) : CastSpellAction(ai, "spellsteal") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        static bool HasStealableAura(PlayerbotAI* ai, Unit* target, const SpellEntry* spell);
+    };
 
 	class CastInvisibilityAction : public CastBuffSpellAction
 	{

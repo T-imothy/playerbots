@@ -3,6 +3,13 @@
 
 namespace ai
 {
+    class GruulSpreadTrigger : public Trigger
+    {
+    public:
+        GruulSpreadTrigger(PlayerbotAI* ai) : Trigger(ai, "gruul shatter spread", 1) {}
+        bool IsActive() override;
+    };
+
     class BossCastPositionTrigger : public Trigger
     {
     public:

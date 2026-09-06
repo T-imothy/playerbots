@@ -9,6 +9,58 @@
 
 using namespace ai;
 
+bool GruulSpreadAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
+{
+    EncounterPosition current;
+    std::vector<encounter::Circle> threats;
+    if (!GruulShatterThreats(ai, current, threats) || !ai->CanMove()) return false;
+    Player* bot = ai->GetBot();
+    plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("gruul spread position")->Get();
+    if (!plan.active || plan.map != current.map || plan.instance != current.instance ||
+        plan.boss != current.boss || plan.spell != current.spell ||
+        !std::isfinite(plan.destination.x) || !std::isfinite(plan.destination.y) || !std::isfinite(plan.destination.z)) return false;
+    const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+    // A moving group can invalidate a cached destination before the next
+    // value update. Never run back into a worse cluster to follow that cache.
+    const float after = encounter::SpreadOverlap(plan.destination, threats);
+    return bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= 1.5f ||
+        after == 0 || after + 1 < encounter::SpreadOverlap(here, threats);
+}
+
+bool GruulSpreadAction::isUseful()
+{
+    EncounterPosition plan;
+    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f ||
+        !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+}
+
+bool GruulSpreadAction::ShouldReactionInterruptCast() const
+{
+    EncounterPosition plan;
+    return GetPlan(ai, plan) && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
+}
+
+bool GruulSpreadAction::Execute(Event& event)
+{
+    EncounterPosition plan;
+    if (!GetPlan(ai, plan) || !ValidateEncounterDestination(ai, plan)) return false;
+    // Native height correction can alter a destination; recheck both geometry
+    // and live group membership after that correction, not just before it.
+    EncounterPosition current;
+    std::vector<encounter::Circle> threats;
+    if (!GruulShatterThreats(ai, current, threats) || current.boss != plan.boss) return false;
+    const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+    if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= 1.5f)
+    {
+        ai->StopMoving();
+        SetDuration(100);
+        return true;
+    }
+    const float after = encounter::SpreadOverlap(plan.destination, threats);
+    if (after > 0 && after + 1 >= encounter::SpreadOverlap(here, threats)) return false;
+    return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
+}
+
 bool BossCastPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 {
     Player* bot = ai->GetBot();

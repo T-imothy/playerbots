@@ -13,6 +13,17 @@
 
 using namespace ai;
 
+float PreserveGruulSpreadMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 565) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<GruulSpreadAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return GruulSpreadAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
+
 float PreserveKarazhanTargetMultiplier::GetValue(Action* action)
 {
     if (!action || action->getName() != "dps assist") return 1.0f;

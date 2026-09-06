@@ -79,6 +79,39 @@ namespace ai { namespace encounter {
         return candidates;
     }
 
+    // Residual overlap, not a promise that a crowded room has a fully safe
+    // point. Used for distance-scaled bursts: fewer/less-deep overlaps are
+    // preferable to remaining stacked when complete separation is impossible.
+    inline float SpreadOverlap(Point point, const std::vector<Circle>& circles)
+    {
+        float overlap = 0;
+        for (const auto& circle : circles)
+            overlap += std::max(0.0f, circle.radius - Distance2d(point, circle.center));
+        return overlap;
+    }
+
+    inline std::vector<Point> SpreadCandidates(Point here, const std::vector<Circle>& circles, uint64_t seed)
+    {
+        struct Candidate { Point point; float overlap, distance; };
+        std::vector<Candidate> ranked{{here, SpreadOverlap(here, circles), 0}};
+        const float start = (seed % 997) * 6.28318530717958647692f / 997;
+        for (float distance : {4.0f, 8.0f, 12.0f, 16.0f, 24.0f})
+            for (unsigned step = 0; step < 16; ++step)
+            {
+                const float angle = start + step * 6.28318530717958647692f / 16;
+                const Point point{here.x + distance * std::cos(angle),
+                    here.y + distance * std::sin(angle), here.z};
+                ranked.push_back({point, SpreadOverlap(point, circles), distance});
+            }
+        std::stable_sort(ranked.begin(), ranked.end(), [](const Candidate& a, const Candidate& b) {
+            return a.overlap == b.overlap ? a.distance < b.distance : a.overlap < b.overlap;
+        });
+        std::vector<Point> candidates;
+        candidates.reserve(ranked.size());
+        for (const auto& candidate : ranked) candidates.push_back(candidate.point);
+        return candidates;
+    }
+
     struct BeamMember
     {
         uint64_t guid = 0;

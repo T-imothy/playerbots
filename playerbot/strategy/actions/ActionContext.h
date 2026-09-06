@@ -392,6 +392,7 @@ namespace ai
             creators["molten core priority target"] = [](PlayerbotAI* ai) { return new MoltenCorePriorityTargetAction(ai); };
             creators["mechanar safe position"] = [](PlayerbotAI* ai) { return new MechanarPositionAction(ai); };
             creators["boss cast safe position"] = [](PlayerbotAI* ai) { return new BossCastPositionAction(ai); };
+            creators["gruul shatter spread"] = [](PlayerbotAI* ai) { return new GruulSpreadAction(ai); };
             creators["assist summoning ritual"] = [](PlayerbotAI* ai) { return new AssistSummoningRitualAction(ai); };
             creators["hold summoning ritual"] = [](PlayerbotAI* ai) { return new HoldSummoningRitualAction(ai); };
             creators["continue ritual summon"] = [](PlayerbotAI* ai) { return new ContinueRitualSummonAction(ai); };

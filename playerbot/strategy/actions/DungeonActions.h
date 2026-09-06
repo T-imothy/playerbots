@@ -6,6 +6,16 @@
 
 namespace ai
 {
+    class GruulSpreadAction : public MovementAction
+    {
+    public:
+        GruulSpreadAction(PlayerbotAI* ai) : MovementAction(ai, "gruul shatter spread") {}
+        bool Execute(Event& event) override;
+        bool isUseful() override;
+        bool ShouldReactionInterruptCast() const override;
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+
     class BossCastPositionAction : public MovementAction
     {
     public:

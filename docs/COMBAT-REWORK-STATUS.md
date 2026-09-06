@@ -58,6 +58,15 @@ claim that every encounter has been implemented or played successfully**.
 
 ### Additional encounter and class corrections
 
+- TBC/Wrath Spellsteal now checks the same positive, non-passive, stealable
+  aura-holder conditions as the native effect, both before scheduling and
+  immediately before casting. Skip no-op attempts on non-stealable buffs;
+  retain real mana, cooldown, resistance, target and native stealing rules.
+- TBC/Wrath Gruul spreading observes native Grasp/Stoned lifetime, native
+  20-yard Shatter radius and combat reach. Bounded path-validated candidates
+  prefer separation or reduced crowding, with fresh group-position checks and
+  native movement/control restrictions. Classic is a no-op. This is partial
+  Gruul support, not a complete raid; see `GRUUL-NATIVE-MECHANIC-AUDIT.md`.
 - TBC/Wrath Karazhan DPS can prioritize Illhoof's actual boss-owned passive
   Demon Chains during a current sacrifice and Curator's four native flare
   variants. Preserve manual orders, marks, CC and tank/healer jobs; reuse normal

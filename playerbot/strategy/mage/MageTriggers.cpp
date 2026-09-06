@@ -5,6 +5,12 @@
 
 using namespace ai;
 
+bool SpellstealTrigger::IsActive()
+{
+    CastSpellstealAction action(ai);
+    return action.isUseful();
+}
+
 bool FingersOfFrostTrigger::IsActive()
 {
 #ifdef MANGOSBOT_TWO

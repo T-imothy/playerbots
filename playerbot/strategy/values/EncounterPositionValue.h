@@ -25,6 +25,15 @@ namespace ai
     float NaxxramasBurstRadius(uint32 aura);
     bool NaxxramasBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
         std::vector<encounter::Circle>& threats);
+    bool GruulShatterThreats(PlayerbotAI* ai, EncounterPosition& plan,
+        std::vector<encounter::Circle>& threats);
+
+    class GruulPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        GruulPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "gruul spread position", 1) {}
+        EncounterPosition Calculate() override;
+    };
 
     class NaxxramasPositionValue : public CalculatedValue<EncounterPosition>
     {

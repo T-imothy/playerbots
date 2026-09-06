@@ -140,6 +140,7 @@ namespace ai
     {
     public:
         SpellstealTrigger(PlayerbotAI* ai) : TargetAuraDispelTrigger(ai, "spellsteal", DISPEL_MAGIC) {}
+        bool IsActive() override;
     };
 
     class CounterspellEnemyHealerTrigger : public InterruptEnemyHealerTrigger

@@ -13,6 +13,12 @@
 
 using namespace ai;
 
+bool GruulSpreadTrigger::IsActive()
+{
+    GruulSpreadAction action(ai);
+    return action.isUseful();
+}
+
 bool BossCastPositionTrigger::IsActive()
 {
     BossCastPositionAction action(ai);
