@@ -58,6 +58,24 @@ claim that every encounter has been implemented or played successfully**.
 
 ### Additional encounter and class corrections
 
+- Shared AoE target selection revalidates world/life/map/phase membership. AoE
+  position bounds initialize from the first still-resolved target, not the first
+  cached GUID; when every target disappears, return no position. Target counts
+  saturate at 255 instead of wrapping 256 targets to zero. No altered spell radius
+  or invented coordinates are used. Actual-source lifecycle tests cover all eras.
+- MC DPS priority now uses normal attack admission for Lucifron/Gehennas adds,
+  Sulfuron's healing priests and Majordomo's remaining adds (free healers first).
+  Golemagg remains the DPS target rather than his death-prevented Core Ragers.
+  Tank/healer assignments, current boss victim, explicit attack commands, valid
+  raid marks, crowd-controlled/planned-CC targets and ambiguous multi-boss pulls
+  are left to existing policy. Same-priority targets remain stable. Native script
+  code for these bosses was compared across all three cores. This is not the
+  complete MC encounter implementation; see `MOLTEN-CORE-MECHANIC-AUDIT.md`.
+- Living Bomb separation now survives Geddon's death/despawn and combat exit,
+  ending with the carrier's actual aura. Friendly carriers, map/phase, death,
+  transition and bounded path checks remain enforced. Combat and noncombat
+  movement arbitration prevents ordinary following from undoing separation.
+  No aura is granted, removed or extended.
 - Wrath-only learned Vigilance maintenance selects a native-castable grouped DPS
   recipient while the warrior is a tank and out of combat. Preserve an existing
   own assignment, do not overwrite another warrior's aura, and select stably
@@ -182,6 +200,12 @@ combat scheduling or Wrath-only ability scheduling is added to Classic/TBC.
   including dummy-to-damage dispatch, difficulty variants, interrupted/completed
   casts, reset/transition/map guards, movement arbitration and eight-query limits.
   The shared avoidance tests also cover combined entries and single-query use.
+- Actual-source MC tests cover DPS target priorities, manual/raid-mark overrides,
+  tank/healer roles, CC and planned CC, native attack eligibility, current-target
+  stability, instance/phase/lifecycle guards and ambiguous pulls. Position tests
+  cover native Living Bomb after combat/boss death, other carriers, Inferno cast
+  lifetime, Shazzrah roles and the eight-path bound. AoE tests cover disappearing
+  first/all targets and saturated counts. These controlled cases are not raid play.
 
 ## Remaining before the full requested scope is complete
 
@@ -210,6 +234,8 @@ diagnostic instrumentation. Existing diagnostic caps/lifecycle policy remain.
 The one-second Aran decision is functional combat state, not a diagnostic cache.
 The one-second native boss-cast position is also functional state, not optional
 logging instrumentation. These changes introduce no additional diagnostic output.
+MC target priority, post-combat bomb handling and AoE lifetime checks likewise add
+no logs, counters, worker or SQL table. They are gameplay decisions, not diagnostics.
 
 The 10,000-bot Classic soak was stopped through the normal console signal; the
 server logged `Halting process...` at 19:16:48 local on 2026-09-05. Shutdown also

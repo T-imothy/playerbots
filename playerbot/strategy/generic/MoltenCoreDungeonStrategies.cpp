@@ -7,6 +7,8 @@ using namespace ai;
 
 void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("molten core priority target",
+        NextAction::array(0, new NextAction("molten core priority target", 90.0f), NULL)));
     triggers.push_back(new TriggerNode("molten core safe position",
         NextAction::array(0, new NextAction("molten core safe position", 105.0f), NULL)));
     triggers.push_back(new TriggerNode(
@@ -27,6 +29,8 @@ void MoltenCoreDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& mu
 
 void MoltenCoreDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("molten core safe position",
+        NextAction::array(0, new NextAction("molten core safe position", 105.0f), NULL)));
     /*
     triggers.push_back(new TriggerNode(
         "val::and::{"
@@ -54,6 +58,11 @@ void MoltenCoreDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "fire protection potion ready",
         NextAction::array(0, new NextAction("fire protection potion", 100.0f), NULL)));
+}
+
+void MoltenCoreDungeonStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new PreserveMoltenCorePositionMultiplier(ai));
 }
 
 void MagmadarFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -331,6 +331,7 @@ namespace ai
             creators["magmadar lava bomb"] = [](PlayerbotAI* ai) { return new MagmadarLavaBombTrigger(ai); };
             creators["magmadar too close"] = [](PlayerbotAI* ai) { return new MagmadarTooCloseTrigger(ai); };
             creators["molten core safe position"] = [](PlayerbotAI* ai) { return new MoltenCorePositionTrigger(ai); };
+            creators["molten core priority target"] = [](PlayerbotAI* ai) { return new MoltenCorePriorityTargetTrigger(ai); };
             creators["mechanar safe position"] = [](PlayerbotAI* ai) { return new MechanarPositionTrigger(ai); };
             creators["pathaleon attack adds"] = [](PlayerbotAI* ai) { return new PathaleonAddsTrigger(ai); };
 

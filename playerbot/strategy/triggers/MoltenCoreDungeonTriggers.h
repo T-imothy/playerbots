@@ -5,6 +5,13 @@
 
 namespace ai
 {
+    class MoltenCorePriorityTargetTrigger : public Trigger
+    {
+    public:
+        MoltenCorePriorityTargetTrigger(PlayerbotAI* ai) : Trigger(ai, "molten core priority target", 1) {}
+        bool IsActive() override { MoltenCorePriorityTargetAction action(ai); return action.isUseful(); }
+    };
+
     class MoltenCorePositionTrigger : public Trigger
     {
     public:

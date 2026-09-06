@@ -2,10 +2,19 @@
 #include "DungeonActions.h"
 #include "ChangeStrategyAction.h"
 #include "UseItemAction.h"
+#include "AttackAction.h"
 #include "playerbot/strategy/values/EncounterPositionValue.h"
 
 namespace ai
 {
+    class MoltenCorePriorityTargetAction : public AttackAction
+    {
+    public:
+        MoltenCorePriorityTargetAction(PlayerbotAI* ai) : AttackAction(ai, "molten core priority target") {}
+        Unit* GetTarget() override;
+        bool isUseful() override;
+    };
+
     class MoltenCorePositionAction : public MovementAction
     {
     public:

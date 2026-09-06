@@ -389,6 +389,7 @@ namespace ai
             creators["disable magmadar fight strategy"] = [](PlayerbotAI* ai) { return new MagmadarDisableFightStrategyAction(ai); };
             creators["move away from magmadar"] = [](PlayerbotAI* ai) { return new MagmadarMoveAwayAction(ai); };
             creators["molten core safe position"] = [](PlayerbotAI* ai) { return new MoltenCorePositionAction(ai); };
+            creators["molten core priority target"] = [](PlayerbotAI* ai) { return new MoltenCorePriorityTargetAction(ai); };
             creators["mechanar safe position"] = [](PlayerbotAI* ai) { return new MechanarPositionAction(ai); };
             creators["boss cast safe position"] = [](PlayerbotAI* ai) { return new BossCastPositionAction(ai); };
             creators["assist summoning ritual"] = [](PlayerbotAI* ai) { return new AssistSummoningRitualAction(ai); };

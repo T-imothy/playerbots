@@ -47,6 +47,11 @@ float PreserveMechanarPositionMultiplier::GetValue(Action* action)
 
 float PreserveMoltenCorePositionMultiplier::GetValue(Action* action)
 {
+    if (action && action->getName() == "dps assist")
+    {
+        MoltenCorePriorityTargetAction priority(ai);
+        if (priority.GetTarget()) return 0.0f;
+    }
     if (!dynamic_cast<MovementAction*>(action) || dynamic_cast<AttackAction*>(action) ||
         dynamic_cast<MoltenCorePositionAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
     EncounterPosition plan;
