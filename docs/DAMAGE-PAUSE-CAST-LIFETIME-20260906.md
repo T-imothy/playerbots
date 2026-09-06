@@ -35,6 +35,11 @@ matching symbols and dev runtime receipts are recorded in the task output.
 * A clipped movement path ending within 0.05 yards of the mover's current position
   is rejected before issuing an empty native point move. The caller can stop or
   retry using its existing behavior.
+* Administrative bot action dispatch now looks up progressively shorter action
+  names while retaining the full remaining parameter text. Previously, a command
+  such as `do <bot> debug position ground` kept looking up the entire argument
+  string and failed. A failed dispatched action also disables its temporary
+  message recording, preventing continued accumulation after an error.
 
 ## Evidence and bounds
 
@@ -53,6 +58,11 @@ native spell effects and target traversal.
 
 `movement_dispatch_regression.py --before-empty-move` reproduces the zero-length
 move; the current dispatch rejects it in all three era builds.
+
+`bot_action_command_regression.py --before` reproduces the parameter lookup
+failure in the actual handler. Current coverage includes longest matching action
+names, multiword parameters, missing actions, explicit requester selection and
+recording cleanup on both successful and failed actions.
 
 Native Ymiron and Devourer scripts, Wrath UnitAuraProcHandler and local spell data
 were inspected for the pause conditions. Mirrored Soul places 69023 on the boss,
