@@ -49,8 +49,7 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
         return unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->IsAlive() && unit->IsInCombat() &&
             PossibleAttackTargetsValue::IsValid(unit, bot, sPlayerbotAIConfig.sightDistance, false, true) &&
             !PossibleAttackTargetsValue::HasBreakableCC(unit, bot) &&
-            !PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot) &&
-            !PossibleAttackTargetsValue::IsCcTarget(unit, bot);
+            !PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot);
     };
     // Manual attack commands and configured raid marks remain authoritative.
     Unit* commanded = ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"));

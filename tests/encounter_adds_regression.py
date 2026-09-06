@@ -56,9 +56,10 @@ namespace ai {
  struct PossibleAttackTargetsValue {
   static bool HasBreakableCC(Unit* unit,Player*){return unit->breakCC;}
   static bool HasUnBreakableCC(Unit* unit,Player*){return unit->hardCC;}
-  static bool IsCcTarget(Unit* unit,Player*){return unit->assignedCC;}
   static bool IsValid(Unit* unit,Player* bot,float range,bool ignoreCC,bool validate){
-   assert(!ignoreCC&&validate);return unit->attackable&&bot->GetDistance(unit)<=range;}
+   assert(!ignoreCC&&validate);return unit->attackable&&bot->GetDistance(unit)<=range&&!IsCcTarget(unit,bot);}
+ private:
+  static bool IsCcTarget(Unit* unit,Player*){return unit->assignedCC;}
  };
  struct PathaleonAddsAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
  struct OnyxiaAddsAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
