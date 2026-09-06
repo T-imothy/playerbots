@@ -10,7 +10,7 @@ from behavior_regression import block
 root = Path(__file__).resolve().parents[1]
 source = (root/'playerbot/strategy/actions/EncounterDamagePolicy.cpp').read_text()
 methods = '\n'.join(block(source, name) for name in (
-    'bool ai::HasEncounterDamagePause(', 'bool ai::ShouldAvoidEncounterOffense(',
+    'bool ai::HasEncounterDamagePause(', 'bool ai::HasEncounterThreatPause(', 'bool ai::HasEncounterSpellBomb(', 'bool ai::ShouldAvoidEncounterOffense(',
     'bool ai::HasUnsafeEncounterOffense(', 'bool ai::StopUnsafeEncounterOffense('))
 pet = (root.parent/'mangos-wotlk-behavior/src/game/AI/BaseAI/PetAI.cpp').read_text()
 pet_methods = '\n'.join(block(pet, name) for name in (
@@ -28,12 +28,22 @@ code = r'''
 #include <functional>
 #include <iostream>
 using uint32=unsigned;
+enum SpellEffectIndex {EFFECT_INDEX_0,EFFECT_INDEX_1,EFFECT_INDEX_2,MAX_EFFECT_INDEX};
 enum CurrentSpellTypes {CURRENT_MELEE_SPELL,CURRENT_GENERIC_SPELL,CURRENT_AUTOREPEAT_SPELL,CURRENT_CHANNELED_SPELL};
 enum {SPELL_STATE_CASTING,SPELL_STATE_CHANNELING,SPELL_STATE_TRAVELING,SPELL_STATE_FINISHED,
- UNIT_STAT_MELEE_ATTACKING=1,TRIGGERED_NORMAL_COMBAT_CAST=0x100,TRIGGERED_PET_CAST=0x80};
+ UNIT_STAT_MELEE_ATTACKING=1,TRIGGERED_NORMAL_COMBAT_CAST=0x100,TRIGGERED_PET_CAST=0x80,
+ SPELL_ATTR_EX_NO_THREAT=1,SPELL_ATTR_EX2_NO_INITIAL_THREAT=2,SPELL_ATTR_EX4_NO_HELPFUL_THREAT=4,
+ SPELL_ATTR_EX3_SUPPRESS_CASTER_PROCS=8,SPELL_ATTR_EX2_AUTO_REPEAT=16,
+ SPELL_DAMAGE_CLASS_MAGIC=1,SPELL_DAMAGE_CLASS_MELEE=2,SPELL_DAMAGE_CLASS_RANGED=3};
 enum SpellCastResult {SPELL_CAST_OK,SPELL_FAILED};
 struct Unit;struct Player;
-struct SpellEntry {uint32 Id=1;bool positive=false;};
+struct SpellAuraHolder {Unit* caster=nullptr;Unit* GetCaster()const{return caster;}};
+struct SpellEntry {uint32 Id=1;bool positive=false;unsigned attributes=0,DmgClass=SPELL_DAMAGE_CLASS_MAGIC;
+ bool periodic[3]{},trigger[3]{},auraTrigger[3]{};bool HasAttribute(unsigned a)const{return attributes&a;}};
+bool IsAuraApplyEffect(const SpellEntry*s,SpellEffectIndex i){return s->periodic[i]||s->auraTrigger[i];}
+bool IsSpellEffectDamage(const SpellEntry&s,SpellEffectIndex i){return s.periodic[i];}
+bool IsSpellEffectTriggerSpell(const SpellEntry*s,SpellEffectIndex i){return s->trigger[i];}
+bool IsSpellEffectTriggerSpellByAura(const SpellEntry*s,SpellEffectIndex i){return s->auraTrigger[i];}
 struct SpellCastTargets {Unit* target=nullptr;Unit* getUnitTarget()const{return target;}void setUnitTarget(Unit*u){target=u;}};
 struct Spell {
  const SpellEntry* m_spellInfo;SpellCastTargets m_targets;int state=SPELL_STATE_CASTING;bool interruptible=true;
@@ -59,8 +69,9 @@ struct Unit {
  bool Attack(Unit*who,bool){if(!who)return false;++attacks;melee=true;return true;}
  bool IsPlayerControlled(){return controlled;}bool HasInArc(Unit*){return true;}void SetFacingToObject(Unit*){}
 };
-struct Player:Unit {bool teleport=false;BotAI* ai=nullptr;Player(){player=true;}
- bool IsBeingTeleported(){return teleport;}BotAI* GetPlayerbotAI(){return ai;}};
+struct Player:Unit {bool teleport=false;BotAI* ai=nullptr;SpellAuraHolder* gaze=nullptr;SpellAuraHolder* bomb=nullptr;Player(){player=true;}
+ bool IsBeingTeleported(){return teleport;}BotAI* GetPlayerbotAI(){return ai;}
+ SpellAuraHolder* GetSpellAuraHolder(unsigned id){assert(id==24314||id==40303);return id==24314?gaze:bomb;}};
 bool IsPositiveSpell(const SpellEntry*s,Unit*,Unit*){return s->positive;}
 std::list<Unit*> worldUnits;
 namespace MaNGOS {
@@ -69,7 +80,7 @@ namespace MaNGOS {
 }
 namespace Cell {template<class T>void VisitAllObjects(Player*,MaNGOS::UnitListSearcher<T>&s,float){s.list=worldUnits;}}
 namespace ai {
- bool HasEncounterDamagePause(Player*);bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*);
+ bool HasEncounterDamagePause(Player*);bool HasEncounterThreatPause(Player*);bool HasEncounterSpellBomb(Player*);bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*);
  bool HasUnsafeEncounterOffense(Player*);bool StopUnsafeEncounterOffense(Player*,Unit*);
 }
 __METHODS__
@@ -83,6 +94,67 @@ __PET_METHODS__
 int main(){
  BotAI botAI;Player bot;bot.ai=&botAI;Unit boss;boss.entry=26861;boss.auras={48294};worldUnits={&boss};
  SpellEntry damage{17,false},heal{18,true};Spell harmful(&bot,&damage,0),helpful(&bot,&heal,0);
+ // Mandokir watches this player's threat, including helpful threat, in every era.
+ bot.map=boss.map=309;boss.entry=11382;SpellAuraHolder gaze{&boss};bot.gaze=&gaze;
+ assert(ai::HasEncounterThreatPause(&bot)&&!ai::HasEncounterDamagePause(&bot));
+ assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&heal,&bot));
+ for(unsigned flag:{SPELL_ATTR_EX_NO_THREAT,SPELL_ATTR_EX2_NO_INITIAL_THREAT,SPELL_ATTR_EX4_NO_HELPFUL_THREAT}){
+  heal.attributes=flag;assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&heal,&bot));
+ }heal.attributes=0;
+ damage.attributes=SPELL_ATTR_EX_NO_THREAT;assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));damage.attributes=0;
+ Unit companion;companion.map=309;assert(!ai::ShouldAvoidEncounterOffense(&bot,&companion,&damage,&boss));
+ for(auto slot:{CURRENT_MELEE_SPELL,CURRENT_GENERIC_SPELL,CURRENT_AUTOREPEAT_SPELL,CURRENT_CHANNELED_SPELL}){
+  bot.casts[slot]=&helpful;assert(ai::HasUnsafeEncounterOffense(&bot));
+  assert(ai::StopUnsafeEncounterOffense(&bot,&bot)&&!bot.casts[slot]);
+ }
+ bot.casts[CURRENT_GENERIC_SPELL]=&helpful;heal.attributes=SPELL_ATTR_EX4_NO_HELPFUL_THREAT;
+ assert(!ai::HasUnsafeEncounterOffense(&bot)&&!ai::StopUnsafeEncounterOffense(&bot,&bot));heal.attributes=0;
+ // Expiry between detection and execution releases the hold without cancelling a replacement cast.
+ assert(ai::HasUnsafeEncounterOffense(&bot));bot.gaze=nullptr;
+ assert(!ai::StopUnsafeEncounterOffense(&bot,&bot)&&bot.casts[CURRENT_GENERIC_SPELL]==&helpful);bot.gaze=&gaze;
+ boss.dist=300;boss.z=50;assert(ai::HasEncounterThreatPause(&bot));boss.dist=5;boss.z=0;
+ auto unwatched=[&](){assert(!ai::HasEncounterThreatPause(&bot));};
+ gaze.caster=nullptr;unwatched();gaze.caster=&boss;
+ boss.entry=999;unwatched();boss.entry=11382;boss.instance=2;unwatched();boss.instance=1;
+ boss.phase=2;unwatched();boss.phase=1;boss.alive=false;unwatched();boss.alive=true;
+ boss.combat=false;unwatched();boss.combat=true;boss.world=false;unwatched();boss.world=true;
+ botAI.real=true;unwatched();botAI.real=false;bot.teleport=true;unwatched();bot.teleport=false;
+ bot.charmed=true;unwatched();bot.charmed=false;
+ bot.gaze=nullptr;bot.map=boss.map=575;boss.entry=26861;
+ bot.casts[CURRENT_GENERIC_SPELL]=nullptr;botAI.interrupted.clear();
+#ifndef MANGOSBOT_ZERO
+ bot.map=boss.map=556;boss.entry=23035;SpellAuraHolder bomb{&boss};bot.bomb=&bomb;
+ assert(ai::HasEncounterSpellBomb(&bot)&&!ai::HasEncounterThreatPause(&bot));
+ assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&heal,&bot));
+ heal.attributes=SPELL_ATTR_EX4_NO_HELPFUL_THREAT;assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&heal,&bot));heal.attributes=0;
+ damage.DmgClass=SPELL_DAMAGE_CLASS_MELEE;assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ for(unsigned index=0;index<3;++index){
+  damage.periodic[index]=true;assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));damage.periodic[index]=false;
+  damage.trigger[index]=true;assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));damage.trigger[index]=false;
+  damage.auraTrigger[index]=true;assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));damage.auraTrigger[index]=false;
+ }
+ damage.DmgClass=SPELL_DAMAGE_CLASS_RANGED;assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ damage.attributes=SPELL_ATTR_EX2_AUTO_REPEAT;assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ damage.DmgClass=SPELL_DAMAGE_CLASS_MAGIC;assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss)); // wands
+ damage.attributes=SPELL_ATTR_EX3_SUPPRESS_CASTER_PROCS;assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));damage.attributes=0;
+ bot.melee=true;assert(!ai::HasUnsafeEncounterOffense(&bot)&&!ai::StopUnsafeEncounterOffense(&bot,&bot)&&bot.melee);
+ for(auto slot:{CURRENT_GENERIC_SPELL,CURRENT_CHANNELED_SPELL}){
+  bot.casts[slot]=&helpful;assert(ai::HasUnsafeEncounterOffense(&bot));
+  assert(ai::StopUnsafeEncounterOffense(&bot,&bot)&&bot.casts[slot]==nullptr&&bot.melee);
+ }
+ companion.map=556;assert(!ai::ShouldAvoidEncounterOffense(&bot,&companion,&damage,&boss));
+ bot.casts[CURRENT_GENERIC_SPELL]=&harmful;bot.bomb=nullptr;
+ assert(!ai::StopUnsafeEncounterOffense(&bot,&bot)&&bot.casts[CURRENT_GENERIC_SPELL]==&harmful);bot.bomb=&bomb;
+ boss.instance=2;assert(!ai::HasEncounterSpellBomb(&bot));boss.instance=1;
+ boss.entry=999;assert(!ai::HasEncounterSpellBomb(&bot));boss.entry=23035;
+ bomb.caster=nullptr;assert(!ai::HasEncounterSpellBomb(&bot));bomb.caster=&boss;
+ bot.bomb=nullptr;bot.melee=false;bot.casts[CURRENT_GENERIC_SPELL]=nullptr;botAI.interrupted.clear();
+ bot.map=boss.map=575;boss.entry=26861;
+#else
+ assert(!ai::HasEncounterSpellBomb(&bot));
+#endif
 #ifdef MANGOSBOT_TWO
  assert(ai::HasEncounterDamagePause(&bot));
  assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));

@@ -14,6 +14,8 @@ namespace ai
     bool HasUnsafeReflectedCast(Player* bot);
     bool InterruptUnsafeReflectedCast(Player* bot);
     bool HasEncounterDamagePause(Player* bot);
+    bool HasEncounterThreatPause(Player* bot);
+    bool HasEncounterSpellBomb(Player* bot);
     bool ShouldAvoidEncounterOffense(Player* bot, Unit* caster, const SpellEntry* spell, Unit* target);
     bool HasUnsafeEncounterOffense(Player* bot);
     bool StopUnsafeEncounterOffense(Player* bot, Unit* caster);
