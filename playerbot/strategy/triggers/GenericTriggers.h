@@ -1162,7 +1162,7 @@ namespace ai
         virtual bool IsActive() override
         {
             Unit* target = AI_VALUE(Unit*, "current target");
-            return target && AI_VALUE2(bool, "has mana", "current target") && ai->CanCastSpell("mana tap", target, 0);
+            return target && target->GetPower(POWER_MANA) > 0 && ai->CanCastSpell("mana tap", target, 0);
         }
     };
 

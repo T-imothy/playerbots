@@ -23,12 +23,16 @@ code = r'''
 using uint32 = unsigned;
 using ObjectGuid = unsigned;
 enum SpellEffectIndex { EFFECT_INDEX_0, EFFECT_INDEX_1, EFFECT_INDEX_2 };
+struct Aura;
 struct Holder {
     ObjectGuid caster = 1;
     int duration = 10000;
     ObjectGuid GetCasterGuid() { return caster; }
     int GetAuraDuration() { return duration; }
+    Aura* effects[3]{};
+    Aura* GetAuraByEffectIndex(SpellEffectIndex effect) { return effects[effect]; }
 };
+using SpellAuraHolder = Holder;
 struct Aura {
     Holder* holder;
     bool real = true;
@@ -40,7 +44,22 @@ struct Unit {
     bool alive = true, world = true;
     float distance = 0;
     std::map<std::pair<uint32, SpellEffectIndex>, Aura*> auras;
+    std::map<std::pair<uint32, SpellEffectIndex>, Aura*> extraAuras;
     Aura* GetAura(uint32 spell, SpellEffectIndex effect) { return auras[{spell, effect}]; }
+    SpellAuraHolder* GetSpellAuraHolder(uint32 spell, ObjectGuid caster) {
+        SpellAuraHolder* found = nullptr;
+        for (auto* entries : {&auras, &extraAuras})
+            for (auto& entry : *entries)
+                if (entry.first.first == spell && entry.second && entry.second->holder &&
+                    entry.second->holder->caster == caster) {
+                    if (!found) {
+                        found = entry.second->holder;
+                        for (auto& effect : found->effects) effect = nullptr;
+                    }
+                    found->effects[entry.first.second] = entry.second;
+                }
+        return found;
+    }
     bool IsAlive() { return alive; }
     bool IsInWorld() { return world; }
     Map* GetMap() { return map; }
@@ -90,6 +109,11 @@ int main() {
     // This is the production crash: a disease exists and ownership is checked.
     source.auras[{55078, EFFECT_INDEX_0}] = &mine;
     assert(ai.GetAura(55078, &source, true) == &mine);
+    source.auras[{55078, EFFECT_INDEX_0}] = &foreign;
+    source.extraAuras[{55078, EFFECT_INDEX_0}] = &mine;
+    assert(ai.GetAura(55078, &source, true) == &mine); // Another DK's same-rank aura may be first.
+    assert(ai.GetAura(55078, &source, false) == &foreign);
+    source.extraAuras.clear();
     for (uint32 spell : {55078u, 55095u}) {
         for (auto effect : {EFFECT_INDEX_0, EFFECT_INDEX_1, EFFECT_INDEX_2}) {
             source.auras.clear();

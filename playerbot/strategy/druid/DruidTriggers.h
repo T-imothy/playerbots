@@ -401,13 +401,9 @@ namespace ai
         {
             if (SpellTargetTrigger::IsTargetValid(target))
             {
-                const uint32 currentMana = target->GetPower(POWER_MANA);
-                if (currentMana > 0)
-                {
-                    const uint32 maxMana = target->GetMaxPower(POWER_MANA);
-                    const uint32 currentManaPct = (uint32)(currentMana / maxMana) * 100;
-                    return currentManaPct < sPlayerbotAIConfig.lowMana;
-                }
+                const uint32 maxMana = target->GetMaxPower(POWER_MANA);
+                return maxMana && uint64(target->GetPower(POWER_MANA)) * 100 <
+                    uint64(maxMana) * sPlayerbotAIConfig.lowMana;
             }
 
             return false;

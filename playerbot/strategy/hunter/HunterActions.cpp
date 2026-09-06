@@ -20,12 +20,15 @@ bool CastExplosiveShotAction::isUseful()
 
 bool CastSerpentStingAction::isUseful()
 {
-    return CastRangedDebuffSpellAction::isUseful() && AI_VALUE2(uint8, "health", GetTargetName()) > 50 && (!(AI_VALUE2(uint8, "mana", GetTargetName()) >= 10) || (ai->HasStrategy("sting serpent", BotState::BOT_STATE_COMBAT)));
+    return CastRangedDebuffSpellAction::isUseful() && AI_VALUE2(uint8, "health", GetTargetName()) > 50 &&
+        (!AI_VALUE2(bool, "has mana", GetTargetName()) || AI_VALUE2(uint8, "mana", GetTargetName()) < 10 ||
+            ai->HasStrategy("sting serpent", BotState::BOT_STATE_COMBAT));
 }
 
 bool CastViperStingAction::isUseful()
 {
-    return CastRangedDebuffSpellAction::isUseful() && AI_VALUE2(uint8, "mana", GetTargetName()) >= 10;
+    return CastRangedDebuffSpellAction::isUseful() && AI_VALUE2(bool, "has mana", GetTargetName()) &&
+        AI_VALUE2(uint8, "mana", GetTargetName()) >= 10;
 }
 
 bool FeedPetAction::Execute(Event& event)

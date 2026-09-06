@@ -15,7 +15,8 @@ std::list<ObjectGuid> GroupMembersValue::Calculate()
     {
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
-            members.push_back(ref->getSource()->GetObjectGuid());
+            if (Player* member = ref->getSource())
+                members.push_back(member->GetObjectGuid());
         }
     }
     else
@@ -68,7 +69,7 @@ uint32 GroupBoolCountValue::Calculate()
             continue;
 
         if (PAI_VALUE2(bool, "and", getQualifier()))
-            return count++;
+            ++count;
     }
 
     return count;
@@ -151,7 +152,7 @@ bool GroupReadyValue::Calculate()
         if (hasAttackers && member->GetHealthPercent() < sPlayerbotAIConfig.almostFullHealth && !member->IsInCombat())
             return false;
 
-        if (!member->GetPower(POWER_MANA))
+        if (!member->GetMaxPower(POWER_MANA))
             continue;
 
         float mana = (static_cast<float> (member->GetPower(POWER_MANA)) / member->GetMaxPower(POWER_MANA)) * 100;

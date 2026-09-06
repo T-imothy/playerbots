@@ -50,7 +50,7 @@ class ManaChecker : public ReadyChecker
 public:
     bool Check(Player* requester, PlayerbotAI *ai, AiObjectContext* context) override
     {
-        return !AI_VALUE2(bool, "has mana", "self target") || AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumHealth;
+        return !AI_VALUE2(bool, "has mana", "self target") || AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana;
     }
     virtual std::string GetName() override { return "MP"; }
 };

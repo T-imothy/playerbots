@@ -79,9 +79,10 @@ uint8 EnergyValue::Calculate()
 uint8 ManaValue::Calculate()
 {
     Unit* target = GetTarget();
-    if (!target)
+    if (!target || !target->GetMaxPower(POWER_MANA))
         return 100;
-    return (static_cast<float> (target->GetPower(POWER_MANA)) / target->GetMaxPower(POWER_MANA)) * 100;
+    return uint8(std::min<uint64>(100, uint64(target->GetPower(POWER_MANA)) * 100 /
+        target->GetMaxPower(POWER_MANA)));
 }
 
 bool HasManaValue::Calculate()
@@ -89,7 +90,7 @@ bool HasManaValue::Calculate()
     Unit* target = GetTarget();
     if (!target)
         return false;
-    return target->GetPower(POWER_MANA);
+    return target->GetMaxPower(POWER_MANA) != 0;
 }
 
 

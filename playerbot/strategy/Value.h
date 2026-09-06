@@ -87,7 +87,7 @@ namespace ai
     protected:
         int checkInterval;
         time_t lastCheckTime;
-        T value;
+        T value{};
     };
 
     template <class T> class SingleCalculatedValue : public CalculatedValue<T>
@@ -258,7 +258,7 @@ namespace ai
     {
     public:
         UnitCalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) :
-            CalculatedValue<Unit*>(ai, name, checkInterval) { this->lastCheckTime = time(0) - checkInterval / 2; }
+            CalculatedValue<Unit*>(ai, name, checkInterval) {}
 
         virtual std::string Format() override
         {
@@ -271,7 +271,7 @@ namespace ai
     {
     public:
         CDPairCalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) :
-            CalculatedValue<CreatureDataPair const*>(ai, name, checkInterval) { this->lastCheckTime = time(0) - checkInterval / 2; }
+            CalculatedValue<CreatureDataPair const*>(ai, name, checkInterval) {}
 
         virtual std::string Format() override
         {
@@ -287,7 +287,7 @@ namespace ai
     {
     public:
         CDPairListCalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) :
-            CalculatedValue<std::list<CreatureDataPair const*>>(ai, name, checkInterval) { this->lastCheckTime = time(0) - checkInterval / 2; }
+            CalculatedValue<std::list<CreatureDataPair const*>>(ai, name, checkInterval) {}
 
         virtual std::string Format() override
         {
@@ -309,7 +309,7 @@ namespace ai
     {
     public:
         ObjectGuidCalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) :
-            CalculatedValue<ObjectGuid>(ai, name, checkInterval) { this->lastCheckTime = time(0) - checkInterval / 2; }
+            CalculatedValue<ObjectGuid>(ai, name, checkInterval) {}
 
         virtual std::string Format() override;
     };
@@ -318,7 +318,7 @@ namespace ai
     {
     public:
         ObjectGuidListCalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) :
-            CalculatedValue<std::list<ObjectGuid> >(ai, name, checkInterval) { this->lastCheckTime = time(0) - checkInterval / 2; }
+            CalculatedValue<std::list<ObjectGuid> >(ai, name, checkInterval) {}
 
         virtual std::string Format() override;
     };
@@ -327,7 +327,7 @@ namespace ai
     {
     public:
         GuidPositionCalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) :
-            CalculatedValue<GuidPosition>(ai, name, checkInterval) { this->lastCheckTime = time(0) - checkInterval / 2; }
+            CalculatedValue<GuidPosition>(ai, name, checkInterval) {}
 
         virtual std::string Format() override;
     };
@@ -336,7 +336,7 @@ namespace ai
     {
     public:
         GuidPositionListCalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) :
-            CalculatedValue<std::list<GuidPosition> >(ai, name, checkInterval) { this->lastCheckTime = time(0) - checkInterval / 2; }
+            CalculatedValue<std::list<GuidPosition> >(ai, name, checkInterval) {}
 
         virtual std::string Format() override;
     };
@@ -366,6 +366,11 @@ namespace ai
     public:
         UnitManualSetValue(PlayerbotAI* ai, Unit* defaultValue, std::string name = "value") :
             ManualSetValue<Unit*>(ai, defaultValue, name) {}
+
+        // Current and pull targets store GUIDs through Set/Get. Dispatch through
+        // those overrides so reset and lazy access cannot use stale storage.
+        Unit* LazyGet() override { return Get(); }
+        void Reset() override { Set(defaultValue); }
 
         virtual std::string Format() override
         {

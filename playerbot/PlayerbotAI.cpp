@@ -4106,32 +4106,22 @@ bool PlayerbotAI::HasAura(uint32 spellId, Unit* unit, bool checkOwner)
 
 Aura* PlayerbotAI::GetAura(uint32 spellId, Unit* unit, bool checkIsOwner)
 {
-    Aura* aura = nullptr;
-    if (spellId != 0 && unit)
-    {
-        for (uint32 effect = EFFECT_INDEX_0; effect <= EFFECT_INDEX_2; effect++)
-        {
-            Aura* auraTmp = ((Unit*)unit)->GetAura(spellId, (SpellEffectIndex)effect);
-            if (IsRealAura(bot, auraTmp, (Unit*)unit))
-            {
-                if (checkIsOwner)
-                {
-                    if (auraTmp->GetHolder() && auraTmp->GetHolder()->GetCasterGuid() == bot->GetObjectGuid())
-                    {
-                        aura = auraTmp;
-                        break;
-                    }
-                }
-                else
-                {
-                    aura = auraTmp;
-                    break;
-                }
-            }
-        }
-    }
+    if (!spellId || !unit)
+        return nullptr;
 
-    return aura;
+    // Several casters can apply the same spell. Select the native holder by
+    // caster before inspecting effects, rather than rejecting only the first
+    // caster's aura and overlooking the bot's own disease/DoT.
+    SpellAuraHolder* owned = checkIsOwner ? unit->GetSpellAuraHolder(spellId, bot->GetObjectGuid()) : nullptr;
+    for (uint32 effect = EFFECT_INDEX_0; effect <= EFFECT_INDEX_2; ++effect)
+    {
+        Aura* aura = checkIsOwner
+            ? (owned ? owned->GetAuraByEffectIndex(SpellEffectIndex(effect)) : nullptr)
+            : unit->GetAura(spellId, SpellEffectIndex(effect));
+        if (IsRealAura(bot, aura, unit))
+            return aura;
+    }
+    return nullptr;
 }
 
 Aura* PlayerbotAI::GetAura(std::string name, Unit* unit, bool checkIsOwner)
