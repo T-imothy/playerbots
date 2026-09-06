@@ -22,6 +22,7 @@
 #include "GreetAction.h"
 #include "ImbueAction.h"
 #include "MovementActions.h"
+#include "RitualSummonAction.h"
 #include "MoveToRpgTargetAction.h"
 #include "MoveToTravelTargetAction.h"
 #include "OutfitAction.h"
@@ -390,6 +391,9 @@ namespace ai
             creators["molten core safe position"] = [](PlayerbotAI* ai) { return new MoltenCorePositionAction(ai); };
             creators["mechanar safe position"] = [](PlayerbotAI* ai) { return new MechanarPositionAction(ai); };
             creators["boss cast safe position"] = [](PlayerbotAI* ai) { return new BossCastPositionAction(ai); };
+            creators["assist summoning ritual"] = [](PlayerbotAI* ai) { return new AssistSummoningRitualAction(ai); };
+            creators["hold summoning ritual"] = [](PlayerbotAI* ai) { return new HoldSummoningRitualAction(ai); };
+            creators["continue ritual summon"] = [](PlayerbotAI* ai) { return new ContinueRitualSummonAction(ai); };
             creators["pathaleon attack adds"] = [](PlayerbotAI* ai) { return new PathaleonAddsAction(ai); };
 
             creators["move away from hazard"] = [](PlayerbotAI* ai) { return new MoveAwayFromHazard(ai); };

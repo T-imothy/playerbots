@@ -7,6 +7,7 @@
 #include "LfgTriggers.h"
 #include "PvpTriggers.h"
 #include "RpgTriggers.h"
+#include "RitualSummonTriggers.h"
 #include "TravelTriggers.h"
 #include "RtiTriggers.h"
 #include "CureTriggers.h"
@@ -303,6 +304,9 @@ namespace ai
             creators["enter onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnterDungeonTrigger(ai); };
             creators["hostile ground damage"] = [](PlayerbotAI* ai) { return new HostileGroundDamageTrigger(ai); };
             creators["boss cast safe position"] = [](PlayerbotAI* ai) { return new BossCastPositionTrigger(ai); };
+            creators["assist summoning ritual"] = [](PlayerbotAI* ai) { return new AssistSummoningRitualTrigger(ai); };
+            creators["hold summoning ritual"] = [](PlayerbotAI* ai) { return new HoldSummoningRitualTrigger(ai); };
+            creators["continue ritual summon"] = [](PlayerbotAI* ai) { return new ContinueRitualSummonTrigger(ai); };
             creators["tank threat transfer"] = [](PlayerbotAI* ai) { return new TankThreatTransferTrigger(ai); };
             creators["leave onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairLeaveDungeonTrigger(ai); };
             creators["enter molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreEnterDungeonTrigger(ai); };

@@ -26,8 +26,13 @@ claim that every encounter has been implemented or played successfully**.
   cannot grant a resurrection. One bounded pending record per AI, not a queue.
 - Suppress the misleading missing-stone announcement before trying an inn.
 - Explicit warlock summons no longer fail map admission merely because the
-  target is already on the warlock's map. Ritual fidelity/reagents remain a
-  separate open review item; no new claim of complete native ritual simulation.
+  target is already on the warlock's map. They now start the learned native
+  ritual with ordinary reagent/cast checks instead of manually sending a summon
+  packet or teleporting a bot. Shared default-strategy assistance clicks the
+  native ritual, preserves its cast/channel, and lets the core count helpers
+  and issue the normal accept/decline request. Wrath's separate portal step has
+  bounded, expiring GUID-only state. See `NATIVE-SUMMON-RITUAL.md`; real-client
+  validation of all three native chains remains required.
 - Wire Naxxramas entry in combat/noncombat and exit in noncombat. Correct the
   Horsemen cleanup lookup and use Korth'azz, present in both eras, rather than
   the Classic-only Mograine identifier. This is not a complete Naxx strategy.
@@ -52,6 +57,16 @@ claim that every encounter has been implemented or played successfully**.
 | Druid | Cat-form/combo-gated Savage Roar; Nourish prefers an owned periodic heal using the same test as our core spell script; Wild Growth for group injury. Restoration form prerequisites and existing heal fallbacks remain. |
 
 ### Additional encounter and class corrections
+
+- Wrath-only learned Vigilance maintenance selects a native-castable grouped DPS
+  recipient while the warrior is a tank and out of combat. Preserve an existing
+  own assignment, do not overwrite another warrior's aura, and select stably
+  rather than rotating recipients. The native threat direction is toward the
+  warrior, not the outgoing Misdirection/Tricks direction. Not optimal-DPS tuning.
+- BWL's optional suppression-room mode no longer permanently deletes `avoid aoe`
+  and `avoid mobs` from three AI engines. Its existing passive multiplier is
+  scoped to a live rogue inside BWL; native reaction avoidance stays available.
+  Leaving the map does not leave that multiplier suppressing ordinary combat.
 
 - Native hazardous ground-area detection inside combat in dungeons/raids:
   hostile periodic damage only; reject friendly heals, farsight, expired objects,
@@ -178,7 +193,7 @@ combat scheduling or Wrath-only ability scheduling is added to Classic/TBC.
 - Review/implement the other missing raid/dungeon libraries from the complete
   coverage matrix. Preserve normal/heroic, raid-size, expansion, threat, CC,
   movement, admission and spell rules; reject donor boss weakening/aura cheats.
-- Resolve remaining class comparison leads (Vigilance/assigned support,
+- Resolve remaining class comparison leads (further assigned support,
   proc and channel clipping, further rune/disease policy, etc.) against
   native APIs and actual reachable behavior; do not treat name differences as bugs.
 - Final exact-revision builds, matching EXE/PDB checks, dev installation and

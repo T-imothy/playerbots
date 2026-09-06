@@ -3,6 +3,16 @@
 
 namespace ai
 {
+#ifdef MANGOSBOT_TWO
+    class CastVigilanceAction : public CastBuffSpellAction
+    {
+    public:
+        CastVigilanceAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "vigilance") {}
+        Unit* GetTarget() override;
+        bool isUseful() override;
+    };
+#endif
+
     // stances
     BUFF_ACTION_U(CastBattleStanceAction, "battle stance", bot->GetShapeshiftForm() != FORM_BATTLESTANCE && CastBuffSpellAction::isUseful());
     BUFF_ACTION_U(CastDefensiveStanceAction, "defensive stance", bot->GetShapeshiftForm() != FORM_DEFENSIVESTANCE && CastBuffSpellAction::isUseful());

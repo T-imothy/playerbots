@@ -28,6 +28,17 @@ void WorldPacketHandlerStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &
 {
     PassTroughStrategy::InitNonCombatTriggers(triggers);
 
+    // The shared default strategy is installed for every class. The legacy
+    // NonCombatStrategy base is not inherited by most current class strategies.
+    triggers.push_back(new TriggerNode("hold summoning ritual",
+        NextAction::array(0, new NextAction("hold summoning ritual", 100.0f), NULL)));
+    triggers.push_back(new TriggerNode("assist summoning ritual",
+        NextAction::array(0, new NextAction("assist summoning ritual", 80.0f), NULL)));
+#ifdef MANGOSBOT_TWO
+    triggers.push_back(new TriggerNode("continue ritual summon",
+        NextAction::array(0, new NextAction("continue ritual summon", 81.0f), NULL)));
+#endif
+
     triggers.push_back(new TriggerNode(
         "check mount state",
         NextAction::array(0, new NextAction("check mount state", 2.0f), NULL)));

@@ -203,6 +203,7 @@ namespace ai
                 creators["bloodrage"] = [](PlayerbotAI* ai) { return new CastBloodrageAction(ai); };
 #ifdef MANGOSBOT_TWO
                 creators["enraged regeneration"] = [](PlayerbotAI* ai) { return new CastEnragedRegenerationAction(ai); };
+                creators["vigilance"] = [](PlayerbotAI* ai) { return new CastVigilanceAction(ai); };
 #endif
                 creators["battle stance"] = [](PlayerbotAI* ai) { return new CastBattleStanceAction(ai); };
                 creators["heroic strike"] = [](PlayerbotAI* ai) { return new CastHeroicStrikeAction(ai); };

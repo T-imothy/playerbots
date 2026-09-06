@@ -39,11 +39,12 @@ struct Group {
 struct Map {bool allowed=true;bool CanEnter(Player*){return allowed;}};
 struct Player {
     uint32 id=0;std::string name;Group* group=nullptr;int mapId=1;float x=0;
-    bool alive=true,world=true,teleporting=false,taxi=false,transport=false,combat=false,real=true,knows=true,los=true,teleportOk=true;
+    bool alive=true,world=true,teleporting=false,taxi=false,transport=false,combat=false,real=true,knows=true,los=true,teleportOk=true,charmed=false;
     int summonRequests=0,teleports=0;Session session;Map map;Map* sharedMap=nullptr;ObjectGuid selection;
     int getClass(){return CLASS_WARLOCK;}bool HasSpell(int){return knows;}
     bool IsAlive(){return alive;}bool IsInWorld(){return world;}bool IsBeingTeleported(){return teleporting;}
     bool IsTaxiFlying(){return taxi;}bool GetTransport(){return transport;}bool IsInCombat(){return combat;}
+    bool HasCharmer(){return charmed;}
     Group* GetGroup(){return group;}const char* GetName(){return name.c_str();}
     ObjectGuid GetObjectGuid(){return {id};}ObjectGuid GetSelectionGuid(){return selection;}
     Session* GetSession(){return &session;}Map* GetMap(){return sharedMap ? sharedMap : &map;}
@@ -61,6 +62,9 @@ struct ObjectMgr {std::map<uint32,Player*> players;Player* GetPlayer(ObjectGuid 
 struct Config {float reactDistance=50;int globalCoolDown=1000;} sPlayerbotAIConfig;
 struct Facade {bool LookupSpellInfo(int){return true;}} sServerFacade;
 struct AI {Player* bot;bool IsSafe(Player* p){return bot->mapId==p->mapId;}template<class... T>void TellPlayerNoFacing(T...){} };
+struct ContinueRitualSummonAction {inline static bool accepted=true;inline static int starts=0;
+ static uint32 RequiredHelpers(Player*){return 2;}
+ static bool Start(AI*,Player*,Player*) {++starts;return accepted;}};
 void ltrim(std::string& s){s.erase(s.begin(),std::find_if(s.begin(),s.end(),[](unsigned char c){return !std::isspace(c);}));}
 bool normalizePlayerName(std::string& s){if(s.empty())return false;for(char& c:s)c=std::tolower((unsigned char)c);s[0]=std::toupper((unsigned char)s[0]);return true;}
 struct CastCustomSpellAction {Player* bot;AI* ai;void SetDuration(int){}bool CastSummonPlayer(Player*,std::string,bool&);};
@@ -69,6 +73,7 @@ int main(){
     Group group;Player caster,target,h1,h2;AI ai{&caster};CastCustomSpellAction action{&caster,&ai};
     auto reset=[&](){
         caster=Player{};target=Player{};h1=Player{};h2=Player{};
+        ContinueRitualSummonAction::starts=0;ContinueRitualSummonAction::accepted=true;
         caster.id=1;caster.real=false;caster.name="Warlock";
         target.id=2;target.name="Impala";target.mapId=2;target.x=500;
         h1.id=3;h2.id=4;
@@ -77,8 +82,8 @@ int main(){
         sObjectMgr.players={{1,&caster},{2,&target},{3,&h1},{4,&h2}};
     };
     auto reject=[&](){bool handled=false;assert(!action.CastSummonPlayer(&target,"summon Impala",handled));assert(handled);assert(target.summonRequests==0 && target.teleports==0);};
-    reset();bool handled=false;assert(action.CastSummonPlayer(&target,"summon impala",handled));assert(handled && target.summonRequests==1 && target.session.packets==1 && target.teleports==0);
-    reset();target.selection={2};assert(action.CastSummonPlayer(&target,"summon",handled));assert(target.summonRequests==1);
+    reset();bool handled=false;assert(action.CastSummonPlayer(&target,"summon impala",handled));assert(handled && ContinueRitualSummonAction::starts==1 && target.summonRequests==0 && target.session.packets==0 && target.teleports==0);
+    reset();target.selection={2};assert(action.CastSummonPlayer(&target,"summon",handled));assert(ContinueRitualSummonAction::starts==1);
     reset();h1.alive=false;reject();
     reset();h1.mapId=3;reject(); // same numeric coordinates, wrong map
     reset();h1.x=500;reject();
@@ -89,13 +94,16 @@ int main(){
     reset();caster.knows=false;reject();
     reset();caster.map.allowed=false;reject();
     reset();target.sharedMap=&caster.map;caster.map.allowed=false;
-    assert(action.CastSummonPlayer(&target,"summon Impala",handled));assert(target.summonRequests==1);
+    assert(action.CastSummonPlayer(&target,"summon Impala",handled));assert(ContinueRitualSummonAction::starts==1);
     reset();target.group=nullptr;reject();
-    reset();target.real=false;assert(action.CastSummonPlayer(&h1,"summon Impala",handled));assert(target.teleports==1 && target.summonRequests==0);
-    reset();target.real=false;target.teleportOk=false;reject();
+    reset();target.real=false;assert(action.CastSummonPlayer(&h1,"summon Impala",handled));assert(target.teleports==0 && target.summonRequests==0 && ContinueRitualSummonAction::starts==1);
+    reset();ContinueRitualSummonAction::accepted=false;reject();
+    reset();h1.charmed=true;reject();
+    reset();caster.charmed=true;reject();
+    reset();target.charmed=true;reject();
     reset();assert(!action.CastSummonPlayer(&target,"summon imp",handled));assert(!handled);
     reset();assert(!action.CastSummonPlayer(&target,"notsummon Impala",handled));assert(!handled);
-    std::cout<<"PASS: actual summon command helper, 17 eligibility/direction cases\n";
+    std::cout<<"PASS: actual summon parser/eligibility starts native ritual; no direct teleport or request packet\n";
 }
 '''.replace('__BODY__', body)
 with tempfile.TemporaryDirectory(prefix='mantech-summon-') as tmp:

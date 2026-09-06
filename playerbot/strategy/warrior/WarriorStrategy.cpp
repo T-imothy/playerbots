@@ -671,6 +671,8 @@ void WarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void WarriorStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitNonCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("often",
+        NextAction::array(0, new NextAction("vigilance", ACTION_NORMAL), NULL)));
 }
 
 void WarriorStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)

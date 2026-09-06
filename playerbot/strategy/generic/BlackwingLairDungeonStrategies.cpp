@@ -35,7 +35,8 @@ public:
         if (!action)
             return 1.0f;
 
-        if (ai->GetBot()->getClass() != CLASS_ROGUE)
+        if (ai->GetBot()->getClass() != CLASS_ROGUE || !ai->GetBot()->IsInWorld() ||
+            ai->GetBot()->GetMapId() != 469)
             return 1.0f;
 
         const std::string& name = action->getName();
@@ -128,15 +129,6 @@ void SuppressionRoomStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& m
     multipliers.push_back(new SuppressionRoomPassiveMultiplier(ai));
 }
 
-void SuppressionRoomStrategy::OnStrategyAdded(BotState state)
-{
-    if (ai->GetBot()->getClass() == CLASS_ROGUE)
-    {
-        ai->ChangeStrategy("-avoid aoe", BotState::BOT_STATE_COMBAT);
-        ai->ChangeStrategy("-avoid aoe", BotState::BOT_STATE_NON_COMBAT);
-        ai->ChangeStrategy("-avoid aoe", BotState::BOT_STATE_REACTION);
-        ai->ChangeStrategy("-avoid mobs", BotState::BOT_STATE_COMBAT);
-        ai->ChangeStrategy("-avoid mobs", BotState::BOT_STATE_NON_COMBAT);
-        ai->ChangeStrategy("-avoid mobs", BotState::BOT_STATE_REACTION);
-    }
-}
+// Suppression-room priorities are temporary multipliers, not permission to
+// delete the player's configured avoidance strategies in all three engines.
+// Native reaction avoidance remains available, including after leaving BWL.

@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "UseMeetingStoneAction.h"
+#include "RitualSummonAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 
@@ -50,7 +51,11 @@ bool UseMeetingStoneAction::Execute(Event& event)
 	if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_SUMMONING_RITUAL)
         return false;
 
-    return Teleport(requester, requester, bot);
+    // A player's ritual click is not a convenience-teleport command. Participate
+    // locally through the native object-use handler; the recipient waits for
+    // the core's completed summon request and normal accept/decline handling.
+    AssistSummoningRitualAction assist(ai);
+    return assist.UseRitual(gameObject);
 }
 
 class AnyGameObjectInObjectRangeCheck

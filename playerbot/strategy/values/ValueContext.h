@@ -2,6 +2,7 @@
 
 #include "ActiveSpellValue.h"
 #include "EncounterPositionValue.h"
+#include "RitualSummonValue.h"
 #include "NearestGameObjects.h"
 #include "LogLevelValue.h"
 #include "NearestNpcsValue.h"
@@ -123,6 +124,7 @@ namespace ai
             creators["mechanar position"] = [](PlayerbotAI* ai) { return new MechanarPositionValue(ai); };
             creators["aran flame wreath"] = [](PlayerbotAI* ai) { return new AranFlameWreathValue(ai); };
             creators["boss cast position"] = [](PlayerbotAI* ai) { return new BossCastPositionValue(ai); };
+            creators["ritual summon request"] = [](PlayerbotAI* ai) { return new RitualSummonRequestValue(ai); };
             creators["active spell"] = [](PlayerbotAI* ai) { return new ActiveSpellValue(ai); };
             creators["craft"] = [](PlayerbotAI* ai) { return new CraftValue(ai); };
             creators["collision"] = [](PlayerbotAI* ai) { return new CollisionValue(ai); };

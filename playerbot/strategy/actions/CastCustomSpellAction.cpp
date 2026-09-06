@@ -5,6 +5,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "CheckMountStateAction.h"
+#include "RitualSummonAction.h"
 
 using namespace ai;
 
@@ -296,8 +297,8 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
             }
 
             handled = true;
-            if (!requester || !bot->IsAlive() || !bot->IsInWorld() || bot->IsBeingTeleported() ||
-                bot->IsTaxiFlying() || bot->GetTransport())
+            if (!requester || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->HasCharmer() ||
+                !bot->IsAlive() || !bot->IsInWorld() || bot->IsBeingTeleported() || bot->IsTaxiFlying() || bot->GetTransport())
                 return false;
             if (!bot->HasSpell(698) || !sServerFacade.LookupSpellInfo(698))
             {
@@ -373,14 +374,14 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
 
                 if (target && target != bot && target->IsAlive() && target->IsInWorld() &&
                     !target->IsBeingTeleported() && !target->IsTaxiFlying() && !target->GetTransport() &&
-                    !target->GetSession()->isLogingOut() && !target->IsInCombat())
+                    target->GetSession() && !target->GetSession()->isLogingOut() && !target->HasCharmer() && !target->IsInCombat())
                 {
                     for (const auto& slot : bot->GetGroup()->GetMemberSlots())
                     {
                         Player* member = sObjectMgr.GetPlayer(slot.guid);
                         if (!member || member == bot || member == target || !ai->IsSafe(member) ||
                             !member->IsInWorld() || !member->IsAlive() || member->IsBeingTeleported() ||
-                            member->GetSession()->isLogingOut() || member->IsTaxiFlying() ||
+                            !member->GetSession() || member->GetSession()->isLogingOut() || member->HasCharmer() || member->IsTaxiFlying() ||
                             member->GetTransport() || member->IsInCombat() ||
                             !bot->IsWithinDistInMap(member, sPlayerbotAIConfig.reactDistance) ||
                             !bot->IsWithinLOSInMap(member))
@@ -391,32 +392,12 @@ bool CastCustomSpellAction::CastSummonPlayer(Player* requester, std::string comm
                     // summon needs no map admission, only the normal teleport.
                     if (bot->GetMap() != target->GetMap() && !bot->GetMap()->CanEnter(target))
                         return false;
-                    if (membersAroundSummoner >= 2)
+                    const uint32 requiredHelpers = ContinueRitualSummonAction::RequiredHelpers(bot);
+                    if (requiredHelpers && membersAroundSummoner >= requiredHelpers)
                     {
-                        if (target->isRealPlayer())
-                        {
-                            float x, y, z;
-                            bot->GetPosition(x, y, z);
-                            target->SetSummonPoint(bot->GetMapId(), x, y, z, bot->GetObjectGuid());
-
-                            WorldPacket data(SMSG_SUMMON_REQUEST, 8 + 4 + 4);
-                            data << bot->GetObjectGuid();
-                            data << uint32(bot->GetZoneId());
-                            data << uint32(MAX_PLAYER_SUMMON_DELAY * IN_MILLISECONDS);
-                            target->GetSession()->SendPacket(data);
-                        }
-                        else
-                        {
-                            if (!target->TeleportTo(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), bot->GetOrientation()))
-                                return false;
-                        }
-
-                        std::ostringstream msg;
-                        msg << "Summoning " << target->GetName();
-
-                        std::map<std::string, std::string> args;
-                        args["%target"] = target->GetName();
-                        ai->TellPlayerNoFacing(requester, BOT_TEXT2("cast_spell_command_summon", args), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                        if (!ContinueRitualSummonAction::Start(ai, requester, target)) return false;
+                        ai->TellPlayerNoFacing(requester, std::string("Starting the summoning ritual for ") + target->GetName() +
+                            ". Nearby party bots can help; human helpers must click the ritual.");
                         SetDuration(sPlayerbotAIConfig.globalCoolDown);
                         return true;
                     }
