@@ -28,7 +28,8 @@ enum CurrentSpellTypes{CURRENT_GENERIC_SPELL=0,CURRENT_CHANNELED_SPELL=1,CURRENT
 enum class BotState{BOT_STATE_COMBAT};
 struct SpellEntry{bool healing=true;};
 struct Targets{unsigned unit=0,corpse=0;unsigned getUnitTargetGuid(){return unit;}unsigned getCorpseTargetGuid(){return corpse;}};
-struct Spell{SpellEntry* m_spellInfo=nullptr;Targets m_targets;bool finished=false;bool IsFinished(){return finished;}};
+constexpr uint32 SPELL_STATE_FINISHED=7;
+struct Spell{SpellEntry* m_spellInfo=nullptr;Targets m_targets;bool finished=false;uint32 getState(){return finished ? SPELL_STATE_FINISHED : 0;}};
 struct Unit{virtual ~Unit()=default;unsigned guid=0,hp=100,maxhp=100,map=533,instance=1,phase=1;
  bool alive=true,world=true,friendly=true,reach=true;float distance=0,damage=0;int healing=0;
  mutable unsigned attackerReads=0;std::vector<Unit*> attackers;
