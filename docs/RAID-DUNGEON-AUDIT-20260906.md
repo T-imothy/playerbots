@@ -16,6 +16,10 @@ damage pauses and cast lifetime safeguards are recorded in
 The register below describes full encounters; these specific fixes do not close
 their remaining group assignments or live gameplay validation.
 
+[The Anzu/Vorpil continuation](ANZU-VORPIL-AUDIT-20260906.md) corrects native
+Anzu brood thresholds and bird pulse initialization in TBC/Wrath, and adds DPS
+priority for Vorpil's travelers using their exact two-level summon ownership.
+
 | Finding | Change | Expansion scope | Regression |
 | --- | --- | --- | --- |
 | A cast already underway could complete after its target gained a reflect shield | Dungeon combat/reaction hooks recheck the current generic spell and cancel only a native-reflectable hostile cast facing at least 50% school-specific reflection. Execution rechecks the shield and cast; launched spells, channels, friendly casts and uninterruptible casts are preserved. | All three | `reflected_cast_reaction_regression.py` |

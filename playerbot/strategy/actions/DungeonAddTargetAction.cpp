@@ -11,11 +11,12 @@ Unit* DungeonAddTargetAction::GetTarget()
 #ifndef MANGOSBOT_ZERO
     if (!bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() || bot->HasCharmer() ||
         bot->IsBeingTeleported()) return nullptr;
-    uint32 bossEntry = 0, addEntry = 0, phaseAura = 0;
+    uint32 bossEntry = 0, addEntry = 0, phaseAura = 0, summonerEntry = 0;
     switch (bot->GetMapId())
     {
         case 545: bossEntry = 17796; addEntry = 17951; break; // Steamrigger mechanics repair him.
         case 553: bossEntry = 17975; addEntry = 19953; phaseAura = 34551; break; // Freywinn Tree Form.
+        case 555: bossEntry = 18732; addEntry = 19226; summonerEntry = 19427; break; // Vorpil's Void Travelers.
         case 556: bossEntry = 23035; addEntry = 23132; phaseAura = 42354; break; // Anzu banish.
 #ifdef MANGOSBOT_TWO
         case 576: bossEntry = 26763; addEntry = 26918; phaseAura = 47748; break; // Anomalus Rift Shield.
@@ -48,6 +49,14 @@ Unit* DungeonAddTargetAction::GetTarget()
         // Repair mechanics can be passive. Their live native summoner and its
         // encounter phase establish relevance without requiring an add victim.
         Unit* boss = ai->GetUnit(add->GetSpawnerGuid());
+        if (summonerEntry)
+        {
+            // Vorpil's passive helper summons the travelers. Resolve exactly
+            // that live native chain; never guess ownership from proximity.
+            if (!boss || !boss->IsInWorld() || !boss->IsAlive() || !bot->IsInMap(boss) ||
+                boss->HasCharmer() || boss->GetEntry() != summonerEntry) continue;
+            boss = ai->GetUnit(boss->GetSpawnerGuid());
+        }
         if (!boss || !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() || !bot->IsInMap(boss) ||
             boss->HasCharmer() || boss->GetEntry() != bossEntry || boss->GetVictim() == bot ||
             (phaseAura && !boss->HasAura(phaseAura))) continue;

@@ -110,6 +110,35 @@ int main(){
   assert(action.GetTarget()==&add);ai.units.erase(2);none(); // Despawn before Execute reselects.
 #endif
  }
+ // Vorpil travelers belong to his passive summoner, not directly to the boss.
+ {
+  Player bot;Group group;bot.group=&group;bot.map=555;
+  Unit boss,summoner,add;boss.guid=1;boss.entry=18732;boss.map=555;
+  summoner.guid=2;summoner.entry=19427;summoner.map=555;summoner.spawner=1;summoner.combat=false;
+  add.guid=3;add.entry=19226;add.map=555;add.spawner=2;add.x=5;add.combat=false;
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&summoner},{3,&add}};ai.possible={3};
+  DungeonAddTargetAction action(&ai);
+#ifdef MANGOSBOT_ZERO
+  assert(!action.GetTarget());
+#else
+  assert(action.GetTarget()==&add);
+  auto none=[&](){assert(!action.GetTarget());};
+  summoner.world=false;none();summoner.world=true;summoner.alive=false;none();summoner.alive=true;
+  summoner.charmed=true;none();summoner.charmed=false;
+  summoner.map=0;none();summoner.map=555;summoner.instance=2;none();summoner.instance=1;
+  summoner.phase=2;none();summoner.phase=1;summoner.entry=999;none();summoner.entry=19427;
+  summoner.spawner=0;none();summoner.spawner=2;none();summoner.spawner=3;none();summoner.spawner=1;
+  add.spawner=1;none();add.spawner=2; // A lookalike summoned directly is not this native chain.
+  boss.combat=false;none();boss.combat=true;boss.alive=false;none();boss.alive=true;
+  boss.instance=2;none();boss.instance=1;boss.phase=2;none();boss.phase=1;
+  boss.entry=999;none();boss.entry=18732;boss.victim=&bot;none();boss.victim=nullptr;
+  ai.command=1;none();ai.command=0;ai.marked=&boss;none();ai.marked=nullptr;
+  ai.healer=true;none();ai.healer=false;ai.tank=true;none();ai.tank=false;
+  add.breakCC=true;none();add.breakCC=false;add.immune=true;none();add.immune=false;
+  ai.current=&add;assert(!action.isUseful());assert(action.GetTarget()==&add);
+  ai.units.erase(2);none(); // Missing native summoner cannot fall back to a nearby boss.
+#endif
+ }
  std::cout<<"PASS: native-owned dungeon add priorities, phase/reset, manual/CC, role and era guards\n";
 }
 '''.replace('__METHODS__',methods)
@@ -120,7 +149,10 @@ for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
             'boss_high_botanist_freywinn.cpp':['19953','34551','SummonedCreatureJustDied','InterruptTreeForm()'],
             'boss_mekgineer_steamrigger.cpp':['17951','31532','37936','MoveFollow(m_creature'],
             'boss_anzu.cpp':['42354','SummonedCreatureJustDied','SummonCreature(NPC_BROOD_OF_ANZU'],
-            'sethekk_halls.h':['23132','23035']}
+            'sethekk_halls.h':['23132','23035'],
+            'boss_grandmaster_vorpil.cpp':['19226','19427','33927','m_creature->GetSpawner()',
+                'SPELL_EMPOWERING_SHADOWS_H      = 39364','MoveChase(vorpil','aTravelerSummonSpells[urand(0, 4)]'],
+            'shadow_labyrinth.h':['18732']}
         if realm=='wotlk':expected['boss_anomalus.cpp']=['26918','47748','SummonedCreatureJustDied','RemoveAurasDueToSpell(SPELL_RIFT_SHIELD)']
         for name,contracts in expected.items():
             matches=list(scripts.rglob(name));assert len(matches)==1,(realm,name)
