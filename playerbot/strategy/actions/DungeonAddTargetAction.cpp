@@ -12,14 +12,20 @@ Unit* DungeonAddTargetAction::GetTarget()
     if (!bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() || bot->HasCharmer() ||
         bot->IsBeingTeleported()) return nullptr;
     uint32 bossEntry = 0, addEntry = 0, phaseAura = 0, summonerEntry = 0;
+    uint32 sourceBossEntry = 0, sourceAddEntry = 0, sourceAura = 0;
     switch (bot->GetMapId())
     {
-        case 545: bossEntry = 17796; addEntry = 17951; break; // Steamrigger mechanics repair him.
+        case 545:
+            bossEntry = 17796; addEntry = 17951; // Steamrigger repair mechanics.
+            sourceBossEntry = 17798; sourceAddEntry = 17954; sourceAura = 31543; // Kalithresh's active distiller.
+            break;
         case 553: bossEntry = 17975; addEntry = 19953; phaseAura = 34551; break; // Freywinn Tree Form.
         case 555: bossEntry = 18732; addEntry = 19226; summonerEntry = 19427; break; // Vorpil's Void Travelers.
         case 556: bossEntry = 23035; addEntry = 23132; phaseAura = 42354; break; // Anzu banish.
+        case 585: sourceBossEntry = 24723; sourceAddEntry = 24722; sourceAura = 44320; break; // Selin's active crystal.
 #ifdef MANGOSBOT_TWO
         case 576: bossEntry = 26763; addEntry = 26918; phaseAura = 47748; break; // Anomalus Rift Shield.
+        case 619: sourceBossEntry = 29309; sourceAddEntry = 30176; sourceAura = 56153; break; // Nadox's shielding guardian.
 #endif
         default: return nullptr;
     }
@@ -39,17 +45,40 @@ Unit* DungeonAddTargetAction::GetTarget()
             !sServerFacade.IsFriendlyTo(unit, bot) && bot->GetDistance(unit) <= sPlayerbotAIConfig.sightDistance;
     };
     if (commanded(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"))) || commanded(AI_VALUE(Unit*, "rti target"))) return nullptr;
+    auto validBoss = [this](Unit* boss)
+    {
+        return boss && boss->IsInWorld() && boss->IsAlive() && boss->IsInCombat() && bot->IsInMap(boss) &&
+            !boss->HasCharmer() && boss->GetVictim() != bot;
+    };
     Unit* owner = nullptr;
     Unit* selected = nullptr;
     Unit* current = AI_VALUE(Unit*, "current target");
-    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets"))
+    const auto possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible targets");
+    for (const auto& guid : possibleTargets)
     {
         Unit* add = ai->GetUnit(guid);
-        if (!add || add->GetEntry() != addEntry || !valid(add)) continue;
+        if (!add) continue;
+        const bool auraSource = sourceAddEntry && add->GetEntry() == sourceAddEntry;
+        if ((!auraSource && (!addEntry || add->GetEntry() != addEntry)) || !valid(add)) continue;
         // Repair mechanics can be passive. Their live native summoner and its
         // encounter phase establish relevance without requiring an add victim.
-        Unit* boss = ai->GetUnit(add->GetSpawnerGuid());
-        if (summonerEntry)
+        Unit* boss = nullptr;
+        if (auraSource)
+        {
+            // Static crystals have no boss summoner. The boss aura's exact
+            // caster identifies the active source, including Nadox's guardian.
+            for (const auto& bossGuid : possibleTargets)
+            {
+                Unit* candidate = ai->GetUnit(bossGuid);
+                if (!validBoss(candidate) || candidate->GetEntry() != sourceBossEntry ||
+                    !candidate->GetSpellAuraHolder(sourceAura, add->GetObjectGuid())) continue;
+                if (boss && boss != candidate) return nullptr;
+                boss = candidate;
+            }
+        }
+        else
+            boss = ai->GetUnit(add->GetSpawnerGuid());
+        if (!auraSource && summonerEntry)
         {
             // Vorpil's passive helper summons the travelers. Resolve exactly
             // that live native chain; never guess ownership from proximity.
@@ -57,9 +86,8 @@ Unit* DungeonAddTargetAction::GetTarget()
                 boss->HasCharmer() || boss->GetEntry() != summonerEntry) continue;
             boss = ai->GetUnit(boss->GetSpawnerGuid());
         }
-        if (!boss || !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() || !bot->IsInMap(boss) ||
-            boss->HasCharmer() || boss->GetEntry() != bossEntry || boss->GetVictim() == bot ||
-            (phaseAura && !boss->HasAura(phaseAura))) continue;
+        if (!validBoss(boss) || boss->GetEntry() != (auraSource ? sourceBossEntry : bossEntry) ||
+            (!auraSource && phaseAura && !boss->HasAura(phaseAura))) continue;
         if (owner && owner != boss) return nullptr;
         owner = boss;
         // Keep attacking the selected live add instead of oscillating as they move.

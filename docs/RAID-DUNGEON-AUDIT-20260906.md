@@ -20,6 +20,10 @@ their remaining group assignments or live gameplay validation.
 Anzu brood thresholds and bird pulse initialization in TBC/Wrath, and adds DPS
 priority for Vorpil's travelers using their exact two-level summon ownership.
 
+[The crystal continuation](CRYSTAL-TRANSITIONS-AUDIT-20260906.md) fixes Selin's
+approach point and Kalithresh's missing-distiller transition, and adds exact
+aura-source priorities for their active crystals and Nadox's shielding guardian.
+
 | Finding | Change | Expansion scope | Regression |
 | --- | --- | --- | --- |
 | A cast already underway could complete after its target gained a reflect shield | Dungeon combat/reaction hooks recheck the current generic spell and cancel only a native-reflectable hostile cast facing at least 50% school-specific reflection. Execution rechecks the shield and cast; launched spells, channels, friendly casts and uninterruptible casts are preserved. | All three | `reflected_cast_reaction_regression.py` |

@@ -19,14 +19,16 @@ code=r'''
 #include <set>
 #include <string>
 #include <type_traits>
+#include <vector>
 using uint32=unsigned;using ObjectGuid=unsigned;
 struct Unit {
  unsigned entry=0,map=545,instance=1,phase=1;ObjectGuid guid=0,spawner=0;
  bool world=true,alive=true,combat=true,charmed=false,friendly=false,attackable=true,freeAttack=true;
  bool immune=false,assignedCC=false,breakCC=false,hardCC=false;
- float x=0;Unit* victim=nullptr;std::set<unsigned> auras;
+ float x=0;Unit* victim=nullptr;std::set<unsigned> auras;std::set<std::pair<unsigned,ObjectGuid>> sourceAuras;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
- unsigned GetEntry(){return entry;}ObjectGuid GetSpawnerGuid(){return spawner;}
+ unsigned GetEntry(){return entry;}ObjectGuid GetSpawnerGuid(){return spawner;}ObjectGuid GetObjectGuid(){return guid;}
+ bool GetSpellAuraHolder(unsigned spell,ObjectGuid caster){return sourceAuras.count({spell,caster});}
  Unit* GetVictim(){return victim;}bool HasAura(unsigned id){return auras.count(id);}
  float GetDistance(Unit*u){return std::fabs(x-u->x);}
 };
@@ -139,6 +141,45 @@ int main(){
   ai.units.erase(2);none(); // Missing native summoner cannot fall back to a nearby boss.
 #endif
  }
+ // Static crystals and Nadox's guardian must be the actual source of the boss aura.
+ for(auto c:{std::vector<unsigned>{545,17798,17954,31543},std::vector<unsigned>{585,24723,24722,44320},std::vector<unsigned>{619,29309,30176,56153}}){
+  Player bot;Group group;bot.group=&group;bot.map=c[0];
+  Unit boss,add,inactive,otherBoss;boss.guid=1;boss.entry=c[1];boss.map=c[0];
+  add.guid=2;add.entry=c[2];add.map=c[0];add.x=10;add.combat=false;
+  inactive=add;inactive.guid=3;inactive.x=2;otherBoss=boss;otherBoss.guid=4;
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&add},{3,&inactive},{4,&otherBoss}};ai.possible={1,2,3,4};
+  DungeonAddTargetAction action(&ai);PreserveDungeonAddTargetMultiplier multiplier{&ai};Action assist{"dps assist"};
+  boss.sourceAuras={{c[3],2}};
+#ifdef MANGOSBOT_ZERO
+  assert(!action.GetTarget());
+#else
+#ifndef MANGOSBOT_TWO
+  if(c[0]==619){assert(!action.GetTarget());continue;}
+#endif
+  assert(action.GetTarget()==&add); // Closer inactive lookalike is ignored.
+  auto none=[&](){assert(!action.GetTarget()&&multiplier.GetValue(&assist)==1);};
+  if(c[0]==545){
+   Unit repairBoss,repair;repairBoss.entry=17796;repairBoss.guid=5;repairBoss.map=545;
+   repair.entry=17951;repair.guid=6;repair.map=545;repair.spawner=5;
+   ai.units[5]=&repairBoss;ai.units[6]=&repair;ai.possible.push_back(6);
+   none(); // Two engaged encounters in the same map remain ambiguous.
+   ai.possible.remove(6);ai.units.erase(5);ai.units.erase(6);
+  }
+  boss.sourceAuras.clear();none();boss.sourceAuras={{c[3],99}};none();boss.sourceAuras={{999,2}};none();boss.sourceAuras={{c[3],2}};
+  ai.current=&inactive;assert(action.GetTarget()==&add&&action.isUseful());ai.current=&add;assert(!action.isUseful());ai.current=nullptr;
+  otherBoss.sourceAuras={{c[3],2}};none();otherBoss.sourceAuras.clear();
+  boss.world=false;none();boss.world=true;boss.alive=false;none();boss.alive=true;
+  boss.combat=false;none();boss.combat=true;boss.charmed=true;none();boss.charmed=false;
+  boss.instance=2;none();boss.instance=1;boss.phase=2;none();boss.phase=1;
+  boss.entry=999;none();boss.entry=c[1];boss.victim=&bot;none();boss.victim=nullptr;
+  add.alive=false;none();add.alive=true;add.instance=2;none();add.instance=1;add.phase=2;none();add.phase=1;
+  add.breakCC=true;none();add.breakCC=false;add.immune=true;none();add.immune=false;add.charmed=true;none();add.charmed=false;
+  ai.command=1;boss.immune=true;none();ai.command=0;ai.marked=&boss;none();ai.marked=nullptr;boss.immune=false;
+  ai.healer=true;none();ai.healer=false;ai.tank=true;none();ai.tank=false;ai.real=true;none();ai.real=false;
+  bot.combat=false;none();bot.combat=true;assert(action.GetTarget()==&add);
+  ai.units.erase(2);none();
+#endif
+ }
  std::cout<<"PASS: native-owned dungeon add priorities, phase/reset, manual/CC, role and era guards\n";
 }
 '''.replace('__METHODS__',methods)
@@ -152,8 +193,15 @@ for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
             'sethekk_halls.h':['23132','23035'],
             'boss_grandmaster_vorpil.cpp':['19226','19427','33927','m_creature->GetSpawner()',
                 'SPELL_EMPOWERING_SHADOWS_H      = 39364','MoveChase(vorpil','aTravelerSummonSpells[urand(0, 4)]'],
+            'boss_selin_fireheart.cpp':['44320','44321','target->CastSpell(nullptr, SPELL_MANA_RAGE_CHANNEL','spell_mana_rage_selin'],
+            'boss_warlord_kalithresh.cpp':['31543','37076','distiller->CastSpell(nullptr, SPELL_WARLORDS_RAGE_NAGA'],
+            'magisters_terrace.h':['24723','24722'],
+            'steam_vault.h':['17798','17954'],
             'shadow_labyrinth.h':['18732']}
-        if realm=='wotlk':expected['boss_anomalus.cpp']=['26918','47748','SummonedCreatureJustDied','RemoveAurasDueToSpell(SPELL_RIFT_SHIELD)']
+        if realm=='wotlk':
+            expected['boss_anomalus.cpp']=['26918','47748','SummonedCreatureJustDied','RemoveAurasDueToSpell(SPELL_RIFT_SHIELD)']
+            expected['boss_nadox.cpp']=['30176','56151','pSummoned->CastSpell(pSummoned, SPELL_GUARDIAN_AURA']
+            expected['ahnkahet.h']=['29309','30173']
         for name,contracts in expected.items():
             matches=list(scripts.rglob(name));assert len(matches)==1,(realm,name)
             native=matches[0].read_text()
