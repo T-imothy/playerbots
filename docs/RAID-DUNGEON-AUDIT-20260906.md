@@ -28,6 +28,10 @@ aura-source priorities for their active crystals and Nadox's shielding guardian.
 targets in depleted raids, corrects Wrath's player release auras, and adds
 group-member rescue priority for active wraps in all three cores.
 
+[The target-list review](ENCOUNTER-TARGET-LISTS-20260906.md) corrects Renataki's
+depleted secondary-target selection, Vazruden's empty-threat facing and Thorim's
+despawned ground-helper lookup. Full encounter strategy coverage remains open.
+
 | Finding | Change | Expansion scope | Regression |
 | --- | --- | --- | --- |
 | A cast already underway could complete after its target gained a reflect shield | Dungeon combat/reaction hooks recheck the current generic spell and cancel only a native-reflectable hostile cast facing at least 50% school-specific reflection. Execution rechecks the shield and cast; launched spells, channels, friendly casts and uninterruptible casts are preserved. | All three | `reflected_cast_reaction_regression.py` |
