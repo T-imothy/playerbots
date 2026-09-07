@@ -6,6 +6,67 @@ class Action;
 
 namespace ai
 {
+    class PreserveRotatingBeamMultiplier : public Multiplier
+    {
+    public:
+        PreserveRotatingBeamMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve rotating beam position") {}
+        float GetValue(Action* action) override;
+    };
+    class PreserveVashjCoreMultiplier : public Multiplier
+    {
+    public:
+        PreserveVashjCoreMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve vashj core relay") {}
+        float GetValue(Action* action) override;
+    };
+    class PreserveEadricFacingMultiplier : public Multiplier
+    {
+    public:
+        PreserveEadricFacingMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve eadric facing") {}
+        float GetValue(Action* action) override;
+    };
+    class PreserveHeiganDanceMultiplier : public Multiplier
+    {
+    public:
+        PreserveHeiganDanceMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve heigan dance") {}
+        float GetValue(Action* action) override;
+    };
+    class PreserveNajentusSpineMultiplier : public Multiplier
+    {
+    public:
+        PreserveNajentusSpineMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve najentus rescue") {}
+        float GetValue(Action* action) override;
+    };
+    class PreserveLinkedBurstMultiplier : public Multiplier
+    {
+    public:
+        PreserveLinkedBurstMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve linked burst separation") {}
+        float GetValue(Action* action) override;
+    };
+    class PreserveAkilzonStormMultiplier : public Multiplier
+    {
+    public:
+        PreserveAkilzonStormMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve akilzon shelter") {}
+        float GetValue(Action* action) override;
+    };
+    class PreserveHakkarPoisonMultiplier : public Multiplier
+    {
+    public:
+        PreserveHakkarPoisonMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve hakkar poison position") {}
+        float GetValue(Action* action) override;
+    };
+    class PreserveOssirianCrystalMultiplier : public Multiplier
+    {
+    public:
+        PreserveOssirianCrystalMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve ossirian crystal") {}
+        float GetValue(Action* action) override;
+    };
+    class PreserveBossCoverMultiplier : public Multiplier
+    {
+    public:
+        PreserveBossCoverMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve boss cover") {}
+        float GetValue(Action* action) override;
+    };
+
     class PreserveDungeonAddTargetMultiplier : public Multiplier
     {
     public:

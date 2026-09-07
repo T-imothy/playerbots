@@ -37,6 +37,8 @@ namespace ai
 
     // Hazard position, Hazard radius
     typedef std::pair<WorldPosition, float> HazardPosition;
+    void AppendVashjStriderHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
+    void AppendNativeEncounterActorHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
 
     // DO NOT USE. Value to store hazards which the bot must avoid when moving around
     class StoredHazardsValue : public ManualSetValue<std::list<Hazard>>

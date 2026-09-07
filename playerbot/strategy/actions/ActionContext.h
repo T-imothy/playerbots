@@ -397,6 +397,22 @@ namespace ai
             creators["solarian burst position"] = [](PlayerbotAI* ai) { return new SolarianPositionAction(ai); };
             creators["solarian priority target"] = [](PlayerbotAI* ai) { return new SolarianPriorityTargetAction(ai); };
             creators["dungeon priority add"] = [](PlayerbotAI* ai) { return new DungeonAddTargetAction(ai); };
+            creators["boss seek cover"] = [](PlayerbotAI* ai) { return new BossCoverAction(ai); };
+            creators["ossirian crystal"] = [](PlayerbotAI* ai) { return new OssirianCrystalAction(ai); };
+            creators["hakkar acquire poison"] = [](PlayerbotAI* ai) { return new HakkarPoisonAction(ai); };
+            creators["avoid rotating beam"] = [](PlayerbotAI* ai) { return new RotatingBeamAction(ai); };
+            creators["vashj core relay"] = [](PlayerbotAI* ai) { return new VashjCoreAction(ai); };
+            creators["fight own inner demon"] = [](PlayerbotAI* ai) { return new InnerDemonAction(ai); };
+            creators["eadric face away"] = [](PlayerbotAI* ai) { return new EadricRadianceAction(ai); };
+            creators["move against cold"] = [](PlayerbotAI* ai) { return new ColdMovementAction(ai); };
+            creators["viscidus frost"] = [](PlayerbotAI* ai) { return new ViscidusFrostAction(ai); };
+            creators["moam mana control"] = [](PlayerbotAI* ai) { return new MoamManaControlAction(ai); };
+            creators["akilzon storm shelter"] = [](PlayerbotAI* ai) { return new AkilzonStormAction(ai); };
+            creators["separate linked burst"] = [](PlayerbotAI* ai) { return new LinkedBurstAction(ai); };
+            creators["archimonde tears"] = [](PlayerbotAI* ai) { return new ArchimondeTearsAction(ai); };
+            creators["najentus spine rescue"] = [](PlayerbotAI* ai) { return new NajentusSpineAction(ai); };
+            creators["najentus break shield"] = [](PlayerbotAI* ai) { return new NajentusShieldAction(ai); };
+            creators["heigan dance"] = [](PlayerbotAI* ai) { return new HeiganDanceAction(ai); };
             creators["magtheridon cube"] = [](PlayerbotAI* ai) { return new MagtheridonCubeAction(ai); };
             creators["gruul shatter spread"] = [](PlayerbotAI* ai) { return new GruulSpreadAction(ai); };
             creators["assist summoning ritual"] = [](PlayerbotAI* ai) { return new AssistSummoningRitualAction(ai); };
@@ -416,6 +432,7 @@ namespace ai
             creators["stop unsafe reflected cast"] = [](PlayerbotAI* ai) { return new StopUnsafeReflectedCastAction(ai); };
             creators["stop unsafe encounter offense"] = [](PlayerbotAI* ai) { return new StopUnsafeEncounterOffenseAction(ai); };
             creators["blackwing lair safe position"] = [](PlayerbotAI* ai) { return new BlackwingLairPositionAction(ai); };
+            creators["use hourglass sand"] = [](PlayerbotAI* ai) { return new HourglassSandAction(ai); };
             creators["naxxramas safe position"] = [](PlayerbotAI* ai) { return new NaxxramasPositionAction(ai); };
 
             creators["enable netherspite fight strategy"] = [](PlayerbotAI* ai) { return new NetherspiteEnableFightStrategyAction(ai); };

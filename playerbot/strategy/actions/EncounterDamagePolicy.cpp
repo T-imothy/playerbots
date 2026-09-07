@@ -6,6 +6,7 @@
 
 bool ai::HasEncounterDamagePause(Player* bot)
 {
+    if (HasHakkarPoisonPreparation(bot)) return true;
 #ifdef MANGOSBOT_TWO
     if (!bot || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() ||
         bot->HasCharmer() || bot->IsBeingTeleported() || !bot->GetPlayerbotAI() ||

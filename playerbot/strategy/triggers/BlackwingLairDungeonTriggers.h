@@ -6,6 +6,13 @@
 
 namespace ai
 {
+    class HourglassSandTrigger : public Trigger
+    {
+    public:
+        HourglassSandTrigger(PlayerbotAI* ai) : Trigger(ai, "use hourglass sand", 1) {}
+        bool IsActive() override { HourglassSandAction action(ai); return action.isUseful(); }
+    };
+
     class BlackwingLairPositionTrigger : public Trigger
     {
     public:

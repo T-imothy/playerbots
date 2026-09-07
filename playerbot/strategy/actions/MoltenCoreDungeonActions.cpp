@@ -111,6 +111,13 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 bool MoltenCorePositionAction::isUseful()
 {
     EncounterPosition plan;
+    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f ||
+        !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+}
+
+bool MoltenCorePositionAction::ShouldReactionInterruptCast() const
+{
+    EncounterPosition plan;
     return GetPlan(ai, plan) && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
 }
 
@@ -120,5 +127,11 @@ bool MoltenCorePositionAction::Execute(Event& event)
     std::vector<encounter::Circle> threats;
     if (!GetPlan(ai, plan) || !ai->CanMove() || !MoltenCoreThreats(ai, current, threats) ||
         !ValidateEncounterDestination(ai, plan) || !encounter::OutsideCircles(plan.destination, threats)) return false;
+    if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= 1.5f)
+    {
+        ai->StopMoving();
+        SetDuration(100);
+        return true;
+    }
     return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
 }

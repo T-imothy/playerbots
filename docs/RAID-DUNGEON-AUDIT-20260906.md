@@ -8,6 +8,33 @@ these tests. Areas 3–5 remain open at the full mechanic-by-mechanic level.
 
 ## Fixed behavior
 
+The [native transition recovery continuation](ENCOUNTER-TRANSITION-RECOVERY-20260907.md)
+repairs seven encounters across the applicable cores and records one combined
+build pass plus five focused regression runners. It distinguishes this source
+verification from remaining full-encounter behavior and live tests.
+
+The [hazards and native recovery continuation](ENCOUNTER-HAZARDS-AND-RECOVERY-20260907.md)
+adds C'Thun/Lurker beam handling, nine encounters' native actor hazards and
+Ionar/Reliquary/Delrissa failure recovery. Its verification status is recorded
+separately; the full-encounter rows below remain open beyond those mechanics.
+
+The [resumed encounter progression](ENCOUNTER-PROGRESSION-20260907.md) adds
+Twin Emperors DPS selection, Syth/Maladaar/Telestra objectives, native Syth and
+Telestra retry repairs, and Eadric's native/bot facing mechanic. It records the
+127-runner suite, three builds, local runtime checks and required Wrath binding.
+
+The [lifecycle and objective continuation](ENCOUNTER-LIFECYCLE-AND-OBJECTIVES-20260907.md)
+adds Thekal balance, Gluth finishing targets, five dungeon objectives and
+Viscidus frost/glob targeting, plus native Ayamiss/Jedoga/Viscidus repairs.
+It also records the later local-development metadata repair and verification.
+
+The [objectives and healing continuation](ENCOUNTER-OBJECTIVES-AND-WINDOWS-20260907.md)
+records subsequently implemented cover, crystal/spine interactions, Heigan
+wave positioning, Hakkar poison preparation, Akil'zon shelter, linked bursts,
+cold movement, healing windows/absorption and further add/tank priorities.
+The original rows below remain a full-encounter gap register; items now covered
+by that continuation still require their listed live role/phase validation.
+
 Subsequent continuation fixes add [Mandokir threat and Anzu casting holds](ENCOUNTER-CAST-HOLDS-20260906.md)
 and [boss-owned add priorities](DUNGEON-ADD-PRIORITY-20260906.md) for Steamrigger,
 Freywinn, Anzu and Anomalus. Keli'dan/Dalliah warning handling, Ymiron/Devourer

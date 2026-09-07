@@ -22,7 +22,7 @@ code=r'''
 #include <string>
 #include <type_traits>
 #include <vector>
-using uint32=unsigned;using uint8=unsigned char;using ObjectGuid=unsigned;
+using uint32=unsigned;using uint64=unsigned long long;using uint8=unsigned char;using ObjectGuid=unsigned;
 enum{UNIT_FIELD_MINDAMAGE=0,UNIT_FIELD_MAXDAMAGE=1,SPELL_AURA_MOD_HEALING_PCT=118,MINI_PET=1,POWER_MANA=0};
 enum CurrentSpellTypes{CURRENT_GENERIC_SPELL=0,CURRENT_CHANNELED_SPELL=1,CURRENT_MAX_SPELL=2};
 enum class BotState{BOT_STATE_COMBAT};
@@ -30,8 +30,8 @@ struct SpellEntry{bool healing=true;};
 struct Targets{unsigned unit=0,corpse=0;unsigned getUnitTargetGuid(){return unit;}unsigned getCorpseTargetGuid(){return corpse;}};
 constexpr uint32 SPELL_STATE_FINISHED=7;
 struct Spell{SpellEntry* m_spellInfo=nullptr;Targets m_targets;bool finished=false;uint32 getState(){return finished ? SPELL_STATE_FINISHED : 0;}};
-struct Unit{virtual ~Unit()=default;unsigned guid=0,hp=100,maxhp=100,map=533,instance=1,phase=1;
- bool alive=true,world=true,friendly=true,reach=true;float distance=0,damage=0;int healing=0;
+struct Unit{virtual ~Unit()=default;unsigned guid=0,hp=100,maxhp=100,map=533,instance=1,phase=1,absorb=0;
+ bool alive=true,world=true,friendly=true,reach=true,fullHealWound=false;float distance=0,damage=0;int healing=0;
  mutable unsigned attackerReads=0;std::vector<Unit*> attackers;
  virtual bool IsPlayer(){return false;}unsigned GetHealth()const{return hp;}unsigned GetMaxHealth()const{return maxhp;}
  float GetHealthPercent()const{return maxhp?100.f*hp/maxhp:0;}ObjectGuid GetObjectGuid(){return guid;}
@@ -42,6 +42,11 @@ struct Unit{virtual ~Unit()=default;unsigned guid=0,hp=100,maxhp=100,map=533,ins
  bool CanReachWithMeleeAttack(const Unit*){return reach;}float GetFloatValue(unsigned){return damage;}
 };
 struct Pet:Unit{unsigned petType=0;unsigned getPetType(){return petType;}};
+struct Player;
+// Encounter timing is compiled separately in healing_window_regression.py.
+unsigned UpcomingEncounterHealingWindow(Player*,Unit*){return 0;}
+bool NeedsFullHealingToRemoveAura(Unit* u){return u && u->fullHealWound && u->hp < u->maxhp;}
+unsigned RemainingHealingAbsorb(Unit* u){return u?u->absorb:0;}
 struct Corpse{unsigned guid=500;unsigned GetObjectGuid(){return guid;}};
 struct Duel{Unit* opponent=nullptr;};struct Group;
 struct Player:Unit{bool teleport=false,bg=false,tank=false,healer=false,safe=true,hasAI=true;
@@ -71,7 +76,7 @@ struct PlayerbotAI{Player* bot;std::map<unsigned,Unit*> units;bool preheal=false
 };
 struct Facade{bool IsFriendlyTo(Unit*,Unit* u){return u&&u->friendly;}bool IsAlive(Unit* u){return u&&u->alive;}
  float GetDistance2d(Unit*,Unit* u){return u->distance;}}sServerFacade;
-struct Config{unsigned almostFullHealth=95,lowMana=20;}sPlayerbotAIConfig;
+struct Config{unsigned almostFullHealth=95,lowMana=20,criticalHealth=20;}sPlayerbotAIConfig;
 struct SpellEntryPredicate{virtual bool Check(const SpellEntry*)=0;};
 struct PartyMemberValue{PlayerbotAI* ai;Player* bot;bool IsTargetOfSpellCast(Unit*,SpellEntryPredicate&);};
 struct PartyMemberToHeal:PartyMemberValue{Unit* Calculate();bool CanHealPet(Pet*);bool Check(Unit*);std::vector<Player*> GetPartyMembers();};
@@ -83,6 +88,9 @@ int main(){
  ai.units={{1,&bot},{2,&owner},{3,&healer},{4,&a},{5,&b},{6,&pet}};
  PartyMemberToHeal selector;selector.ai=&ai;selector.bot=&bot;
  assert(selector.Calculate()==nullptr); // full-health pet no longer fabricates work
+ owner.hp=98;assert(selector.Calculate()==nullptr);owner.fullHealWound=true;
+ assert(selector.Calculate()==&owner);owner.fullHealWound=false;owner.hp=100;
+ owner.absorb=60000;assert(selector.Calculate()==&owner);owner.absorb=0;
  pet.hp=40;assert(selector.Calculate()==&pet);
  SpellEntry heal;Spell healing{&heal,{pet.guid,0}};healer.casts[0]=&healing;ai.nearest={healer.guid};
  assert(selector.Calculate()==nullptr); // the pet, not its owner, is already being healed
@@ -105,6 +113,10 @@ int main(){
  // De-duplicate selected+group candidates before distributing two healers.
  owner.pet=nullptr;a.hp=10;b.hp=20;healer.healer=true;group.Set({&healer,&bot,&a,&b});bot.selection=a.guid;
  assert(selector.Calculate()==&b);healer.maxmana=0;assert(selector.Calculate()==&a);healer.maxmana=100;
+ // Absorb amount competes with ordinary missing health; actual critical health wins.
+ healer.maxmana=0;ai.preheal=false;a.hp=100;a.absorb=60000;b.hp=50;
+ assert(selector.Calculate()==&a);b.hp=10;assert(selector.Calculate()==&b);
+ a.absorb=0;a.hp=10;b.hp=20;healer.maxmana=100;
  bot.selection=0;ai.preheal=true;ai.nearest.clear();a.attackers={&enemy};b.attackers={&enemy};
  a.attackerReads=b.attackerReads=0;selector.Calculate();assert(a.attackerReads==1&&b.attackerReads==1);
  // Focus list must not downcast a pet/creature to Player.

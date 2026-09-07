@@ -4,6 +4,20 @@
 
 using namespace ai;
 
+bool HourglassSandAction::isUseful()
+{
+    return bot->IsInWorld() && bot->IsAlive() && bot->GetMapId() == 469 && !bot->HasCharmer() &&
+        !bot->IsBeingTeleported() && !ai->IsRealPlayer() && bot->HasAura(23170) && bot->HasItemCount(19183, 1) &&
+        UseItemIdAction::isUseful();
+}
+
+bool HourglassSandAction::Execute(Event& event)
+{
+    // The native item spell removes Bronze; never directly remove an aura or
+    // invent an item. Recheck because another effect may have cured it already.
+    return isUseful() && UseItemIdAction::Execute(event);
+}
+
 bool BlackwingLairPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 {
     Player* bot = ai->GetBot();

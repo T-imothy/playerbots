@@ -173,7 +173,7 @@ namespace ai
     class JumpAction : public MovementAction, public Qualified
     {
     public:
-        JumpAction(PlayerbotAI* ai) : MovementAction(ai, "jump"), Qualified() {}
+        JumpAction(PlayerbotAI* ai, std::string name = "jump") : MovementAction(ai, name), Qualified() {}
         bool Execute(Event& event) override;
         bool isUseful() override;
 

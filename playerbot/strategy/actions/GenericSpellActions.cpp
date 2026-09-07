@@ -425,6 +425,10 @@ bool CastEnchantItemAction::isPossible()
 
 bool CastAoeHealSpellAction::isUseful()
 {
+    RefreshSpellId();
+    Unit* target = GetTarget();
+    if (target && target->GetMaxNegativeAuraModifier(SPELL_AURA_MOD_HEALING_PCT) <= -100 &&
+        !CanPrecastEncounterHeal(bot, target, sServerFacade.LookupSpellInfo(GetSpellID()))) return false;
     return CastSpellAction::isUseful();
 }
 

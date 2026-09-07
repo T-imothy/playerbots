@@ -13,6 +13,99 @@
 #include "Grids/CellImpl.h"
 
 using namespace ai;
+bool RotatingBeamTrigger::IsActive()
+{
+    return RotatingBeamAction(ai).isUseful();
+}
+
+bool VashjCoreTrigger::IsActive()
+{
+    return VashjCoreAction(ai).isUseful();
+}
+
+bool InnerDemonTrigger::IsActive()
+{
+    InnerDemonAction action(ai);
+    return action.isUseful();
+}
+
+bool EadricRadianceTrigger::IsActive()
+{
+    EadricRadianceAction action(ai);
+    return action.isUseful();
+}
+
+bool HeiganDanceTrigger::IsActive()
+{
+    HeiganDanceAction action(ai);
+    return action.isUseful();
+}
+
+bool NajentusSpineTrigger::IsActive()
+{
+    NajentusSpineAction action(ai);
+    return action.isUseful();
+}
+
+bool NajentusShieldTrigger::IsActive()
+{
+    NajentusShieldAction action(ai);
+    return action.isUseful();
+}
+
+bool ArchimondeTearsTrigger::IsActive()
+{
+    ArchimondeTearsAction action(ai);
+    return action.isUseful();
+}
+
+bool LinkedBurstTrigger::IsActive()
+{
+    LinkedBurstAction action(ai);
+    return action.isUseful();
+}
+
+bool AkilzonStormTrigger::IsActive()
+{
+    AkilzonStormAction action(ai);
+    return action.isUseful();
+}
+
+bool ColdMovementTrigger::IsActive()
+{
+    ColdMovementAction action(ai);
+    return action.isUseful();
+}
+
+bool ViscidusFrostTrigger::IsActive()
+{
+    ViscidusFrostAction action(ai);
+    return action.isUseful();
+}
+
+bool MoamManaControlTrigger::IsActive()
+{
+    MoamManaControlAction action(ai);
+    return action.isUseful();
+}
+
+bool HakkarPoisonTrigger::IsActive()
+{
+    HakkarPoisonAction action(ai);
+    return action.isUseful();
+}
+
+bool OssirianCrystalTrigger::IsActive()
+{
+    OssirianCrystalAction action(ai);
+    return action.isUseful();
+}
+
+bool BossCoverTrigger::IsActive()
+{
+    BossCoverAction action(ai);
+    return action.isUseful();
+}
 
 bool DungeonAddTargetTrigger::IsActive()
 {

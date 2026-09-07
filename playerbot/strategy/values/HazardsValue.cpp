@@ -166,5 +166,7 @@ std::list<HazardPosition> HazardsValue::Calculate()
         SET_AI_VALUE(std::list<Hazard>, "stored hazards", storedHazards);
     }
 
+    AppendVashjStriderHazards(ai, hazards);
+    AppendNativeEncounterActorHazards(ai, hazards);
     return hazards;
 }

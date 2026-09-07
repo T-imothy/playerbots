@@ -2,6 +2,7 @@
 
 #include "ActiveSpellValue.h"
 #include "EncounterPositionValue.h"
+#include "VashjCoreValue.h"
 #include "RitualSummonValue.h"
 #include "RighteousDefenseTargetValue.h"
 #include "NearestGameObjects.h"
@@ -127,6 +128,15 @@ namespace ai
             creators["mechanar position"] = [](PlayerbotAI* ai) { return new MechanarPositionValue(ai); };
             creators["aran flame wreath"] = [](PlayerbotAI* ai) { return new AranFlameWreathValue(ai); };
             creators["boss cast position"] = [](PlayerbotAI* ai) { return new BossCastPositionValue(ai); };
+            creators["boss cover position"] = [](PlayerbotAI* ai) { return new BossCoverPositionValue(ai); };
+            creators["ossirian crystal position"] = [](PlayerbotAI* ai) { return new OssirianPositionValue(ai); };
+            creators["hakkar poison position"] = [](PlayerbotAI* ai) { return new HakkarPositionValue(ai); };
+            creators["akilzon storm position"] = [](PlayerbotAI* ai) { return new AkilzonStormPositionValue(ai); };
+            creators["linked burst position"] = [](PlayerbotAI* ai) { return new LinkedBurstPositionValue(ai); };
+            creators["rotating beam position"] = [](PlayerbotAI* ai) { return new RotatingBeamPositionValue(ai); };
+            creators["vashj core plan"] = [](PlayerbotAI* ai) { return new VashjCoreValue(ai); };
+            creators["najentus spine position"] = [](PlayerbotAI* ai) { return new NajentusPositionValue(ai); };
+            creators["heigan dance position"] = [](PlayerbotAI* ai) { return new HeiganPositionValue(ai); };
             creators["solarian burst position"] = [](PlayerbotAI* ai) { return new SolarianPositionValue(ai); };
             creators["magtheridon cube position"] = [](PlayerbotAI* ai) { return new MagtheridonPositionValue(ai); };
             creators["righteous defense target"] = [](PlayerbotAI* ai) { return new RighteousDefenseTargetValue(ai); };

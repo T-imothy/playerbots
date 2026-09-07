@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "HealthTriggers.h"
+#include "playerbot/strategy/actions/EncounterSpellPolicy.h"
 
 using namespace ai;
 
@@ -42,6 +43,12 @@ bool HealthInRangeTrigger::IsActive()
     else
         healthCheck = ValueInRangeTrigger::IsActive();
 
+    // Reuse each class's existing medium-heal action, without presenting fake
+    // health to other decisions or enabling low-health emergency cooldowns.
+    if (!healthCheck && (getName() == "medium health" || getName() == "party member medium health") &&
+        GetValue() >= minValue && (NeedsFullHealingToRemoveAura(GetTarget()) || RemainingHealingAbsorb(GetTarget())))
+        healthCheck = true;
+
     return healthCheck
         && !AI_VALUE2(bool, "dead", GetTargetName())
         && (!isTankRequired || (GetTarget()->IsPlayer() && ai->IsTank((Player*)GetTarget(), false)));
@@ -73,8 +80,9 @@ bool HealTargetFullHealthTrigger::IsActive()
             std::string status = "fullhp";
             if (Unit* pTarget = currentSpell->m_targets.getUnitTarget())
             {
+                if (RemainingHealingAbsorb(pTarget)) return false;
                 bool hpFull = pTarget->GetHealth() == pTarget->GetMaxHealth();
-                if (!hpFull && (pTarget->GetHealthPercent() > 90.f))
+                if (!hpFull && !NeedsFullHealingToRemoveAura(pTarget) && (pTarget->GetHealthPercent() > 90.f))
                 {
                     uint32 healValue = currentSpell->GetDamage();
                     uint32 needHeal = pTarget->GetMaxHealth() - pTarget->GetHealth();

@@ -6,6 +6,8 @@ using namespace ai;
 
 void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("use hourglass sand",
+        NextAction::array(0, new NextAction("use hourglass sand", ACTION_DISPEL + 1), NULL)));
     triggers.push_back(new TriggerNode("blackwing lair safe position",
         NextAction::array(0, new NextAction("blackwing lair safe position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("corrupted healing cast",
@@ -25,6 +27,8 @@ void BlackwingLairDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>&
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("use hourglass sand",
+        NextAction::array(0, new NextAction("use hourglass sand", ACTION_DISPEL + 1), NULL)));
     triggers.push_back(new TriggerNode("blackwing lair safe position",
         NextAction::array(0, new NextAction("blackwing lair safe position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode(

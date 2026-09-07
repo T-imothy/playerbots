@@ -6,17 +6,20 @@ using namespace ai;
 
 bool ai::IsBossEscapeMap(uint32 map)
 {
+    if (map == 531) return true;
 #ifndef MANGOSBOT_ZERO
     if (map == 532 || map == 542 || map == 550 || map == 552 || map == 553 || map == 555) return true;
 #endif
 #ifdef MANGOSBOT_TWO
-    if (map == 602 || map == 603 || map == 604 || map == 658) return true;
+    if (map == 602 || map == 603 || map == 604 || map == 624 || map == 658) return true;
 #endif
     return false;
 }
 
 uint32 ai::NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast, bool regular)
 {
+    if (map == 531 && entry == 15516 && cast == 26083) return 26084;
+    if (map == 531 && entry == 15984 && cast == 26038) return 26686;
     // These are verified caster-centred escape mechanics, not an assumption
     // that every damaging AoE should be fled. All other casts retain normal AI.
 #ifndef MANGOSBOT_ZERO
@@ -39,6 +42,7 @@ uint32 ai::NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast, bool reg
     if (map == 602 && entry == 28923 && (cast == 52960 || cast == 59835)) return cast; // Loken
     if (map == 603 && entry == 33432 && cast == 63631) return cast; // Leviathan Mk II
     if (map == 604 && entry == 29304 && (cast == 55081 || cast == 59842)) return cast; // Slad'ran
+    if (map == 624 && entry == 33993 && (cast == 64216 || cast == 65279)) return cast; // Emalon: native 10/25-player Lightning Nova.
     if (map == 658 && entry == 36476 && cast == 68989) return cast; // Ick
 #endif
     return 0;
@@ -62,6 +66,11 @@ const Spell* ai::CurrentBossEscapeCast(Player* bot, Unit* boss)
 uint32 ai::CurrentBossEscapeSpell(Player* bot, Unit* boss)
 {
     if (!bot || !boss) return 0;
+    if (bot->GetMapId() == 531)
+    {
+        const uint32 aura = boss->GetEntry() == 15516 ? 26083 : boss->GetEntry() == 15984 ? 26038 : 0;
+        return aura && boss->GetSpellAuraHolder(aura, boss->GetObjectGuid()) ? aura : 0;
+    }
 #ifndef MANGOSBOT_ZERO
     // Burning Nova is triggered instantly. Its warning aura gates the native
     // Fire Nova action, so watching only an active spell misses the escape window.
@@ -81,6 +90,20 @@ EncounterPosition BossCastPositionValue::Calculate()
     // overlap. This never removes its aura or moves a player through the ring.
     if (bot->GetMapId() == 532 && AI_VALUE(bool, "aran flame wreath")) return plan;
     const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+    if (bot->GetMapId() == 531)
+    {
+        std::vector<encounter::Circle> threats;
+        if (!AQWhirlwindThreats(ai, plan, threats)) return plan;
+        unsigned checked = 0;
+        for (const auto& point : encounter::EscapeCircles(here, threats))
+        {
+            if (++checked > 8) break;
+            plan.destination = point;
+            if (ValidateEncounterDestination(ai, plan) && encounter::OutsideCircles(plan.destination, threats)) return plan;
+        }
+        plan.active = false;
+        return plan;
+    }
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
     {
         Unit* boss = ai->GetUnit(guid);
@@ -88,7 +111,11 @@ EncounterPosition BossCastPositionValue::Calculate()
             !bot->IsInMap(boss) || bot->GetDistance(boss) > 100 ||
             std::fabs(boss->GetPositionZ() - here.z) > 8) continue;
         const uint32 spell = CurrentBossEscapeSpell(bot, boss);
-        if (!spell) continue;
+        if (!spell)
+        {
+            if (PlanLokenClosePosition(ai, boss, plan)) return plan;
+            continue;
+        }
         bool regular = true;
 #ifndef MANGOSBOT_ZERO
         regular = bot->GetMap()->IsRegularDifficulty();

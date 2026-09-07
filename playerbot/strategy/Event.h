@@ -7,6 +7,20 @@ class Player;
 
 namespace ai
 {
+    // Queued work may outlive the player who submitted it. Resolve by GUID
+    // before use, and do not deliver old commands to a replacement login.
+    class EventOwner
+    {
+    public:
+        EventOwner(Player* player = nullptr);
+        Player* Get() const;
+        bool HasOwner() const { return original != nullptr; }
+        bool IsAvailable() const { return !HasOwner() || Get() != nullptr; }
+    private:
+        ObjectGuid guid;
+        Player* original;
+    };
+
     class Event
 	{
 	public:
@@ -19,9 +33,9 @@ namespace ai
         }
         Event() {}
         Event(std::string source) : source(source) {}
-        Event(std::string source, std::string param, Player* owner = NULL) : source(source), param(param), owner(owner) {}
-        Event(std::string source, WorldPacket &packet, Player* owner = NULL) : source(source), packet(packet), owner(owner) {}
-        Event(std::string source, ObjectGuid object, Player* owner = NULL) : source(source), owner(owner) { packet << object; }
+        Event(std::string source, std::string param, EventOwner owner = {}) : source(source), param(param), owner(owner) {}
+        Event(std::string source, WorldPacket &packet, EventOwner owner = {}) : source(source), packet(packet), owner(owner) {}
+        Event(std::string source, ObjectGuid object, EventOwner owner = {}) : source(source), owner(owner) { packet << object; }
         virtual ~Event() {}
 
 	public:
@@ -29,13 +43,14 @@ namespace ai
         std::string getParam() { return param; }
         WorldPacket& getPacket() { return packet; }
         ObjectGuid getObject();
-        Player* getOwner() { return owner; }
-        bool operator! () const { return source.empty(); }
+        Player* getOwner() { return owner.Get(); }
+        bool IsOwnerAvailable() const { return owner.IsAvailable(); }
+        bool operator! () const { return source.empty() || !IsOwnerAvailable(); }
 
     protected:
         std::string source;
         std::string param;
         WorldPacket packet;
-        Player* owner = nullptr;
+        EventOwner owner;
 	};
 }

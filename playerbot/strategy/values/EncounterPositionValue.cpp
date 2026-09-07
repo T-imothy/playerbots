@@ -37,7 +37,17 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan)
     if (!std::isfinite(point.z) || std::fabs(point.z - originalZ) > 8.0f ||
         bot->GetDistance(point.x, point.y, point.z) > 60) return false;
     const WorldPosition destination(plan.map, point.x, point.y, point.z);
-    const auto hazards = ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Get();
+    auto hazards = ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Get();
+    if (plan.map == 531)
+    {
+        EncounterPosition current;
+        std::vector<encounter::Circle> whirlwinds;
+        AQWhirlwindThreats(ai, current, whirlwinds);
+        // Keep one yard of route clearance and two at the endpoint. These
+        // moving native auras need not have entered the stored hazard cache.
+        for (const auto& circle : whirlwinds)
+            hazards.emplace_back(WorldPosition(plan.map, circle.center.x, circle.center.y, circle.center.z), circle.radius - 1);
+    }
     for (const auto& hazard : hazards)
         if (destination.distance(hazard.first) < hazard.second + 1) return false;
     if (bot->GetDistance(point.x, point.y, point.z) <= 1.0f) return true;

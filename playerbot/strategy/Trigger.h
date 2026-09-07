@@ -65,7 +65,7 @@ namespace ai
 		time_t lastCheckTime;
         std::string param;
         bool triggered;
-        Player* owner = nullptr;
+        EventOwner owner;
 	};
 
 

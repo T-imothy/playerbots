@@ -19,6 +19,7 @@
 #include "PlayerbotAI.h"
 #include "CombatDiagnostics.h"
 #include "strategy/actions/EncounterSpellPolicy.h"
+#include "strategy/actions/DungeonActions.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "PlayerbotSecurity.h"
 #include "Groups/Group.h"
@@ -722,6 +723,7 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
 
 void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
 {
+    if (EadricRadianceAction::GetBoss(this)) return;
     faceTargetUpdateDelay = faceTargetUpdateDelay > elapsed ? faceTargetUpdateDelay - elapsed : 0U;
     if (faceTargetUpdateDelay <= 0U)
     {
@@ -1177,6 +1179,11 @@ void PlayerbotAI::HandleCommands()
     while (!chatCommands.empty())
     {
         ChatCommandHolder holder = chatCommands.front();
+        if (!holder.IsOwnerAvailable())
+        {
+            chatCommands.pop();
+            continue;
+        }
         time_t checkTime = holder.GetTime();
         if (checkTime && time(0) < checkTime)
         {
@@ -2092,7 +2099,9 @@ void PlayerbotAI::SpellInterrupted(uint32 spellid)
         return;
 
     time_t now = time(0);
-    if (now <= lastSpell.time)
+    // time(0) has one-second resolution. A matching interruption in the
+    // starting second must release the original cast wait as well.
+    if (now < lastSpell.time)
         return;
 
     uint32 castTimeSpent = 1000 * (now - lastSpell.time);

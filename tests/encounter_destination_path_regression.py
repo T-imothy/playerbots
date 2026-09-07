@@ -40,6 +40,9 @@ struct Stored {std::list<HazardPosition> hazards;std::list<HazardPosition> Get()
 struct Context {Stored stored;template<class T>Stored* GetValue(const char*){return &stored;}};
 struct PlayerbotAI {Player bot;Context context;Player* GetBot(){return &bot;}Context* GetAiObjectContext(){return &context;}};
 namespace ai {struct Point {float x=0,y=0,z=0;};struct EncounterPosition {bool active=true;unsigned map=542,instance=1;Point destination{10,0,0};};
+namespace encounter {struct Circle {Point center;float radius;};}
+std::vector<encounter::Circle> whirlwinds;
+bool AQWhirlwindThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>& out){out=whirlwinds;return !out.empty();}
 bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&);
 __HELPERS__
 }
@@ -65,6 +68,17 @@ int main(){
  ai.bot.adjust=0;plan.destination={10,0,0};ai.bot.teleport=true;assert(!ValidateEncounterDestination(&ai,plan));ai.bot.teleport=false;
  plan.instance=2;assert(!ValidateEncounterDestination(&ai,plan));plan.instance=1;
  plan.destination={0,0,0};path.clear();assert(ValidateEncounterDestination(&ai,plan));
+ // Uncached Sartura/guard auras must constrain the whole route as well.
+ ai.bot.map=plan.map=531;plan.destination={30,0,0};
+ whirlwinds={{{-1,0,0},12},{{15,0,0},12}};
+ path={{531,0,0,0},{531,30,0,0}};assert(!ValidateEncounterDestination(&ai,plan));
+ path={{531,0,0,0},{531,0,15,0},{531,30,15,0},{531,30,0,0}};assert(ValidateEncounterDestination(&ai,plan));
+ // The endpoint needs its two-yard margin, even when the route is empty.
+ plan.destination={26.5f,0,0};assert(!ValidateEncounterDestination(&ai,plan));
+ whirlwinds.pop_back();plan.destination={30,0,0};
+ path={{531,0,0,0},{531,30,0,0}};assert(ValidateEncounterDestination(&ai,plan));
+ path={{531,0,0,0},{531,-2,0,0},{531,30,0,0}};assert(!ValidateEncounterDestination(&ai,plan));
+ whirlwinds.clear();assert(ValidateEncounterDestination(&ai,plan));
  std::cout<<"PASS: actual encounter endpoint and bounded route validation, crossing/outward hazards and lifecycle gates\n";
 }
 '''.replace('__HELPERS__',helpers).replace('__METHOD__',method)

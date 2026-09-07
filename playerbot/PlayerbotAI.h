@@ -354,13 +354,14 @@ public:
 
 public:
     std::string GetCommand() { return command; }
-    Player* GetOwner() { return owner; }
+    Player* GetOwner() { return owner.Get(); }
+    bool IsOwnerAvailable() const { return owner.IsAvailable(); }
     uint32 GetType() { return type; }
     time_t GetTime() { return time; }
 
 private:
     std::string command;
-    Player* owner;
+    EventOwner owner;
     uint32 type;
     time_t time;
 };
@@ -643,6 +644,7 @@ public:
     void ResetJumpDestination() { jumpDestination = WorldPosition(); }
 
     bool IsJumping() { return jumpTime; }
+    uint32 GetJumpTime() const { return jumpTime; }
     void SetFallAfterJump() { fallAfterJump = true; }
     void SetJumpTime(uint32 time) { jumpTime = time; }
     bool CanMove();

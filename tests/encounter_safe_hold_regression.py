@@ -5,7 +5,7 @@ from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
 before='--before' in sys.argv
 methods=[]
-for name,path in [('MechanarPositionAction','MechanarDungeonActions.cpp'),('OnyxiaPositionAction','OnyxiasLairDungeonActions.cpp'),('BlackwingLairPositionAction','BlackwingLairDungeonActions.cpp'),('NaxxramasPositionAction','NaxxramasDungeonActions.cpp')]:
+for name,path in [('MoltenCorePositionAction','MoltenCoreDungeonActions.cpp'),('MechanarPositionAction','MechanarDungeonActions.cpp'),('OnyxiaPositionAction','OnyxiasLairDungeonActions.cpp'),('BlackwingLairPositionAction','BlackwingLairDungeonActions.cpp'),('NaxxramasPositionAction','NaxxramasDungeonActions.cpp')]:
     source=(root/'playerbot/strategy/actions'/path).read_text()
     if before:
         source=subprocess.check_output(['git','-c','safe.directory='+root.as_posix(),'-C',str(root),'show',
@@ -32,10 +32,18 @@ namespace encounter{struct Circle{};bool OutsideCircles(Point,const std::vector<
 bool MechanarThreats(PlayerbotAI* ai,EncounterPosition& p,std::vector<encounter::Circle>&){p.boss=7;return ai->fresh;}
 bool BlackwingLairBurstThreats(PlayerbotAI* ai,EncounterPosition&,std::vector<encounter::Circle>&){return ai->fresh;}
 bool NaxxramasBurstThreats(PlayerbotAI* ai,EncounterPosition&,std::vector<encounter::Circle>&){return ai->fresh;}
+bool MoltenCoreThreats(PlayerbotAI* ai,EncounterPosition&,std::vector<encounter::Circle>&){return ai->fresh;}
 struct Base{PlayerbotAI* ai;Player* bot;Base(PlayerbotAI* a):ai(a),bot(&a->bot){}
  static bool GetPlan(PlayerbotAI* ai,EncounterPosition& p){p=ai->plan;return p.active;}
  bool MoveTo(unsigned,float,float,float,bool,bool,bool,bool){++ai->moves;return true;}
  void SetDuration(unsigned){}bool IsReaction(){return true;}};
+struct MoltenCorePositionAction:Base{using Base::Base;bool isUseful();bool Execute(Event&);
+#ifdef BEFORE
+ bool ShouldReactionInterruptCast()const{return true;}
+#else
+ bool ShouldReactionInterruptCast()const;
+#endif
+};
 struct MechanarPositionAction:Base{using Base::Base;bool isUseful();bool Execute(Event&);
 #ifdef BEFORE
  bool ShouldReactionInterruptCast()const{return true;}
@@ -77,7 +85,7 @@ template<class T>void check(){
  ai.canMove=false;assert(!action.Execute(event));ai.canMove=true;
  ai.plan.active=false;assert(!action.isUseful()&&!action.ShouldReactionInterruptCast()&&!action.Execute(event));
 }
-int main(){check<MechanarPositionAction>();check<OnyxiaPositionAction>();check<BlackwingLairPositionAction>();check<NaxxramasPositionAction>();
+int main(){check<MoltenCorePositionAction>();check<MechanarPositionAction>();check<OnyxiaPositionAction>();check<BlackwingLairPositionAction>();check<NaxxramasPositionAction>();
  PlayerbotAI ai;Event e;OnyxiaPositionAction onyxia(&ai);ai.plan.exclusive=false;
  assert(!onyxia.isUseful()&&!onyxia.Execute(e)&&ai.stops==0); // Flank guidance does not cancel chasing adds.
  ai.plan.exclusive=true;MechanarPositionAction mechanar(&ai);ai.fresh=false;

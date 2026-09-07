@@ -28,6 +28,9 @@ def source(path):
             'show','88f43c09:playerbot/strategy/'+path],text=True)
     return (base / path).read_text()
 methods = "\n".join(block(source(path), name) for path, names in extract for name in names)
+methods = block((base/'values/AQWhirlwindPositionValue.cpp').read_text(), 'bool ai::AQWhirlwindThreats(') + '\n' + methods
+methods = '\n'.join(block((base/'values/LokenPositionValue.cpp').read_text(), name) for name in
+    ('bool ai::IsLokenClosePhase(', 'bool ai::PlanLokenClosePosition(')) + '\n' + methods
 if 'uint32 ai::CurrentBossEscapeSpell(' in source('values/BossCastPositionValue.cpp'):
     methods = block(source('values/BossCastPositionValue.cpp'), 'uint32 ai::CurrentBossEscapeSpell(') + '\n' + methods
 code = r'''
@@ -39,6 +42,7 @@ code = r'''
 #include <iostream>
 #include "__GEOMETRY__"
 using uint32=unsigned;using ObjectGuid=unsigned;
+struct PlayerbotAI;
 constexpr int CURRENT_GENERIC_SPELL=1,CURRENT_CHANNELED_SPELL=3,SPELL_STATE_FINISHED=2,IDLE_MOTION_TYPE=0;
 struct SpellEntry {unsigned Id=0;};
 struct Spell {SpellEntry* m_spellInfo=nullptr;int state=0;int getState()const{return state;}};
@@ -48,7 +52,8 @@ struct Map {bool regular=true;
 #endif
 };
 struct Unit {unsigned entry=0,guid=1,phase=1;bool world=true,alive=true,combat=true,charmed=false;Map* map=nullptr;
- unsigned aura=0;bool HasAura(unsigned id){return aura==id;}
+ unsigned aura=0;bool auraOwner=true;bool HasAura(unsigned id){return aura==id;}
+ bool GetSpellAuraHolder(unsigned id,unsigned caster){return auraOwner&&aura==id&&caster==guid;}
  float x=0,y=0,z=0;Spell* current=nullptr;Spell* channel=nullptr;Unit* victim=nullptr;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}
  bool HasCharmer(){return charmed;}unsigned GetEntry(){return entry;}Map* GetMap(){return map;}
@@ -58,23 +63,27 @@ struct Unit {unsigned entry=0,guid=1,phase=1;bool world=true,alive=true,combat=t
  float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c));}
  float GetDistance(Unit* u){return GetDistance(u->x,u->y,u->z);}};
 struct Motion {int kind=0;int GetCurrentMovementGeneratorType(){return kind;}};
-struct Player:Unit {bool teleport=false,stopped=true;unsigned mapId=532,instance=1;Motion motion;
+struct Player:Unit {bool teleport=false,stopped=true,casting=false;unsigned mapId=532,instance=1;Motion motion;
+ bool IsNonMeleeSpellCasted(bool,bool,bool){return casting;}
  bool IsInMap(Unit* unit){return map==unit->map&&phase==unit->phase;}
  bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}unsigned GetInstanceId(){return instance;}
  bool IsStopped(){return stopped;}Motion* GetMotionMaster(){return &motion;}};
 namespace ai {
  struct EncounterPosition {bool active=false;unsigned map=0,instance=0,boss=0,spell=0;encounter::Point destination;};
  bool IsBossEscapeMap(unsigned);unsigned NativeBossEscapeSpell(unsigned,unsigned,unsigned__DIFFICULTY__);
+ bool AQWhirlwindThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
+ bool IsLokenClosePhase(Player*,Unit*);
+ bool PlanLokenClosePosition(PlayerbotAI*,Unit*,EncounterPosition&);
  unsigned CurrentBossEscapeSpell(Player*,Unit*);
  const Spell* CurrentBossEscapeCast(Player*,Unit*);
  std::map<unsigned,float> radii{{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15},{34164,18},
- {34660,15},{39132,15},{55081,15},{59842,15},{33775,10},{37371,12},{36142,8}};
+ {34660,15},{39132,15},{55081,15},{59842,15},{33775,20},{37371,20},{36142,8},{64216,20},{65279,100},{26084,10},{26686,10}};
  float NativeEncounterSpellRadius(unsigned id){return radii[id];}
 }
 template<class T>struct Stored {T value{};T Get(){return value;}};
-struct Context {Stored<ai::EncounterPosition> plan;Stored<bool> wreath;unsigned reads=0;
+struct Context {Stored<ai::EncounterPosition> plan;Stored<bool> wreath;Stored<std::list<unsigned>> attackers;unsigned reads=0;
  template<class T>Stored<T>* GetValue(const char*) {++reads;
-  if constexpr(std::is_same_v<T,bool>)return &wreath;else return &plan;}};
+  if constexpr(std::is_same_v<T,bool>)return &wreath;else if constexpr(std::is_same_v<T,std::list<unsigned>>)return &attackers;else return &plan;}};
 struct PlayerbotAI {Player* bot;Context context;std::list<ObjectGuid> attackers;std::map<unsigned,Unit*> units;
  bool validPath=true,canMove=true;unsigned checked=0,stops=0,moves=0;ai::encounter::Point moved;
  Player* GetBot(){return bot;}Context* GetAiObjectContext(){return &context;}
@@ -108,9 +117,9 @@ int main(){
  BossCastPositionValue value{&bot,&ai};BossCastPositionAction action(&ai);
  PreserveBossCastPositionMultiplier multiplier{&ai};MovementAction chase(&ai);AttackAction attack(&ai);
  MoveAwayFromHazard hazard(&ai);CastSpellAction heal,charge;charge.movement=true;Event event;
- auto load=[&](){return ai.context.plan.value=value.Calculate();};
+ auto load=[&](){ai.context.attackers.value=ai.attackers;return ai.context.plan.value=value.Calculate();};
 #ifdef MANGOSBOT_ZERO
- for(unsigned id:{532u,542u,550u,552u,553u,555u,602u,603u,604u,658u})assert(!IsBossEscapeMap(id));
+ for(unsigned id:{532u,542u,550u,552u,553u,555u,602u,603u,604u,624u,658u})assert(!IsBossEscapeMap(id));
  assert(!load().active && ai.checked==0);assert(!action.isUseful() && !action.Execute(event));
  assert(multiplier.GetValue(&chase)==1 && multiplier.GetValue(&charge)==1 && ai.context.reads==0);
  assert(NativeBossEscapeSpell(532,16524,29973)==0);
@@ -162,11 +171,13 @@ int main(){
  assert(load().active);boss.channel=nullptr;assert(!action.Execute(event));boss.current=&cast;
  assert(load().active);entry.Id=34172;assert(!action.Execute(event)&&!load().active); // Orb isn't a caster-centred escape.
 #ifdef MANGOSBOT_TWO
- const unsigned cases[][3]={{602,28923,52960},{602,28923,59835},{603,33432,63631},{658,36476,68989},{604,29304,55081},{604,29304,59842}};
+ const unsigned cases[][3]={{602,28923,52960},{602,28923,59835},{603,33432,63631},{658,36476,68989},{604,29304,55081},{604,29304,59842},{624,33993,64216}};
  for(const auto& c:cases){bot.mapId=c[0];boss.entry=c[1];entry.Id=c[2];plan=load();
   assert(plan.active && encounter::Distance2d(plan.destination,{0,0,0})>=radii[c[2]]+2);}
+ bot.mapId=624;boss.entry=33993;entry.Id=65279;
+ assert(!load().active); // Actual dev DBC radius is100; no imaginary25-yard safe point.
 #else
- assert(!IsBossEscapeMap(602) && !IsBossEscapeMap(603) && !IsBossEscapeMap(604) && !IsBossEscapeMap(658));
+ assert(!IsBossEscapeMap(602) && !IsBossEscapeMap(603) && !IsBossEscapeMap(604) && !IsBossEscapeMap(624) && !IsBossEscapeMap(658));
  assert(!NativeBossEscapeSpell(602,28923,52960));
 #endif
  // Botanica's Hellfire channel has a zero-radius parent and distinct native
@@ -187,7 +198,7 @@ int main(){
  bot.mapId=542;boss.entry=17377;boss.aura=30940;boss.current=boss.channel=nullptr;
  for(bool regular:{true,false}){
   map.regular=regular;plan=load();assert(plan.active && plan.spell==30940);
-  assert(encounter::Distance2d(plan.destination,{0,0,0})>=(regular?12:14));
+  assert(encounter::Distance2d(plan.destination,{0,0,0})>=22);
   assert(action.Execute(event));boss.aura=0;
   assert(!action.Execute(event)&&!load().active&&multiplier.GetValue(&chase)==1);
   boss.aura=30940;
@@ -205,6 +216,40 @@ int main(){
  assert(encounter::Distance2d(plan.destination,{0,0,0})>=10&&action.Execute(event));
  boss.aura=0;entry.Id=36144;boss.current=&cast;
  assert(!action.Execute(event)&&!load().active&&multiplier.GetValue(&chase)==1);
+#endif
+ // Sartura and her guards are simultaneous moving hazards. Clear every active
+ // whirlwind, and reject a cached point if another guard moves into it.
+ bot.mapId=531;bot.x=bot.y=0;boss.x=boss.y=boss.z=0;boss.entry=15516;boss.aura=26083;
+ boss.current=boss.channel=nullptr;Unit guard;guard.guid=2;guard.entry=15984;guard.aura=26038;guard.x=8;guard.map=&map;
+ ai.units[2]=&guard;ai.attackers={1,2};auto aq=load();assert(aq.active&&aq.boss==1&&aq.spell==26083);
+ assert(encounter::Distance2d(aq.destination,{0,0,0})>=12&&encounter::Distance2d(aq.destination,{8,0,0})>=12);
+ assert(action.Execute(event));guard.x=aq.destination.x;guard.y=aq.destination.y;assert(!action.Execute(event));
+ guard.x=8;guard.y=0;aq=load();boss.aura=0;assert(!action.Execute(event));aq=load();assert(aq.active&&aq.boss==2);
+ guard.auraOwner=false;assert(!load().active);guard.auraOwner=true;guard.combat=false;assert(!load().active);guard.combat=true;
+ guard.phase=2;assert(!load().active);guard.phase=1;guard.z=20;assert(!load().active);guard.z=0;
+ ai.validPath=false;ai.checked=0;assert(!load().active&&ai.checked<=8);ai.validPath=true;
+ guard.aura=0;assert(!load().active&&multiplier.GetValue(&chase)==1);
+#ifdef MANGOSBOT_TWO
+ // Native Shockwave damage scales with distance: close after Nova, escape
+ // again on the next cast, and never clip a heal merely to return closer.
+ ai.attackers={1};bot.mapId=602;bot.x=30;boss.entry=28923;boss.aura=52961;boss.current=boss.channel=nullptr;
+ auto close=load();assert(close.active&&close.spell==59414&&encounter::Distance2d(close.destination,{0,0,0})<=5);
+ assert(action.isUseful()&&!action.ShouldReactionInterruptCast()&&action.Execute(event));
+ assert(multiplier.GetValue(&chase)==0&&multiplier.GetValue(&heal)==1);
+ bot.casting=true;assert(!action.isUseful()&&!action.Execute(event));bot.casting=false;
+ entry.Id=52960;cast.state=0;boss.current=&cast;
+ assert(!action.Execute(event)); // Cached return-to-boss cannot survive Nova starting.
+ bot.x=0;auto nova=load();assert(nova.active&&nova.spell==52960&&action.ShouldReactionInterruptCast());
+ boss.current=nullptr;assert(!action.Execute(event));bot.x=30;
+ for(unsigned aura:{52961u,59836u}){boss.aura=aura;assert(load().active);}
+ boss.auraOwner=false;assert(!load().active);boss.auraOwner=true;
+ boss.victim=&bot;assert(!load().active);boss.victim=nullptr;
+ ai.validPath=false;ai.checked=0;assert(!load().active&&ai.checked==8);ai.validPath=true;
+ close=load();boss.x=15;assert(!action.Execute(event));boss.x=0;
+ bot.x=3;close=load();assert(close.active&&close.destination.x==3);bot.motion.kind=1;
+ assert(action.isUseful()&&!action.ShouldReactionInterruptCast()&&action.Execute(event)&&!action.isUseful());
+ boss.aura=0;assert(!action.Execute(event)&&!load().active&&multiplier.GetValue(&chase)==1);
+ bot.mapId=603;boss.aura=52961;assert(!load().active);
 #endif
  std::cout<<"PASS: actual native cast/difficulty/expansion/radius selection, bounded escape, safe hold, cast lifetime and movement arbitration\n";
 }

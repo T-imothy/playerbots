@@ -212,6 +212,9 @@ bool ReactionEngine::Update(uint32 elapsed, bool minimal, bool isStunned, bool& 
 
 bool ReactionEngine::ListenAndExecute(Action* action, Event& event)
 {
+    if (!event.IsOwnerAvailable())
+        return false;
+
     bool actionExecuted = false;
     if (actionExecutionListeners.Before(action, event))
     {

@@ -5,8 +5,81 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/Action.h"
 #include "playerbot/strategy/values/RtiTargetValue.h"
+#include "Grids/GridNotifiers.h"
+#include "Grids/GridNotifiersImpl.h"
+#include "Grids/CellImpl.h"
 
 using namespace ai;
+
+namespace
+{
+    bool GarrBanishAssignment(PlayerbotAI* ai, const std::string& spell, Unit*& result)
+    {
+        Player* bot = ai->GetBot();
+        if (spell != "banish" || bot->GetMapId() != 409 || !bot->GetGroup() ||
+            !bot->IsInCombat() || bot->HasCharmer() || ai->IsRealPlayer()) return false;
+        AiObjectContext* context = ai->GetAiObjectContext();
+        // An explicit CC mark retains the usual player-directed selection.
+        if (AI_VALUE(Unit*, "rti cc target")) return false;
+        const auto possible = AI_VALUE(std::list<ObjectGuid>, "possible targets no los");
+        Unit* boss = nullptr;
+        for (const auto& guid : possible)
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (!unit || unit->GetEntry() != 12057 || !unit->IsInWorld() || !unit->IsAlive() ||
+                !bot->IsInMap(unit) || !unit->IsInCombat() || unit->HasCharmer()) continue;
+            if (boss && boss != unit) return false;
+            boss = unit;
+        }
+        if (!boss) return false;
+        std::vector<Player*> warlocks;
+        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->getSource();
+            if (!member || !member->IsInWorld() || !member->IsAlive() || !bot->IsInMap(member) ||
+                member->GetGroup() != bot->GetGroup() || member->IsBeingTeleported() || member->HasCharmer() ||
+                member->getClass() != CLASS_WARLOCK || (!member->HasSpell(710) && !member->HasSpell(18647)) ||
+                member->GetDistance(boss) > sPlayerbotAIConfig.sightDistance || !member->GetPlayerbotAI() ||
+                member->GetPlayerbotAI()->IsRealPlayer() ||
+                !member->GetPlayerbotAI()->HasStrategy("cc", BotState::BOT_STATE_COMBAT)) continue;
+            warlocks.push_back(member);
+        }
+        std::sort(warlocks.begin(), warlocks.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+        const auto own = std::find(warlocks.begin(), warlocks.end(), bot);
+        if (own == warlocks.end()) return true;
+        std::vector<Unit*> adds;
+        const ObjectGuid skull = bot->GetGroup()->GetTargetIcon(7);
+        // Every participant needs the same boss-centred view. Per-bot sight
+        // lists can contain different subsets and assign two locks one add.
+        std::list<Unit*> firesworn;
+        MaNGOS::AllCreaturesOfEntryInRangeCheck check(boss, 12099, 100.0f);
+        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(firesworn, check);
+        Cell::VisitAllObjects(boss, searcher, 100.0f);
+        for (Unit* add : firesworn)
+        {
+            if (!add || add->GetEntry() != 12099 || !add->IsInWorld() || !add->IsAlive() ||
+                !bot->IsInMap(add) || !add->IsInCombat() || add->HasCharmer() ||
+                add->GetObjectGuid() == skull || sServerFacade.IsFriendlyTo(bot, add) ||
+                add->GetDistance(boss) > 100.0f) continue;
+            // Keep bot-owned banishes in the ordering so a successful cast
+            // cannot shift every other warlock onto a different add.
+            if (add->HasAura(710) || add->HasAura(18647))
+            {
+                bool owned = false;
+                for (Player* member : warlocks)
+                    if (add->GetSpellAuraHolder(710, member->GetObjectGuid()) ||
+                        add->GetSpellAuraHolder(18647, member->GetObjectGuid())) { owned = true; break; }
+                if (!owned) continue; // Human CC is not reassigned.
+            }
+            adds.push_back(add);
+        }
+        std::sort(adds.begin(), adds.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+        const size_t slot = std::distance(warlocks.begin(), own);
+        if (slot < adds.size() && !adds[slot]->HasAura(710) && !adds[slot]->HasAura(18647) &&
+            ai->CanCastSpell(spell, adds[slot], 0, nullptr, false, true)) result = adds[slot];
+        return true;
+    }
+}
 
 class FindTargetForCcStrategy : public FindTargetStrategy
 {
@@ -126,6 +199,8 @@ Unit* CcTargetValue::Calculate()
         }
     }
 
+    Unit* assigned = nullptr;
+    if (GarrBanishAssignment(ai, qualifier, assigned)) return assigned;
     FindTargetForCcStrategy strategy(ai, qualifier);
     return FindTarget(&strategy);
 }

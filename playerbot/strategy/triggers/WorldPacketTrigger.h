@@ -30,6 +30,6 @@ namespace ai
     private:
         WorldPacket packet;
         bool triggered;
-        Player* owner;
+        EventOwner owner;
     };
 }

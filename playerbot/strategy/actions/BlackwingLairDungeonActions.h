@@ -11,6 +11,18 @@ namespace ai
 {
     const uint32 SPELL_DISARM_TRAP = 1842;
 
+    class HourglassSandAction : public UseItemIdAction
+    {
+    public:
+        HourglassSandAction(PlayerbotAI* ai) : UseItemIdAction(ai, "use hourglass sand") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool ShouldReactionInterruptCast() const override { return false; }
+    protected:
+        uint32 GetItemId() override { return 19183; }
+        Unit* GetTarget() override { return bot; }
+    };
+
     class BlackwingLairPositionAction : public MovementAction
     {
     public:

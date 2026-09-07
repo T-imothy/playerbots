@@ -73,6 +73,11 @@ bool BossCastPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     if (!boss || !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() || boss->HasCharmer() ||
         !bot->IsInMap(boss) || bot->GetDistance(boss) > 100 ||
         std::fabs(boss->GetPositionZ() - bot->GetPositionZ()) > 8) return false;
+    if (plan.spell == 59414)
+        return IsLokenClosePhase(bot, boss) && std::isfinite(plan.destination.x) &&
+            std::isfinite(plan.destination.y) && std::isfinite(plan.destination.z) &&
+            std::fabs(plan.destination.z - boss->GetPositionZ()) <= 8 &&
+            encounter::Distance2d(plan.destination, {boss->GetPositionX(), boss->GetPositionY(), boss->GetPositionZ()}) <= 5;
     const uint32 spell = CurrentBossEscapeSpell(bot, boss);
     if (!spell || spell != plan.spell) return false;
     bool regular = true;
@@ -83,6 +88,14 @@ bool BossCastPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     if (!damage) return false;
     const float radius = NativeEncounterSpellRadius(damage);
     const encounter::Point center{boss->GetPositionX(), boss->GetPositionY(), boss->GetPositionZ()};
+    if (plan.map == 531)
+    {
+        EncounterPosition current;
+        std::vector<encounter::Circle> threats;
+        // Every active guard remains a hazard, including one that starts or
+        // moves after this destination was cached.
+        if (!AQWhirlwindThreats(ai, current, threats) || !encounter::OutsideCircles(plan.destination, threats)) return false;
+    }
     // A cached point must still clear the live caster. End the hold immediately
     // on cast completion/interruption, reset, map change or invalid spell data.
     return std::isfinite(radius) && radius > 0 && radius <= 35 &&
@@ -93,7 +106,8 @@ bool BossCastPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 bool BossCastPositionAction::isUseful()
 {
     EncounterPosition plan;
-    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f ||
+    return GetPlan(ai, plan) && !(plan.spell == 59414 && bot->IsNonMeleeSpellCasted(false, false, true)) &&
+        (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f ||
         !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
 }
 
@@ -101,13 +115,14 @@ bool BossCastPositionAction::ShouldReactionInterruptCast() const
 {
     EncounterPosition plan;
     // Stopping an old chase at an already safe point need not cancel a heal.
-    return GetPlan(ai, plan) && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
+    return GetPlan(ai, plan) && plan.spell != 59414 && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
 }
 
 bool BossCastPositionAction::Execute(Event& event)
 {
     EncounterPosition plan;
     if (!GetPlan(ai, plan) || !ai->CanMove() || !ValidateEncounterDestination(ai, plan)) return false;
+    if (plan.spell == 59414 && bot->IsNonMeleeSpellCasted(false, false, true)) return false;
     if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= 1.5f)
     {
         ai->StopMoving();
@@ -119,6 +134,9 @@ bool BossCastPositionAction::Execute(Event& event)
 
 bool MoveAwayFromHazard::Execute(Event& event)
 {
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() || !ai->CanMove())
+        return false;
+    const WorldPosition botPosition(bot);
     const std::list<HazardPosition>& hazards = AI_VALUE(std::list<HazardPosition>, "hazards");
 
     // Get the closest hazard to move away from
@@ -127,6 +145,8 @@ bool MoveAwayFromHazard::Execute(Event& event)
     for (const HazardPosition& hazard : hazards)
     {
         const WorldPosition& hazardPosition = hazard.first;
+        if (hazardPosition.getMapId() != bot->GetMapId() || !std::isfinite(hazard.second) || hazard.second <= 0)
+            continue;
         const float distance = bot->GetDistance(hazardPosition.getX(), hazardPosition.getY(), hazardPosition.getZ());
         if (distance <= hazard.second && distance < closestHazardDistance)
         {
@@ -168,7 +188,7 @@ bool MoveAwayFromHazard::Execute(Event& event)
                 // Check if the point is not near other hazards
                 if (!IsHazardNearby(point, hazards))
                 {
-                    if (bot->IsWithinLOS(point.getX(), point.getY(), point.getZ() + bot->GetCollisionHeight()) && initialPosition.canPathTo(point, bot))
+                    if (bot->IsWithinLOS(point.getX(), point.getY(), point.getZ() + bot->GetCollisionHeight()) && botPosition.canPathTo(point, bot))
                     {
                         if (ai->HasStrategy("debug move", BotState::BOT_STATE_COMBAT))
                         {
@@ -179,7 +199,7 @@ bool MoveAwayFromHazard::Execute(Event& event)
                         {
                             if (IsReaction())
                             {
-                                WaitForReach(point.distance(initialPosition));
+                                WaitForReach(point.distance(botPosition));
                             }
 
                             return true;

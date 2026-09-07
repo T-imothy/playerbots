@@ -70,6 +70,9 @@ struct CcTargetValue {
  Unit* Calculate();
  Unit* FindTarget(FindTargetStrategy* strategy){for(auto pair:ai->units)if(pair.second)strategy->CheckAttacker(pair.second,nullptr);return strategy->GetResult();}
 };
+// Garr assignment is exercised with full native-state fixtures in its own
+// regression. This fixture exercises the ordinary polymorph selector.
+bool GarrBanishAssignment(PlayerbotAI*,const std::string& spell,Unit*&){assert(spell=="polymorph");return false;}
 __CALCULATE__
 int main(){
  Player bot;Group group;bot.group=&group;PlayerbotAI ai{&bot};Unit target;ai.context.marked=&target;

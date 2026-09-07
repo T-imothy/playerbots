@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "PossibleAttackTargetsValue.h"
 #include "PossibleTargetsValue.h"
+#include "playerbot/strategy/actions/EncounterSpellPolicy.h"
 
 #include "playerbot/ServerFacade.h"
 #include "Grids/GridNotifiers.h"
@@ -112,6 +113,7 @@ bool PossibleAttackTargetsValue::HasIgnoreCCRti(Unit* target, Player* player)
 
 bool PossibleAttackTargetsValue::HasBreakableCC(Unit* target, Player* player)
 {
+    if (IsViscidusShatterTarget(target, player)) return false;
     if (target->IsPolymorphed())
     {
         return true;
@@ -146,6 +148,7 @@ bool PossibleAttackTargetsValue::HasBreakableCC(Unit* target, Player* player)
 
 bool PossibleAttackTargetsValue::HasUnBreakableCC(Unit* target, Player* player)
 {
+    if (IsViscidusShatterTarget(target, player)) return false;
     if (target->IsStunned())
     {
         return true;

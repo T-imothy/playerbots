@@ -927,6 +927,9 @@ Action* Engine::InitializeAction(ActionNode* actionNode)
 
 bool Engine::ListenAndExecute(Action* action, Event& event)
 {
+    if (!event.IsOwnerAvailable())
+        return false;
+
     bool actionExecuted = false;
     Action* prevExecutedAction = lastExecutedAction;
     if (actionExecutionListeners.Before(action, event))

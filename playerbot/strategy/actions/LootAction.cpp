@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "LootAction.h"
+#include "playerbot/strategy/values/VashjCoreValue.h"
 
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -388,6 +389,9 @@ bool StoreLootAction::IsLootAllowed(ItemQualifier& itemQualifier, PlayerbotAI *a
     uint32 max = proto->MaxCount;
     if (max > 0 && ai->GetBot()->HasItemCount(itemQualifier.GetId(), max, true))
         return false;
+
+    if (itemQualifier.GetId() == 31088 && ai->GetBot()->GetMapId() == 548 && FindVashjCorePhase(ai))
+        return true;
 
     if (proto->StartQuest)
     {

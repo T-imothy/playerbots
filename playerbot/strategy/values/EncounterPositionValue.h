@@ -2,6 +2,9 @@
 
 #include "playerbot/strategy/Value.h"
 #include "playerbot/strategy/EncounterGeometry.h"
+#include "playerbot/strategy/RotatingBeamGeometry.h"
+
+class DynamicObject;
 
 namespace ai
 {
@@ -15,11 +18,84 @@ namespace ai
     };
 
     bool ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan);
+    bool ReadRotatingBeam(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan, encounter::RotatingBeam& beam);
+    bool ValidateRotatingBeamDestination(PlayerbotAI* ai, EncounterPosition& plan, const encounter::RotatingBeam& beam);
+    class RotatingBeamPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        RotatingBeamPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "rotating beam position", 2) {}
+        EncounterPosition Calculate() override;
+    };
     float NativeEncounterSpellRadius(uint32 id, unsigned depth = 0);
     uint32 NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast, bool regular = true);
     uint32 CurrentBossEscapeSpell(Player* bot, Unit* boss);
     const Spell* CurrentBossEscapeCast(Player* bot, Unit* boss);
     bool IsBossEscapeMap(uint32 map);
+    bool AQWhirlwindThreats(PlayerbotAI* ai, EncounterPosition& plan, std::vector<encounter::Circle>& threats);
+    bool IsLokenClosePhase(Player* bot, Unit* boss);
+    bool PlanLokenClosePosition(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan);
+    uint32 BossCoverMechanic(PlayerbotAI* ai, Unit* boss, bool keepCover);
+    bool IsBossCoverMap(uint32 map);
+    bool IsBossCoverPosition(PlayerbotAI* ai, Unit* boss, const encounter::Point& point);
+    bool LinkedBurstThreats(PlayerbotAI* ai, EncounterPosition& plan, std::vector<encounter::Circle>& threats);
+    uint32 HeiganNextWave(Unit* controller);
+    uint32 HeiganUpcomingWave(Unit* boss, Unit* controller);
+    bool HeiganCloudSafe(Player* bot, Unit* boss, const encounter::Point& point);
+    bool HeiganFloorThreats(PlayerbotAI* ai, const EncounterPosition& plan,
+        std::vector<encounter::Circle>& threats, std::vector<encounter::Point>& safeFloor);
+    class HeiganPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        HeiganPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "heigan dance position", 2) {}
+        EncounterPosition Calculate() override;
+    };
+    Player* NajentusSpineVictim(PlayerbotAI* ai, GameObject* spine);
+    Player* NajentusSpineUser(PlayerbotAI* ai, GameObject* spine);
+    class NajentusPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        NajentusPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "najentus spine position", 2) {}
+        EncounterPosition Calculate() override;
+    };
+    class LinkedBurstPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        LinkedBurstPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "linked burst position", 2) {}
+        EncounterPosition Calculate() override;
+    };
+    Unit* AkilzonStormBoss(Player* bot, DynamicObject* eye);
+    class AkilzonStormPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        AkilzonStormPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "akilzon storm position", 2) {}
+        EncounterPosition Calculate() override;
+    };
+    bool IsOssirianCrystal(Player* bot, GameObject* crystal);
+    bool IsHakkarPoisonSource(Player* bot, Unit* son);
+    bool HasHakkarPoisonPreparation(Player* bot);
+    class HakkarPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        HakkarPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "hakkar poison position", 2) {}
+        EncounterPosition Calculate() override;
+        void Reset() override { CalculatedValue::Reset(); preparationSon.Clear(); }
+    private:
+        ObjectGuid preparationSon;
+        time_t preparationStarted = 0;
+    };
+    Unit* FindOssirianCrystalTrigger(Player* bot, GameObject* crystal);
+    bool OssirianNeedsCrystal(Unit* boss);
+    Player* OssirianCrystalUser(PlayerbotAI* ai, Unit* boss, GameObject* crystal);
+    class OssirianPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        OssirianPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "ossirian crystal position", 2) {}
+        EncounterPosition Calculate() override;
+        void Reset() override { CalculatedValue::Reset(); anchorCrystal.Clear(); }
+    private:
+        ObjectGuid anchorCrystal;
+        encounter::Point tankAnchor;
+    };
     uint32 BurningAdrenalineAura(Unit* unit);
     bool BlackwingLairBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
         std::vector<encounter::Circle>& threats);
@@ -84,6 +160,16 @@ namespace ai
     public:
         BossCastPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "boss cast position", 2) {}
         EncounterPosition Calculate() override;
+    };
+
+    class BossCoverPositionValue : public CalculatedValue<EncounterPosition>
+    {
+    public:
+        BossCoverPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "boss cover position", 2) {}
+        EncounterPosition Calculate() override;
+        void Reset() override { CalculatedValue::Reset(); shelterBoss.Clear(); }
+    private:
+        ObjectGuid shelterBoss;
     };
 
     class AranFlameWreathValue : public BoolCalculatedValue

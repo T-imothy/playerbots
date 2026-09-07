@@ -3,6 +3,7 @@
 #include "PartyMemberToHeal.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/actions/EncounterSpellPolicy.h"
 
 using namespace ai;
 
@@ -101,7 +102,8 @@ Unit* PartyMemberToHeal::Calculate()
             }
 
             uint8 health = uint8((double(forecast(player)) * 100.0) / player->GetMaxHealth());
-            if (isTank || (health < sPlayerbotAIConfig.almostFullHealth && !IsTargetOfSpellCast(player, predicate)))
+            if (isTank || ((health < sPlayerbotAIConfig.almostFullHealth || NeedsFullHealingToRemoveAura(player) || RemainingHealingAbsorb(player)) &&
+                !IsTargetOfSpellCast(player, predicate)))
             { 
                 addCandidate(player);
             }
@@ -110,7 +112,8 @@ Unit* PartyMemberToHeal::Calculate()
             if (pet && CanHealPet(pet) && Check(pet))
             {
                 health = pet->GetHealthPercent();
-                if (health < sPlayerbotAIConfig.almostFullHealth && !IsTargetOfSpellCast(pet, predicate))
+                if ((health < sPlayerbotAIConfig.almostFullHealth || NeedsFullHealingToRemoveAura(pet) || RemainingHealingAbsorb(pet)) &&
+                    !IsTargetOfSpellCast(pet, predicate))
                 {
                     addCandidate(pet);
                 }
@@ -133,9 +136,15 @@ Unit* PartyMemberToHeal::Calculate()
         needHeals = tankTargets;
     }
 
-    for (Unit* target : needHeals) forecast(target);
+    std::map<Unit*, uint64> healingNeed;
+    for (Unit* target : needHeals)
+        healingNeed[target] = uint64(target->GetMaxHealth() - forecast(target)) + RemainingHealingAbsorb(target);
     std::stable_sort(needHeals.begin(), needHeals.end(), [&](Unit* u1, Unit* u2) {
-        return (u1->GetMaxHealth() - predictedHealth.at(u1)) > (u2->GetMaxHealth() - predictedHealth.at(u2));
+        // An absorption objective must not outrank a critically injured player.
+        const bool critical1 = u1->GetHealthPercent() < sPlayerbotAIConfig.criticalHealth;
+        const bool critical2 = u2->GetHealthPercent() < sPlayerbotAIConfig.criticalHealth;
+        if (critical1 != critical2) return critical1;
+        return healingNeed.at(u1) > healingNeed.at(u2);
     });
 
     int healerIndex = 0;
@@ -195,7 +204,8 @@ bool PartyMemberToHeal::Check(Unit* player)
     if (player->IsPlayer() && static_cast<Player*>(player)->IsBeingTeleported())
         return false;
 
-    if (player->GetMaxNegativeAuraModifier(SPELL_AURA_MOD_HEALING_PCT) <= -100)
+    if (player->GetMaxNegativeAuraModifier(SPELL_AURA_MOD_HEALING_PCT) <= -100 &&
+        !UpcomingEncounterHealingWindow(bot, player))
         return false;
                                                      
     if (sServerFacade.GetDistance2d(bot, player) > maxDist)

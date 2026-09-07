@@ -3,6 +3,103 @@
 
 namespace ai
 {
+    class RotatingBeamTrigger : public Trigger
+    {
+    public:
+        RotatingBeamTrigger(PlayerbotAI* ai) : Trigger(ai, "avoid rotating beam", 1) {}
+        bool IsActive() override;
+    };
+    class VashjCoreTrigger : public Trigger
+    {
+    public:
+        VashjCoreTrigger(PlayerbotAI* ai) : Trigger(ai, "vashj core relay", 1) {}
+        bool IsActive() override;
+    };
+    class InnerDemonTrigger : public Trigger
+    {
+    public:
+        InnerDemonTrigger(PlayerbotAI* ai) : Trigger(ai, "fight own inner demon", 1) {}
+        bool IsActive() override;
+    };
+    class EadricRadianceTrigger : public Trigger
+    {
+    public:
+        EadricRadianceTrigger(PlayerbotAI* ai) : Trigger(ai, "eadric face away", 1) {}
+        bool IsActive() override;
+    };
+    class MoamManaControlTrigger : public Trigger
+    {
+    public:
+        MoamManaControlTrigger(PlayerbotAI* ai) : Trigger(ai, "moam mana control", 1) {}
+        bool IsActive() override;
+    };
+    class ViscidusFrostTrigger : public Trigger
+    {
+    public:
+        ViscidusFrostTrigger(PlayerbotAI* ai) : Trigger(ai, "viscidus frost", 1) {}
+        bool IsActive() override;
+    };
+    class HeiganDanceTrigger : public Trigger
+    {
+    public:
+        HeiganDanceTrigger(PlayerbotAI* ai) : Trigger(ai, "heigan dance", 1) {}
+        bool IsActive() override;
+    };
+    class NajentusSpineTrigger : public Trigger
+    {
+    public:
+        NajentusSpineTrigger(PlayerbotAI* ai) : Trigger(ai, "najentus spine rescue", 1) {}
+        bool IsActive() override;
+    };
+    class NajentusShieldTrigger : public Trigger
+    {
+    public:
+        NajentusShieldTrigger(PlayerbotAI* ai) : Trigger(ai, "najentus break shield", 1) {}
+        bool IsActive() override;
+    };
+    class ArchimondeTearsTrigger : public Trigger
+    {
+    public:
+        ArchimondeTearsTrigger(PlayerbotAI* ai) : Trigger(ai, "archimonde tears", 1) {}
+        bool IsActive() override;
+    };
+    class LinkedBurstTrigger : public Trigger
+    {
+    public:
+        LinkedBurstTrigger(PlayerbotAI* ai) : Trigger(ai, "separate linked burst", 1) {}
+        bool IsActive() override;
+    };
+    class AkilzonStormTrigger : public Trigger
+    {
+    public:
+        AkilzonStormTrigger(PlayerbotAI* ai) : Trigger(ai, "akilzon storm shelter", 1) {}
+        bool IsActive() override;
+    };
+    class ColdMovementTrigger : public Trigger
+    {
+    public:
+        ColdMovementTrigger(PlayerbotAI* ai) : Trigger(ai, "move against cold", 1) {}
+        bool IsActive() override;
+    };
+    class HakkarPoisonTrigger : public Trigger
+    {
+    public:
+        HakkarPoisonTrigger(PlayerbotAI* ai) : Trigger(ai, "hakkar acquire poison", 1) {}
+        bool IsActive() override;
+    };
+    class OssirianCrystalTrigger : public Trigger
+    {
+    public:
+        OssirianCrystalTrigger(PlayerbotAI* ai) : Trigger(ai, "ossirian crystal", 1) {}
+        bool IsActive() override;
+    };
+    class BossCoverTrigger : public Trigger
+    {
+    public:
+        BossCoverTrigger(PlayerbotAI* ai) : Trigger(ai, "boss seek cover", 1) {}
+        bool IsActive() override;
+    };
+
     class DungeonAddTargetTrigger : public Trigger
     {
     public:

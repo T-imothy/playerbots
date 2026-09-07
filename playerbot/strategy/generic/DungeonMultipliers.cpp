@@ -13,6 +13,132 @@
 #include "playerbot/strategy/actions/TempestKeepActions.h"
 
 using namespace ai;
+float PreserveRotatingBeamMultiplier::GetValue(Action* action)
+{
+    if (!action || (ai->GetBot()->GetMapId() != 531 && ai->GetBot()->GetMapId() != 548) ||
+        dynamic_cast<RotatingBeamAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!dynamic_cast<MovementAction*>(action) && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    encounter::RotatingBeam beam;
+    return RotatingBeamAction::GetPlan(ai, plan, beam) ? 0.0f : 1.0f;
+}
+
+float PreserveVashjCoreMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 548 || dynamic_cast<VashjCoreAction*>(action) ||
+        dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!dynamic_cast<MovementAction*>(action) && !(spell && spell->HasMovementEffect())) return 1.0f;
+    VashjCorePlan plan;
+    if (!VashjCoreAction::GetPlan(ai, plan) || plan.task == VashjCoreTask::Deliver) return 1.0f;
+    return 0.0f;
+}
+
+float PreserveEadricFacingMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 650 || dynamic_cast<EadricRadianceAction*>(action) ||
+        dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!spell && !dynamic_cast<MovementAction*>(action)) return 1.0f;
+    Unit* boss = EadricRadianceAction::GetBoss(ai);
+    if (!boss) return 1.0f;
+    Player* bot = ai->GetBot();
+    if (spell && !spell->HasMovementEffect() && !bot->HasInArc(boss, 2.5f))
+    {
+        // Stationary friendly casts remain available when their automatic
+        // facing cannot turn the bot back into Radiance's frontal arc.
+        Unit* target = action->GetTarget();
+        if (target && sServerFacade.IsFriendlyTo(bot, target) &&
+            (target == bot || std::fabs(std::remainder(bot->GetAngle(target) - bot->GetAngle(boss), 2 * M_PI_F)) > 1.35f))
+            return 1.0f;
+    }
+    return 0.0f;
+}
+
+float PreserveHeiganDanceMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 533) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<HeiganDanceAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return HeiganDanceAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
+
+float PreserveNajentusSpineMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 564) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<NajentusSpineAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return NajentusSpineAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
+
+float PreserveLinkedBurstMultiplier::GetValue(Action* action)
+{
+    if (!action) return 1.0f;
+    const uint32 map = ai->GetBot()->GetMapId();
+    if (map != 543 && map != 555 && map != 564) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<LinkedBurstAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action) &&
+        !dynamic_cast<BossCastPositionAction*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return LinkedBurstAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
+
+float PreserveAkilzonStormMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 568) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<AkilzonStormAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return AkilzonStormAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
+
+float PreserveHakkarPoisonMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 309) return 1.0f;
+    if (ai->IsHeal(ai->GetBot()))
+        if (ReachTargetAction* reach = dynamic_cast<ReachTargetAction*>(action))
+            if (Unit* target = reach->GetTarget())
+                if (sServerFacade.IsFriendlyTo(ai->GetBot(), target)) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<HakkarPoisonAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return HakkarPoisonAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
+
+float PreserveOssirianCrystalMultiplier::GetValue(Action* action)
+{
+    if (!action || ai->GetBot()->GetMapId() != 509) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<OssirianCrystalAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return OssirianCrystalAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
+
+float PreserveBossCoverMultiplier::GetValue(Action* action)
+{
+    if (!action || !IsBossCoverMap(ai->GetBot()->GetMapId())) return 1.0f;
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+        !dynamic_cast<BossCoverAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
+    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
+    if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
+    EncounterPosition plan;
+    return BossCoverAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}
 
 float PreserveDungeonAddTargetMultiplier::GetValue(Action* action)
 {

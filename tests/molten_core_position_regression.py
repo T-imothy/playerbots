@@ -39,6 +39,7 @@ struct Unit {virtual ~Unit()=default;virtual bool IsPlayer(){return false;}bool 
 struct Group;
 struct Player:Unit {bool teleport=false;unsigned mapId=409,instance=1;Group* group=nullptr;
  bool IsPlayer()override{return true;}
+ float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c));}
  bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}
  unsigned GetInstanceId(){return instance;}Group* GetGroup(){return group;}
  bool IsInMap(Unit* other){return world&&other->world&&map==other->map&&phase==other->phase;}
@@ -55,6 +56,7 @@ struct Context {Cached<EncounterPosition> cached;Cached<std::list<ObjectGuid>> a
  template<class T>Cached<T>* GetValue(const char*){if constexpr(std::is_same_v<T,EncounterPosition>)return &cached;else return &attackers;}};
 struct PlayerbotAI {Player* bot=nullptr;Context context;std::list<ObjectGuid> attackers;std::map<unsigned,Unit*> units;
  bool validPath=true,ranged=false,healer=false,canMove=true;unsigned checked=0,moves=0;bool CanMove(){return canMove;}
+ unsigned stops=0;void StopMoving(){++stops;}
  Player* GetBot(){return bot;}Context* GetAiObjectContext(){return &context;}
  bool IsRanged(Player*){return ranged;}bool IsHeal(Player*){return healer;}
  Unit* GetUnit(ObjectGuid guid){auto it=units.find(guid);return it==units.end()?nullptr:it->second;}
@@ -66,7 +68,8 @@ namespace ai {
  struct MoltenCorePositionValue {Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
  bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
  struct Event{};
- struct MoltenCorePositionAction {PlayerbotAI* ai;static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool Execute(Event&);
+ struct MoltenCorePositionAction {PlayerbotAI* ai;Player*bot=ai->bot;static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool Execute(Event&);
+ void SetDuration(unsigned){}
  bool IsReaction(){return true;}
  bool MoveTo(unsigned,float,float,float,bool idle,bool reaction,bool noPath,bool ignoreEnemies){assert(!idle&&reaction&&!noPath&&ignoreEnemies);++ai->moves;return true;}};
 }

@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "UseItemAction.h"
+#include "EncounterItemUse.h"
 
 #include "playerbot/PlayerbotAIConfig.h"
 #include "Database/DBCStore.h"
@@ -196,8 +197,10 @@ bool RequiresItemToUse(const ItemPrototype* itemProto, PlayerbotAI* ai, Player* 
     if (itemExceptions.find(itemProto->ItemId) != itemExceptions.end())
         return false;
 
-    // Required items                                  Hearthstone, Scourgestone
-    const std::unordered_set<uint32> itemsRequired = { 6948, 40582 };
+    // Encounter objectives must retain native ownership and charge/item
+    // consumption even when ordinary consumables use the item cheat.
+    // Hearthstone, Scourgestone, Hourglass Sand, Tears, Tainted Core, Spine.
+    static const std::unordered_set<uint32> itemsRequired = { 6948, 40582, 19183, 24494, 31088, 32408 };
     if (itemsRequired.find(itemProto->ItemId) != itemsRequired.end())
         return true;
 
@@ -489,6 +492,14 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
         }
 
         return false;
+    }
+
+    if (IsNativeEncounterItem(itemId))
+    {
+        if (item || !UseNativeEncounterItem(bot, itemUsed, unit, gameObject)) return false;
+        RESET_AI_VALUE2(uint32, "item count", itemId);
+        SetDuration(sPlayerbotAIConfig.globalCoolDown);
+        return true;
     }
 
     Unit* unitTarget = nullptr;

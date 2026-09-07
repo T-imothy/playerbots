@@ -8,6 +8,7 @@ root=Path(__file__).resolve().parents[1]
 source=(root/'playerbot/strategy/actions/DungeonAddTargetAction.cpp').read_text()
 multiplier=(root/'playerbot/strategy/generic/DungeonMultipliers.cpp').read_text()
 methods='\n'.join([block(source,'Unit* DungeonAddTargetAction::GetTarget('),
+    block((root/'playerbot/strategy/actions/RaidTotemTargetAction.cpp').read_text(),'Unit* DungeonAddTargetAction::GetRaidTotemTarget('),
     block(source,'bool DungeonAddTargetAction::isUseful('),
     block(multiplier,'float PreserveDungeonAddTargetMultiplier::GetValue(')])
 code=r'''
@@ -33,7 +34,9 @@ struct Unit {
  Unit* GetVictim(){return victim;}bool HasAura(unsigned id){return auras.count(id);}
  float GetDistance(Unit*u){return std::fabs(x-u->x);}
 };
-struct Group{};
+struct Player;
+struct GroupReference{Player*player=nullptr;GroupReference*following=nullptr;Player*getSource(){return player;}GroupReference*next(){return following;}};
+struct Group{GroupReference*first=nullptr;GroupReference*GetFirstMember(){return first;}};
 struct Map {bool regular=true;bool IsRegularDifficulty(){return regular;}};
 struct Player:Unit {Player(){player=true;}bool teleport=false;Group*group=nullptr;
  Map nativeMap;Map*GetMap(){return &nativeMap;}
@@ -54,23 +57,77 @@ struct PossibleTargetsValue {
 };
 struct ServerFacade{bool IsFriendlyTo(Unit*u,Player*){return u->friendly;}}sServerFacade;
 struct PossibleAttackTargetsValue {
- static bool IsPossibleTarget(Unit*u,Player*p,float range,bool ignoreCC){assert(ignoreCC==(p->map==533||p->map==574||p->map==604));return !u->immune&&!u->assignedCC&&p->GetDistance(u)<=range;}
+ static bool IsPossibleTarget(Unit*u,Player*p,float range,bool ignoreCC){assert(ignoreCC==(p->map==533||p->map==574||p->map==604||p->map==631));return !u->immune&&!u->assignedCC&&p->GetDistance(u)<=range;}
  static bool HasBreakableCC(Unit*u,Player*){return u->breakCC;}
  static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}
 };
 struct Action{std::string name;std::string getName(){return name;}};
+struct InnerDemonAction{static Unit* GetDemon(PlayerbotAI*){return nullptr;}};
 struct DungeonAddTargetAction {PlayerbotAI*ai;Player*bot;DungeonAddTargetAction(PlayerbotAI*a):ai(a),bot(a->bot){}
- Unit*GetTarget();bool isUseful();};
+ Unit*GetTarget();bool isUseful();Unit*GetThekalTarget(){return nullptr;}Unit*GetGluthTarget(){return nullptr;}Unit*GetSummonObjectiveTarget(){return nullptr;}Unit*GetRaidTotemTarget();Unit*GetTwinEmperorTarget(){return nullptr;}Unit*GetIcecrownAddTarget(){return nullptr;}};
 struct PreserveDungeonAddTargetMultiplier{PlayerbotAI*ai;float GetValue(Action*);};
 #define AI_VALUE(type,key) ai->Value<type>(key)
 __METHODS__
 int main(){
+ struct TotemCase{unsigned map,owner,entry;};
+ for(TotemCase row:{TotemCase{548,21965,22091},{548,21214,22091},{568,23577,24224}}){
+  Group group,other;Player bot,tank;bot.group=tank.group=&group;bot.map=tank.map=row.map;
+  Unit boss,totem;boss.guid=1;boss.entry=row.owner;boss.map=row.map;boss.victim=&tank;
+  totem.guid=2;totem.entry=row.entry;totem.map=row.map;totem.spawner=1;totem.combat=false;
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&totem}};ai.possible={1,2};DungeonAddTargetAction action(&ai);
+#ifdef MANGOSBOT_ZERO
+  assert(!action.GetTarget());continue;
+#endif
+  assert(action.GetTarget()==&totem);totem.spawner=99;assert(!action.GetTarget());totem.spawner=1;
+  boss.entry=1;assert(!action.GetTarget());boss.entry=row.owner;
+  tank.group=&other;assert(!action.GetTarget());tank.group=&group;boss.victim=&bot;assert(!action.GetTarget());boss.victim=&tank;
+  boss.combat=false;assert(!action.GetTarget());boss.combat=true;totem.phase=2;assert(!action.GetTarget());totem.phase=1;
+  totem.assignedCC=true;assert(!action.GetTarget());totem.assignedCC=false;
+  ai.healer=true;assert(!action.GetTarget());ai.healer=false;ai.tank=true;assert(!action.GetTarget());ai.tank=false;
+  ai.command=1;assert(!action.GetTarget());ai.command=0;assert(action.GetTarget()==&totem);
+ }
+#ifdef MANGOSBOT_TWO
+ for(unsigned entry:{33998u,34049u}){
+  Group group;Player bot;bot.group=&group;bot.map=624;
+  Unit boss,add;boss.guid=1;boss.entry=33993;boss.map=624;add.guid=2;add.entry=entry;add.map=624;
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&add}};ai.possible={1,2};DungeonAddTargetAction action(&ai);
+  assert(!action.GetTarget());add.sourceAuras={{64218,1}};assert(action.GetTarget()==&add);
+  add.sourceAuras={{64218,99}};assert(!action.GetTarget());add.sourceAuras={{64218,1}};
+  add.phase=2;assert(!action.GetTarget());add.phase=1;boss.combat=false;assert(!action.GetTarget());boss.combat=true;
+  ai.command=1;assert(!action.GetTarget());ai.command=0;ai.healer=true;assert(!action.GetTarget());ai.healer=false;
+  add.breakCC=true;assert(!action.GetTarget());add.breakCC=false;assert(action.GetTarget()==&add);
+ }
+ for(unsigned entry:{34813u,34825u}){
+  Group group;Player bot;bot.group=&group;bot.map=649;
+  Unit boss,add;boss.guid=1;boss.entry=34780;boss.map=649;add.guid=2;add.entry=entry;add.map=649;add.spawner=1;add.combat=false;
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&add}};ai.possible={1,2};DungeonAddTargetAction action(&ai);
+  assert(action.GetTarget()==&add);add.immune=true;assert(!action.GetTarget());add.immune=false;
+  add.attackable=false;assert(!action.GetTarget());add.attackable=true;add.spawner=99;assert(!action.GetTarget());add.spawner=1;
+  boss.combat=false;assert(!action.GetTarget());boss.combat=true;ai.tank=true;assert(!action.GetTarget());ai.tank=false;
+  ai.marked=&boss;assert(!action.GetTarget());ai.marked=nullptr;assert(action.GetTarget()==&add);
+ }
+#endif
+ {
+  Group group;Player bot,member;bot.group=member.group=&group;bot.map=member.map=309;
+  GroupReference memberRef{&member};group.first=&memberRef;
+  Unit boss,son;boss.guid=1;boss.entry=14834;boss.map=309;son.guid=2;son.entry=11357;son.map=309;son.victim=&member;
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&son}};ai.possible={1,2};DungeonAddTargetAction action(&ai);
+  assert(action.GetTarget()==&son);son.victim=nullptr;assert(!action.GetTarget());son.victim=&member;
+  son.combat=false;assert(!action.GetTarget());son.combat=true;
+  bot.auras.insert(24321);assert(action.GetTarget()==&son);member.auras.insert(24321);assert(!action.GetTarget());member.auras.clear();
+  member.group=nullptr;assert(!action.GetTarget());member.group=&group;
+  son.breakCC=true;assert(!action.GetTarget());son.breakCC=false;
+  ai.command=1;assert(!action.GetTarget());ai.command=0;
+  boss.combat=false;assert(!action.GetTarget());boss.combat=true;
+ }
  // Rescue objects are summoned by the trapped group member.
  struct Rescue{unsigned map,boss,add,aura;bool regular;};
  for(Rescue rescue: {Rescue{533,15952,16486,28622,true}
 #ifdef MANGOSBOT_TWO
   ,Rescue{574,23953,23965,48400,true},Rescue{574,23953,23965,48400,false},
-  Rescue{604,29304,29742,55126,true},Rescue{604,29304,29742,61476,false}
+  Rescue{604,29304,29742,55126,true},Rescue{604,29304,29742,61476,false},
+  Rescue{631,36612,36619,69065,true},Rescue{631,36612,38711,69065,true},Rescue{631,36612,38712,69065,true},
+  Rescue{631,36612,36619,69065,false},Rescue{631,36612,38711,69065,false},Rescue{631,36612,38712,69065,false}
 #endif
  }) {
   Group group,otherGroup;Player bot,member;bot.group=member.group=&group;bot.map=member.map=rescue.map;bot.nativeMap.regular=rescue.regular;
@@ -150,6 +207,25 @@ int main(){
 #endif
  }
  // Vorpil travelers belong to his passive summoner, not directly to the boss.
+ for(bool ritual:{false,true}) {
+#ifndef MANGOSBOT_TWO
+  if(ritual)continue;
+#endif
+  Group group,other;Player bot,member;GroupReference ref{&member};group.first=&ref;bot.group=member.group=&group;
+  bot.map=member.map=ritual?575:509;Unit boss,add;boss.map=add.map=bot.map;
+  boss.guid=1;boss.entry=ritual?26668:15369;add.guid=2;add.entry=ritual?27281:15555;add.spawner=1;add.victim=&member;
+  unsigned aura=ritual?48278:25725;unsigned caster=ritual?2:1;member.sourceAuras={{aura,caster}};
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&add}};ai.possible={2};DungeonAddTargetAction action(&ai);
+  assert(action.GetTarget()==&add);auto none=[&](){assert(!action.GetTarget());};
+  member.sourceAuras={{aura,99}};none();member.sourceAuras={{aura,caster}};
+  member.group=&other;none();member.group=&group;member.alive=false;none();member.alive=true;
+  member.world=false;none();member.world=true;member.phase=2;none();member.phase=1;
+  member.teleport=true;none();member.teleport=false;member.charmed=true;none();member.charmed=false;
+  add.spawner=99;none();add.spawner=1;boss.combat=false;none();boss.combat=true;
+  ai.command=1;none();ai.command=0;ai.healer=true;none();ai.healer=false;
+  if(!ritual){add.victim=nullptr;none();add.victim=&member;}
+  assert(action.GetTarget()==&add);
+ }
  {
   Player bot;Group group;bot.group=&group;bot.map=555;
   Unit boss,summoner,add;boss.guid=1;boss.entry=18732;boss.map=555;
@@ -236,6 +312,10 @@ for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
             'steam_vault.h':['17798','17954'],
             'shadow_labyrinth.h':['18732']}
         if realm=='wotlk':
+            expected['boss_svala.cpp']=['27281','48278','pSummoned->CastSpell(pSummoned, SPELL_PARALIZE',
+                'DoCastSpellIfCan(m_creature, SPELL_SUMMON_CHANNELER_1']
+            expected['boss_lord_marrowgar.cpp']=['36619','38711','38712','69065','target->CastSpell(target, 69062',
+                'playerTarget = m_creature->GetSpawner()', 'playerTarget->RemoveAurasDueToSpell(SPELL_IMPALED)']
             expected['boss_anomalus.cpp']=['26918','47748','SummonedCreatureJustDied','RemoveAurasDueToSpell(SPELL_RIFT_SHIELD)']
             expected['boss_nadox.cpp']=['30176','56151','pSummoned->CastSpell(pSummoned, SPELL_GUARDIAN_AURA']
             expected['ahnkahet.h']=['29309','30173']

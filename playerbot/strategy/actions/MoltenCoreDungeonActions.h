@@ -21,6 +21,7 @@ namespace ai
         MoltenCorePositionAction(PlayerbotAI* ai) : MovementAction(ai, "molten core safe position") {}
         bool Execute(Event& event) override;
         bool isUseful() override;
+        bool ShouldReactionInterruptCast() const override;
         static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
     };
 

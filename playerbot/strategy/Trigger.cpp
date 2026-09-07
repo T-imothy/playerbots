@@ -11,7 +11,7 @@ Event Trigger::Check()
 {
 	if (triggered)
 	{
-		if (owner)
+        if (owner.HasOwner())
 			return Event(getName(), param, owner);
 		else
 			return Event(getName());

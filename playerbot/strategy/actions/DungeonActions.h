@@ -1,18 +1,175 @@
 #pragma once
 #include "MovementActions.h"
+#include "playerbot/strategy/values/VashjCoreValue.h"
 #include "AttackAction.h"
+#include "GenericSpellActions.h"
+#include "UseItemAction.h"
 #include "playerbot/strategy/values/HazardsValue.h"
 #include "playerbot/strategy/values/EncounterPositionValue.h"
 
 
 namespace ai
 {
+    class RotatingBeamAction : public MovementAction
+    {
+    public:
+        RotatingBeamAction(PlayerbotAI* ai) : MovementAction(ai, "avoid rotating beam") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool ShouldReactionInterruptCast() const override;
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan, encounter::RotatingBeam& beam);
+    };
+    class VashjCoreAction : public MovementAction
+    {
+    public:
+        VashjCoreAction(PlayerbotAI* ai) : MovementAction(ai, "vashj core relay") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        static bool GetPlan(PlayerbotAI* ai, VashjCorePlan& plan);
+    };
+    class InnerDemonAction : public CastSpellAction
+    {
+    public:
+        InnerDemonAction(PlayerbotAI* ai);
+        std::string getName() override { return "fight own inner demon"; }
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        static Unit* GetDemon(PlayerbotAI* ai);
+    protected:
+        Unit* GetTarget() override;
+    };
+    class EadricRadianceAction : public Action
+    {
+    public:
+        EadricRadianceAction(PlayerbotAI* ai) : Action(ai, "eadric face away") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool ShouldReactionInterruptCast() const override;
+        static Unit* GetBoss(PlayerbotAI* ai);
+    };
+    class MoamManaControlAction : public CastSpellAction
+    {
+    public:
+        MoamManaControlAction(PlayerbotAI* ai);
+        std::string getName() override { return "moam mana control"; }
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
+    class ViscidusFrostAction : public Action
+    {
+    public:
+        ViscidusFrostAction(PlayerbotAI* ai) : Action(ai, "viscidus frost") {}
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_SINGLE; }
+        uint32 GetFrostSpell();
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
+    class HeiganDanceAction : public MovementAction
+    {
+    public:
+        HeiganDanceAction(PlayerbotAI* ai) : MovementAction(ai, "heigan dance") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool ShouldReactionInterruptCast() const override;
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+    class NajentusSpineAction : public MovementAction
+    {
+    public:
+        NajentusSpineAction(PlayerbotAI* ai) : MovementAction(ai, "najentus spine rescue") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool ShouldReactionInterruptCast() const override { return true; }
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+    class NajentusShieldAction : public UseItemIdAction
+    {
+    public:
+        NajentusShieldAction(PlayerbotAI* ai) : UseItemIdAction(ai, "najentus break shield") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool ShouldReactionInterruptCast() const override { return false; }
+    protected:
+        Unit* GetTarget() override;
+        uint32 GetItemId() override { return 32408; }
+    };
+    class ArchimondeTearsAction : public UseItemIdAction
+    {
+    public:
+        ArchimondeTearsAction(PlayerbotAI* ai) : UseItemIdAction(ai, "archimonde tears") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool ShouldReactionInterruptCast() const override { return true; }
+    protected:
+        uint32 GetItemId() override { return 24494; }
+    };
+    class LinkedBurstAction : public MovementAction
+    {
+    public:
+        LinkedBurstAction(PlayerbotAI* ai) : MovementAction(ai, "separate linked burst") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool ShouldReactionInterruptCast() const override;
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+    class AkilzonStormAction : public MovementAction
+    {
+    public:
+        AkilzonStormAction(PlayerbotAI* ai) : MovementAction(ai, "akilzon storm shelter") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool ShouldReactionInterruptCast() const override;
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+    class ColdMovementAction : public JumpAction
+    {
+    public:
+        ColdMovementAction(PlayerbotAI* ai) : JumpAction(ai, "move against cold") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool ShouldReactionInterruptCast() const override;
+        uint32 GetColdStacks() const;
+    };
+    class HakkarPoisonAction : public MovementAction
+    {
+    public:
+        HakkarPoisonAction(PlayerbotAI* ai) : MovementAction(ai, "hakkar acquire poison") {}
+        bool Execute(Event& event) override;
+        bool isUseful() override;
+        bool ShouldReactionInterruptCast() const override { return false; }
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+    class OssirianCrystalAction : public MovementAction
+    {
+    public:
+        OssirianCrystalAction(PlayerbotAI* ai) : MovementAction(ai, "ossirian crystal") {}
+        bool Execute(Event& event) override;
+        bool isUseful() override;
+        bool ShouldReactionInterruptCast() const override;
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+    class BossCoverAction : public MovementAction
+    {
+    public:
+        BossCoverAction(PlayerbotAI* ai) : MovementAction(ai, "boss seek cover") {}
+        bool Execute(Event& event) override;
+        bool isUseful() override;
+        bool ShouldReactionInterruptCast() const override;
+        static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
+    };
+
     class DungeonAddTargetAction : public AttackAction
     {
     public:
         DungeonAddTargetAction(PlayerbotAI* ai) : AttackAction(ai, "dungeon priority add") {}
         Unit* GetTarget() override;
         bool isUseful() override;
+        Unit* GetThekalTarget();
+        Unit* GetGluthTarget();
+        Unit* GetSummonObjectiveTarget();
+        Unit* GetRaidTotemTarget();
+        Unit* GetTwinEmperorTarget();
+        Unit* GetIcecrownAddTarget();
     };
 
     class MagtheridonCubeAction : public MovementAction

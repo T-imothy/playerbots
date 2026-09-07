@@ -204,19 +204,13 @@ namespace ai
     {
     public:
         CastHealingSpellAction(PlayerbotAI* ai, std::string spell, uint8 estAmount = 15.0f) : CastAuraSpellAction(ai, spell, true), estAmount(estAmount) {}
+        bool Execute(Event& event) override;
         
     protected:
         virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
         virtual std::string GetTargetName() override { return "self target"; }
         virtual std::string GetReachActionName() override { return "reach party member to heal"; }
-        virtual bool isUseful() override 
-        {
-            // do not heal if they will not receive healing due to debuff
-            Unit* target = AI_VALUE(Unit*, GetTargetName());
-            if (target && target->GetMaxNegativeAuraModifier(SPELL_AURA_MOD_HEALING_PCT) <= -100)
-                return false;
-            return CastAuraSpellAction::isUseful();
-        }
+        bool isUseful() override;
 
     protected:
         uint8 estAmount;

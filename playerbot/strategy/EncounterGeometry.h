@@ -90,12 +90,14 @@ namespace ai { namespace encounter {
         return overlap;
     }
 
-    inline std::vector<Point> SpreadCandidates(Point here, const std::vector<Circle>& circles, uint64_t seed)
+    inline std::vector<Point> SpreadCandidates(Point here, const std::vector<Circle>& circles, uint64_t seed, float maxDistance = 24.0f)
     {
         struct Candidate { Point point; float overlap, distance; };
         std::vector<Candidate> ranked{{here, SpreadOverlap(here, circles), 0}};
         const float start = (seed % 997) * 6.28318530717958647692f / 997;
-        for (float distance : {4.0f, 8.0f, 12.0f, 16.0f, 24.0f})
+        for (float distance : {4.0f, 8.0f, 12.0f, 16.0f, 24.0f, 32.0f, 40.0f})
+        {
+            if (distance > maxDistance) break;
             for (unsigned step = 0; step < 16; ++step)
             {
                 const float angle = start + step * 6.28318530717958647692f / 16;
@@ -103,6 +105,7 @@ namespace ai { namespace encounter {
                     here.y + distance * std::sin(angle), here.z};
                 ranked.push_back({point, SpreadOverlap(point, circles), distance});
             }
+        }
         std::stable_sort(ranked.begin(), ranked.end(), [](const Candidate& a, const Candidate& b) {
             return a.overlap == b.overlap ? a.distance < b.distance : a.overlap < b.overlap;
         });
