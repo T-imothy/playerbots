@@ -13,8 +13,8 @@ namespace ai
         NaxxramasPositionAction(PlayerbotAI* ai) : MovementAction(ai, "naxxramas safe position") {}
         static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
         bool isUseful() override;
+        bool ShouldReactionInterruptCast() const override;
         bool Execute(Event& event) override;
-        bool ShouldReactionInterruptCast() const override { return true; }
         bool ShouldReactionInterruptMovement() const override { return true; }
     };
 

@@ -32,8 +32,11 @@ struct Unit{virtual ~Unit()=default;Map* map=nullptr;unsigned phase=1,entry=0;Ob
  bool HasCharmer(){return charmed;}bool IsInCombat(){return combat;}unsigned GetEntry(){return entry;}
  bool HasAura(unsigned id){return auras.count(id);}Unit* GetVictim(){return victim;}
  ObjectGuid GetObjectGuid(){return guid;}float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}};
+constexpr int IDLE_MOTION_TYPE=0;
+struct Motion{int GetCurrentMovementGeneratorType(){return 0;}};
 struct Group;
 struct Player:Unit{unsigned mapId=469,instance=1;bool teleport=false;Group* group=nullptr;
+ bool IsStopped(){return true;}Motion motion;Motion* GetMotionMaster(){return &motion;}
  bool IsPlayer()override{return true;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}
  unsigned GetInstanceId(){return instance;}Group* GetGroup(){return group;}
  bool IsInMap(Unit* u){return u&&world&&u->world&&map==u->map&&phase==u->phase;}
@@ -50,7 +53,7 @@ struct Context{Cached cached;AttackerCache attackers;template<class T>auto* GetV
  if constexpr(std::is_same_v<T,EncounterPosition>)return &cached;else return &attackers;}};
 struct PlayerbotAI{Player* bot;Context context;std::list<ObjectGuid> attackers;std::map<unsigned,Unit*> units;
  bool validPath=true,canMove=true;unsigned checked=0,moves=0;Player* GetBot(){return bot;}
- Context* GetAiObjectContext(){return &context;}bool CanMove(){return canMove;}
+ Context* GetAiObjectContext(){return &context;}bool CanMove(){return canMove;}void StopMoving(){}
  Unit* GetUnit(ObjectGuid guid){auto i=units.find(guid);return i==units.end()?nullptr:i->second;}};
 struct Event{};
 struct Action{virtual ~Action()=default;};
@@ -65,7 +68,7 @@ namespace ai{
  struct BlackwingLairPositionValue{Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
  struct BlackwingLairPositionAction:MovementAction{PlayerbotAI* ai;Player* bot;
   BlackwingLairPositionAction(PlayerbotAI* a):ai(a),bot(a->bot){}
-  static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool isUseful();bool Execute(Event&);
+  static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool isUseful();bool Execute(Event&);void SetDuration(unsigned){}
   bool IsReaction(){return true;}
   bool MoveTo(unsigned,float,float,float,bool idle,bool react,bool noPath,bool ignoreEnemies){
    assert(!idle&&react&&!noPath&&ignoreEnemies);++ai->moves;return true;}};

@@ -83,7 +83,8 @@ EncounterPosition NetherspitePositionValue::Calculate()
         MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(nearby, check);
         Cell::VisitAllObjects(bot, searcher, 100.0f);
         for (Unit* portal : nearby)
-            if (portal && portal->IsInWorld() && bot->IsInMap(portal) && portal->IsAlive())
+            if (portal && portal->IsInWorld() && bot->IsInMap(portal) && portal->IsAlive() &&
+                portal->GetSpawnerGuid() == boss->GetObjectGuid())
             {
                 portals[color] = portal;
                 portalPoints[color] = {portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ()};
@@ -98,6 +99,7 @@ EncounterPosition NetherspitePositionValue::Calculate()
         Player* player = ref->getSource();
         if (!player || !player->IsInWorld() || !bot->IsInMap(player) ||
             !player->IsAlive() || player->IsBeingTeleported() || !player->GetSession() ||
+            player->GetGroup() != bot->GetGroup() ||
             player->GetDistance(boss) > 100 || player->HasCharmer()) continue;
         encounter::BeamMember member;
         member.guid = player->GetObjectGuid().GetRawValue();
@@ -125,7 +127,7 @@ EncounterPosition NetherspitePositionValue::Calculate()
         if (assigned[color] == self) { chosen = color; break; }
     if (chosen < 0)
         for (unsigned color = 0; color < 3; ++color)
-            if (present[color] && (own->inside[color] || own->stacks[color] || own->exhausted[color]))
+            if (present[color] && (own->inside[color] || own->stacks[color]))
             {
                 chosen = color;
                 // Step aside; native expiration applies Exhaustion. Never remove

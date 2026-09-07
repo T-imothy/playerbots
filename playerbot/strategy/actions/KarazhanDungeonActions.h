@@ -61,6 +61,7 @@ namespace ai
         NetherspitePositionAction(PlayerbotAI* ai) : MovementAction(ai, "netherspite beam position") {}
         bool Execute(Event& event) override;
         bool isUseful() override;
+        bool ShouldReactionInterruptCast() const override;
         static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
     };
 

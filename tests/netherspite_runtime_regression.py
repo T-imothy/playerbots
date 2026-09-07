@@ -12,7 +12,7 @@ base = root / 'playerbot/strategy'
 methods = []
 for filename, signatures in (
     ('values/EncounterPositionValue.cpp', ('EncounterPosition NetherspitePositionValue::Calculate(',)),
-    ('actions/KarazhanDungeonActions.cpp', ('bool NetherspitePositionAction::GetPlan(',
+    ('actions/KarazhanDungeonActions.cpp', ('bool NetherspitePositionAction::GetPlan(', 'bool NetherspitePositionAction::isUseful(', 'bool NetherspitePositionAction::ShouldReactionInterruptCast(',
                                           'bool NetherspitePositionAction::Execute(')),
     ('generic/DungeonMultipliers.cpp', ('float PreserveNetherspitePositionMultiplier::GetValue(',
                                       'float PreserveMoltenCorePositionMultiplier::GetValue(')),
@@ -25,6 +25,7 @@ code = r'''
 #include <list>
 #include <string>
 #include <iostream>
+#include <functional>
 #include "__GEOMETRY__"
 using uint32=unsigned;using uint64=uint64_t;
 constexpr int CLASS_HUNTER=3,POWER_MANA=0;
@@ -33,7 +34,8 @@ struct ObjectGuid {unsigned id=0;ObjectGuid(unsigned i=0):id(i){}operator unsign
 struct Aura {unsigned stack=0;unsigned GetStackAmount(){return stack;}};
 struct Map {};
 struct Unit {unsigned entry=0,phase=1;ObjectGuid guid;Map* map=nullptr;
- bool world=true,alive=true,combat=true;float x=0,y=0,z=0;
+ bool world=true,alive=true,combat=true;ObjectGuid spawner;float x=0,y=0,z=0;
+ ObjectGuid GetSpawnerGuid(){return spawner;}
  std::set<unsigned> auras;std::map<unsigned,Aura> buffs;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}
  Map* GetMap(){return map;}unsigned GetEntry(){return entry;}ObjectGuid GetObjectGuid(){return guid;}
@@ -41,8 +43,13 @@ struct Unit {unsigned entry=0,phase=1;ObjectGuid guid;Map* map=nullptr;
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}
  float GetDistance(Unit* other){return std::hypot(x-other->x,y-other->y);}
 };
+constexpr int IDLE_MOTION_TYPE=0;
+struct Motion {int type=1;int GetCurrentMovementGeneratorType(){return type;}};
 struct Group;struct PlayerbotAI;
 struct Player:Unit {bool teleport=false,charmed=false,session=true,tank=false,healer=false,ranged=false;
+ Motion motion;bool stopped=true;bool IsStopped(){return stopped;}Motion* GetMotionMaster(){return &motion;}
+ float GetDistance(float xx,float yy,float zz){return std::sqrt((x-xx)*(x-xx)+(y-yy)*(y-yy)+(z-zz)*(z-zz));}
+ using Unit::GetDistance;
  unsigned mapId=532,instance=1,cls=1,mana=100;Group* group=nullptr;PlayerbotAI* controller=nullptr;
  bool IsBeingTeleported(){return teleport;}bool HasCharmer(){return charmed;}
  bool IsInMap(Unit* unit){return world&&unit->world&&map==unit->map&&phase==unit->phase;}
@@ -58,9 +65,10 @@ namespace ai {
 struct EncounterPosition {bool active=false;unsigned map=0,instance=0;ObjectGuid boss,source;encounter::Point destination;};
 }
 using namespace ai;
-struct Cached {EncounterPosition plan;EncounterPosition Get(){return plan;}};
+struct Cached {EncounterPosition plan;std::function<EncounterPosition()> refresh;
+ void Reset(){if(refresh)plan=refresh();}EncounterPosition Get(){return plan;}};
 struct Context {Cached cache;template<class T>Cached* GetValue(const char*){return &cache;}};
-struct PlayerbotAI {Player* bot;bool real=false,validPath=true,canMove=true;unsigned pathChecks=0,moves=0;
+struct PlayerbotAI {Player* bot;bool real=false,validPath=true,canMove=true;unsigned pathChecks=0,moves=0,stops=0;void StopMoving(){++stops;bot->stopped=true;bot->motion.type=0;}
  bool mcHold=false,mcPriority=false;std::list<ObjectGuid> attackers;std::map<unsigned,Unit*> units;Context context;
  Player* GetBot(){return bot;}bool IsRealPlayer(){return real;}
  bool IsTank(Player* p){return p->tank;}bool IsHeal(Player* p){return p->healer;}bool IsRanged(Player* p){return p->ranged;}
@@ -87,7 +95,7 @@ struct VoidZoneMoveAwayAction:MovementAction {};
 struct CastSpellAction:Action {bool movement=false;bool HasMovementEffect(){return movement;}};
 struct NetherspitePositionValue {Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
 struct NetherspitePositionAction:MovementAction {Player* bot;PlayerbotAI* ai;
- static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool Execute(Event&);bool IsReaction(){return false;}
+ static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool isUseful();bool ShouldReactionInterruptCast()const;void SetDuration(unsigned){}bool Execute(Event&);bool IsReaction(){return false;}
  bool MoveTo(unsigned,float,float,float,bool,bool,bool,bool){++ai->moves;return true;}};
 struct MoltenCorePositionAction:MovementAction {static bool GetPlan(PlayerbotAI* ai,EncounterPosition&){return ai->mcHold;}};
 struct MoltenCorePriorityTargetAction {PlayerbotAI* ai;MoltenCorePriorityTargetAction(PlayerbotAI* p):ai(p){}
@@ -102,13 +110,16 @@ int main(){
  bot.guid=1;human.guid=2;boss.guid=3;red.guid=4;bot.tank=true;bot.x=10;bot.y=5;
  boss.entry=15689;red.entry=17369;red.x=50;human.x=20;human.y=0;
  PlayerbotAI ai{&bot};bot.controller=&ai;ai.units={{1,&bot},{2,&human},{3,&boss},{4,&red}};ai.attackers={3};grid={&red};
- GroupReference humanRef{&human},selfRef{&bot,&humanRef};Group group{&selfRef};bot.group=&group;
+ GroupReference humanRef{&human},selfRef{&bot,&humanRef};Group group{&selfRef};bot.group=human.group=&group;red.spawner=boss.guid;
  NetherspitePositionValue value{&bot,&ai};EncounterPosition plan;
+ ai.context.cache.refresh=[&](){return value.Calculate();};
  auto calculate=[&](){ai.pathChecks=0;ai.context.cache.plan=value.Calculate();return ai.context.cache.plan.active;};
 #ifdef MANGOSBOT_ZERO
  assert(!calculate()); // Karazhan cannot activate in Classic.
 #else
  assert(!calculate()); // A human actually blocking the red beam has precedence.
+ human.group=nullptr;assert(calculate());human.group=&group; // stale roster entry cannot claim a beam
+ human.y=10;red.spawner=99;assert(!calculate());red.spawner=boss.guid;human.y=0;
  human.phase=2;assert(calculate()); // Other-phase players must not reserve our beam.
  assert(ai.context.cache.plan.source==red.guid&&ai.pathChecks==1);
  human.phase=1;assert(!calculate());human.world=false;assert(calculate());human.world=true;
@@ -120,15 +131,25 @@ int main(){
  red.map=&other;assert(!NetherspitePositionAction::GetPlan(&ai,plan));assert(!calculate());red.map=&map;
  bot.charmed=true;assert(!calculate());bot.charmed=false;
  boss.auras={38542};assert(!calculate());boss.auras.clear();
- bot.auras={38637};assert(calculate());
+ bot.auras={38637};assert(!calculate()); // exhaustion alone must not drag us back toward a beam
+ bot.y=0;assert(calculate());
  assert(!encounter::InBeam(ai.context.cache.plan.destination,{50,0,0},{0,0,0})); // exhaustion => step aside, never remove aura
- assert(bot.HasAura(38637));bot.auras.clear();
+ assert(bot.HasAura(38637));bot.auras.clear();bot.y=5;
  ai.validPath=false;assert(!calculate()&&ai.pathChecks==4);ai.validPath=true;assert(calculate());
  // A hazard/path failure between plan creation and execution must veto the move.
  NetherspitePositionAction move;move.bot=&bot;move.ai=&ai;Event event;
  ai.validPath=false;assert(!move.Execute(event)&&ai.moves==0);ai.validPath=true;
- assert(move.Execute(event)&&ai.moves==1);bot.teleport=true;assert(!move.Execute(event));bot.teleport=false;
+ assert(move.Execute(event)&&ai.moves==1);
+ // A human enters the assigned beam after selection: recompute before dispatch.
+ assert(calculate());human.y=0;assert(!move.Execute(event)&&ai.moves==1);human.y=10;assert(calculate());
+ bot.group=nullptr;assert(!NetherspitePositionAction::GetPlan(&ai,plan));bot.group=&group;
+ bot.teleport=true;assert(!move.Execute(event));bot.teleport=false;assert(calculate());
  ai.units.erase(4);assert(!NetherspitePositionAction::GetPlan(&ai,plan));ai.units[4]=&red;
+ // At the assigned beam point, stop a surviving chase without interrupting a stationary cast.
+ assert(calculate());auto safe=ai.context.cache.plan.destination;bot.x=safe.x;bot.y=safe.y;bot.z=safe.z;
+ assert(calculate()&&move.isUseful()&&!move.ShouldReactionInterruptCast());
+ unsigned oldMoves=ai.moves;assert(move.Execute(event)&&ai.moves==oldMoves&&ai.stops==1&&!move.isUseful());
+ bot.x=10;bot.y=5;assert(calculate());
  PreserveNetherspitePositionMultiplier multiplier{&ai};
  MovementAction chase;AttackAction attack;MoveAwayFromHazard escape;Action stationary;CastSpellAction spell;
  assert(multiplier.GetValue(nullptr)==1&&multiplier.GetValue(&chase)==0);

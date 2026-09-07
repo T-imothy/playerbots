@@ -138,14 +138,15 @@ bool AranFlameWreathHoldAction::Execute(Event& event)
 bool NetherspitePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 {
     Player* bot = ai->GetBot();
-    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() || bot->GetMapId() != 532 || !bot->IsInCombat()) return false;
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() || bot->GetMapId() != 532 || !bot->IsInCombat() || !bot->GetGroup()) return false;
     plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("netherspite position")->Get();
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
     Unit* boss = ai->GetUnit(plan.boss);
     Unit* portal = ai->GetUnit(plan.source);
     if (!boss || !portal || !boss->IsInWorld() || !portal->IsInWorld() ||
         !bot->IsInMap(boss) || !bot->IsInMap(portal) ||
-        !boss->IsAlive() || !boss->IsInCombat() || !portal->IsAlive() || boss->HasAura(38542)) return false;
+        !boss->IsAlive() || !boss->IsInCombat() || !portal->IsAlive() || boss->HasAura(38542) ||
+        boss->GetEntry() != 15689 || portal->GetSpawnerGuid() != boss->GetObjectGuid()) return false;
     const float oldZ = plan.destination.z;
     bot->UpdateAllowedPositionZ(plan.destination.x, plan.destination.y, plan.destination.z);
     return std::isfinite(plan.destination.z) && std::fabs(plan.destination.z - oldZ) < 6.0f;
@@ -154,13 +155,29 @@ bool NetherspitePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan
 bool NetherspitePositionAction::isUseful()
 {
     EncounterPosition plan;
+    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.0f ||
+        !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+}
+
+bool NetherspitePositionAction::ShouldReactionInterruptCast() const
+{
+    EncounterPosition plan;
     return GetPlan(ai, plan) && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.0f;
 }
 
 bool NetherspitePositionAction::Execute(Event& event)
 {
+    // Selection can precede exhaustion, relief arriving, or a group change.
+    // Refresh only when executing a move, not for every strategy multiplier.
+    ai->GetAiObjectContext()->GetValue<EncounterPosition>("netherspite position")->Reset();
     EncounterPosition plan;
     if (!GetPlan(ai, plan) || !ai->CanMove() || !ValidateEncounterDestination(ai, plan)) return false;
+    if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= 1.0f)
+    {
+        ai->StopMoving();
+        SetDuration(100);
+        return true;
+    }
     // Use ordinary pathfinding and the native portal SpellScript. No aura
     // grants, removals, boss weakening, teleportation or no-path movement.
     return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);

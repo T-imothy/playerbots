@@ -17,6 +17,7 @@ namespace ai
         BlackwingLairPositionAction(PlayerbotAI* ai) : MovementAction(ai, "blackwing lair safe position") {}
         bool Execute(Event& event) override;
         bool isUseful() override;
+        bool ShouldReactionInterruptCast() const override;
         static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
     };
 

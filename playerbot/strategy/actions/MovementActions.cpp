@@ -649,7 +649,10 @@ bool MovementAction::WaitForTransport()
 
     GenericTransport* transport = bot->GetTransport();
 
-    if (!transport || transport->GetEntry() != lastMove.lastTransportEntry || lastMove.lastPath.getPath().front().type != PathNodeType::NODE_TRANSPORT || lastMove.lastPath.getPath().front().entry != lastMove.lastTransportEntry)
+    if (!transport || transport->GetEntry() != lastMove.lastTransportEntry ||
+        lastMove.lastPath.getPath().size() < 2 ||
+        lastMove.lastPath.getPath().front().type != PathNodeType::NODE_TRANSPORT ||
+        lastMove.lastPath.getPath().front().entry != lastMove.lastTransportEntry)
     {
         lastMove.lastTransportEntry = 0;
         return false;
@@ -660,6 +663,14 @@ bool MovementAction::WaitForTransport()
     if(!path.UpcommingSpecialMovement(bot, 0.0f, bot->GetTransport()))
         return false;
 
+    // Special-movement selection can trim the copy down to its final point.
+    // Both the dock and exit must remain before resuming the journey.
+    if (path.getPath().size() < 2 || path.getPath().front().type != PathNodeType::NODE_TRANSPORT ||
+        path.getPath().front().entry != lastMove.lastTransportEntry)
+    {
+        lastMove.lastTransportEntry = 0;
+        return false;
+    }
     PathNodePoint dockPoint = path.getPath().front();
     PathNodePoint telePoint = *std::next(path.getPath().begin());
         
@@ -1094,15 +1105,17 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
 
     // Bound retries for an unchanged navigation failure.  The key is per bot,
-    // map/instance, transition generation and an eight-yard destination cell,
+    // map/instance, transition generation and an eight-yard 3D destination cell,
     // so moving the target or completing a transition invalidates it naturally.
     int32 const destinationCellX = static_cast<int32>(std::floor(endPos.getX() / 8.0f));
     int32 const destinationCellY = static_cast<int32>(std::floor(endPos.getY() / 8.0f));
+    int32 const destinationCellZ = static_cast<int32>(std::floor(endPos.getZ() / 8.0f));
     uint32 const transitionGeneration = ai->GetTransitionGeneration();
     uint32 const nowMs = WorldTimer::getMSTime();
     bool const sameFailedRequest = lastMove.failedPathMap == endPos.getMapId() &&
         lastMove.failedPathInstance == bot->GetInstanceId() &&
         lastMove.failedPathCellX == destinationCellX && lastMove.failedPathCellY == destinationCellY &&
+        lastMove.failedPathCellZ == destinationCellZ &&
         lastMove.failedPathGeneration == transitionGeneration;
     if (sameFailedRequest && static_cast<int32>(lastMove.failedPathRetryUntil - nowMs) > 0)
         return false;
@@ -1176,6 +1189,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         lastMove.failedPathInstance = bot->GetInstanceId();
         lastMove.failedPathCellX = destinationCellX;
         lastMove.failedPathCellY = destinationCellY;
+        lastMove.failedPathCellZ = destinationCellZ;
         lastMove.failedPathGeneration = transitionGeneration;
         lastMove.failedPathRetryUntil = WorldTimer::getMSTime() + sPlayerbotAIConfig.pathFailureRetryMs;
         ai->StopMoving();
@@ -1374,6 +1388,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         lastMove.failedPathInstance = bot->GetInstanceId();
         lastMove.failedPathCellX = destinationCellX;
         lastMove.failedPathCellY = destinationCellY;
+        lastMove.failedPathCellZ = destinationCellZ;
         lastMove.failedPathGeneration = transitionGeneration;
         lastMove.failedPathRetryUntil = WorldTimer::getMSTime() + sPlayerbotAIConfig.pathFailureRetryMs;
         ai->StopMoving();

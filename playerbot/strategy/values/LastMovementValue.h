@@ -27,6 +27,7 @@ namespace ai
             failedPathInstance = other.failedPathInstance;
             failedPathCellX = other.failedPathCellX;
             failedPathCellY = other.failedPathCellY;
+            failedPathCellZ = other.failedPathCellZ;
             failedPathGeneration = other.failedPathGeneration;
             failedPathRetryUntil = other.failedPathRetryUntil;
             moveEvent = Event();
@@ -51,6 +52,7 @@ namespace ai
             failedPathInstance = 0;
             failedPathCellX = 0;
             failedPathCellY = 0;
+            failedPathCellZ = 0;
             failedPathGeneration = 0;
             failedPathRetryUntil = 0;
         }
@@ -76,6 +78,7 @@ namespace ai
         uint32 failedPathInstance;
         int32 failedPathCellX;
         int32 failedPathCellY;
+        int32 failedPathCellZ;
         uint32 failedPathGeneration;
         uint32 failedPathRetryUntil;
         Event moveEvent;
