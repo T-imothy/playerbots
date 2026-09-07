@@ -26,7 +26,12 @@ Unit* DungeonAddTargetAction::GetTarget()
         case 556: bossEntry = 23035; addEntry = 23132; phaseAura = 42354; break; // Anzu banish.
         case 585: sourceBossEntry = 24723; sourceAddEntry = 24722; sourceAura = 44320; break; // Selin's active crystal.
 #ifdef MANGOSBOT_TWO
+        case 574: bossEntry = 23953; addEntry = 23965; rescueAura = 48400; break; // Keleseth's Frost Tomb channel.
         case 576: bossEntry = 26763; addEntry = 26918; phaseAura = 47748; break; // Anomalus Rift Shield.
+        case 604:
+            bossEntry = 29304; addEntry = 29742; // Slad'ran's player-summoned Snake Wrap.
+            rescueAura = bot->GetMap()->IsRegularDifficulty() ? 55126 : 61476;
+            break;
         case 619: sourceBossEntry = 29309; sourceAddEntry = 30176; sourceAura = 56153; break; // Nadox's shielding guardian.
 #endif
 #endif
@@ -69,8 +74,8 @@ Unit* DungeonAddTargetAction::GetTarget()
         Unit* boss = nullptr;
         if (rescueAura)
         {
-            // The wrapped player summons this rescue object, not the boss.
-            // Its native self-stun must not make it look like protected CC.
+            // The trapped player summons these rescue objects, not the boss.
+            // Native immobilization must not make them look like protected CC.
             Unit* victim = ai->GetUnit(add->GetSpawnerGuid());
             if (!victim || !victim->IsPlayer() || !victim->IsInWorld() || !victim->IsAlive() ||
                 !bot->IsInMap(victim) || victim->HasCharmer() || !victim->HasAura(rescueAura)) continue;

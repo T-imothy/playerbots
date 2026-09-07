@@ -34,7 +34,9 @@ struct Unit {
  float GetDistance(Unit*u){return std::fabs(x-u->x);}
 };
 struct Group{};
+struct Map {bool regular=true;bool IsRegularDifficulty(){return regular;}};
 struct Player:Unit {Player(){player=true;}bool teleport=false;Group*group=nullptr;
+ Map nativeMap;Map*GetMap(){return &nativeMap;}
  bool IsBeingTeleported(){return teleport;}Group*GetGroup(){return group;}unsigned GetMapId(){return map;}
  bool IsInMap(Unit*u){return u&&world&&u->world&&map==u->map&&instance==u->instance&&phase==u->phase;}};
 struct PlayerbotAI {Player*bot;bool real=false,healer=false,tank=false;
@@ -52,7 +54,7 @@ struct PossibleTargetsValue {
 };
 struct ServerFacade{bool IsFriendlyTo(Unit*u,Player*){return u->friendly;}}sServerFacade;
 struct PossibleAttackTargetsValue {
- static bool IsPossibleTarget(Unit*u,Player*p,float range,bool ignoreCC){assert(ignoreCC==(p->map==533));return !u->immune&&!u->assignedCC&&p->GetDistance(u)<=range;}
+ static bool IsPossibleTarget(Unit*u,Player*p,float range,bool ignoreCC){assert(ignoreCC==(p->map==533||p->map==574||p->map==604));return !u->immune&&!u->assignedCC&&p->GetDistance(u)<=range;}
  static bool HasBreakableCC(Unit*u,Player*){return u->breakCC;}
  static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}
 };
@@ -63,17 +65,23 @@ struct PreserveDungeonAddTargetMultiplier{PlayerbotAI*ai;float GetValue(Action*)
 #define AI_VALUE(type,key) ai->Value<type>(key)
 __METHODS__
 int main(){
- // Maexxna's wrap is summoned by the trapped group member and self-stuns.
- {
-  Group group,otherGroup;Player bot,member;bot.group=member.group=&group;bot.map=member.map=533;
-  member.guid=3;member.auras={28622};
-  Unit boss,wrap,otherBoss;boss.guid=1;boss.entry=15952;boss.map=533;
-  wrap.guid=2;wrap.entry=16486;wrap.map=533;wrap.spawner=3;wrap.hardCC=true;wrap.combat=false;
+ // Rescue objects are summoned by the trapped group member.
+ struct Rescue{unsigned map,boss,add,aura;bool regular;};
+ for(Rescue rescue: {Rescue{533,15952,16486,28622,true}
+#ifdef MANGOSBOT_TWO
+  ,Rescue{574,23953,23965,48400,true},Rescue{574,23953,23965,48400,false},
+  Rescue{604,29304,29742,55126,true},Rescue{604,29304,29742,61476,false}
+#endif
+ }) {
+  Group group,otherGroup;Player bot,member;bot.group=member.group=&group;bot.map=member.map=rescue.map;bot.nativeMap.regular=rescue.regular;
+  member.guid=3;member.auras={rescue.aura};
+  Unit boss,wrap,otherBoss;boss.guid=1;boss.entry=rescue.boss;boss.map=rescue.map;
+  wrap.guid=2;wrap.entry=rescue.add;wrap.map=rescue.map;wrap.spawner=3;wrap.hardCC=true;wrap.combat=false;
   otherBoss=boss;otherBoss.guid=4;
   PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&wrap},{3,&member},{4,&otherBoss}};ai.possible={1,2};
   DungeonAddTargetAction action(&ai);auto none=[&](){assert(!action.GetTarget());};
   assert(action.GetTarget()==&wrap);ai.current=&wrap;assert(!action.isUseful());ai.current=nullptr;
-  member.auras.clear();none();member.auras={28622};member.group=&otherGroup;none();member.group=&group;
+  member.auras.clear();none();member.auras={rescue.aura};member.group=&otherGroup;none();member.group=&group;
   member.alive=false;none();member.alive=true;member.world=false;none();member.world=true;
   member.charmed=true;none();member.charmed=false;member.teleport=true;none();member.teleport=false;
   member.instance=2;none();member.instance=1;member.phase=2;none();member.phase=1;
