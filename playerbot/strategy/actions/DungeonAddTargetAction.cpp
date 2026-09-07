@@ -8,13 +8,15 @@ using namespace ai;
 
 Unit* DungeonAddTargetAction::GetTarget()
 {
-#ifndef MANGOSBOT_ZERO
     if (!bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() || bot->HasCharmer() ||
         bot->IsBeingTeleported()) return nullptr;
     uint32 bossEntry = 0, addEntry = 0, phaseAura = 0, summonerEntry = 0;
     uint32 sourceBossEntry = 0, sourceAddEntry = 0, sourceAura = 0;
+    uint32 rescueAura = 0;
     switch (bot->GetMapId())
     {
+        case 533: bossEntry = 15952; addEntry = 16486; rescueAura = 28622; break; // Maexxna Web Wrap.
+#ifndef MANGOSBOT_ZERO
         case 545:
             bossEntry = 17796; addEntry = 17951; // Steamrigger repair mechanics.
             sourceBossEntry = 17798; sourceAddEntry = 17954; sourceAura = 31543; // Kalithresh's active distiller.
@@ -27,15 +29,17 @@ Unit* DungeonAddTargetAction::GetTarget()
         case 576: bossEntry = 26763; addEntry = 26918; phaseAura = 47748; break; // Anomalus Rift Shield.
         case 619: sourceBossEntry = 29309; sourceAddEntry = 30176; sourceAura = 56153; break; // Nadox's shielding guardian.
 #endif
+#endif
         default: return nullptr;
     }
     if (!bot->GetGroup() || ai->IsRealPlayer() || ai->IsHeal(bot) || ai->IsTank(bot)) return nullptr;
-    auto valid = [this](Unit* unit)
+    auto valid = [this, rescueAura](Unit* unit)
     {
         return unit && unit->IsInWorld() && unit->IsAlive() && bot->IsInMap(unit) && !unit->HasCharmer() &&
             PossibleTargetsValue::IsValid(unit, bot, false) &&
-            PossibleAttackTargetsValue::IsPossibleTarget(unit, bot, sPlayerbotAIConfig.sightDistance, false) &&
-            !PossibleAttackTargetsValue::HasBreakableCC(unit, bot) && !PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot);
+            PossibleAttackTargetsValue::IsPossibleTarget(unit, bot, sPlayerbotAIConfig.sightDistance, rescueAura != 0) &&
+            !PossibleAttackTargetsValue::HasBreakableCC(unit, bot) &&
+            (rescueAura || !PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot));
     };
     auto commanded = [this](Unit* unit)
     {
@@ -63,7 +67,24 @@ Unit* DungeonAddTargetAction::GetTarget()
         // Repair mechanics can be passive. Their live native summoner and its
         // encounter phase establish relevance without requiring an add victim.
         Unit* boss = nullptr;
-        if (auraSource)
+        if (rescueAura)
+        {
+            // The wrapped player summons this rescue object, not the boss.
+            // Its native self-stun must not make it look like protected CC.
+            Unit* victim = ai->GetUnit(add->GetSpawnerGuid());
+            if (!victim || !victim->IsPlayer() || !victim->IsInWorld() || !victim->IsAlive() ||
+                !bot->IsInMap(victim) || victim->HasCharmer() || !victim->HasAura(rescueAura)) continue;
+            Player* member = static_cast<Player*>(victim);
+            if (member->IsBeingTeleported() || member->GetGroup() != bot->GetGroup()) continue;
+            for (const auto& bossGuid : possibleTargets)
+            {
+                Unit* candidate = ai->GetUnit(bossGuid);
+                if (!validBoss(candidate) || candidate->GetEntry() != bossEntry) continue;
+                if (boss && boss != candidate) return nullptr;
+                boss = candidate;
+            }
+        }
+        else if (auraSource)
         {
             // Static crystals have no boss summoner. The boss aura's exact
             // caster identifies the active source, including Nadox's guardian.
@@ -95,9 +116,6 @@ Unit* DungeonAddTargetAction::GetTarget()
             selected = add;
     }
     return selected;
-#else
-    return nullptr;
-#endif
 }
 
 bool DungeonAddTargetAction::isUseful()

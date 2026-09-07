@@ -23,7 +23,8 @@ code=r'''
 using uint32=unsigned;using ObjectGuid=unsigned;
 struct Unit {
  unsigned entry=0,map=545,instance=1,phase=1;ObjectGuid guid=0,spawner=0;
- bool world=true,alive=true,combat=true,charmed=false,friendly=false,attackable=true,freeAttack=true;
+ bool world=true,alive=true,combat=true,charmed=false,friendly=false,attackable=true,freeAttack=true,player=false;
+ bool IsPlayer(){return player;}
  bool immune=false,assignedCC=false,breakCC=false,hardCC=false;
  float x=0;Unit* victim=nullptr;std::set<unsigned> auras;std::set<std::pair<unsigned,ObjectGuid>> sourceAuras;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
@@ -33,7 +34,7 @@ struct Unit {
  float GetDistance(Unit*u){return std::fabs(x-u->x);}
 };
 struct Group{};
-struct Player:Unit {bool teleport=false;Group*group=nullptr;
+struct Player:Unit {Player(){player=true;}bool teleport=false;Group*group=nullptr;
  bool IsBeingTeleported(){return teleport;}Group*GetGroup(){return group;}unsigned GetMapId(){return map;}
  bool IsInMap(Unit*u){return u&&world&&u->world&&map==u->map&&instance==u->instance&&phase==u->phase;}};
 struct PlayerbotAI {Player*bot;bool real=false,healer=false,tank=false;
@@ -51,7 +52,7 @@ struct PossibleTargetsValue {
 };
 struct ServerFacade{bool IsFriendlyTo(Unit*u,Player*){return u->friendly;}}sServerFacade;
 struct PossibleAttackTargetsValue {
- static bool IsPossibleTarget(Unit*u,Player*p,float range,bool ignoreCC){assert(!ignoreCC);return !u->immune&&!u->assignedCC&&p->GetDistance(u)<=range;}
+ static bool IsPossibleTarget(Unit*u,Player*p,float range,bool ignoreCC){assert(ignoreCC==(p->map==533));return !u->immune&&!u->assignedCC&&p->GetDistance(u)<=range;}
  static bool HasBreakableCC(Unit*u,Player*){return u->breakCC;}
  static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}
 };
@@ -62,6 +63,34 @@ struct PreserveDungeonAddTargetMultiplier{PlayerbotAI*ai;float GetValue(Action*)
 #define AI_VALUE(type,key) ai->Value<type>(key)
 __METHODS__
 int main(){
+ // Maexxna's wrap is summoned by the trapped group member and self-stuns.
+ {
+  Group group,otherGroup;Player bot,member;bot.group=member.group=&group;bot.map=member.map=533;
+  member.guid=3;member.auras={28622};
+  Unit boss,wrap,otherBoss;boss.guid=1;boss.entry=15952;boss.map=533;
+  wrap.guid=2;wrap.entry=16486;wrap.map=533;wrap.spawner=3;wrap.hardCC=true;wrap.combat=false;
+  otherBoss=boss;otherBoss.guid=4;
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&wrap},{3,&member},{4,&otherBoss}};ai.possible={1,2};
+  DungeonAddTargetAction action(&ai);auto none=[&](){assert(!action.GetTarget());};
+  assert(action.GetTarget()==&wrap);ai.current=&wrap;assert(!action.isUseful());ai.current=nullptr;
+  member.auras.clear();none();member.auras={28622};member.group=&otherGroup;none();member.group=&group;
+  member.alive=false;none();member.alive=true;member.world=false;none();member.world=true;
+  member.charmed=true;none();member.charmed=false;member.teleport=true;none();member.teleport=false;
+  member.instance=2;none();member.instance=1;member.phase=2;none();member.phase=1;
+  member.player=false;none();member.player=true;wrap.spawner=1;none();wrap.spawner=3;
+  wrap.breakCC=true;none();wrap.breakCC=false;wrap.assignedCC=true;none();wrap.assignedCC=false;
+  wrap.immune=true;none();wrap.immune=false;wrap.alive=false;none();wrap.alive=true;
+  wrap.world=false;none();wrap.world=true;wrap.phase=2;none();wrap.phase=1;
+  wrap.charmed=true;none();wrap.charmed=false;wrap.friendly=true;none();wrap.friendly=false;
+  boss.victim=&bot;none();boss.victim=nullptr;boss.combat=false;none();boss.combat=true;
+  boss.phase=2;none();boss.phase=1;boss.alive=false;none();boss.alive=true;
+  ai.possible.push_back(4);none();ai.possible.remove(4);
+  ai.command=1;none();ai.command=0;ai.marked=&boss;none();ai.marked=nullptr;
+  ai.healer=true;none();ai.healer=false;ai.tank=true;none();ai.tank=false;ai.real=true;none();ai.real=false;
+  bot.group=nullptr;none();bot.group=&group;bot.teleport=true;none();bot.teleport=false;
+  bot.alive=false;none();bot.alive=true;bot.combat=false;none();bot.combat=true;
+  assert(action.GetTarget()==&wrap);ai.units.erase(3);none();
+ }
  struct Case{unsigned map,boss,add,aura;};
  for(Case c: {Case{545,17796,17951,0},Case{553,17975,19953,34551},Case{556,23035,23132,42354},Case{576,26763,26918,47748}}){
   Player bot;Group group;bot.group=&group;bot.map=c.map;

@@ -24,6 +24,10 @@ priority for Vorpil's travelers using their exact two-level summon ownership.
 approach point and Kalithresh's missing-distiller transition, and adds exact
 aura-source priorities for their active crystals and Nadox's shielding guardian.
 
+[The Maexxna continuation](MAEXXNA-AUDIT-20260906.md) prevents null Web Wrap
+targets in depleted raids, corrects Wrath's player release auras, and adds
+group-member rescue priority for active wraps in all three cores.
+
 | Finding | Change | Expansion scope | Regression |
 | --- | --- | --- | --- |
 | A cast already underway could complete after its target gained a reflect shield | Dungeon combat/reaction hooks recheck the current generic spell and cancel only a native-reflectable hostile cast facing at least 50% school-specific reflection. Execution rechecks the shield and cast; launched spells, channels, friendly casts and uninterruptible casts are preserved. | All three | `reflected_cast_reaction_regression.py` |
