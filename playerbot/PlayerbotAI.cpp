@@ -1670,6 +1670,11 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 		if (casterGuid != bot->GetObjectGuid())
 			return;
 
+#ifdef MANGOSBOT_TWO
+        // Wrath inserts the cast counter between the packed GUID and spell ID.
+        uint8 castCount;
+        p >> castCount;
+#endif
 		uint32 spellId;
 		p >> spellId;
 		SpellInterrupted(spellId);
@@ -5864,8 +5869,9 @@ void PlayerbotAI::InterruptSpell(bool withMeleeAndAuto)
         Spell* currentSpell = bot->GetCurrentSpell((CurrentSpellTypes)type);
         if (currentSpell && currentSpell->CanBeInterrupted())
         {
+            const uint32 spellId = currentSpell->m_spellInfo->Id;
             bot->InterruptSpell((CurrentSpellTypes)type);
-            SpellInterrupted(currentSpell->m_spellInfo->Id);
+            SpellInterrupted(spellId);
         }
     }
 }
