@@ -113,6 +113,13 @@ bool ReactionEngine::FindReaction(bool isStunned)
                                 MultiplyAndPush(reactionNode->getAlternatives(), reactionRelevance + 0.03, false, reactionEvent, "alt");
                             }
                         }
+                        else if ((!isStunned || reaction->isUsefulWhenStunned()) &&
+                            reaction->ShouldTryAlternativesWhenUseless())
+                        {
+                            // Honor the same explicit fallback contract as the
+                            // combat engine; ordinary useless actions still stop.
+                            MultiplyAndPush(reactionNode->getAlternatives(), reactionRelevance + 0.03, false, reactionEvent, "alt");
+                        }
                     }
 
                     // Delete the reaction node

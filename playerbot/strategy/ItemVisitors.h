@@ -336,11 +336,12 @@ namespace ai
                 {
                     const SpellEntry* const spellInfo = sServerFacade.LookupSpellInfo(proto->Spells[j].SpellId);
                     if (!spellInfo)
-                        return false;
+                        continue;
 
                     for (int i = 0 ; i < 3; i++)
                     {
-                        if (spellInfo->Effect[i] == effectId)
+                        if (spellInfo->Effect[i] == effectId &&
+                            (effectId != SPELL_EFFECT_ENERGIZE || spellInfo->EffectMiscValue[i] == POWER_MANA))
                             return true;
                     }
                 }

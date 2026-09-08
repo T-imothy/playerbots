@@ -3572,7 +3572,7 @@ void RandomItemMgr::BuildPotionCache()
 
     sLog.outBasic("Building potion cache for %d levels", maxLevel);
 	int counter2 = 0;
-    for (uint32 level = 1; level <= maxLevel+1; level+=10)
+    for (uint32 level = 1; level <= maxLevel; level+=10)
     {
         uint32 effects[] = { SPELL_EFFECT_HEAL, SPELL_EFFECT_ENERGIZE };
         for (int i = 0; i < 2; ++i)
@@ -3590,7 +3590,9 @@ void RandomItemMgr::BuildPotionCache()
                     proto->Bonding != NO_BIND)
                     continue;
 
-                if (proto->RequiredLevel && (proto->RequiredLevel > level || proto->RequiredLevel < level - 10))
+                const uint32 highestLevel = std::min<uint32>(maxLevel, level + 9);
+                const uint32 lowestLevel = level > 10 ? level - 10 : 0;
+                if (proto->RequiredLevel && (proto->RequiredLevel > highestLevel || proto->RequiredLevel < lowestLevel))
                     continue;
 
                 if (proto->RequiredSkill)
@@ -3610,7 +3612,8 @@ void RandomItemMgr::BuildPotionCache()
 
                     for (int i = 0 ; i < 3; i++)
                     {
-                        if (spellInfo->Effect[i] == effect)
+                        if (spellInfo->Effect[i] == effect &&
+                            (effect != SPELL_EFFECT_ENERGIZE || spellInfo->EffectMiscValue[i] == POWER_MANA))
                         {
                             potionCache[level / 10][effect].push_back(itemId);
                             break;
@@ -3621,7 +3624,7 @@ void RandomItemMgr::BuildPotionCache()
         }
     }
 
-    for (uint32 level = 1; level <= maxLevel+1; level+=10)
+    for (uint32 level = 1; level <= maxLevel; level+=10)
     {
         uint32 effects[] = { SPELL_EFFECT_HEAL, SPELL_EFFECT_ENERGIZE };
         for (int i = 0; i < 2; ++i)
@@ -3695,7 +3698,16 @@ void RandomItemMgr::BuildFoodCache()
 
 uint32 RandomItemMgr::GetRandomPotion(uint32 level, uint32 effect)
 {
-    std::vector<uint32> potions = potionCache[(level - 1) / 10][effect];
+    if (!level)
+        return 0;
+    std::vector<uint32> potions;
+    for (uint32 itemId : potionCache[(level - 1) / 10][effect])
+    {
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+        // The bucket covers ten levels, so check the caller's actual level.
+        if (proto && proto->RequiredLevel <= level)
+            potions.push_back(itemId);
+    }
     if (potions.empty()) return 0;
     return potions[urand(0, potions.size() - 1)];
 }

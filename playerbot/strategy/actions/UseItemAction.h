@@ -173,6 +173,15 @@ namespace ai
     {
     public:
         UseManaPotionAction(PlayerbotAI* ai) : UsePotionAction(ai, "mana potion", SPELL_EFFECT_ENERGIZE) {}
+
+        bool isUseful() override
+        {
+            // Recheck live mana when a queued fallback runs; another recovery
+            // action may already have resolved the low-mana trigger.
+            const uint32 maximum = bot->GetMaxPower(POWER_MANA);
+            return maximum && uint64(bot->GetPower(POWER_MANA)) * 100 <
+                uint64(maximum) * sPlayerbotAIConfig.lowMana && UsePotionAction::isUseful();
+        }
     };
 
     class UseHearthStoneAction : public UseAction
@@ -589,6 +598,10 @@ namespace ai
     {
     public:
         UseDarkRuneAction(PlayerbotAI* ai) : UseItemIdAction(ai, "dark rune") {}
+
+        // Low health, mage restrictions or a skipped rune spell do not make
+        // the independent mana-potion alternative useless.
+        bool ShouldTryAlternativesWhenUseless() override { return true; }
 
         virtual bool isUseful() override
         {
