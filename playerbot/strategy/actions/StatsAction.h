@@ -3,6 +3,14 @@
 
 namespace ai
 {
+    class BotStatusAction : public ChatCommandAction
+    {
+    public:
+        BotStatusAction(PlayerbotAI* ai) : ChatCommandAction(ai, "status") {}
+        bool Execute(Event& event) override;
+        bool isUsefulWhenStunned() override { return true; }
+    };
+
     class StatsAction : public ChatCommandAction
     {
     public:

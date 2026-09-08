@@ -3,46 +3,102 @@
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/AttackersValue.h"
 #include "PullActions.h"
+#include "PullDiagnostics.h"
+#include "BotCommandAccess.h"
 #include "playerbot/strategy/values/PositionValue.h"
 
 using namespace ai;
 
+const char* ai::PullFailureReason(PullFailure failure)
+{
+    switch (failure)
+    {
+        case PullFailure::None: return "ready";
+        case PullFailure::NoTarget: return "no hostile target selected";
+        case PullFailure::InvalidTarget: return "target cannot be pulled";
+        case PullFailure::StrategyDisabled: return "pull strategy is disabled";
+        case PullFailure::NoAction: return "no pull action is available";
+        case PullFailure::NoRangedWeapon: return "no usable ranged weapon";
+        case PullFailure::NoAmmo: return "ammunition is required";
+        case PullFailure::OutOfRange: return "target is outside pull range";
+        case PullFailure::NoLineOfSight: return "no line of sight";
+        case PullFailure::NotKnown: return "pull spell is not known";
+        case PullFailure::NotReady: return "pull spell is on cooldown";
+        case PullFailure::InvalidState: return "current state prevents the pull";
+        default: return "configured pull action is unavailable";
+    }
+}
+
+PullFailure ai::GetPullReadiness(PlayerbotAI* ai, Unit* target)
+{
+    PullStrategy* strategy = PullStrategy::Get(ai);
+    if (!strategy) return PullFailure::StrategyDisabled;
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer())
+        return PullFailure::InvalidState;
+    if (!target) return PullFailure::NoTarget;
+    if (!AttackersValue::IsValid(target, bot, nullptr, false)) return PullFailure::InvalidTarget;
+    // Match the existing request gate; this diagnostic does not change which
+    // classes currently require the ranged equipment slot to be populated.
+    if (bot->getClass() != CLASS_DRUID && bot->getClass() != CLASS_PALADIN &&
+        !bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED))
+        return PullFailure::NoRangedWeapon;
+    if (strategy->GetPullActionName().empty() ||
+        !ai->GetAiObjectContext()->GetAction(strategy->GetPullActionName())) return PullFailure::NoAction;
+    SpellCastResult result = SPELL_CAST_OK;
+    const bool possible = ai->CanCastSpell(strategy->GetSpellName(), target, 0, nullptr, false, false, false, &result);
+    switch (result)
+    {
+        case SPELL_FAILED_NEED_AMMO:
+        case SPELL_FAILED_NO_AMMO: return PullFailure::NoAmmo;
+        case SPELL_FAILED_EQUIPPED_ITEM:
+        case SPELL_FAILED_EQUIPPED_ITEM_CLASS: return PullFailure::NoRangedWeapon;
+        case SPELL_FAILED_OUT_OF_RANGE:
+        case SPELL_FAILED_TOO_CLOSE: return PullFailure::OutOfRange;
+        case SPELL_FAILED_LINE_OF_SIGHT: return PullFailure::NoLineOfSight;
+        case SPELL_FAILED_NOT_KNOWN: return PullFailure::NotKnown;
+        case SPELL_FAILED_NOT_READY: return PullFailure::NotReady;
+        case SPELL_CAST_OK: return possible ? PullFailure::None : PullFailure::Unavailable;
+        default: return PullFailure::InvalidState;
+    }
+}
+
 bool PullRequestAction::Execute(Event& event)
 {
+    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    auto fail = [&](PullFailure reason) {
+        if ((event.getSource() == "pull" || event.getSource() == "pull rti") && CanManageBotCommands(ai, requester))
+            ai->TellPlayerNoFacing(requester, std::string("Pull failed: ") + PullFailureReason(reason) + ".");
+        return false;
+    };
     PullStrategy* strategy = PullStrategy::Get(ai);
     if (!strategy)
     {
-        return false;
+        return fail(PullFailure::StrategyDisabled);
     }
-
-    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
 
     Unit* target = GetTarget(event);
     if (!target)
     {
-        ai->TellPlayerNoFacing(requester, "You have no target");
-        return false;
+        return fail(PullFailure::NoTarget);
     }
 
     const float maxPullDistance = sPlayerbotAIConfig.reactDistance * 3;
     const float distanceToPullTarget = target->GetDistance(ai->GetBot());
     if (distanceToPullTarget > maxPullDistance)
     {
-        ai->TellPlayerNoFacing(requester, "The target is too far away");
-        return false;
+        return fail(PullFailure::OutOfRange);
     }
 
     if (!AttackersValue::IsValid(target, bot, nullptr, false))
     {
-        ai->TellPlayerNoFacing(requester, "The target can't be pulled");
-        return false;
+        return fail(PullFailure::InvalidTarget);
     }
 
     if (!strategy->CanDoPullAction(target))
     {
-        std::ostringstream out; out << "Can't perform pull action '" << strategy->GetPullActionName() << "'";
-        ai->TellPlayerNoFacing(requester, out.str());
-        return false;
+        const PullFailure reason = GetPullReadiness(ai, target);
+        return fail(reason == PullFailure::None ? PullFailure::Unavailable : reason);
     }
 
     //Set position to return to after pulling.

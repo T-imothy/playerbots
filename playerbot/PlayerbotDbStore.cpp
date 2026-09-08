@@ -15,6 +15,7 @@ using namespace ai;
 
 void PlayerbotDbStore::Load(PlayerbotAI *ai, std::string preset)
 {
+    if (preset == "__roll_policy") return; // Dedicated setting, never an AI strategy preset.
     uint64 guid = ai->GetBot()->GetObjectGuid().GetRawValue();
 
     auto results = CharacterDatabase.PQuery("SELECT `key`,`value` FROM `ai_playerbot_db_store` WHERE `guid` = '%lu' AND `preset` = '%s'", guid, preset.c_str());
@@ -44,6 +45,7 @@ void PlayerbotDbStore::Load(PlayerbotAI *ai, std::string preset)
 
 void PlayerbotDbStore::Save(PlayerbotAI *ai, std::string preset)
 {
+    if (preset == "__roll_policy") return;
     uint64 guid = ai->GetBot()->GetObjectGuid().GetRawValue();
 
     Reset(ai, preset);
@@ -72,6 +74,7 @@ std::string PlayerbotDbStore::FormatStrategies(std::string type, std::list<std::
 
 void PlayerbotDbStore::Reset(PlayerbotAI *ai, std::string preset)
 {
+    if (preset == "__roll_policy") return;
     uint64 guid = ai->GetBot()->GetObjectGuid().GetRawValue();
     uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(ObjectGuid(guid));
 

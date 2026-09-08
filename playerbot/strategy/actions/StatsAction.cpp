@@ -2,8 +2,79 @@
 #include "playerbot/playerbot.h"
 #include "StatsAction.h"
 #include "playerbot/RandomItemMgr.h"
+#include "playerbot/Talentspec.h"
+#include "playerbot/strategy/generic/PullStrategy.h"
+#include "PullDiagnostics.h"
+#include "BotCommandAccess.h"
 
 using namespace ai;
+
+namespace
+{
+    std::string StatusField(const std::string& text)
+    {
+        std::string result;
+        const char* hex = "0123456789ABCDEF";
+        for (unsigned char c : text)
+        {
+            if (c < 32 || c == 127 || c == ';' || c == ':' || c == '%' || c == '|')
+            { result += '%'; result += hex[c >> 4]; result += hex[c & 15]; }
+            else result += c;
+            if (result.size() >= 80) break;
+        }
+        return result.empty() ? "unknown" : result;
+    }
+}
+
+bool BotStatusAction::Execute(Event& event)
+{
+    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    if (!CanManageBotCommands(ai, requester)) return false;
+    const std::string query = event.getParam();
+    std::ostringstream out;
+    if (query == "role")
+    {
+        const bool inGroup = bot->GetGroup() != nullptr;
+        const bool tank = ai->IsTank(bot, inGroup), healer = ai->IsHeal(bot, inGroup);
+        out << "Role: " << (tank && healer ? "tank+healer" : tank ? "tank" : healer ? "healer" : "dps")
+            << "; Range: " << (ai->IsRanged(bot, inGroup) ? "ranged" : "melee")
+            << "; Spec: " << StatusField(ChatHelper::specName(bot)) << "; SpecSource: dominant_tree";
+    }
+    else if (query == "build")
+    {
+        TalentSpec actual(bot);
+        std::set<std::string> names;
+        if (actual.GetTalentPoints() > 0)
+        {
+            const std::string link = actual.GetTalentLink();
+            for (const auto& path : sPlayerbotAIConfig.classSpecs[bot->getClass()].talentPath)
+                for (const auto& configured : path.talentSpec)
+                {
+                    TalentSpec candidate = configured;
+                    if (candidate.GetTalentLink() == link) names.insert(path.name);
+                }
+        }
+        out << "Build: " << (names.size() == 1 ? StatusField(*names.begin()) : "unknown")
+            << "; Layout: " << actual.GetTalentPoints(0) << '/' << actual.GetTalentPoints(1) << '/' << actual.GetTalentPoints(2)
+            << "; SuggestedRole: unknown";
+    }
+    else if (query == "pull")
+    {
+        PullStrategy* strategy = PullStrategy::Get(ai);
+        Unit* target = ai->GetUnit(requester->GetSelectionGuid());
+        const PullFailure reason = GetPullReadiness(ai, target);
+        out << "PullAction: " << (strategy ? StatusField(strategy->GetPullActionName()) : "none")
+            << "; Ready: " << (reason == PullFailure::None ? "yes" : "no")
+            << "; Reason: " << PullFailureReason(reason) << "; Scope: immediate_cast";
+    }
+    else
+    {
+        ai->TellPlayerNoFacing(requester, "Usage: status role | status build | status pull");
+        return false;
+    }
+    ai->TellPlayerNoFacing(requester, out.str());
+    return true;
+}
 
 bool StatsAction::Execute(Event& event)
 {

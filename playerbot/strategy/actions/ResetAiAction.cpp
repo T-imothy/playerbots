@@ -43,6 +43,7 @@ void ResetAiAction::ResetValues()
         {
             Field* fields = results->Fetch();
             std::string val = fields[0].GetString();
+            if (val == "__roll_policy") continue;
 
             std::vector<std::string> parts = split(val, '>');
             if (parts.size() != 2) continue;

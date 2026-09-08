@@ -29,6 +29,7 @@ ChatCommandHandlerStrategy::ChatCommandHandlerStrategy(PlayerbotAI* ai) : PassTr
     supported.push_back("quests");
     supported.push_back("quest reward");
     supported.push_back("stats");
+    supported.push_back("status");
     supported.push_back("leave");
     supported.push_back("reputation");
     supported.push_back("log");

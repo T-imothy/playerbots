@@ -3,8 +3,40 @@
 #include "LootRollAction.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/LootValues.h"
+#include "playerbot/strategy/values/RollPolicyValue.h"
+#include "BotCommandAccess.h"
 
 using namespace ai;
+
+std::string RollPolicyValue::Get()
+{
+    if (!loaded)
+    {
+        loaded = true;
+        auto rows = CharacterDatabase.PQuery("SELECT `value` FROM `ai_playerbot_db_store` WHERE `guid`='%llu' AND `preset`='__roll_policy' AND `key`='mode'",
+            static_cast<unsigned long long>(ai->GetBot()->GetObjectGuid().GetRawValue()));
+        if (rows)
+        {
+            const std::string saved = rows->Fetch()[0].GetString();
+            if (IsValid(saved)) value = saved;
+        }
+    }
+    return value;
+}
+
+bool RollPolicyValue::Persist(const std::string& mode)
+{
+    if (!IsValid(mode)) return false;
+    const auto guid = static_cast<unsigned long long>(ai->GetBot()->GetObjectGuid().GetRawValue());
+    CharacterDatabase.BeginTransaction();
+    CharacterDatabase.PExecute("DELETE FROM `ai_playerbot_db_store` WHERE `guid`='%llu' AND `preset`='__roll_policy' AND `key`='mode'", guid);
+    CharacterDatabase.PExecute("INSERT INTO `ai_playerbot_db_store` (`guid`,`preset`,`key`,`value`) VALUES ('%llu','__roll_policy','mode','%s')", guid, mode.c_str());
+    CharacterDatabase.CommitTransaction();
+    value = mode;
+    loaded = true;
+    return true;
+}
+
 
 bool LootStartRollAction::Execute(Event& event)
 {
@@ -63,6 +95,26 @@ bool RollAction::Execute(Event& event)
     {
         ai->TellPlayerNoFacing(requester, "Please give a roll type or item. See " + ChatHelper::formatValue("help", "action:roll", "roll help") + " for more information.");
         return false;
+    }
+
+    if (text == "policy" || text.compare(0, 7, "policy ") == 0)
+    {
+        if (!CanManageBotCommands(ai, requester)) return false;
+        auto policy = static_cast<RollPolicyValue*>(ai->GetAiObjectContext()->GetValue<std::string>("roll policy"));
+        std::string mode = text == "policy" ? "?" : text.substr(7);
+        if (mode == "?")
+        {
+            ai->TellPlayerNoFacing(requester, "RollPolicy: " + policy->Get());
+            return true;
+        }
+        if (!RollPolicyValue::IsValid(mode))
+        {
+            ai->TellPlayerNoFacing(requester, "Roll policy must be auto, pass, greed or need.");
+            return false;
+        }
+        policy->Persist(mode);
+        ai->TellPlayerNoFacing(requester, "RollPolicy: " + mode + "; Saved: yes");
+        return true;
     }
 
     ItemIds ids = ChatHelper::parseItems(text);
@@ -237,13 +289,22 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier)
     return canLoot ? needVote : ROLL_PASS;
 }
 
-bool RollAction::RollOnItemInSlot(RollVote vote, ObjectGuid lootGuid, uint32 slot)
+RollVote RollAction::CalculateAutomaticRollVote(ItemQualifier& itemQualifier)
+{
+    const std::string policy = AI_VALUE(std::string, "roll policy");
+    if (policy == "auto") return CalculateRollVote(itemQualifier);
+    if (!StoreLootAction::IsLootAllowed(itemQualifier, ai) || policy == "pass") return ROLL_PASS;
+    return policy == "need" ? ROLL_NEED : ROLL_GREED;
+}
+
+bool RollAction::RollOnItemInSlot(RollVote vote, ObjectGuid lootGuid, uint32 slot, bool automatic)
 {
     Loot* loot = sLootMgr.GetLoot(bot, lootGuid);
     if (!loot)
         return false;
 
     LootItem* item = loot->GetLootItemInSlot(slot);
+    if (!item) return false;
     ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(item->itemId);
     if (!proto)
         return false;
@@ -252,6 +313,14 @@ bool RollAction::RollOnItemInSlot(RollVote vote, ObjectGuid lootGuid, uint32 slo
     if (!lootRoll)
         return false;
 
+    if (automatic && AI_VALUE(std::string, "roll policy") != "auto")
+    {
+        const uint32 mask = lootRoll->GetVoteMaskFor(bot);
+        if (!mask) return false;
+        if (vote == ROLL_NEED && !(mask & ROLL_VOTE_MASK_NEED)) vote = ROLL_GREED;
+        if (vote == ROLL_GREED && !(mask & ROLL_VOTE_MASK_GREED)) vote = ROLL_PASS;
+        if (vote == ROLL_PASS && !(mask & ROLL_VOTE_MASK_PASS)) return false;
+    }
     bool didRoll = lootRoll->PlayerVote(bot, vote);
 
     if (didRoll)
@@ -284,9 +353,9 @@ bool LootRollAction::Execute(Event& event)
     if (!itemQualifier.GetId())
         return false;
 
-    RollVote vote = CalculateRollVote(itemQualifier);
+    RollVote vote = CalculateAutomaticRollVote(itemQualifier);
 
-    return RollOnItemInSlot(vote, guid, slot);
+    return RollOnItemInSlot(vote, guid, slot, true);
 }
 
 bool AutoLootRollAction::Execute(Event& event)
@@ -298,7 +367,8 @@ bool AutoLootRollAction::Execute(Event& event)
     // an empty set.
     ActiveRolls::CleanUp(bot, lootRolls);
     SET_AI_VALUE(LootRollMap, "active rolls", lootRolls);
-    if (!bot->GetGroup() || lootRolls.empty() || AI_VALUE(uint8, "bag space") >= 100)
+    if (!bot->GetGroup() || lootRolls.empty() ||
+        (AI_VALUE(uint8, "bag space") >= 100 && AI_VALUE(std::string, "roll policy") != "pass"))
         return false;
 
     auto currentRoll = lootRolls.begin();
@@ -310,14 +380,14 @@ bool AutoLootRollAction::Execute(Event& event)
     if (!itemQualifier.GetId())
         return false;
 
-    RollVote vote = CalculateRollVote(itemQualifier);
+    RollVote vote = CalculateAutomaticRollVote(itemQualifier);
 
-    return RollOnItemInSlot(vote, currentRoll->first, currentRoll->second);
+    return RollOnItemInSlot(vote, currentRoll->first, currentRoll->second, true);
 }
 
 bool AutoLootRollAction::isPossible()
 {
-    if (!bot->GetGroup() || AI_VALUE(uint8, "bag space") >= 100)
+    if (!bot->GetGroup() || (AI_VALUE(uint8, "bag space") >= 100 && AI_VALUE(std::string, "roll policy") != "pass"))
         return false;
 
     LootRollMap lootRolls = AI_VALUE(LootRollMap, "active rolls");

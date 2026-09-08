@@ -105,6 +105,7 @@
 #include "playerbot/strategy/druid/DruidValues.h"
 #include "TravelValues.h"
 #include "LootValues.h"
+#include "RollPolicyValue.h"
 #include "GlyphValues.h"
 #include "StuckValues.h"
 #include "FishValues.h"
@@ -120,6 +121,7 @@ namespace ai
     public:
         ValueContext()
         {
+            creators["roll policy"] = [](PlayerbotAI* ai) { return new RollPolicyValue(ai); };
             creators["netherspite position"] = [](PlayerbotAI* ai) { return new NetherspitePositionValue(ai); };
             creators["onyxia position"] = [](PlayerbotAI* ai) { return new OnyxiaPositionValue(ai); };
             creators["molten core position"] = [](PlayerbotAI* ai) { return new MoltenCorePositionValue(ai); };

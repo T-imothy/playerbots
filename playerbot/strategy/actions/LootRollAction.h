@@ -35,6 +35,7 @@ namespace ai
         {
             return "This will make the bot roll a certain way on a specific item.\n"
                 "Usage: roll <roll type> [itemlink].\n"
+                "roll policy ? or roll policy auto/pass/greed/need saves the automatic vote preference.\n"
                 "Types are need, greed, pass, emote and auto.\n"
                 "When no itemlink is provided bots will roll on all current rollable loot.\n"
                 "Examples:\n"
@@ -49,7 +50,8 @@ namespace ai
     protected:
         virtual ItemQualifier GetRollItem(ObjectGuid lootGuid, uint32 slot);
         virtual RollVote CalculateRollVote(ItemQualifier& itemQualifier);
-        virtual bool RollOnItemInSlot(RollVote type, ObjectGuid lootGuid, uint32 slot);
+        RollVote CalculateAutomaticRollVote(ItemQualifier& itemQualifier);
+        virtual bool RollOnItemInSlot(RollVote type, ObjectGuid lootGuid, uint32 slot, bool automatic = false);
     };
 
     class LootRollAction : public RollAction 

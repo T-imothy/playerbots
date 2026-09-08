@@ -92,6 +92,7 @@ namespace ai
         {
             creators["range"] = [](PlayerbotAI* ai) { return new RangeAction(ai); };
             creators["stats"] = [](PlayerbotAI* ai) { return new StatsAction(ai); };
+            creators["status"] = [](PlayerbotAI* ai) { return new BotStatusAction(ai); };
             creators["quests"] = [](PlayerbotAI* ai) { return new ListQuestsAction(ai); };
             creators["quest reward"] = [](PlayerbotAI* ai) { return new QuestRewardAction(ai); };
             creators["leave"] = [](PlayerbotAI* ai) { return new LeaveGroupAction(ai); };
