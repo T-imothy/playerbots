@@ -1211,3 +1211,8 @@ AiPlayerbot.CombatDiagnostics.TraceBot = 0
 AiPlayerbot.CombatDiagnostics.MaxKeys = 2048
 AiPlayerbot.CombatDiagnostics.MaxTraces = 128
 AiPlayerbot.CombatDiagnostics.MaxFileMB = 8
+
+# Bound routine manager scans; the cursor resumes next pass.
+# A single ProcessBot call completes before the time budget is checked.
+AiPlayerbot.RandomBotManagerBudgetMs = 10
+AiPlayerbot.RandomBotManagerScanLimit = 512

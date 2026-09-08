@@ -259,6 +259,9 @@ public:
         time_t databasePingTimer = 0;
         time_t performanceMapScanTimer = 0;
         time_t memoryMaintenanceTimer = 0;
+        size_t memoryMaintenanceCursor = 0;
+        size_t memoryMaintenanceRemaining = 0;
+        uint64 memoryMaintenanceReleased = 0;
         time_t admissionStateLogTimer = 0;
         bool memoryAdmissionPaused = false;
         uint64 lastPrivateBytes = 0;

@@ -772,9 +772,14 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 
     uint32 updateBots = sPlayerbotAIConfig.randomBotsPerInterval == 0 ? UINT32_MAX : sPlayerbotAIConfig.randomBotsPerInterval;
 
-    const size_t processScanLimit = availableBots.size();
+    const auto processStart = std::chrono::steady_clock::now();
+    uint32 slowestProcessMs = 0;
+    uint32 slowestProcessBot = 0;
+    const size_t processScanLimit = std::min<size_t>(availableBots.size(), sPlayerbotAIConfig.randomBotManagerScanLimit);
     for (size_t scanned = 0; scanned < processScanLimit && !availableBots.empty(); ++scanned)
     {
+        if (scanned && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - processStart).count() >= sPlayerbotAIConfig.randomBotManagerBudgetMs)
+            break;
         ++diagnosticsProcessScans;
         processBotCursor %= availableBots.size();
         const uint32 bot = availableBots[processBotCursor];
@@ -783,13 +788,24 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
         if (GetPlayerBot(bot))
         {
             ++diagnosticsProcessCalls;
+            const auto callStart = std::chrono::steady_clock::now();
             if (ProcessBot(bot))
                 updateBots--;
+            const uint32 callMs = static_cast<uint32>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - callStart).count());
+            if (callMs > slowestProcessMs)
+            {
+                slowestProcessMs = callMs;
+                slowestProcessBot = bot;
+            }
 
             if (!updateBots)
                 break;
         }
     }
+
+    const uint32 processMs = static_cast<uint32>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - processStart).count());
+    if (processMs >= 50)
+        sLog.outPerformance("SLOW_BOT_MANAGER_PROCESS elapsed=%u ms scans=%u calls=%u peak_bot_ms=%u peak_bot=%u", processMs, diagnosticsProcessScans, diagnosticsProcessCalls, slowestProcessMs, slowestProcessBot);
 
     uint32 maxLogins = sPlayerbotAIConfig.randomBotsMaxLoginsPerInterval;
 
@@ -815,20 +831,35 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
         memoryAdmissionPaused = false;
 
     const time_t memoryNow = time(nullptr);
-    if (memorySoftMb && privateMb >= memorySoftMb &&
+    if (!memoryMaintenanceRemaining && memorySoftMb && privateMb >= memorySoftMb &&
         (!memoryMaintenanceTimer || memoryNow >= memoryMaintenanceTimer + 60))
     {
         memoryMaintenanceTimer = memoryNow;
-        uint64 released = 0;
-        ForEachPlayerbot([&](Player* activeBot)
+        memoryMaintenanceRemaining = availableBots.size();
+        memoryMaintenanceReleased = 0;
+    }
+    if (memoryMaintenanceRemaining)
+    {
+        const auto cleanupStart = std::chrono::steady_clock::now();
+        const size_t limit = std::min<size_t>(128, memoryMaintenanceRemaining);
+        for (size_t scanned = 0; scanned < limit && !availableBots.empty(); ++scanned)
         {
+            if (scanned && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - cleanupStart).count() >= 5)
+                break;
+            memoryMaintenanceCursor %= availableBots.size();
+            Player* activeBot = GetPlayerBot(availableBots[memoryMaintenanceCursor++]);
+            --memoryMaintenanceRemaining;
             if (activeBot && activeBot->GetPlayerbotAI() && activeBot->GetPlayerbotAI()->GetAiObjectContext())
-                released += activeBot->GetPlayerbotAI()->GetAiObjectContext()->ClearExpiredValues();
-        });
-        const uint64 eventsReleased = PruneExpiredEventCache(memoryNow);
-        sLog.outPerformance("BOT_MEMORY_MAINTENANCE private_mb=%u soft_mb=%u hard_mb=%u values_released=%llu events_released=%llu admission_paused=%u",
-            privateMb, memorySoftMb, memoryHardMb, static_cast<unsigned long long>(released),
-            static_cast<unsigned long long>(eventsReleased), memoryAdmissionPaused ? 1 : 0);
+                memoryMaintenanceReleased += activeBot->GetPlayerbotAI()->GetAiObjectContext()->ClearExpiredValues();
+        }
+        if (availableBots.empty()) memoryMaintenanceRemaining = 0;
+        if (!memoryMaintenanceRemaining)
+        {
+            const uint64 eventsReleased = PruneExpiredEventCache(memoryNow);
+            sLog.outPerformance("BOT_MEMORY_MAINTENANCE private_mb=%u soft_mb=%u hard_mb=%u values_released=%llu events_released=%llu admission_paused=%u incremental=1",
+                privateMb, memorySoftMb, memoryHardMb, static_cast<unsigned long long>(memoryMaintenanceReleased),
+                static_cast<unsigned long long>(eventsReleased), memoryAdmissionPaused ? 1 : 0);
+        }
     }
 
     const uint32 averageWorldDiff = sWorld.GetAverageDiff();
@@ -875,7 +906,7 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
             maxLogins = std::min<uint32>(maxLogins, loginQueueLimit - static_cast<uint32>(pendingLoginDbWork));
 
         static time_t lastBackpressureLog = 0;
-        if (!maxLogins && pendingLoginDbWork && time(nullptr) >= lastBackpressureLog + 5)
+        if (diagnosticsLoginBackpressure && admissionCapacity && time(nullptr) >= lastBackpressureLog + 5)
         {
             lastBackpressureLog = time(nullptr);
             sLog.outPerformance("BOT_LOGIN_BACKPRESSURE pending=%u limit=%u bots_online=%u target=%u",

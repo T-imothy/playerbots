@@ -172,6 +172,8 @@ public:
     uint32 minRandomBotPvpTime, maxRandomBotPvpTime;
     uint32 randomBotsMaxLoginsPerInterval;
     uint32 randomBotsPerInterval;
+    uint32 randomBotManagerBudgetMs;
+    uint32 randomBotManagerScanLimit;
     uint32 randomBotLoginDbQueueLimit;
     uint32 randomBotDatabasePingInterval, performanceMapScanInterval;
     bool diagnosticsEnabled = false;

@@ -794,6 +794,12 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
         return false;
     }
 
+    if (gameObject->GetGoType() == GAMEOBJECT_TYPE_GENERIC)
+    {
+        ai->TellPlayerNoFacing(requester, "That object cannot be interacted with", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        return false;
+    }
+
     ObjectGuid guid = gameObject->GetObjectGuid();
     if (!sServerFacade.isSpawned(gameObject) || gameObject->IsInUse() || gameObject->GetGoState() != GO_STATE_READY)
     {

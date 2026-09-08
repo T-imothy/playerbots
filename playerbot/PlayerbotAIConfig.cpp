@@ -244,6 +244,8 @@ bool PlayerbotAIConfig::Initialize()
     randomBotTeleportMaxInterval = config.GetIntDefault("AiPlayerbot.RandomBotTeleportTeleportMaxInterval", 48 * 3600);
     randomBotsMaxLoginsPerInterval = config.GetIntDefault("AiPlayerbot.RandomBotsMaxLoginsPerInterval", 10);
     randomBotsPerInterval = config.GetIntDefault("AiPlayerbot.RandomBotsPerInterval", 0);
+    randomBotManagerBudgetMs = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.RandomBotManagerBudgetMs", 10));
+    randomBotManagerScanLimit = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.RandomBotManagerScanLimit", 512));
     randomBotLoginDbQueueLimit = std::max<int32>(16, config.GetIntDefault("AiPlayerbot.RandomBotLoginDbQueueLimit", 256));
     randomBotDatabasePingInterval = std::max<int32>(1000, config.GetIntDefault("AiPlayerbot.RandomBotDatabasePingInterval", 10000));
     performanceMapScanInterval = std::max<int32>(1000, config.GetIntDefault("AiPlayerbot.PerformanceMapScanInterval", 30000));

@@ -345,7 +345,8 @@ ObjectGuid MailProcessor::FindMailbox(PlayerbotAI* ai)
     for (std::list<ObjectGuid>::iterator i = gos.begin(); i != gos.end(); ++i)
     {
         GameObject* go = ai->GetGameObject(*i);
-        if (go && go->GetGoType() == GAMEOBJECT_TYPE_MAILBOX)
+        if (go && go->IsInWorld() && go->IsSpawned() && go->GetGoType() == GAMEOBJECT_TYPE_MAILBOX &&
+            ai->GetBot()->IsWithinDistInMap(go, INTERACTION_DISTANCE))
         {
             mailbox = go->GetObjectGuid();
             break;

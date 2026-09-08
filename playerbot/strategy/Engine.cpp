@@ -960,7 +960,12 @@ bool Engine::ListenAndExecute(Action* action, Event& event)
     if (actionExecutionListeners.Before(action, event))
     {
         ai->SetLastEvent(event);
+        const auto executionStart = std::chrono::steady_clock::now();
         actionExecuted = actionExecutionListeners.AllowExecution(action, event) ? action->Execute(event) : true;
+        const auto executionMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - executionStart).count();
+        if (executionMs >= 50 && sPlayerbotDiagnostics.IsEnabled())
+            sLog.outPerformance("SLOW_BOT_ACTION elapsed=%llu ms action=%s bot=%u map=%u instance=%u success=%u",
+                static_cast<unsigned long long>(executionMs), action->getName().c_str(), ai->GetBot()->GetGUIDLow(), ai->GetBot()->GetMapId(), ai->GetBot()->GetInstanceId(), actionExecuted ? 1 : 0);
         if (actionExecuted)
         {
             ai->SetActionDuration(action);
