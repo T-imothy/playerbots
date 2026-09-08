@@ -36,7 +36,7 @@ struct CastShootAction:CastSpellAction {const Item* rangedWeapon=nullptr;unsigne
 fixture+=block(source,'void CastShootAction::UpdateWeaponInfo(')+'\n'
 if method:fixture+=block(source,'bool CastShootAction::isUseful(')+'\n'
 fixture+=r'''
-struct PullStrategy {static PullStrategy* current;static PullStrategy* Get(PlayerbotAI*){return current;}std::string spell;std::string GetSpellName(){return spell;}};PullStrategy* PullStrategy::current=nullptr;
+struct PullStrategy {static PullStrategy* current;static PullStrategy* Get(PlayerbotAI*){return current;}bool issued=false;bool HasPullActionIssued(){return issued;}std::string spell;std::string GetSpellName(){return spell;}};PullStrategy* PullStrategy::current=nullptr;
 struct PullAction:CastSpellAction{PullAction(PlayerbotAI*a):CastSpellAction(a,"pull action"){InitPullAction();}void InitPullAction();__PULL_DECL__};
 '''.replace('__PULL_DECL__','bool isUseful() override;' if 'bool PullAction::isUseful()' in pull else '')
 fixture+=block(pull,'void PullAction::InitPullAction(')+'\n'
@@ -59,7 +59,7 @@ int main(){
 #ifdef EXPECT_BEFORE
  assert(!pullAction.isUseful());
 #else
- assert(pullAction.isUseful());PullStrategy::current=nullptr;assert(!pullAction.isUseful());PullStrategy::current=&strategy;
+ assert(pullAction.isUseful());strategy.issued=true;assert(!pullAction.isUseful());strategy.issued=false;PullStrategy::current=nullptr;assert(!pullAction.isUseful());PullStrategy::current=&strategy;
 #endif
  bot.weapon=&bow;CastShootAction shoot(&ai);shoot.target=&enemy;
  bool ready=shoot.isUseful();

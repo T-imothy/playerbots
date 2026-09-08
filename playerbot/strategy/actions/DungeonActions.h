@@ -55,6 +55,15 @@ namespace ai
         bool isUseful() override;
         bool Execute(Event& event) override;
     };
+    class TharonjaSkeletonAction : public MovementAction
+    {
+    public:
+        TharonjaSkeletonAction(PlayerbotAI* ai) : MovementAction(ai, "tharonja skeleton") {}
+        Unit* GetBoss();
+        uint32 SelectSpell(Unit* boss, Unit*& target);
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
     class ViscidusFrostAction : public Action
     {
     public:

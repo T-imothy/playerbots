@@ -17,6 +17,8 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("eadric face away", 109.0f), NULL)));
     triggers.push_back(new TriggerNode("moam mana control",
         NextAction::array(0, new NextAction("moam mana control", 54.0f), NULL)));
+    triggers.push_back(new TriggerNode("tharonja skeleton",
+        NextAction::array(0, new NextAction("tharonja skeleton", 85.0f), NULL)));
     triggers.push_back(new TriggerNode("viscidus frost",
         NextAction::array(0, new NextAction("viscidus frost", 55.0f), NULL)));
     triggers.push_back(new TriggerNode("heigan dance",

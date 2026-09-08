@@ -11,7 +11,7 @@ bool ai::IsBossEscapeMap(uint32 map)
     if (map == 532 || map == 542 || map == 550 || map == 552 || map == 553 || map == 555) return true;
 #endif
 #ifdef MANGOSBOT_TWO
-    if (map == 602 || map == 603 || map == 604 || map == 624 || map == 658) return true;
+    if (map == 602 || map == 603 || map == 604 || map == 624 || map == 631 || map == 658) return true;
 #endif
     return false;
 }
@@ -39,6 +39,7 @@ uint32 ai::NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast, bool reg
     }
 #endif
 #ifdef MANGOSBOT_TWO
+    if (map == 631 && entry == 36853 && (cast == 70123 || cast == 71047 || cast == 71048 || cast == 71049)) return cast;
     if (map == 602 && entry == 28923 && (cast == 52960 || cast == 59835)) return cast; // Loken
     if (map == 603 && entry == 33432 && cast == 63631) return cast; // Leviathan Mk II
     if (map == 604 && entry == 29304 && (cast == 55081 || cast == 59842)) return cast; // Slad'ran

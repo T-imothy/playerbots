@@ -405,6 +405,7 @@ namespace ai
             creators["fight own inner demon"] = [](PlayerbotAI* ai) { return new InnerDemonAction(ai); };
             creators["eadric face away"] = [](PlayerbotAI* ai) { return new EadricRadianceAction(ai); };
             creators["move against cold"] = [](PlayerbotAI* ai) { return new ColdMovementAction(ai); };
+            creators["tharonja skeleton"] = [](PlayerbotAI* ai) { return new TharonjaSkeletonAction(ai); };
             creators["viscidus frost"] = [](PlayerbotAI* ai) { return new ViscidusFrostAction(ai); };
             creators["moam mana control"] = [](PlayerbotAI* ai) { return new MoamManaControlAction(ai); };
             creators["akilzon storm shelter"] = [](PlayerbotAI* ai) { return new AkilzonStormAction(ai); };

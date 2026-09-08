@@ -316,6 +316,7 @@ namespace ai
             creators["fight own inner demon"] = [](PlayerbotAI* ai) { return new InnerDemonTrigger(ai); };
             creators["eadric face away"] = [](PlayerbotAI* ai) { return new EadricRadianceTrigger(ai); };
             creators["move against cold"] = [](PlayerbotAI* ai) { return new ColdMovementTrigger(ai); };
+            creators["tharonja skeleton"] = [](PlayerbotAI* ai) { return new TharonjaSkeletonTrigger(ai); };
             creators["viscidus frost"] = [](PlayerbotAI* ai) { return new ViscidusFrostTrigger(ai); };
             creators["moam mana control"] = [](PlayerbotAI* ai) { return new MoamManaControlTrigger(ai); };
             creators["akilzon storm shelter"] = [](PlayerbotAI* ai) { return new AkilzonStormTrigger(ai); };

@@ -77,6 +77,11 @@ bool ColdMovementTrigger::IsActive()
     return action.isUseful();
 }
 
+bool TharonjaSkeletonTrigger::IsActive()
+{
+    return TharonjaSkeletonAction(ai).isUseful();
+}
+
 bool ViscidusFrostTrigger::IsActive()
 {
     ViscidusFrostAction action(ai);

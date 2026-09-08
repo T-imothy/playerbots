@@ -1,4 +1,5 @@
 #include "DungeonActions.h"
+#include "Spells/SpellAuras.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/PlayerbotAI.h"
@@ -472,4 +473,75 @@ bool MoveAwayFromSpecificCreatures::Execute(Event& event)
 {
     const std::set<uint32>& creatureIDList = AI_VALUE(std::set<uint32>&, "avoid creature list");
     return CreatureSearchHelperFunction(event, creatureIDList);
+}
+
+
+Unit* TharonjaSkeletonAction::GetBoss()
+{
+#ifdef MANGOSBOT_TWO
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId() != 600 ||
+        !bot->IsInCombat() || !bot->GetGroup() || bot->HasCharmer() ||
+        bot->IsBeingTeleported() || ai->IsRealPlayer() || bot->GetShapeshiftForm() != 10)
+        return nullptr;
+    SpellAuraHolder* gift = bot->GetSpellAuraHolder(52509);
+    Unit* boss = gift ? gift->GetCaster() : nullptr;
+    if (boss && boss->GetEntry() == 26632 && boss->IsInWorld() && boss->IsAlive() &&
+        boss->IsInCombat() && !boss->HasCharmer() && bot->IsInMap(boss) &&
+        !sServerFacade.IsFriendlyTo(bot, boss))
+        return boss;
+#endif
+    return nullptr;
+}
+
+uint32 TharonjaSkeletonAction::SelectSpell(Unit* boss, Unit*& target)
+{
+    target = nullptr;
+#ifdef MANGOSBOT_TWO
+    if (!boss) return 0;
+    const SpellShapeshiftFormEntry* form = sSpellShapeshiftFormStore.LookupEntry(10);
+    if (!form) return 0;
+    auto ready = [&](uint32 id, Unit* recipient) {
+        // These are temporary native form-bar spells, not learned class spells.
+        // Verify the form grants them before using the normal cast checks.
+        bool granted = false;
+        for (uint32 available : form->spellId)
+            if (available == id) granted = true;
+        if (!granted || !ai->CanCastSpell(id, recipient, 0, false)) return false;
+        target = recipient;
+        return true;
+    };
+    // Touch of Life is a hostile life drain, not a friendly-target heal.
+    if (bot->GetHealthPercent() < 80.0f && ready(49617, boss)) return 49617;
+    if ((boss->GetVictim() == bot || bot->GetHealthPercent() < 60.0f) &&
+        !bot->HasAura(49609) && ready(49609, bot)) return 49609;
+    if (ai->IsTank(bot) && boss->GetVictim() && boss->GetVictim() != bot &&
+        ready(49613, boss)) return 49613;
+    if (ready(50799, boss)) return 50799;
+#endif
+    return 0;
+}
+
+bool TharonjaSkeletonAction::isUseful()
+{
+    Unit* boss = GetBoss();
+    if (!boss) return false;
+    Unit* target = nullptr;
+    return SelectSpell(boss, target) || !bot->CanReachWithMeleeAttack(boss);
+}
+
+bool TharonjaSkeletonAction::Execute(Event& event)
+{
+    Unit* boss = GetBoss();
+    if (!boss) return false;
+    Unit* target = nullptr;
+    uint32 spell = SelectSpell(boss, target);
+    if (spell)
+    {
+        uint32 duration = 0;
+        if (!ai->CastSpell(spell, target, nullptr, false, &duration)) return false;
+        SetDuration(duration);
+        return true;
+    }
+    // Ordinary pathfinding/hazard checks remain responsible for approaching.
+    return !bot->CanReachWithMeleeAttack(boss) && MoveNear(boss, 2.0f);
 }

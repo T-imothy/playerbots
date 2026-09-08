@@ -11,18 +11,22 @@ fixture = r'''
 #include <iostream>
 #include <map>
 #include <vector>
+#include <set>
 using namespace std::chrono_literals;
 using uint32=unsigned;
 enum {IN_PROGRESS=1,DONE=2,TYPE_THADDIUS=3,NPC_FEUGEN=15930,NPC_STALAGG=15929,
  SAY_STAL_DEATH=10,SAY_FEUG_DEATH=11,UNIT_FIELD_FLAGS=1,UNIT_FLAG_UNINTERACTIBLE=2,
  UNIT_FLAG_IMMUNE_TO_PLAYER=4,UNIT_STAND_STATE_DEAD=5,AURA_STATE_HEALTHLESS_20_PERCENT=6,
  AURA_STATE_HEALTHLESS_35_PERCENT=7,THADDIUS_ADD_REVIVE=8,SPELL_CLEAR_CHARGES=63133};
-struct Unit{};struct Creature;
+enum{TYPEID_PLAYER=1,SPELL_POSITIVE_CHARGE=28059,SPELL_NEGATIVE_CHARGE=28084,SPELL_POSITIVE_CHARGE_BUFF=29659,SPELL_NEGATIVE_CHARGE_BUFF=29660};
+struct Unit{unsigned type=2;std::set<unsigned>auras;unsigned GetTypeId(){return type;}void RemoveAurasDueToSpell(unsigned id){auras.erase(id);}};
+struct Player:Unit{Player(){type=TYPEID_PLAYER;}};struct Creature;
 struct ScriptedInstance { unsigned state=IN_PROGRESS,changes=0;std::map<unsigned,Creature*> creatures;
  void SetData(unsigned type,unsigned value){assert(type==TYPE_THADDIUS);state=value;++changes;}
  Creature* GetSingleCreatureFromStorage(unsigned id){auto it=creatures.find(id);return it==creatures.end()?nullptr:it->second;}};
 struct MotionMaster{void Clear(){} void MoveIdle(){}};
-struct Map{Unit* GetUnit(unsigned){return nullptr;}};
+struct Ref{Player*p;Player*getSource()const{return p;}};
+struct Map{std::vector<Ref>players;Unit* GetUnit(unsigned){return nullptr;}const std::vector<Ref>&GetPlayers(){return players;}};
 struct Creature:Unit{unsigned entry=NPC_FEUGEN,health=100,flags=0,stand=0,despawns=0;bool stopped=false;
  ScriptedInstance* instance=nullptr;MotionMaster motion;Map map;
  unsigned GetEntry()const{return entry;}ScriptedInstance* GetInstanceData(){return instance;}
@@ -45,9 +49,11 @@ struct BossAI:CombatAI{Creature* m_creature;unsigned m_instanceDataType=TYPE_THA
  void OpenEntrances(){++opened;}void OpenExits(){++opened;}
 };
 __NATIVE_BASE_DEATH__
+__CLEAR_HELPER__
 struct Boss:BossAI{ScriptedInstance* m_instance;unsigned cleared=0;
  Boss(Creature* c):BossAI(c),m_instance(c->instance){}
  void DoCastSpellIfCan(Unit*,unsigned spell){assert(spell==SPELL_CLEAR_CHARGES);++cleared;}
+ __CLEAR_PLAYERS__
  __BOSS_DEATH__
 };
 struct Adds:BossAI{ScriptedInstance* m_instance;bool m_isFakingDeath=false,script=false;unsigned timer=0;
@@ -71,7 +77,10 @@ int main(){
  second.JustPreventedDeath(&attacker);
  assert(instance.state==IN_PROGRESS&&instance.changes==0&&second.timer==10&&lastText==SAY_STAL_DEATH&&textCount==2);
  assert(feugen.despawns==0&&stalagg.despawns==0); // no premature completion/despawn
+ Player living,dead,far;for(Player*p:{&living,&dead,&far})p->auras={28059,28084,29659,29660,12345};
+ thaddius.map.players={{&living},{&dead},{nullptr},{&far}};
  boss.JustDied(&attacker);
+ for(Player*p:{&living,&dead,&far})assert(p->auras==std::set<unsigned>{12345});
  assert(instance.state==DONE&&instance.changes==1&&boss.deathCalls==1&&boss.opened==2&&boss.closed==0);
  assert(feugen.despawns==1&&stalagg.despawns==1);
  instance.creatures.erase(NPC_STALAGG);assert(first.GetOtherAdd()==nullptr);
@@ -95,6 +104,7 @@ for realm in ('classic', 'tbc', 'wotlk'):
     other=block(adds,'Creature* GetOtherAdd() const')
     # Wrath has an interposed comment between signature and body; block retains it.
     code=fixture.replace('__NATIVE_BASE_DEATH__',block(native,'void BossAI::JustDied('))
+    code=code.replace('__CLEAR_HELPER__',block(source,'static void ClearThaddiusPlayerCharges(')).replace('__CLEAR_PLAYERS__',block(source,'void ClearPlayerCharges()'))
     code=code.replace('__BOSS_DEATH__',boss).replace('__FAKE_DEATH__',fake).replace('__GET_OTHER__',other)
     old=subprocess.check_output(['git','-c',f'safe.directory={repo.as_posix()}','-C',str(repo),'show',f'HEAD:{relative}'],text=True)
     old_fake=block(old.split('struct boss_thaddiusAddsAI :')[1],'void JustPreventedDeath(')

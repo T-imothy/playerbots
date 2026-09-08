@@ -77,7 +77,7 @@ namespace ai {
  unsigned CurrentBossEscapeSpell(Player*,Unit*);
  const Spell* CurrentBossEscapeCast(Player*,Unit*);
  std::map<unsigned,float> radii{{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15},{34164,18},
- {34660,15},{39132,15},{55081,15},{59842,15},{33775,20},{37371,20},{36142,8},{64216,20},{65279,100},{26084,10},{26686,10}};
+ {34660,15},{39132,15},{55081,15},{59842,15},{33775,20},{37371,20},{36142,8},{64216,20},{65279,100},{70123,25},{71047,25},{71048,25},{71049,25},{26084,10},{26686,10}};
  float NativeEncounterSpellRadius(unsigned id){return radii[id];}
 }
 template<class T>struct Stored {T value{};T Get(){return value;}};
@@ -171,7 +171,7 @@ int main(){
  assert(load().active);boss.channel=nullptr;assert(!action.Execute(event));boss.current=&cast;
  assert(load().active);entry.Id=34172;assert(!action.Execute(event)&&!load().active); // Orb isn't a caster-centred escape.
 #ifdef MANGOSBOT_TWO
- const unsigned cases[][3]={{602,28923,52960},{602,28923,59835},{603,33432,63631},{658,36476,68989},{604,29304,55081},{604,29304,59842},{624,33993,64216}};
+ const unsigned cases[][3]={{602,28923,52960},{602,28923,59835},{603,33432,63631},{658,36476,68989},{604,29304,55081},{604,29304,59842},{624,33993,64216},{631,36853,70123},{631,36853,71047},{631,36853,71048},{631,36853,71049}};
  for(const auto& c:cases){bot.mapId=c[0];boss.entry=c[1];entry.Id=c[2];plan=load();
   assert(plan.active && encounter::Distance2d(plan.destination,{0,0,0})>=radii[c[2]]+2);}
  bot.mapId=624;boss.entry=33993;entry.Id=65279;
@@ -179,6 +179,7 @@ int main(){
 #else
  assert(!IsBossEscapeMap(602) && !IsBossEscapeMap(603) && !IsBossEscapeMap(604) && !IsBossEscapeMap(624) && !IsBossEscapeMap(658));
  assert(!NativeBossEscapeSpell(602,28923,52960));
+ assert(!IsBossEscapeMap(631)&&!NativeBossEscapeSpell(631,36853,70123));
 #endif
  // Botanica's Hellfire channel has a zero-radius parent and distinct native
  // normal/heroic damage payloads. Hold only for the actual ongoing channel.

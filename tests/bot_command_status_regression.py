@@ -15,6 +15,7 @@ code=r'''
 #include <sstream>
 #include <string>
 #include <vector>
+using ObjectGuid=unsigned;
 enum {SEC_PLAYER, CLASS_DRUID=11,CLASS_PALADIN=2,INVENTORY_SLOT_BAG_0=0,EQUIPMENT_SLOT_RANGED=17};
 enum SpellCastResult{SPELL_CAST_OK,SPELL_FAILED_NEED_AMMO,SPELL_FAILED_NO_AMMO,SPELL_FAILED_EQUIPPED_ITEM,SPELL_FAILED_EQUIPPED_ITEM_CLASS,
  SPELL_FAILED_OUT_OF_RANGE,SPELL_FAILED_TOO_CLOSE,SPELL_FAILED_LINE_OF_SIGHT,SPELL_FAILED_NOT_KNOWN,SPELL_FAILED_NOT_READY,SPELL_FAILED_MOVING};
@@ -24,7 +25,7 @@ struct Unit{bool valid=true;float distance=5;float GetDistance(Unit*){return dis
 struct Player:Unit{bool real=true,alive=true,world=true,teleport=false,charm=false,equipped=true,grouped=true;unsigned cls=1;Session session;
  bool isRealPlayer(){return real;}Session*GetSession(){return &session;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}
  bool IsBeingTeleported(){return teleport;}bool HasCharmer(){return charm;}unsigned getClass(){return cls;}
- void*GetItemByPos(int,int){return equipped?this:nullptr;}unsigned GetSelectionGuid(){return 1;}
+ void*GetItemByPos(int,int){return equipped?this:nullptr;}unsigned GetSelectionGuid(){return 1;}ObjectGuid GetObjectGuid(){return 123;}
  void*GetGroup(){return grouped?this:nullptr;}float GetPositionX(){return 1;}float GetPositionY(){return 2;}float GetPositionZ(){return 3;}unsigned GetMapId(){return 4;}};
 struct Security{bool CheckLevelFor(PlayerbotSecurityLevel,bool,Player*){return true;}};
 struct PositionEntry{bool set=false;void Set(float,float,float,unsigned){set=true;}};
@@ -41,7 +42,7 @@ struct PlayerbotAI{Player*bot;Player*master;Unit*target;PullStrategy*strategy=nu
  void TellPlayerNoFacing(Player*,const std::string&s){messages.push_back(s);}void OnCombatStarted(){++combatStarts;}
  Unit*GetUnit(unsigned){return target;}bool IsTank(Player*,bool grouped){assert(grouped==bot->grouped);return tank;}
  bool IsHeal(Player*,bool grouped){assert(grouped==bot->grouped);return heal;}bool IsRanged(Player*,bool grouped){assert(grouped==bot->grouped);return ranged;}};
-struct PullStrategy{std::string action="shoot";bool possible=true;Unit*requested=nullptr;unsigned requests=0;
+struct PullStrategy{std::string action="shoot";bool possible=true;Unit*requested=nullptr;unsigned requests=0;ObjectGuid requester=0;void SetRequester(ObjectGuid guid){requester=guid;}
  static PullStrategy*Get(PlayerbotAI*ai){return ai->strategy;}std::string GetPullActionName(){return action;}
  std::string GetSpellName(){return action;}bool CanDoPullAction(Unit*){return possible;}void RequestPull(Unit*u){requested=u;++requests;}};
 struct AttackersValue{static bool IsValid(Unit*u,Player*,void*,bool){return u&&u->valid;}};
@@ -77,7 +78,7 @@ int main(){
  ai.messages.clear();event.source="attack anything";assert(!pull.Execute(event)&&ai.messages.empty());event.source="pull";
  // Existing accepted requests still approach range/LOS; the diagnostic is not a new execution gate.
  strategy.possible=true;for(auto result:{SPELL_FAILED_OUT_OF_RANGE,SPELL_FAILED_LINE_OF_SIGHT,SPELL_FAILED_MOVING}){ai.result=result;assert(pull.Execute(event));}
- assert(strategy.requests==3&&ai.combatStarts==3&&positions["pull"].set);auto requests=strategy.requests;
+ assert(strategy.requests==3&&ai.combatStarts==3&&positions["pull"].set&&strategy.requester==owner.GetObjectGuid());auto requests=strategy.requests;
  event={"status","pull",&owner};ai.result=SPELL_FAILED_LINE_OF_SIGHT;assert(status.Execute(event));
  assert(ai.messages.back()=="PullAction: shoot; Ready: no; Reason: no line of sight; Scope: immediate_cast");
  assert(strategy.requests==requests&&strategy.requested==&target&&ai.combatStarts==3);

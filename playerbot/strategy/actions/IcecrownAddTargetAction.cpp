@@ -26,6 +26,10 @@ Unit* DungeonAddTargetAction::GetIcecrownAddTarget()
         unsigned rank = 1;
         switch (add->GetEntry())
         {
+            case 36980: // Release native Ice Tomb prisoners once air-phase cover is no longer required.
+                bossEntry = 36853;
+                rank = 0;
+                break;
             case 38508: // Blood Beast: ranged DPS handle it without pulling melee off Saurfang.
                 if (!ranged) continue;
                 bossEntry = 37813;
@@ -48,6 +52,9 @@ Unit* DungeonAddTargetAction::GetIcecrownAddTarget()
         if (!boss || boss->GetEntry() != bossEntry || !boss->IsInWorld() || !boss->IsAlive() ||
             !boss->IsInCombat() || !bot->IsInMap(boss) || boss->HasCharmer() || boss->GetVictim() == bot ||
             bot->GetDistance(boss) > 100 || add->GetDistance(boss) > 100) continue;
+        // Do not automatically destroy the raid's cover during takeoff, air
+        // bombardment or landing. The native flight flag includes levitation.
+        if (bossEntry == 36853 && boss->IsFlying()) continue;
         // Native self-applied Determination reduces its matching school by 99%.
         // Hunters use the physical assignment despite being ranged. Re-evaluate
         // the actual aura so a transformed target cannot retain a stale choice.

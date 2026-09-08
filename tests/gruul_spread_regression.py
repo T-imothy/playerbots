@@ -27,8 +27,11 @@ code = r'''
 using uint32=unsigned;
 struct ObjectGuid{unsigned id=0;ObjectGuid(unsigned i=0):id(i){}operator unsigned()const{return id;}
  unsigned GetRawValue()const{return id;}};
-struct Map{};
-struct Unit{virtual ~Unit()=default;Map* map=nullptr;unsigned phase=1,entry=0;ObjectGuid guid;
+enum Difficulty{RAID_DIFFICULTY_10MAN_NORMAL,RAID_DIFFICULTY_25MAN_NORMAL,RAID_DIFFICULTY_10MAN_HEROIC,RAID_DIFFICULTY_25MAN_HEROIC};
+struct Map{Difficulty difficulty=RAID_DIFFICULTY_10MAN_NORMAL;Difficulty GetDifficulty(){return difficulty;}bool regular=true;bool IsRegularDifficulty(){return regular;}};
+enum{CURRENT_GENERIC_SPELL=0,SPELL_STATE_CASTING=1,SPELL_STATE_FINISHED=2};
+struct SpellEntry{unsigned Id=65279;};struct Spell{SpellEntry*m_spellInfo;unsigned state=1;unsigned getState()const{return state;}};
+struct Unit{Spell*cast=nullptr;const Spell*GetCurrentSpell(unsigned){return cast;}virtual ~Unit()=default;Map* map=nullptr;unsigned phase=1,entry=0;ObjectGuid guid;
  bool world=true,alive=true,combat=true,charmed=false;float x=0,y=0,z=0,reach=1.5f;std::set<unsigned> auras;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}
  bool HasCharmer(){return charmed;}bool IsInCombat(){return combat;}unsigned GetEntry(){return entry;}
@@ -38,7 +41,7 @@ constexpr unsigned IDLE_MOTION_TYPE=0;
 struct Motion{unsigned type=0;unsigned GetCurrentMovementGeneratorType(){return type;}};
 struct Group;
 struct Player:Unit{unsigned mapId=565,instance=1;bool teleport=false,stopped=true;Group* group=nullptr;Motion motion;
- bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}
+ Map* GetMap(){return map;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}
  unsigned GetInstanceId(){return instance;}Group* GetGroup(){return group;}
  bool IsInMap(Unit* u){return u&&world&&u->world&&map==u->map&&phase==u->phase;}
  bool IsStopped(){return stopped;}Motion* GetMotionMaster(){return &motion;}
@@ -50,7 +53,7 @@ using namespace ai;
 template<class T>struct Value{T value{};T Get(){return value;}};
 struct Context{Value<EncounterPosition> position;Value<std::list<ObjectGuid>> attackers;
  template<class T>Value<T>* GetValue(const char*){if constexpr(std::is_same_v<T,EncounterPosition>)return &position;else return &attackers;}};
-struct PlayerbotAI{Player* bot;Context context;std::map<unsigned,Unit*> units;bool validPath=true,canMove=true,unsafeHeight=false;
+struct PlayerbotAI{Player* bot;bool real=false;bool IsRealPlayer(){return real;}Context context;std::map<unsigned,Unit*> units;bool validPath=true,canMove=true,unsafeHeight=false;
  unsigned checked=0,moves=0,stops=0;Player* GetBot(){return bot;}Context* GetAiObjectContext(){return &context;}
  bool CanMove(){return canMove;}void StopMoving(){++stops;bot->stopped=true;bot->motion.type=0;}
  Unit* GetUnit(ObjectGuid guid){auto i=units.find(guid);return i==units.end()?nullptr:i->second;}};
@@ -59,8 +62,10 @@ struct Action{virtual ~Action()=default;};struct MovementAction:Action{};struct 
 struct MoveAwayFromHazard:MovementAction{};
 struct CastSpellAction:Action{bool movement=false;bool HasMovementEffect(){return movement;}};
 namespace ai{
+ struct BossCoverAction:MovementAction{};
+ unsigned CurrentBossEscapeSpell(Player*,Unit*b){return b->cast&&b->cast->state==SPELL_STATE_CASTING&&b->cast->m_spellInfo->Id==70123?70123:0;}
  float nativeRadius=20;
- float NativeEncounterSpellRadius(unsigned id){assert(id==33671);return nativeRadius;}
+ float NativeEncounterSpellRadius(unsigned id){if(id==71045||id==71046)return 20;assert(id==70157||id==33671||id==50811||id==61547);return nativeRadius;}
  bool ValidateEncounterDestination(PlayerbotAI* ai,EncounterPosition& p){++ai->checked;
   if(ai->unsafeHeight)p.destination={0,0,0};return ai->validPath;}
  bool GruulShatterThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
@@ -117,6 +122,44 @@ int main(){
  assert(get());assert(multiplier.GetValue(&chase)==0&&multiplier.GetValue(&attack)==1&&multiplier.GetValue(&escape)==1);
  assert(multiplier.GetValue(&action)==1&&multiplier.GetValue(&cast)==1);cast.movement=true;assert(multiplier.GetValue(&cast)==0);
  bot.auras.clear();assert(multiplier.GetValue(&chase)==1&&multiplier.GetValue(&cast)==1);
+#endif
+ // Wrath Krystallus reuses the same validated spreading and movement gates.
+ bot.mapId=599;boss.entry=27977;bot.auras={50836};nativeRadius=30;
+#ifdef MANGOSBOT_TWO
+ assert(get()&&plan.spell==50811);map.regular=false;assert(get()&&plan.spell==61547);
+ assert(multiplier.GetValue(&chase)==0&&multiplier.GetValue(&cast)==0);
+ assert(multiplier.GetValue(&action)==1&&multiplier.GetValue(&escape)==1);
+ ai.canMove=false;assert(!get());ai.canMove=true;
+ bot.auras.clear();assert(!get());ally.auras={50812};assert(get());ally.auras.clear();
+ bot.auras={33572};assert(!get());bot.auras={50836};boss.entry=31383;assert(!get());boss.entry=27977;
+#else
+ assert(!get());
+#endif
+ bot.mapId=631;boss.entry=36853;bot.auras={70126};nativeRadius=10;
+#ifdef MANGOSBOT_TWO
+ assert(get()&&plan.spell==70157&&multiplier.GetValue(&chase)==0);
+ bot.auras={70157};assert(!get());bot.auras.clear();ally.auras={70126};assert(get());
+ ally.auras={70157};assert(!get());ally.auras.clear();
+ bot.auras={69766};assert(!get()); // normal has no splash
+ map.difficulty=RAID_DIFFICULTY_10MAN_HEROIC;assert(get());
+ BossCoverAction cover;assert(multiplier.GetValue(&cover)==1&&multiplier.GetValue(&chase)==0);
+ std::vector<encounter::Circle> splash;EncounterPosition live;assert(GruulShatterThreats(&ai,live,splash));assert(splash[0].radius>20);
+ bot.auras={70126,69766};splash.clear();assert(GruulShatterThreats(&ai,live,splash)&&splash[0].radius>20);
+ SpellEntry cold; cold.Id=70123;Spell castCold{&cold};boss.cast=&castCold;assert(!get()&&multiplier.GetValue(&chase)==1);boss.cast=nullptr;
+ bot.auras.clear();ally.auras={69766};map.difficulty=RAID_DIFFICULTY_25MAN_HEROIC;assert(get());ally.auras.clear();assert(!get());map.difficulty=RAID_DIFFICULTY_10MAN_NORMAL;
+
+#else
+ assert(!get());
+#endif
+ bot.mapId=624;boss.entry=33993;bot.auras.clear();SpellEntry nova;Spell castNova{&nova};boss.cast=&castNova;
+#ifdef MANGOSBOT_TWO
+ assert(get()&&plan.spell==65279);assert(multiplier.GetValue(&chase)==0);
+ assert(encounter::Distance2d(plan.destination,{boss.x,boss.y,boss.z})>encounter::Distance2d({bot.x,bot.y,bot.z},{boss.x,boss.y,boss.z}));
+ nova.Id=64216;assert(!get());nova.Id=65279;castNova.state=SPELL_STATE_FINISHED;assert(!get());castNova.state=SPELL_STATE_CASTING;
+ boss.z=20;assert(!get());boss.z=0;ai.real=true;assert(!get());ai.real=false;
+ boss.combat=false;assert(!get());boss.combat=true;
+#else
+ assert(!get());
 #endif
  // Crowded geometry: minimize remaining overlap; no teleport, fictitious safe
  // point or unbounded candidate search when full separation cannot be achieved.

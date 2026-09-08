@@ -179,7 +179,19 @@ float PreserveMagtheridonCubeMultiplier::GetValue(Action* action)
 
 float PreserveGruulSpreadMultiplier::GetValue(Action* action)
 {
-    if (!action || ai->GetBot()->GetMapId() != 565) return 1.0f;
+    if (!action) return 1.0f;
+    const uint32 map = ai->GetBot()->GetMapId();
+    if (map != 565
+#ifdef MANGOSBOT_TWO
+        && map != 599 && map != 631 && map != 624
+#endif
+    ) return 1.0f;
+#ifdef MANGOSBOT_TWO
+    // A cover destination already revalidates Beacon/Backlash clearance.
+    // Allow that compatible action instead of making cover and spread veto
+    // each other. Valid cover still has priority through its own multiplier.
+    if (map == 631 && dynamic_cast<BossCoverAction*>(action)) return 1.0f;
+#endif
     const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
         !dynamic_cast<GruulSpreadAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
     CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);

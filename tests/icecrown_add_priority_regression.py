@@ -13,7 +13,7 @@ fixture=r'''
 #include <iostream>
 using uint32=unsigned;using ObjectGuid=unsigned;constexpr unsigned CLASS_HUNTER=3;
 struct Unit{unsigned guid=0,entry=0,spawner=0,phase=1;bool world=true,alive=true,combat=true,charm=false,valid=true,cc=false;
- float x=0;Unit*victim=nullptr;std::map<unsigned,unsigned>auras;
+ bool flying=false;bool IsFlying(){return flying;}float x=0;Unit*victim=nullptr;std::map<unsigned,unsigned>auras;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charm;}
  unsigned GetEntry(){return entry;}unsigned GetObjectGuid(){return guid;}unsigned GetSpawnerGuid(){return spawner;}
  Unit*GetVictim(){return victim;}float GetDistance(Unit*u){return std::abs(x-u->x);}
@@ -56,6 +56,9 @@ int main(){
  boss.alive=false;assert(!action.GetIcecrownAddTarget());boss.alive=true;boss.combat=false;assert(!action.GetIcecrownAddTarget());boss.combat=true;
  boss.victim=&bot;assert(!action.GetIcecrownAddTarget());boss.victim=&tank;bot.teleport=true;assert(!action.GetIcecrownAddTarget());bot.teleport=false;
  ai.real=true;assert(!action.GetIcecrownAddTarget());ai.real=false;bot.map=0;assert(!action.GetIcecrownAddTarget());bot.map=631;
+ boss.entry=36853;add.entry=36980;assert(action.GetIcecrownAddTarget()==&add);
+ boss.flying=true;assert(!action.GetIcecrownAddTarget());boss.flying=false;assert(action.GetIcecrownAddTarget()==&add);
+ boss.entry=37813;add.entry=38508;
  // One live boss cannot authorize another boss's adds.
  Unit secondBoss;secondBoss.guid=4;secondBoss.entry=36855;secondBoss.victim=&tank;
  other.entry=37890;other.spawner=4;ai.units[4]=&secondBoss;ai.near.push_back(3);assert(!action.GetIcecrownAddTarget());

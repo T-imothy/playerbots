@@ -33,6 +33,12 @@ namespace ai
         MoamManaControlTrigger(PlayerbotAI* ai) : Trigger(ai, "moam mana control", 1) {}
         bool IsActive() override;
     };
+    class TharonjaSkeletonTrigger : public Trigger
+    {
+    public:
+        TharonjaSkeletonTrigger(PlayerbotAI* ai) : Trigger(ai, "tharonja skeleton", 1) {}
+        bool IsActive() override;
+    };
     class ViscidusFrostTrigger : public Trigger
     {
     public:

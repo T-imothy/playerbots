@@ -8,7 +8,7 @@ using namespace ai;
 
 bool MeleeAction::isUseful()
 {
-    if (HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot))
+    if (HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot) || HasEncounterBrand(bot))
     {
         StopUnsafeEncounterOffense(bot, bot);
         return false;

@@ -10,7 +10,7 @@ from behavior_regression import block
 root = Path(__file__).resolve().parents[1]
 source = (root/'playerbot/strategy/actions/EncounterDamagePolicy.cpp').read_text()
 methods = '\n'.join(block(source, name) for name in (
-    'bool ai::HasEncounterDamagePause(', 'bool ai::HasEncounterThreatPause(', 'bool ai::HasEncounterSpellBomb(', 'bool ai::ShouldAvoidEncounterOffense(',
+    'bool ai::HasEncounterDamagePause(', 'bool ai::HasEncounterThreatPause(', 'bool ai::HasEncounterSpellBomb(', 'bool ai::HasEncounterBrand(', 'bool ai::HasEncounterWeaponPause(', 'bool ai::ShouldAvoidEncounterOffense(',
     'bool ai::HasUnsafeEncounterOffense(', 'bool ai::StopUnsafeEncounterOffense('))
 pet = (root.parent/'mangos-wotlk-behavior/src/game/AI/BaseAI/PetAI.cpp').read_text()
 pet_methods = '\n'.join(block(pet, name) for name in (
@@ -29,6 +29,8 @@ code = r'''
 #include <iostream>
 using uint32=unsigned;
 enum SpellEffectIndex {EFFECT_INDEX_0,EFFECT_INDEX_1,EFFECT_INDEX_2,MAX_EFFECT_INDEX};
+enum {SPELL_EFFECT_HEAL=10,SPELL_EFFECT_HEAL_MAX_HEALTH=67,SPELL_EFFECT_HEAL_PCT=136,SPELL_EFFECT_HEAL_MECHANICAL=75,
+ SPELL_AURA_PERIODIC_HEAL=8,SPELL_AURA_OBS_MOD_HEALTH=20,SPELL_AURA_PERIODIC_HEALTH_FUNNEL=62};
 enum CurrentSpellTypes {CURRENT_MELEE_SPELL,CURRENT_GENERIC_SPELL,CURRENT_AUTOREPEAT_SPELL,CURRENT_CHANNELED_SPELL};
 enum {SPELL_STATE_CASTING,SPELL_STATE_CHANNELING,SPELL_STATE_TRAVELING,SPELL_STATE_FINISHED,
  UNIT_STAT_MELEE_ATTACKING=1,TRIGGERED_NORMAL_COMBAT_CAST=0x100,TRIGGERED_PET_CAST=0x80,
@@ -37,8 +39,9 @@ enum {SPELL_STATE_CASTING,SPELL_STATE_CHANNELING,SPELL_STATE_TRAVELING,SPELL_STA
  SPELL_DAMAGE_CLASS_MAGIC=1,SPELL_DAMAGE_CLASS_MELEE=2,SPELL_DAMAGE_CLASS_RANGED=3};
 enum SpellCastResult {SPELL_CAST_OK,SPELL_FAILED};
 struct Unit;struct Player;
-struct SpellAuraHolder {Unit* caster=nullptr;Unit* GetCaster()const{return caster;}};
+struct SpellAuraHolder {Unit* caster=nullptr;unsigned stacks=1;Unit* GetCaster()const{return caster;}unsigned GetStackAmount()const{return stacks;}};
 struct SpellEntry {uint32 Id=1;bool positive=false;unsigned attributes=0,DmgClass=SPELL_DAMAGE_CLASS_MAGIC;
+ unsigned Effect[3]{},EffectApplyAuraName[3]{};
  bool periodic[3]{},trigger[3]{},auraTrigger[3]{};bool HasAttribute(unsigned a)const{return attributes&a;}};
 bool IsAuraApplyEffect(const SpellEntry*s,SpellEffectIndex i){return s->periodic[i]||s->auraTrigger[i];}
 bool IsSpellEffectDamage(const SpellEntry&s,SpellEffectIndex i){return s.periodic[i];}
@@ -69,9 +72,9 @@ struct Unit {
  bool Attack(Unit*who,bool){if(!who)return false;++attacks;melee=true;return true;}
  bool IsPlayerControlled(){return controlled;}bool HasInArc(Unit*){return true;}void SetFacingToObject(Unit*){}
 };
-struct Player:Unit {bool teleport=false;BotAI* ai=nullptr;SpellAuraHolder* gaze=nullptr;SpellAuraHolder* bomb=nullptr;Player(){player=true;}
+struct Player:Unit {bool teleport=false;BotAI* ai=nullptr;SpellAuraHolder* gaze=nullptr;SpellAuraHolder* bomb=nullptr;SpellAuraHolder* brand=nullptr;SpellAuraHolder* chilled=nullptr;SpellAuraHolder* chill=nullptr;SpellAuraHolder* instability=nullptr;SpellAuraHolder* unchained=nullptr;Player(){player=true;}
  bool IsBeingTeleported(){return teleport;}BotAI* GetPlayerbotAI(){return ai;}
- SpellAuraHolder* GetSpellAuraHolder(unsigned id){assert(id==24314||id==40303);return id==24314?gaze:bomb;}};
+ SpellAuraHolder* GetSpellAuraHolder(unsigned id){assert(id==24314||id==40303||id==69172||id==69762||id==69766||id==70106||id==70107);return id==70106?chilled:id==70107?chill:id==24314?gaze:id==40303?bomb:id==69762?unchained:id==69766?instability:brand;}};
 bool IsPositiveSpell(const SpellEntry*s,Unit*,Unit*){return s->positive;}
 std::list<Unit*> worldUnits;
 namespace MaNGOS {
@@ -81,7 +84,7 @@ namespace MaNGOS {
 namespace Cell {template<class T>void VisitAllObjects(Player*,MaNGOS::UnitListSearcher<T>&s,float){s.list=worldUnits;}}
 namespace ai {
  bool HasHakkarPoisonPreparation(Player*) { return false; } // actual coordination is exercised in hakkar_poison_regression.py
- bool HasEncounterDamagePause(Player*);bool HasEncounterThreatPause(Player*);bool HasEncounterSpellBomb(Player*);bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*);
+ bool HasEncounterDamagePause(Player*);bool HasEncounterThreatPause(Player*);bool HasEncounterSpellBomb(Player*);bool HasEncounterBrand(Player*);bool HasEncounterWeaponPause(Player*);bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*);
  bool HasUnsafeEncounterOffense(Player*);bool StopUnsafeEncounterOffense(Player*,Unit*);
 }
 __METHODS__
@@ -95,6 +98,76 @@ __PET_METHODS__
 int main(){
  BotAI botAI;Player bot;bot.ai=&botAI;Unit boss;boss.entry=26861;boss.auras={48294};worldUnits={&boss};
  SpellEntry damage{17,false},heal{18,true};Spell harmful(&bot,&damage,0),helpful(&bot,&heal,0);
+ // Instability has a bounded casting budget, native caster/lifecycle guards, and no cross-era effect.
+ bot.map=boss.map=631;boss.entry=36853;SpellAuraHolder instability{&bot,3},unchained{&boss};bot.instability=&instability;bot.unchained=&unchained;
+#ifdef MANGOSBOT_TWO
+ assert(ai::HasEncounterSpellBomb(&bot));assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&heal,&bot));
+ assert(!ai::ShouldAvoidEncounterOffense(&bot,&boss,&damage,&bot));
+ instability.stacks=2;assert(!ai::HasEncounterSpellBomb(&bot));instability.stacks=3;
+ bot.instability=nullptr;assert(!ai::HasEncounterSpellBomb(&bot));bot.instability=&instability;
+ bot.unchained=nullptr;assert(!ai::HasEncounterSpellBomb(&bot));bot.unchained=&unchained;
+ boss.alive=false;assert(!ai::HasEncounterSpellBomb(&bot));boss.alive=true;
+ boss.phase=2;assert(!ai::HasEncounterSpellBomb(&bot));boss.phase=1;
+ botAI.real=true;assert(!ai::HasEncounterSpellBomb(&bot));botAI.real=false;
+#else
+ assert(!ai::HasEncounterSpellBomb(&bot));
+#endif
+ bot.instability=bot.unchained=nullptr;
+ SpellAuraHolder chilled{&bot,5},chill{&boss};bot.chilled=&chilled;bot.chill=&chill;
+#ifdef MANGOSBOT_TWO
+ assert(ai::HasEncounterWeaponPause(&bot));bot.melee=true;assert(ai::HasUnsafeEncounterOffense(&bot));
+ assert(ai::StopUnsafeEncounterOffense(&bot,&bot)&&!bot.melee);bot.stops=0;
+ assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&heal,&bot));
+ damage.DmgClass=SPELL_DAMAGE_CLASS_MELEE;assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ damage.DmgClass=SPELL_DAMAGE_CLASS_RANGED;assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ damage.attributes=SPELL_ATTR_EX2_AUTO_REPEAT;assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ damage.attributes|=SPELL_ATTR_EX3_SUPPRESS_CASTER_PROCS;assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ damage.attributes=0;damage.DmgClass=SPELL_DAMAGE_CLASS_MAGIC;
+ chilled.stacks=4;assert(!ai::HasEncounterWeaponPause(&bot));chilled.stacks=5;
+ boss.phase=2;assert(!ai::HasEncounterWeaponPause(&bot));boss.phase=1;
+ boss.combat=false;assert(!ai::HasEncounterWeaponPause(&bot));boss.combat=true;
+ botAI.real=true;assert(!ai::HasEncounterWeaponPause(&bot));botAI.real=false;
+#else
+ assert(!ai::HasEncounterWeaponPause(&bot));
+#endif
+ bot.chilled=bot.chill=nullptr;
+
+ // Brand belongs to the marked caster: unaffected pets and party healers remain free to act.
+ bot.map=boss.map=658;boss.entry=36658;SpellAuraHolder brand{&boss};bot.brand=&brand;
+#ifdef MANGOSBOT_TWO
+ assert(ai::HasEncounterBrand(&bot));assert(!ai::HasEncounterDamagePause(&bot));
+ assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&heal,&bot)); // ordinary buff, no heal effects
+ for(unsigned effect:{SPELL_EFFECT_HEAL,SPELL_EFFECT_HEAL_MAX_HEALTH,SPELL_EFFECT_HEAL_PCT,SPELL_EFFECT_HEAL_MECHANICAL}){
+  heal.Effect[0]=effect;assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&heal,&bot));
+ }heal.Effect[0]=0;
+ for(unsigned aura:{SPELL_AURA_PERIODIC_HEAL,SPELL_AURA_OBS_MOD_HEALTH,SPELL_AURA_PERIODIC_HEALTH_FUNNEL}){
+  heal.periodic[1]=true;heal.EffectApplyAuraName[1]=aura;assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&heal,&bot));
+ }heal.periodic[1]=false;heal.EffectApplyAuraName[1]=0;
+ heal.trigger[0]=true;assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&heal,&bot));heal.trigger[0]=false;
+ Unit brandPet;brandPet.map=658;assert(!ai::ShouldAvoidEncounterOffense(&bot,&brandPet,&damage,&boss));
+ heal.Effect[0]=SPELL_EFFECT_HEAL;assert(!ai::ShouldAvoidEncounterOffense(&bot,&brandPet,&heal,&bot));
+ for(auto slot:{CURRENT_MELEE_SPELL,CURRENT_GENERIC_SPELL,CURRENT_AUTOREPEAT_SPELL,CURRENT_CHANNELED_SPELL}){
+  bot.casts[slot]=&helpful;assert(ai::HasUnsafeEncounterOffense(&bot));
+  assert(ai::StopUnsafeEncounterOffense(&bot,&bot)&&!bot.casts[slot]);
+ }
+ heal.Effect[0]=0;bot.casts[CURRENT_GENERIC_SPELL]=&helpful;
+ assert(!ai::HasUnsafeEncounterOffense(&bot)&&!ai::StopUnsafeEncounterOffense(&bot,&bot));bot.casts[CURRENT_GENERIC_SPELL]=nullptr;
+ bot.melee=true;assert(ai::HasUnsafeEncounterOffense(&bot));assert(ai::StopUnsafeEncounterOffense(&bot,&bot)&&!bot.melee);
+ brandPet.melee=true;assert(!ai::StopUnsafeEncounterOffense(&bot,&brandPet)&&brandPet.melee);
+ auto unbranded=[&](){assert(!ai::HasEncounterBrand(&bot));};
+ brand.caster=nullptr;unbranded();brand.caster=&boss;boss.entry=999;unbranded();boss.entry=36658;
+ boss.instance=2;unbranded();boss.instance=1;boss.phase=2;unbranded();boss.phase=1;
+ boss.alive=false;unbranded();boss.alive=true;boss.combat=false;unbranded();boss.combat=true;
+ botAI.real=true;unbranded();botAI.real=false;bot.teleport=true;unbranded();bot.teleport=false;
+ bot.casts[CURRENT_GENERIC_SPELL]=&harmful;assert(ai::HasUnsafeEncounterOffense(&bot));bot.brand=nullptr;
+ assert(!ai::StopUnsafeEncounterOffense(&bot,&bot)&&bot.casts[CURRENT_GENERIC_SPELL]==&harmful);
+ bot.casts[CURRENT_GENERIC_SPELL]=nullptr;
+#else
+ assert(!ai::HasEncounterBrand(&bot));
+#endif
+ bot.brand=nullptr;bot.map=boss.map=575;boss.entry=26861;
  // Mandokir watches this player's threat, including helpful threat, in every era.
  bot.map=boss.map=309;boss.entry=11382;SpellAuraHolder gaze{&boss};bot.gaze=&gaze;
  assert(ai::HasEncounterThreatPause(&bot)&&!ai::HasEncounterDamagePause(&bot));

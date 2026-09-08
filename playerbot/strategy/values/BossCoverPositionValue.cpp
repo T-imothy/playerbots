@@ -1,6 +1,11 @@
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
+#ifdef MANGOSBOT_TWO
+#include "Grids/GridNotifiers.h"
+#include "Grids/GridNotifiersImpl.h"
+#include "Grids/CellImpl.h"
+#endif
 
 using namespace ai;
 
@@ -11,7 +16,7 @@ bool ai::IsBossCoverMap(uint32 map)
     if (map == 556) return true;
 #endif
 #ifdef MANGOSBOT_TWO
-    if (map == 658) return true;
+    if (map == 658 || map == 631) return true;
 #endif
     return false;
 }
@@ -20,9 +25,30 @@ uint32 ai::BossCoverMechanic(PlayerbotAI* ai, Unit* boss, bool keepCover)
 {
     Player* bot = ai->GetBot();
     if (!bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() || bot->HasCharmer() || bot->IsBeingTeleported() ||
-        ai->IsRealPlayer() || !boss || !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() ||
+        ai->IsRealPlayer() || !boss || !boss->IsInWorld() || !boss->IsAlive() ||
         boss->HasCharmer() || !bot->IsInMap(boss) || bot->GetDistance(boss) > 100 ||
         std::fabs(bot->GetPositionZ() - boss->GetPositionZ()) > 8) return 0;
+#ifdef MANGOSBOT_TWO
+    if (bot->GetMapId() == 631)
+    {
+        if (bot->HasAura(70157) || bot->HasAura(70126)) return 0;
+        if (boss->GetEntry() == 36853 && CurrentBossEscapeSpell(bot, boss)) return 0;
+        if (boss->GetEntry() == 37186 && boss->HasAura(70022))
+        {
+            // Markers need not be in combat. Only a live encounter owner's
+            // actual warning marker supplies the origin of the incoming bomb.
+            Unit* owner = ai->GetUnit(boss->GetSpawnerGuid());
+            return owner && owner->GetEntry() == 36853 && owner->IsInWorld() && owner->IsAlive() &&
+                owner->IsInCombat() && !owner->HasCharmer() && bot->IsInMap(owner) ? 69845 : 0;
+        }
+        if (boss->GetEntry() == 36853 && boss->IsInCombat() && boss->GetVictim() != bot)
+            for (uint32 spell : {70127u, 72528u, 72529u, 72530u})
+                if (const SpellAuraHolder* buffet = bot->GetSpellAuraHolder(spell, boss->GetObjectGuid()))
+                    if (keepCover || buffet->GetStackAmount() >= 5) return spell;
+        return 0;
+    }
+#endif
+    if (!boss->IsInCombat()) return 0;
     // Native Sapphiron has different breath timing between eras. Air-phase
     // hover and an actual blocking Ice Block give warning even when the
     // Wrath payload has no interruptible cast bar.
@@ -81,7 +107,17 @@ bool ai::IsBossCoverPosition(PlayerbotAI* ai, Unit* boss, const encounter::Point
     Player* bot = ai->GetBot();
     // Match Spell::CheckTarget's spell LOS rather than movement visibility:
     // decorative static M2 objects cannot be treated as spell-blocking cover.
-    if (!boss || boss->IsWithinLOS(point.x, point.y, point.z + bot->GetCollisionHeight(), true)) return false;
+    bool ignoreM2 = true;
+#ifdef MANGOSBOT_TWO
+    if (bot->GetMapId() == 631 && boss && (boss->GetEntry() == 36853 || boss->GetEntry() == 37186))
+    {
+        ignoreM2 = false; // Match the encounter's explicit Ice Block model check.
+        EncounterPosition separation;
+        std::vector<encounter::Circle> threats;
+        if (GruulShatterThreats(ai, separation, threats) && !encounter::OutsideCircles(point, threats)) return false;
+    }
+#endif
+    if (!boss || boss->IsWithinLOS(point.x, point.y, point.z + bot->GetCollisionHeight(), ignoreM2)) return false;
     if (bot->GetMapId() == 469 && boss->GetEntry() == 11983 && ai->IsHeal(bot))
     {
         // A healer must retain a line to the current tank while dropping
@@ -103,7 +139,19 @@ EncounterPosition BossCoverPositionValue::Calculate()
         return plan;
     }
     Unit* source = nullptr;
-    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    std::list<ObjectGuid> sources = AI_VALUE(std::list<ObjectGuid>, "attackers");
+#ifdef MANGOSBOT_TWO
+    if (bot->GetMapId() == 631 && bot->IsAlive() && bot->IsInCombat())
+    {
+        std::list<Unit*> markers;
+        MaNGOS::AllCreaturesOfEntryInRangeCheck check(bot, 37186, 100.0f);
+        MaNGOS::UnitListSearcher<decltype(check)> searcher(markers, check);
+        Cell::VisitAllObjects(bot, searcher, 100.0f);
+        for (Unit* marker : markers)
+            if (BossCoverMechanic(ai, marker, false)) sources.push_back(marker->GetObjectGuid());
+    }
+#endif
+    for (const auto& guid : sources)
     {
         Unit* boss = ai->GetUnit(guid);
         const uint32 mechanic = BossCoverMechanic(ai, boss, boss && boss->GetObjectGuid() == shelterBoss);
@@ -126,6 +174,7 @@ EncounterPosition BossCoverPositionValue::Calculate()
     if (bot->GetMapId() == 533 && source->GetEntry() == 15989) coverEntry = 181247;
 #ifdef MANGOSBOT_TWO
     if (bot->GetMapId() == 658 && source->GetEntry() == 36494) coverEntry = 196485;
+    if (bot->GetMapId() == 631 && (source->GetEntry() == 36853 || source->GetEntry() == 37186)) coverEntry = 201722;
 #endif
     if (coverEntry)
     {
