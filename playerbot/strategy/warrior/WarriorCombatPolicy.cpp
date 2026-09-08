@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "WarriorCombatPolicy.h"
+#include "playerbot/ServerFacade.h"
 
 std::string ai::WarriorStancePrerequisite(PlayerbotAI* ai, const SpellEntry* spell)
 {
