@@ -5,33 +5,48 @@
 #include "BudgetValues.h"
 #include "GuildValues.h"
 #include "Guilds/GuildMgr.h"
+#include <chrono>
 
 using namespace ai;
 
 EntryGuidps EntryGuidpsValue::Calculate()
 {
+    using Clock = std::chrono::steady_clock;
+    const auto started = Clock::now();
+    auto nextProgress = started + std::chrono::seconds(5);
+    std::chrono::nanoseconds eventTime{}, areaTime{};
     EntryGuidps guidps;
-
-    for (auto& creatureDataPair : WorldPosition().getCreaturesNear())
+    const auto creatures = WorldPosition().getCreaturesNear();
+    const auto objects = WorldPosition().getGameObjectsNear();
+    const size_t total = creatures.size() + objects.size();
+    size_t visited = 0, accepted = 0;
+    const auto add = [&](auto dataPair, bool gameObject)
     {
-        AsyncGuidPosition aGuidP(creatureDataPair);
-        if (aGuidP.isValid() && !aGuidP.IsEventUnspawned())
+        AsyncGuidPosition point(dataPair);
+        const auto beforeEvent = Clock::now();
+        const bool available = point.isValid() && !point.IsEventUnspawned();
+        const auto beforeArea = Clock::now();
+        eventTime += beforeArea - beforeEvent;
+        if (available)
         {
-            aGuidP.FetchArea();
-            guidps[aGuidP.GetEntry()].push_back(aGuidP);
+            point.FetchArea();
+            areaTime += Clock::now() - beforeArea;
+            const int32 entry = static_cast<int32>(point.GetEntry());
+            guidps[gameObject ? -entry : entry].push_back(point);
+            ++accepted;
         }
-    }
-
-    for (auto& goDataPair : WorldPosition().getGameObjectsNear())
-    {
-        AsyncGuidPosition aGuidP(goDataPair);
-        if (aGuidP.isValid() && !aGuidP.IsEventUnspawned())
+        ++visited;
+        if (Clock::now() >= nextProgress)
         {
-            aGuidP.FetchArea();
-            guidps[-((int32)aGuidP.GetEntry())].push_back(aGuidP);
+            sLog.outString("Object locations: " SIZEFMTD "/" SIZEFMTD " spawns checked.", visited, total);
+            nextProgress = Clock::now() + std::chrono::seconds(5);
         }
-    }
-
+    };
+    for (auto pair : creatures) add(pair, false);
+    for (auto pair : objects) add(pair, true);
+    sLog.outString("Object locations ready: " SIZEFMTD " spawns, %.2f seconds (event checks %.2f, terrain areas %.2f).",
+        accepted, std::chrono::duration<double>(Clock::now() - started).count(),
+        std::chrono::duration<double>(eventTime).count(), std::chrono::duration<double>(areaTime).count());
     return guidps;
 }
 

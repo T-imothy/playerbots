@@ -933,7 +933,10 @@ bool WorldPosition::loadVMap(uint32 mapId, int x, int y)
     if (isVmapLoaded(mapId, x, y))
         return true;
 
-    return VMAP::VMapFactory::createOrGetVMapManager()->loadMap(sWorld.GetDataPath().c_str(), mapId, x, y);
+    // The native VMapManager expects the vmap directory, not DataDir itself.
+    // A failed map-tree open is otherwise repeated for every spawn on that map.
+    return VMAP::VMapFactory::createOrGetVMapManager()->loadMap(
+        (sWorld.GetDataPath() + "vmaps").c_str(), mapId, x, y) == VMAP::VMAP_LOAD_RESULT_OK;
 }
 
 std::vector<WorldPosition> WorldPosition::fromPointsArray(const std::vector<G3D::Vector3>& path) const
