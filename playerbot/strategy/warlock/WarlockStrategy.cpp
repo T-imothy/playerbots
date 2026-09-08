@@ -1214,9 +1214,6 @@ void WarlockBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     BoostStrategy::InitCombatTriggers(triggers);
 
-    triggers.push_back(new TriggerNode(
-        "amplify curse",
-        NextAction::array(0, new NextAction("amplify curse", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "inferno",

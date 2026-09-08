@@ -505,7 +505,7 @@ void DpsFeralDruidStealthStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
         NextAction::array(0, new NextAction("pounce", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "not behind target",
+        "behind target",
         NextAction::array(0, new NextAction("ravage", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -1000,7 +1000,7 @@ void DpsFeralDruidStealthStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
         NextAction::array(0, new NextAction("pounce", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "not behind target",
+        "behind target",
         NextAction::array(0, new NextAction("ravage", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -1502,7 +1502,7 @@ void DpsFeralDruidStealthStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
         NextAction::array(0, new NextAction("pounce", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "not behind target",
+        "behind target",
         NextAction::array(0, new NextAction("ravage", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(

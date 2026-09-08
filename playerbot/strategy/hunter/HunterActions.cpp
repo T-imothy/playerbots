@@ -45,7 +45,7 @@ bool CastAutoShotAction::isUseful()
     if (ai->IsInVehicle() && !ai->IsInVehicle(false, false, true))
         return false;
 
-    return ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT) && AI_VALUE(uint32, "active spell") != AI_VALUE2(uint32, "spell id", getName());
+    return CastSpellAction::isUseful() && ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT) && AI_VALUE(uint32, "active spell") != AI_VALUE2(uint32, "spell id", getName());
 }
 
 bool HunterEquipAmmoAction::Execute(Event& event)
@@ -123,16 +123,6 @@ bool CastAutoShotAction::Execute(Event& event)
 
 bool CastSteadyShotAction::Execute(Event& event)
 {
-    if (CastSpellAction::Execute(event))
-    {
-        const Item* equippedWeapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
-        if (equippedWeapon)
-        {
-            SetDuration(GetDuration() + sPlayerbotAIConfig.globalCoolDown);
-        }
-
-        return true;
-    }
-
-    return false;
+    // The shared cast duration already includes native cast time and GCD.
+    return CastSpellAction::Execute(event);
 }

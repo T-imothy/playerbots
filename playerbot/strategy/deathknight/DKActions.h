@@ -23,9 +23,7 @@ namespace ai
 	class CastDeathchillAction : public CastBuffSpellAction {
 	public:
 		CastDeathchillAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "deathchill") {}
-		virtual NextAction** getPrerequisites() {
-			return NextAction::merge(NextAction::array(0, new NextAction("frost presence"), NULL), CastSpellAction::getPrerequisites());
-		}
+
 	};
 
     class CastDarkCommandAction : public CastSpellAction {
@@ -302,14 +300,14 @@ namespace ai
 		CastMindFreezeOnEnemyHealerAction(PlayerbotAI* ai) : CastSpellOnEnemyHealerAction(ai, "mind freeze") {}
     };
 
-	class CastRuneTapAction : public CastMeleeSpellAction {
+    class CastRuneTapAction : public CastHealingSpellAction {
 	public:
-		CastRuneTapAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "rune tap") {}
+        CastRuneTapAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "rune tap") {}
 
 	};
-	class CastBloodTapAction : public CastMeleeSpellAction {
+    class CastBloodTapAction : public CastBuffSpellAction {
 	public:
-		CastBloodTapAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "blood tap") {}
+        CastBloodTapAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "blood tap") {}
 	};
 
 	const std::vector<uint32> RUNEFORGES = { 190557, 191746, 191747, 191748, 191757, 191758 };

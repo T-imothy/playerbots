@@ -34,7 +34,12 @@ namespace ai
 #endif
     BUFF_ACTION(CastColdBloodAction, "cold blood");
 
-    BUFF_ACTION_U(CastPreparationAction, "preparation", !bot->IsSpellReady(14177) || !bot->IsSpellReady(2983) || !bot->IsSpellReady(2094));
+    class CastPreparationAction : public CastBuffSpellAction
+    {
+    public:
+        CastPreparationAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "preparation") {}
+        bool isUseful() override;
+    };
 
     class CastShadowstepAction : public CastSpellAction 
     {
@@ -73,12 +78,12 @@ namespace ai
             }
 
             // do not use with WSG flag
-            return !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot) && !ai->HasAura(34976, bot);
+            return CastBuffSpellAction::isUseful() && !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot) && !ai->HasAura(34976, bot);
         }
 
         virtual bool Execute(Event& event)
         {
-            if (ai->CastSpell("stealth", bot))
+            if (CastBuffSpellAction::Execute(event))
             {
                 ai->ChangeStrategy("+stealthed", BotState::BOT_STATE_COMBAT);
                 ai->ChangeStrategy("+stealthed", BotState::BOT_STATE_NON_COMBAT);
@@ -175,12 +180,12 @@ namespace ai
         virtual bool isUseful()
         {
             // do not use with WSG flag or EYE flag
-            return !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot) && !ai->HasAura(34976, bot);
+            return CastBuffSpellAction::isUseful() && !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot) && !ai->HasAura(34976, bot);
         }
 
         virtual bool Execute(Event& event)
         {
-            if (ai->CastSpell("vanish", bot))
+            if (CastBuffSpellAction::Execute(event))
             {
                 if (ai->HasStrategy("stealth", BotState::BOT_STATE_COMBAT))
                 {

@@ -350,7 +350,7 @@ namespace ai
 				;
 
 			// useful if no mount or with wsg flag
-			return !bot->IsMounted() || !firstmount;
+            return CastBuffSpellAction::isUseful() && (!bot->IsMounted() || !firstmount);
 		}
 	};
 
@@ -483,19 +483,20 @@ namespace ai
             }
 
             // do not use with WSG flag
-            return !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot) && !ai->HasAura(34976, bot);
+            return CastBuffSpellAction::isUseful() && !ai->HasAura(23333, bot) && !ai->HasAura(23335, bot) && !ai->HasAura(34976, bot);
         }
 
         virtual bool Execute(Event& event)
         {
-            if (ai->CastSpell("prowl", bot))
+            if (CastBuffSpellAction::Execute(event))
             {
                 ai->ChangeStrategy("+stealthed", BotState::BOT_STATE_COMBAT);
                 ai->ChangeStrategy("+stealthed", BotState::BOT_STATE_NON_COMBAT);
                 bot->InterruptSpell(CURRENT_MELEE_SPELL);
+                return true;
             }
 
-            return true;
+            return false;
         }
     };
 

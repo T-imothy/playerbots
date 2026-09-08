@@ -91,7 +91,13 @@ namespace ai
     public:
         UsePotionAction(PlayerbotAI* ai, std::string name, SpellEffects effect) : UseItemIdAction(ai, name), effect(effect) {}
 
-        bool isUseful() override { return UseItemIdAction::isUseful() && AI_VALUE2(bool, "combat", "self target"); }
+        bool isUseful() override
+        {
+#ifndef MANGOSBOT_ZERO
+            if (bot->InArena()) return false;
+#endif
+            return UseItemIdAction::isUseful() && AI_VALUE2(bool, "combat", "self target");
+        }
 
         virtual uint32 GetItemId() override
         {
@@ -149,7 +155,8 @@ namespace ai
                 }
             }
 
-            return true;
+            // No item was used: permit the existing fallback action.
+            return false;
         }
 
     private:
@@ -210,22 +217,14 @@ namespace ai
                 {
                     return 5510;
                 }
-                else if(level >= 48 && level < 61)
-                {
-                    return 9421;
-                }
-                else if(level >= 61 && level < 63)
-                {
-                    return 22103;
-                }
-                else if(level >= 63 && level < 71)
-                {
-                    return 36889;
-                }
-                else
-                {
-                    return 36892;
-                }
+#ifdef MANGOSBOT_TWO
+                if (level >= 69) return 36892;
+                if (level >= 63) return 36889;
+#endif
+#ifndef MANGOSBOT_ZERO
+                if (level >= 60) return 22103;
+#endif
+                return 9421;
             }
 
             return items.front()->GetProto()->ItemId;
@@ -272,7 +271,7 @@ namespace ai
                 }
             }
 
-            return true;
+            return false;
         }
     };
 
@@ -480,7 +479,8 @@ namespace ai
             if (bot->HasAura(11196))
                 return false;
 
-            if (AI_VALUE(uint8, "my attacker count") > 0 || bot->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE))
+            if (AI_VALUE(uint8, "my attacker count") > 0 || bot->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE) ||
+                bot->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE_PERCENT) || bot->HasAuraType(SPELL_AURA_PERIODIC_LEECH))
                 return false;
 
             if (bot->GetSkillValue(129) < 1)
@@ -681,7 +681,7 @@ namespace ai
                     return false;
                 }
 
-                bot->addUnitState(UNIT_STAND_STATE_SIT);
+                bot->SetStandState(UNIT_STAND_STATE_SIT);
                 ai->InterruptSpell();
 
                 float drinkDuration = AI_VALUE(float, "drink duration");
@@ -692,7 +692,7 @@ namespace ai
 
                 ai->Unmount();
 
-                ai->CastSpell(24355, bot);
+                if (!ai->CastSpell(24355, bot)) return false;
                 SetDuration(drinkDuration);
                 bot->RemoveSpellCooldown(*pSpellInfo);
 
@@ -758,7 +758,7 @@ namespace ai
                     return false;
                 }
 
-                bot->addUnitState(UNIT_STAND_STATE_SIT);
+                bot->SetStandState(UNIT_STAND_STATE_SIT);
                 ai->InterruptSpell();
 
                 float eatDuration = AI_VALUE(float, "eat duration");
@@ -769,7 +769,7 @@ namespace ai
 
                 ai->Unmount();
 
-                ai->CastSpell(24005, bot);
+                if (!ai->CastSpell(24005, bot)) return false;
                 SetDuration(eatDuration);
                 bot->RemoveSpellCooldown(*pSpellInfo);
 

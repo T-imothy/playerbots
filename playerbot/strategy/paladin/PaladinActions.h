@@ -24,7 +24,8 @@ namespace ai
 		CastJudgementAction(PlayerbotAI* ai) : CastMeleeDebuffSpellAction(ai, "judgement") { range = 10.0f; }
 		virtual bool isUseful() 
 		{
-            Unit* target = bot->GetTarget();
+            if (!CastSpellAction::isUseful()) return false;
+            Unit* target = GetTarget();
             if (target && target->IsAlive())
             {
                 if (ai->HasAnyAuraOf(bot, "seal of vengeance", NULL))
@@ -107,7 +108,7 @@ namespace ai
     {
     public:
         CastSealSpellAction(PlayerbotAI* ai, std::string name) : CastBuffSpellAction(ai, name) {}
-        virtual bool isUseful() override { return AI_VALUE2(bool, "combat", "self target"); }
+        virtual bool isUseful() override { return CastBuffSpellAction::isUseful() && AI_VALUE2(bool, "combat", "self target"); }
     };
 
     // Shared by the trigger and dispatcher so stale queued actions cannot

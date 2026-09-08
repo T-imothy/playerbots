@@ -214,7 +214,6 @@ void GenericDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 	triggers.push_back(new TriggerNode(
 		"melee high aoe",
 		NextAction::array(0,
-			new NextAction("unholy blight", ACTION_NORMAL + 6),
 			new NextAction("death and decay", ACTION_NORMAL + 5),
 			new NextAction("pestilence", ACTION_NORMAL + 4),
 			new NextAction("blood boil", ACTION_NORMAL + 3), NULL)));

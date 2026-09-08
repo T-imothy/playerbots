@@ -242,6 +242,7 @@ namespace ai
         CastPolymorphAction(PlayerbotAI* ai) : CastCrowdControlSpellAction(ai, "polymorph") {}
         virtual bool Execute(Event& event)
         {
+            if (!CastCrowdControlSpellAction::isUseful()) return false;
             std::vector<std::string> polySpells;
             polySpells.push_back("polymorph");
             if (bot->HasSpell(28271))
@@ -249,7 +250,11 @@ namespace ai
             if (bot->HasSpell(28272))
                 polySpells.push_back("polymorph: pig");
 
-            return ai->CastSpell(polySpells[urand(0, polySpells.size() - 1)], GetTarget());
+            uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
+            if (!ai->CastSpell(polySpells[urand(0, polySpells.size() - 1)], GetTarget(), nullptr, false, &spellDuration))
+                return false;
+            SetDuration(ai->HasCheat(BotCheatMask::attackspeed) ? 1 : spellDuration);
+            return true;
         }
     };
 

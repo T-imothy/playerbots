@@ -120,7 +120,7 @@ run(common + r'''
 enum class BotState{BOT_STATE_COMBAT,BOT_STATE_NON_COMBAT};enum{CURRENT_MELEE_SPELL};
 struct Player{int interrupts=0;void InterruptSpell(int){++interrupts;}};
 struct PlayerbotAI{Player bot;bool cast=false;int changes=0;bool HasAura(std::string,Player*){return false;}bool HasAura(int,Player*){return false;}bool CastSpell(std::string,Player*){return cast;}void ChangeStrategy(std::string,BotState){++changes;}};
-struct CastBuffSpellAction{PlayerbotAI* ai;Player* bot;CastBuffSpellAction(PlayerbotAI* a,std::string):ai(a),bot(&a->bot){}virtual std::string GetTargetName(){return "self target";}};
+struct CastBuffSpellAction{PlayerbotAI* ai;Player* bot;CastBuffSpellAction(PlayerbotAI* a,std::string):ai(a),bot(&a->bot){}virtual std::string GetTargetName(){return "self target";}virtual bool isUseful(){return true;}bool Execute(Event&){return ai->CastSpell("stealth",bot);}};
 ''' + stealth + r'''
 int main(){PlayerbotAI ai;Event e;CastStealthAction action(&ai);assert(!action.Execute(e));assert(ai.changes==0&&ai.bot.interrupts==0);ai.cast=true;assert(action.Execute(e));assert(ai.changes==2&&ai.bot.interrupts==1);}
 ''', 'rogue stealth changes strategy only after a successful core cast')

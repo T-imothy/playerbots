@@ -62,7 +62,7 @@ const ai::WorldPosition WaitForAttackKeepSafeDistanceAction::GetBestPoint(const 
     const WorldPosition targetPosition = pos;
     const int8 startDir = urand(0, 1) * 2 - 1;
     const float radiansIncrement = (5.0f / 180.0f) * (M_PI_F);
-    const float startAngle = targetPosition.getAngleTo(botPosition) + urand(0.f,radiansIncrement) * startDir;
+    const float startAngle = targetPosition.getAngleTo(botPosition) + frand(0.0f, radiansIncrement) * startDir;
     const float distance = frand(minDistance, maxDistance);
     const std::list<ObjectGuid> enemies = AI_VALUE(std::list<ObjectGuid>, "possible targets no los");
 
@@ -79,8 +79,10 @@ const ai::WorldPosition WaitForAttackKeepSafeDistanceAction::GetBestPoint(const 
 
     for (float tryAngle = 0.0f; tryAngle < M_PI_F; tryAngle += radiansIncrement)
     {
-        for (int8 tryDir = -1; tryAngle && tryDir < 1; tryDir += 2)
+        for (int8 tryDir = -1; tryDir <= 1; tryDir += 2)
         {
+            // Test the straight candidate once and both sides at other angles.
+            if (tryAngle == 0.0f && tryDir == 1) continue;
             float pointAngle = startAngle;
             pointAngle += tryAngle * startDir * tryDir;
 
