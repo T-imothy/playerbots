@@ -229,6 +229,16 @@ bool CastSpellAction::isPossible()
 	return ai->CanCastSpell(spellName, spellTarget, 0, nullptr, true);
 }
 
+bool CastSpellAction::ShouldTryAlternativesWhenUseless()
+{
+    // Vehicle abilities have their own capability checks and spellbook.
+    if (spellIdContext != "spell id")
+        return false;
+    RefreshSpellId();
+    const SpellEntry* spell = sServerFacade.LookupSpellInfo(spellId);
+    return !spellId || !spell || !ai->HasSpell(spellId) || IsPassiveSpell(spell);
+}
+
 bool CastSpellAction::isUseful()
 {
     RefreshSpellId();
@@ -439,16 +449,19 @@ bool HealHotPartyMemberAction::isUseful()
 
 bool CastVehicleSpellAction::isPossible()
 {
+    RefreshSpellId();
     return ai->CanCastVehicleSpell(GetSpellID(), GetTarget());
 }
 
 bool CastVehicleSpellAction::isUseful()
 {
+    RefreshSpellId();
     return ai->IsInVehicle(false, true);
 }
 
 bool CastVehicleSpellAction::Execute(Event& event)
 {
+    RefreshSpellId();
     return ai->CastVehicleSpell(GetSpellID(), GetTarget(), speed, needTurn);
 }
 
@@ -491,6 +504,15 @@ bool CastDevourHumanoidAction::isPossible()
         return false;
 
     return CastVehicleSpellAction::isPossible();
+}
+
+bool CastShootAction::isUseful()
+{
+    // The engine checks usefulness before possibility. Resolve the equipped
+    // weapon here so Classic's Shoot Bow/Gun/Crossbow and Throw reach the
+    // learned-spell check instead of being rejected as generic Shoot.
+    UpdateWeaponInfo();
+    return rangedWeapon && !needsAmmo && CastSpellAction::isUseful();
 }
 
 bool CastShootAction::isPossible()

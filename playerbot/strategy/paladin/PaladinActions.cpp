@@ -263,6 +263,20 @@ Unit* CastBlessingOnPartyAction::GetTarget()
     return AI_VALUE2(Unit*, "party member without my aura", blessList);
 }
 
+bool CastBlessingOnPartyAction::isUseful()
+{
+    // The action name describes a dispatcher, not a learned spell. Select
+    // the target's actual blessing before the generic capability check.
+    Unit* target = GetTarget();
+    if (!target)
+        return false;
+    const std::string blessing = GetBlessingForTarget(target);
+    if (blessing.empty())
+        return false;
+    SetSpellName(blessing);
+    return CastSpellAction::isUseful();
+}
+
 bool CastBlessingOnPartyAction::isPossible()
 {
     Unit* target = GetTarget();

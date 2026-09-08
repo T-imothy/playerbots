@@ -43,7 +43,7 @@ namespace ai
         std::string getParam() { return param; }
         WorldPacket& getPacket() { return packet; }
         ObjectGuid getObject();
-        Player* getOwner() { return owner.Get(); }
+        Player* getOwner() const { return owner.Get(); }
         bool IsOwnerAvailable() const { return owner.IsAvailable(); }
         bool operator! () const { return source.empty() || !IsOwnerAvailable(); }
 

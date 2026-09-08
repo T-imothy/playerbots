@@ -4,6 +4,7 @@
 #include <iomanip>
 
 #include "Engine.h"
+#include "actions/GenericActions.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotDiagnostics.h"
 #include "playerbot/CombatDiagnostics.h"
@@ -16,6 +17,18 @@
 #endif
 
 using namespace ai;
+
+namespace
+{
+    bool IsExplicitPlayerCommand(Action* action, const Event& event)
+    {
+        if (!dynamic_cast<ChatCommandAction*>(action))
+            return false;
+
+        Player* requester = event.getOwner();
+        return requester && requester->isRealPlayer();
+    }
+}
 
 std::atomic<uint64> Engine::suppressedImpossibleActions{0};
 std::atomic<uint64> Engine::suppressedFailedActions{0};
@@ -77,6 +90,11 @@ std::string Engine::GetFailureKey(Action* action, const Event& event, ActionResu
 
 bool Engine::IsFailureBackedOff(Action* action, const Event& event, ActionResult reason) const
 {
+    // A fresh player request must be evaluated and receive its normal reply.
+    // Retry throttling applies to autonomous decisions, not chat commands.
+    if (IsExplicitPlayerCommand(action, event))
+        return false;
+
     auto existing = actionFailures.find(GetFailureKey(action, event, reason));
     if (existing == actionFailures.end())
         return false;
@@ -87,6 +105,9 @@ bool Engine::IsFailureBackedOff(Action* action, const Event& event, ActionResult
 
 void Engine::RecordFailure(Action* action, const Event& event, ActionResult reason)
 {
+    if (IsExplicitPlayerCommand(action, event))
+        return;
+
     if (!sPlayerbotAIConfig.failedActionRetryBase || !sPlayerbotAIConfig.failedActionRetryMax)
     {
         ClearActionFailures();
@@ -390,6 +411,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             ++diagnosticSample.suppressedImpossible;
                         if (CombatDiagnostics::Select(ai))
                             CombatDiagnostics::Record(ai, action->getName(), event.getSource(), "suppressed_impossible", 0);
+                        MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                         delete actionNode;
                         continue;
                     }
@@ -400,6 +422,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             ++diagnosticSample.suppressedFailed;
                         if (CombatDiagnostics::Select(ai))
                             CombatDiagnostics::Record(ai, action->getName(), event.getSource(), "suppressed_failed", 0);
+                        MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                         delete actionNode;
                         continue;
                     }
@@ -527,6 +550,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     }
                     lastRelevance = relevance;
                     LogAction("A:%s - USELESS", action->getName().c_str());
+                    if ((!isStunned || action->isUsefulWhenStunned()) && action->ShouldTryAlternativesWhenUseless())
+                        MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
                 }
             }
             delete actionNode;

@@ -12,7 +12,8 @@ namespace ai
         virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_SINGLE; }
         virtual bool Execute(Event& event) override;
         virtual bool isPossible() override;
-		virtual bool isUseful() override;
+        virtual bool isUseful() override;
+        bool ShouldTryAlternativesWhenUseless() override;
 
         // Used when this action is executed as a reaction
         bool ShouldReactionInterruptCast() const override { return true; }
@@ -359,6 +360,7 @@ namespace ai
         CastShootAction(PlayerbotAI* ai) : CastSpellAction(ai, "shoot"), rangedWeapon(nullptr), weaponDelay(0), needsAmmo(false) {}
         ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_LOW; }
         bool Execute(Event& event) override;
+        bool isUseful() override;
         bool isPossible() override;
 
     protected:

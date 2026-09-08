@@ -227,6 +227,14 @@ bool PullAction::Execute(Event& event)
     return false;
 }
 
+bool PullAction::isUseful()
+{
+    // This action can outlive a weapon or strategy change. Refresh the
+    // strategy's spell before the inherited capability check runs.
+    InitPullAction();
+    return PullStrategy::Get(ai) && CastSpellAction::isUseful();
+}
+
 bool PullAction::isPossible()
 {
     InitPullAction();

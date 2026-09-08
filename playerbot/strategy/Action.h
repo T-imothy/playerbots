@@ -67,6 +67,9 @@ namespace ai
         virtual bool Execute(Event& event) { return true; }
         virtual bool isPossible() { return true; }
         virtual bool isUseful() { return true; }
+        // A missing capability may still have a valid configured fallback.
+        // Ordinary useless actions (e.g. an already-present buff) do not.
+        virtual bool ShouldTryAlternativesWhenUseless() { return false; }
         virtual bool isUsefulWhenStunned() { return false; }
         virtual NextAction** getPrerequisites() { return NULL; }
         virtual NextAction** getAlternatives() { return NULL; }
