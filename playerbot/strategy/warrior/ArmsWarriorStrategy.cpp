@@ -16,7 +16,7 @@ public:
         creators["mocking blow"] = &mocking_blow;
         creators["heroic strike"] = &heroic_strike;
         creators["whirlwind"] = &whirlwind;
-        creators["sweeping strikes"] = &sweeping_strikes;
+
     }
 
 private:
@@ -34,7 +34,7 @@ private:
 
     ACTION_NODE_P(whirlwind, "whirlwind", "berserker stance");
 
-    ACTION_NODE_P(sweeping_strikes, "sweeping strikes", "battle stance");
+
 };
 
 ArmsWarriorStrategy::ArmsWarriorStrategy(PlayerbotAI* ai) : WarriorStrategy(ai)
@@ -343,6 +343,10 @@ void ArmsWarriorBoostRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>
 void ArmsWarriorCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     WarriorCcStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode("pummel", NextAction::array(0, new NextAction("pummel", ACTION_INTERRUPT), nullptr)));
+    triggers.push_back(new TriggerNode("pummel on enemy healer", NextAction::array(0, new NextAction("pummel on enemy healer", ACTION_INTERRUPT), nullptr)));
+    triggers.push_back(new TriggerNode("shield bash", NextAction::array(0, new NextAction("shield bash", ACTION_INTERRUPT), nullptr)));
 
     triggers.push_back(new TriggerNode(
         "hamstring",
@@ -681,6 +685,10 @@ void ArmsWarriorCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
 {
     WarriorCcStrategy::InitCombatTriggers(triggers);
 
+    triggers.push_back(new TriggerNode("pummel", NextAction::array(0, new NextAction("pummel", ACTION_INTERRUPT), nullptr)));
+    triggers.push_back(new TriggerNode("pummel on enemy healer", NextAction::array(0, new NextAction("pummel on enemy healer", ACTION_INTERRUPT), nullptr)));
+    triggers.push_back(new TriggerNode("shield bash", NextAction::array(0, new NextAction("shield bash", ACTION_INTERRUPT), nullptr)));
+
     triggers.push_back(new TriggerNode(
         "hamstring",
         NextAction::array(0, new NextAction("piercing howl", ACTION_HIGH), NULL)));
@@ -926,8 +934,8 @@ void ArmsWarriorBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
     WarriorBuffStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
-        "berserker stance",
-        NextAction::array(0, new NextAction("berserker stance", ACTION_MOVE), NULL)));
+        "battle stance",
+        NextAction::array(0, new NextAction("battle stance", ACTION_MOVE), NULL)));
 
     triggers.push_back(new TriggerNode(
         "feared",
@@ -1029,6 +1037,10 @@ void ArmsWarriorCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
 {
     WarriorCcStrategy::InitCombatTriggers(triggers);
 
+    triggers.push_back(new TriggerNode("pummel", NextAction::array(0, new NextAction("pummel", ACTION_INTERRUPT), nullptr)));
+    triggers.push_back(new TriggerNode("pummel on enemy healer", NextAction::array(0, new NextAction("pummel on enemy healer", ACTION_INTERRUPT), nullptr)));
+    triggers.push_back(new TriggerNode("shield bash", NextAction::array(0, new NextAction("shield bash", ACTION_INTERRUPT), nullptr)));
+
     triggers.push_back(new TriggerNode(
         "hamstring",
         NextAction::array(0, new NextAction("piercing howl", ACTION_HIGH), NULL)));
@@ -1077,114 +1089,10 @@ void ArmsWarriorCcRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
 
 #endif
 
-class WarriorSweepingStrikesPveMultiplier : public Multiplier
-{
-public:
-    WarriorSweepingStrikesPveMultiplier(PlayerbotAI* ai) : Multiplier(ai, "aoe arms pve") {}
-
-    float GetValue(Action* action) override
-    {
-        // Disable Berserker Stance
-        const std::string& actionName = action->getName();
-        if ((actionName == "berserker stance" ||
-            actionName == "whirlwind" ||
-            actionName == "mortal strike" ||
-            actionName == "heroic strike" ||
-            actionName == "cleave") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
-            bot->HasSpell(12292) &&
-            bot->IsSpellReady(12292) &&
-            !bot->HasAura(12292))
-        {
-            return 0.0f;
-        }
-
-        // Disable Battle Stance spam if SS is on CD
-        if ((actionName == "battle stance") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
-            bot->HasSpell(12292) &&
-            !bot->IsSpellReady(12292))
-        {
-            return 0.0f;
-        }
-
-        return 1.0f;
-    }
-};
-
-class WarriorSweepingStrikesRaidMultiplier : public Multiplier
-{
-public:
-    WarriorSweepingStrikesRaidMultiplier(PlayerbotAI* ai) : Multiplier(ai, "aoe arms raid") {}
-
-    float GetValue(Action* action) override
-    {
-        // Disable Berserker Stance
-        const std::string& actionName = action->getName();
-        if ((actionName == "berserker stance" ||
-            actionName == "whirlwind" ||
-            actionName == "mortal strike" ||
-            actionName == "heroic strike" ||
-            actionName == "cleave") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
-            bot->HasSpell(12292) &&
-            bot->IsSpellReady(12292) &&
-            !bot->HasAura(12292))
-        {
-            return 0.0f;
-        }
-
-        // Disable Battle Stance spam if SS is on CD
-        if ((actionName == "battle stance") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
-            bot->HasSpell(12292) &&
-            !bot->IsSpellReady(12292))
-        {
-            return 0.0f;
-        }
-
-        return 1.0f;
-    }
-};
-
-class WarriorSweepingStrikesPvpMultiplier : public Multiplier
-{
-public:
-    WarriorSweepingStrikesPvpMultiplier(PlayerbotAI* ai) : Multiplier(ai, "aoe arms pvp") {}
-
-    float GetValue(Action* action) override
-    {
-        // Disable Berserker Stance
-        const std::string& actionName = action->getName();
-        if ((actionName == "berserker stance" ||
-            actionName == "whirlwind" ||
-            actionName == "mortal strike" ||
-            actionName == "heroic strike" ||
-            actionName == "cleave") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
-            bot->HasSpell(12292) &&
-            bot->IsSpellReady(12292) &&
-            !bot->HasAura(12292))
-        {
-            return 0.0f;
-        }
-
-        // Disable Battle Stance spam if SS is on CD
-        if ((actionName == "battle stance") &&
-            AI_VALUE2(bool, "trigger active", "melee light aoe") &&
-            bot->HasSpell(12292) &&
-            !bot->IsSpellReady(12292))
-        {
-            return 0.0f;
-        }
-
-        return 1.0f;
-    }
-};
-
+// Trigger priorities schedule Sweeping Strikes before lower-priority AoE.
+// A global stance/damage veto blocked unrelated abilities and used an ID whose
+// meaning differs across expansions. Native stance prerequisites handle it.
 void ArmsWarriorAoeStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
-    multipliers.push_back(new WarriorSweepingStrikesPveMultiplier(ai));
-    multipliers.push_back(new WarriorSweepingStrikesRaidMultiplier(ai));
-    multipliers.push_back(new WarriorSweepingStrikesPvpMultiplier(ai));
+    WarriorAoeStrategy::InitCombatMultipliers(multipliers);
 }

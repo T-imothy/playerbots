@@ -1,5 +1,7 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/generic/PullStrategy.h"
+#include "playerbot/strategy/warrior/WarriorCombatPolicy.h"
 #include "GenericTriggers.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -322,7 +324,9 @@ bool TankThreatTransferTrigger::IsActive()
 
 bool SpellCanBeCastedTrigger::IsActive()
 {
-	Unit* target = GetTarget();
+    Unit* target = GetTarget();
+    if (bot->getClass() == CLASS_WARRIOR)
+        return CanPlanWarriorSpell(ai, spell, target);
     return target && ai->CanCastSpell(spell, target, 0);
 }
 
@@ -825,6 +829,8 @@ bool ReturnToStayPositionTrigger::IsActive()
 
 bool ReturnToPullPositionTrigger::IsActive()
 {
+    const PullStrategy* strategy = PullStrategy::Get(ai);
+    if (!strategy || !strategy->HasPullActionIssued() || bot->IsNonMeleeSpellCasted(true)) return false;
     PositionEntry pullPosition = AI_VALUE(PositionMap&, "position")["pull"];
     if (pullPosition.isSet())
     {

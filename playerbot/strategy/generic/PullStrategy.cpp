@@ -215,9 +215,24 @@ void PullStrategy::OnPullStarted()
     pendingToStart = false;
 }
 
+void PullStrategy::OnPullActionIssued()
+{
+    pendingToStart = false;
+    pullActionTime = time(nullptr);
+}
+
 void PullStrategy::OnPullEnded()
 {
+    // Reset/cancel paths must restore the original pet setting too.
+    if (petReactStateSaved)
+        if (Pet* pet = ai->GetBot()->GetPet())
+            if (UnitAI* petAI = static_cast<Creature*>(pet)->AI())
+                petAI->SetReactState(petReactState);
+    pendingToStart = false;
     pullStartTime = 0;
+    pullActionTime = 0;
+    petReactStateSaved = false;
+    requesterGuid.Clear();
     SetTarget(nullptr);
 }
 
@@ -228,6 +243,7 @@ void PullStrategy::RequestPull(Unit* target, bool resetTime)
     if(resetTime)
     {
         pullStartTime = time(0);
+        pullActionTime = 0;
     }
 }
 

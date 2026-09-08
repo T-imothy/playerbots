@@ -5,6 +5,7 @@
 #include "playerbot/CombatDiagnostics.h"
 #include "EncounterSpellPolicy.h"
 #include "playerbot/strategy/Trigger.h"
+#include "playerbot/strategy/warrior/WarriorCombatPolicy.h"
 
 using namespace ai;
 
@@ -314,6 +315,10 @@ bool CastSpellAction::isUseful()
 
 NextAction** CastSpellAction::getPrerequisites()
 {
+    NextAction** prerequisites = Action::getPrerequisites();
+    const std::string stance = WarriorStancePrerequisite(ai, sServerFacade.LookupSpellInfo(spellId));
+    if (!stance.empty() && CanPlanWarriorSpell(ai, spellName, GetTarget()))
+        prerequisites = NextAction::merge(NextAction::array(0, new NextAction(stance), nullptr), prerequisites);
     // Set the reach action as the cast spell prerequisite when needed
     const std::string reachAction = GetReachActionName();
     if (!reachAction.empty())
@@ -334,11 +339,11 @@ NextAction** CastSpellAction::getPrerequisites()
             }
 
             const std::string qualifiersStr = Qualified::MultiQualify(qualifiers, "::");
-            return NextAction::merge(NextAction::array(0, new NextAction(reachAction + "::" + qualifiersStr), NULL), Action::getPrerequisites());
+            return NextAction::merge(NextAction::array(0, new NextAction(reachAction + "::" + qualifiersStr), NULL), prerequisites);
         }
     }
 
-    return Action::getPrerequisites();
+    return prerequisites;
 }
 
 void CastSpellAction::SetSpellName(const std::string& name, std::string spellIDContextName /*= "spell id"*/, bool force)

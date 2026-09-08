@@ -9,49 +9,36 @@ using namespace ai;
 
 bool PullStartTrigger::IsActive()
 {
-    const PullStrategy* strategy = PullStrategy::Get(ai);
-    return strategy && strategy->IsPullPendingToStart();
+    PullStrategy* strategy = PullStrategy::Get(ai);
+    if (!strategy || !strategy->HasTarget()) return false;
+    Unit* target = strategy->GetTarget();
+    if (strategy->HasPullActionIssued() && !bot->IsNonMeleeSpellCasted(true) &&
+        !target->IsInCombat() && !bot->IsInCombat() &&
+        time(nullptr) - strategy->GetPullActionTime() >= 3 &&
+        time(nullptr) - strategy->GetPullStartTime() < strategy->GetMaxPullTime())
+        strategy->RetryPullAction(); // A miss/interruption never restarts the command deadline.
+    return strategy->IsPullPendingToStart();
 }
 
 bool PullEndTrigger::IsActive()
 {
     const PullStrategy* strategy = PullStrategy::Get(ai);
-    if (strategy && strategy->HasPullStarted())
-    {
-        Unit* target = strategy->GetTarget();
-        if (target)
-        {
-            // Check if the pull is taking too long
-            const time_t secondsSincePullStarted = time(0) - strategy->GetPullStartTime();
-            if (secondsSincePullStarted >= strategy->GetMaxPullTime())
-            {
-                return true;
-            }
-            else
-            {
-                float distanceToPullTarget = target->GetDistance(ai->GetBot());
-                // sometimes creatures can reach slightly more than normal attack distance
-                float creatureMeleeRange = ATTACK_DISTANCE + BASE_MELEERANGE_OFFSET + 1;
+    if (!strategy || !strategy->HasPullStarted()) return false;
+    Unit* target = strategy->GetTarget();
+    if (!target || !target->IsAlive() || !target->IsInWorld() || !bot->IsInMap(target)) return true;
+    if (bot->IsNonMeleeSpellCasted(true)) return false;
+    if (time(nullptr) - strategy->GetPullStartTime() >= strategy->GetMaxPullTime()) return true;
+    if (!target->IsInCombat()) return false;
 
-                if (distanceToPullTarget <= creatureMeleeRange || (target->IsNonMeleeSpellCasted(true) && target->IsInCombat()) || (secondsSincePullStarted >= 10 && target->GetTarget() != bot) || (ai->IsRanged(bot) && distanceToPullTarget <= ai->GetRange("spell")))
-                {
-                    if (ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT))
-                    {
-                        PositionMap& posMap = AI_VALUE(PositionMap&, "position");
-                        PositionEntry pullPosition = posMap["pull"];
-                        if (pullPosition.isSet())
-                        {
-                            distanceToPullTarget = bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z);
-                            return distanceToPullTarget <= ai->GetRange("follow");
-                        }
-                    }
+    // A party member taking the pull must not wait ten seconds for tank combat.
+    Unit* victim = target->GetVictim();
+    if (victim && victim != bot && bot->IsInGroup(victim)) return true;
 
-                    // Check if the pulled target has approached the bot
-                    return true;
-                }
-            }
-        }
-    }
+    const float meleeRange = ATTACK_DISTANCE + BASE_MELEERANGE_OFFSET + 1;
+    if (target->GetDistance(bot) <= meleeRange) return true;
+    if (!ai->HasStrategy("pull back", BotState::BOT_STATE_COMBAT)) return true;
 
-    return false;
+    PositionEntry pullPosition = AI_VALUE(PositionMap&, "position")["pull"];
+    if (!pullPosition.isSet()) return true;
+    return bot->GetDistance(pullPosition.x, pullPosition.y, pullPosition.z) <= ai->GetRange("follow");
 }

@@ -1,4 +1,5 @@
 ﻿#include "playerbot/playerbot.h"
+#include "playerbot/strategy/generic/PullStrategy.h"
 #include "UseConsumableAction.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -775,8 +776,17 @@ bool UseConsumableAction::isPossible()
 
 bool UseConsumableAction::isUseful()
 {
-    if (bot->IsInCombat())
+    if (bot->IsInCombat() || ai->IsStateActive(BotState::BOT_STATE_COMBAT))
         return false;
+    const PullStrategy* pull = PullStrategy::Get(ai);
+    if (pull && pull->HasTarget()) return false;
+    if (Group* group = bot->GetGroup())
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->getSource();
+            if (member && member->IsInWorld() && bot->IsInMap(member) && member->IsInCombat() &&
+                bot->GetDistance(member) <= sPlayerbotAIConfig.reactDistance) return false;
+        }
 
     if (ai->HasCheat(BotCheatMask::item))
         return false;
@@ -793,6 +803,7 @@ bool UseConsumableAction::isUseful()
 bool UseConsumableAction::Execute(Event& event)
 {
     selectedItemId = 0;
+    if (!isUseful() || !isPossible()) return false;
 
     if (bot->IsNonMeleeSpellCasted(false, false, true))
         return false;

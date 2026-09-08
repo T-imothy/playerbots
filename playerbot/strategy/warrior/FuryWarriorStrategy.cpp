@@ -877,14 +877,14 @@ void FuryWarriorRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers
     WarriorRaidStrategy::InitDeadTriggers(triggers);
 }
 
-void FuryWarriorAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
-{
-    WarriorAoeStrategy::InitCombatTriggers(triggers);
-}
-
 void FuryWarriorAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     WarriorAoeStrategy::InitNonCombatTriggers(triggers);
+}
+
+void FuryWarriorAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+    WarriorAoeStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
         "melee medium aoe",

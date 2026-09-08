@@ -173,7 +173,7 @@ namespace ai
                 creators["thunder clap and rage"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "thunder clap", "medium rage available"); };
                 creators["thunder clap and rage and aoe"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "thunder clap and rage", "ranged light aoe"); };
                 creators["intercept can cast"] = [](PlayerbotAI* ai) { return new InterceptCanCastTrigger(ai); };
-                creators["intercept and far enemy"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "enemy is out of melee", "intercept can cast"); };
+                creators["intercept and far enemy"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "enemy out of melee", "intercept can cast"); };
                 creators["intercept and rage"] = [](PlayerbotAI* ai) { return new TwoTriggers(ai, "intercept and far enemy", "light rage available"); };
                 creators["recklessness"] = [](PlayerbotAI* ai) { return new RecklessnessTrigger(ai); };
                 creators["slam"] = [](PlayerbotAI* ai) { return new SlamTrigger(ai); };

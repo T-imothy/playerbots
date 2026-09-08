@@ -209,7 +209,7 @@ bool ReturnToPullPositionAction::isPossible()
     if (stayPosition.isSet())
     {
         PullStrategy* strategy = PullStrategy::Get(ai);
-        if (strategy && strategy->HasPullStarted())
+        if (strategy && strategy->HasPullActionIssued() && !bot->IsNonMeleeSpellCasted(true))
         {
             Unit* target = strategy->GetTarget();
             if (target)

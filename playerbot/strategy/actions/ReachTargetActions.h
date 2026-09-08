@@ -191,6 +191,24 @@ namespace ai
             range = range > threshold ? range - threshold : range;
         }
 
+        bool isUseful() override
+        {
+            PullStrategy* strategy = PullStrategy::Get(ai);
+            if (!strategy || strategy->HasPullActionIssued()) return false;
+            spellName = strategy->GetSpellName();
+            range = strategy->GetRange();
+            if (range > 5.0f) range -= 5.0f;
+            float maximum = 0.0f, minimum = 0.0f;
+            Unit* target = GetTarget();
+            if (target && ai->IsMelee(bot) && ai->GetSpellRange(spellName, &maximum, &minimum) &&
+                target->GetDistance(bot, true, DIST_CALC_COMBAT_REACH) < minimum)
+            {
+                range = 0.0f;
+                spellName.clear(); // Close the ranged dead zone using native melee movement.
+            }
+            return ReachTargetAction::isUseful();
+        }
+
         std::string GetTargetName() override { return "pull target"; }
     };
 

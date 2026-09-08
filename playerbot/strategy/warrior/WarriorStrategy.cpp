@@ -4,79 +4,8 @@
 
 using namespace ai;
 
-class WarriorStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
-{
-public:
-    WarriorStrategyActionNodeFactory()
-    {
-        /*
-        // Stance requirements
-        // battle only
-        creators["charge"] = &charge;
-        creators["mocking blow"] = &mocking_blow;
-        creators["overpower"] = &overpower;
-        creators["sweeping strikes"] = &sweeping strikes;
-
-        // berserker only
-        creators["whirlwind"] = &whirlwind;
-        creators["berserker rage"] = &berserker_rage;
-        creators["recklessness"] = &recklessness;
-        creators["pummel"] = &pummel;
-        creators["intercept"] = &intercept;
-
-        // defensive only
-        creators["taunt"] = &taunt;
-        creators["revenge"] = &revenge;
-        creators["shield block"] = &shield_block;
-        creators["disarm"] = &disarm;
-        creators["shield wall"] = &shield_wall;
-        creators["intervene"] = &intervene;
-        */
-
-        creators["berserker rage"] = &berserker_rage;
-    }
-
-private:
-    /*
-    // Stance requirements
-    ACTION_NODE_P(charge, "charge", "battle stance");
-
-    ACTION_NODE_P(mocking_blow, "mocking blow", "battle stance");
-
-    ACTION_NODE_P(overpower, "overpower", "battle stance");
-
-    ACTION_NODE_P(sweeping strikes, "sweeping strikes", "battle stance");
-
-    ACTION_NODE_P(whirlwind, "whirlwind", "berserker stance");
-
-    ACTION_NODE_P(berserker_rage, "berserker rage", "berserker stance");
-
-    ACTION_NODE_P(recklessness, "recklessness", "berserker stance");
-
-    ACTION_NODE_P(pummel, "pummel", "berserker stance");
-
-    ACTION_NODE_P(intercept, "intercept", "berserker stance");
-
-    ACTION_NODE_P(taunt, "taunt", "defensive stance");
-
-    ACTION_NODE_P(revenge, "revenge", "defensive stance");
-
-    ACTION_NODE_P(shield_block, "shield block", "defensive stance");
-
-    ACTION_NODE_P(disarm, "disarm", "defensive stance");
-
-    ACTION_NODE_P(shield_wall, "shield wall", "defensive stance");
-
-    ACTION_NODE_P(intervene, "intervene", "defensive stance");
-
-    */
-
-    ACTION_NODE_P(berserker_rage, "berserker rage", "berserker stance");
-};
-
 WarriorStrategy::WarriorStrategy(PlayerbotAI* ai) : ClassStrategy(ai)
 {
-    actionNodeFactories.Add(std::make_unique<WarriorStrategyActionNodeFactory>());
 }
 
 #ifdef MANGOSBOT_ZERO // Vanilla
@@ -559,6 +488,7 @@ void WarriorCcRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigg
 void WarriorBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     BuffStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("feared", NextAction::array(0, new NextAction("berserker rage", ACTION_INTERRUPT), nullptr)));
 
     triggers.push_back(new TriggerNode(
         "battle shout",

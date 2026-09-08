@@ -75,14 +75,14 @@ namespace ai
     BUFF_ACTION(CastRampageAction, "rampage");
 
     // protection
-    SPELL_ACTION_U(CastTauntAction, "taunt", GetTarget() && GetTarget()->GetVictim() && GetTarget()->GetVictim() != bot);
+    SPELL_ACTION_U(CastTauntAction, "taunt", CastSpellAction::isUseful() && GetTarget() && GetTarget()->GetVictim() && GetTarget()->GetVictim() != bot);
     SNARE_ACTION(CastTauntOnSnareTargetAction, "taunt");
     BUFF_ACTION(CastBloodrageAction, "bloodrage");
     MELEE_ACTION(CastShieldBashAction, "shield bash");
     ENEMY_HEALER_ACTION(CastShieldBashOnEnemyHealerAction, "shield bash");
     MELEE_ACTION(CastRevengeAction, "revenge");
     BUFF_ACTION(CastShieldBlockAction, "shield block");
-    MELEE_DEBUFF_ACTION_U(CastDisarmAction, "disarm", GetTarget() && GetTarget()->IsPlayer() ? !ai->IsRanged((Player*)GetTarget()) : CastMeleeDebuffSpellAction::isUseful());
+    MELEE_DEBUFF_ACTION_U(CastDisarmAction, "disarm", CastMeleeDebuffSpellAction::isUseful() && GetTarget() && (!GetTarget()->IsPlayer() || !ai->IsRanged((Player*)GetTarget())));
     MELEE_DEBUFF_ENEMY_ACTION(CastDisarmOnAttackerAction, "disarm");
     BUFF_ACTION(CastShieldWallAction, "shield wall");
     // protection 2.4.3
@@ -128,6 +128,8 @@ namespace ai
 
         virtual bool isUseful() override
         {
+            if (!CastSpellAction::isUseful()) return false;
+
             Unit* target = GetTarget();
             if (!target)
                 return false;
@@ -140,9 +142,9 @@ namespace ai
                 uint32 mortalStrike = AI_VALUE2(uint32, "spell id", "mortal strike");
                 uint32 shieldSlam = AI_VALUE2(uint32, "spell id", "shield slam");
 
-                if ((bloodThirst && bot->IsSpellReady(bloodThirst)) ||
-                    (mortalStrike && bot->IsSpellReady(mortalStrike)) ||
-                    (shieldSlam && bot->IsSpellReady(shieldSlam)))
+                if ((bloodThirst && ai->CanCastSpell(bloodThirst, target, 0)) ||
+                    (mortalStrike && ai->CanCastSpell(mortalStrike, target, 0)) ||
+                    (shieldSlam && ai->CanCastSpell(shieldSlam, target, 0)))
                 {
                     return false;
                 }
@@ -162,6 +164,8 @@ namespace ai
 
         virtual bool isUseful() override
         {
+            if (!CastSpellAction::isUseful()) return false;
+
             Unit* target = GetTarget();
             if (!target)
                 return false;
@@ -172,7 +176,7 @@ namespace ai
 
             if (shieldSlam)
             {
-                return !bot->IsSpellReady(shieldSlam);
+                return !ai->CanCastSpell(shieldSlam, target, 0);
             }
 
             return true;
