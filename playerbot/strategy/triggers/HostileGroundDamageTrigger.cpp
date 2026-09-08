@@ -28,6 +28,24 @@ namespace
             const SpellEntry* spell = sServerFacade.LookupSpellInfo(area->GetSpellId());
             if (!spell || area->GetEffIndex() >= MAX_EFFECT_INDEX) return false;
             const auto aura = spell->EffectApplyAuraName[area->GetEffIndex()];
+            bool triggeredDamage = false;
+            if (aura == SPELL_AURA_PERIODIC_TRIGGER_SPELL &&
+                spell->Effect[area->GetEffIndex()] == SPELL_EFFECT_PERSISTENT_AREA_AURA)
+            {
+                // The aura's affected unit casts self-targeted payloads. Inspect
+                // one hop only: Felfire/Doomfire damage is here, while summons,
+                // healing and scripted dummy effects (e.g. Flame Wreath) are not.
+                const SpellEntry* payload = sServerFacade.LookupSpellInfo(spell->EffectTriggerSpell[area->GetEffIndex()]);
+                if (payload && payload->EffectImplicitTargetA[EFFECT_INDEX_0] == TARGET_UNIT_CASTER)
+                    for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
+                        if (payload->Effect[i] == SPELL_EFFECT_SCHOOL_DAMAGE &&
+                            payload->EffectImplicitTargetA[i] == TARGET_UNIT_CASTER && !payload->EffectImplicitTargetB[i])
+                        {
+                            triggeredDamage = true;
+                            break;
+                        }
+                // Keep the parent spell for native area-target eligibility.
+            }
             bool delayedDamage = false;
 #ifndef MANGOSBOT_ZERO
             // Native Magtheridon Debris is a warning dummy area. Its script
@@ -45,7 +63,7 @@ namespace
                 delayedDamage = true;
             }
 #endif
-            return (delayedDamage || aura == SPELL_AURA_PERIODIC_DAMAGE || aura == SPELL_AURA_PERIODIC_DAMAGE_PERCENT ||
+            return (triggeredDamage || delayedDamage || aura == SPELL_AURA_PERIODIC_DAMAGE || aura == SPELL_AURA_PERIODIC_DAMAGE_PERCENT ||
                 aura == SPELL_AURA_PERIODIC_LEECH) && area->CanAttackSpell(bot, spell, true);
         }
     };

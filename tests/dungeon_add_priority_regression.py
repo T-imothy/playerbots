@@ -43,7 +43,7 @@ struct Player:Unit {Player(){player=true;}bool teleport=false;Group*group=nullpt
  bool IsBeingTeleported(){return teleport;}Group*GetGroup(){return group;}unsigned GetMapId(){return map;}
  bool IsInMap(Unit*u){return u&&world&&u->world&&map==u->map&&instance==u->instance&&phase==u->phase;}};
 struct PlayerbotAI {Player*bot;bool real=false,healer=false,tank=false;
- std::list<ObjectGuid> possible;std::map<ObjectGuid,Unit*>units;ObjectGuid command=0;Unit*marked=nullptr;Unit*current=nullptr;
+ std::list<ObjectGuid> possible;std::map<ObjectGuid,Unit*>units;ObjectGuid command=0;Unit*marked=nullptr;Unit*current=nullptr;Unit*objective=nullptr;
  bool IsRealPlayer(){return real;}bool IsHeal(Player*){return healer;}bool IsTank(Player*){return tank;}
  Unit* GetUnit(ObjectGuid id){auto i=units.find(id);return i==units.end()?nullptr:i->second;}
  template<class T>T Value(std::string key){
@@ -64,11 +64,24 @@ struct PossibleAttackTargetsValue {
 struct Action{std::string name;std::string getName(){return name;}};
 struct InnerDemonAction{static Unit* GetDemon(PlayerbotAI*){return nullptr;}};
 struct DungeonAddTargetAction {PlayerbotAI*ai;Player*bot;DungeonAddTargetAction(PlayerbotAI*a):ai(a),bot(a->bot){}
- Unit*GetTarget();bool isUseful();Unit*GetThekalTarget(){return nullptr;}Unit*GetGluthTarget(){return nullptr;}Unit*GetSummonObjectiveTarget(){return nullptr;}Unit*GetRaidTotemTarget();Unit*GetTwinEmperorTarget(){return nullptr;}Unit*GetIcecrownAddTarget(){return nullptr;}};
+ Unit*GetTarget();bool isUseful();Unit*GetThekalTarget(){return nullptr;}Unit*GetGluthTarget(){return nullptr;}Unit*GetSummonObjectiveTarget(){return ai->objective;}Unit*GetRaidTotemTarget();Unit*GetTwinEmperorTarget(){return nullptr;}Unit*GetIcecrownAddTarget(){return nullptr;}};
 struct PreserveDungeonAddTargetMultiplier{PlayerbotAI*ai;float GetValue(Action*);};
 #define AI_VALUE(type,key) ai->Value<type>(key)
 __METHODS__
 int main(){
+ {
+  Group group;Player bot;bot.group=&group;bot.map=230;
+  Unit spirit,boss;spirit.map=boss.map=230;boss.guid=1;
+  PlayerbotAI ai{&bot};ai.objective=&spirit;ai.units={{1,&boss}};DungeonAddTargetAction action(&ai);
+  assert(action.GetTarget()==&spirit);
+  ai.healer=true;assert(!action.GetTarget());ai.healer=false;
+  ai.tank=true;assert(!action.GetTarget());ai.tank=false;
+  ai.command=1;assert(!action.GetTarget());ai.command=0;
+  ai.marked=&boss;assert(!action.GetTarget());ai.marked=nullptr;
+  bot.teleport=true;assert(!action.GetTarget());bot.teleport=false;
+  bot.combat=false;assert(!action.GetTarget());bot.combat=true;
+  ai.objective=nullptr;assert(!action.GetTarget());
+ }
  struct TotemCase{unsigned map,owner,entry;};
  for(TotemCase row:{TotemCase{548,21965,22091},{548,21214,22091},{568,23577,24224}}){
   Group group,other;Player bot,tank;bot.group=tank.group=&group;bot.map=tank.map=row.map;

@@ -7,7 +7,7 @@ using namespace ai;
 bool RotatingBeamAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan, encounter::RotatingBeam& beam)
 {
     Player* bot = ai->GetBot();
-    if (bot->GetMapId() != 531 && bot->GetMapId() != 548) return false;
+    if (bot->GetMapId() != 531 && bot->GetMapId() != 548 && bot->GetMapId() != 632) return false;
     plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("rotating beam position")->Get();
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
     EncounterPosition current;

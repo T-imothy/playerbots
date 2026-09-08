@@ -19,6 +19,7 @@ Unit* DungeonAddTargetAction::GetTarget()
     bool engagedStaticAdd = false;
     switch (bot->GetMapId())
     {
+        case 230: break; // Flamelash's native summoned spirits below.
         case 309: bossEntry = 14834; addEntry = 11357; engagedStaticAdd = true; break; // Son of Hakkar: already engaged by this group.
         case 509: bossEntry = 15369; addEntry = 15555; pursuedPlayerAura = 25725; break; // Ayamiss larva feeding on the paralyzed player.
         case 531: break; // Viscidus globs resolved as native summon objectives below.

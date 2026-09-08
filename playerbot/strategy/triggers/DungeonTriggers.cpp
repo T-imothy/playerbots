@@ -247,11 +247,13 @@ bool CloseToHazardTrigger::IsHazardValid(const ObjectGuid& hazzardGuid)
 {
     if (hazzardGuid.IsGameObject())
     {
-        return ai->GetGameObject(hazzardGuid) != nullptr;
+        GameObject* hazard = ai->GetGameObject(hazzardGuid);
+        return hazard && bot->IsInMap(hazard) && hazard->IsSpawned();
     }
     else if (hazzardGuid.IsCreature())
     {
-        return ai->GetCreature(hazzardGuid) != nullptr;
+        Creature* hazard = ai->GetCreature(hazzardGuid);
+        return hazard && bot->IsInMap(hazard) && hazard->IsAlive();
     }
 
     return false;
@@ -304,7 +306,7 @@ std::list<ObjectGuid> CloseToCreatureHazardTrigger::GetPossibleHazards()
 bool CloseToCreatureHazardTrigger::IsHazardValid(const ObjectGuid& hazzardGuid)
 {
     Creature* creatureHazard = ai->GetCreature(hazzardGuid);
-    if (creatureHazard)
+    if (creatureHazard && bot->IsInMap(creatureHazard) && creatureHazard->IsAlive())
     {
         // Check if the creature is not targeting the bot
         if (!creatureHazard->GetVictim() || (creatureHazard->GetVictim()->GetObjectGuid() != bot->GetObjectGuid()))

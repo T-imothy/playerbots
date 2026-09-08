@@ -24,7 +24,9 @@ struct Unit{unsigned entry=0,guid=0,phase=1,created=0,spawner=0;
  unsigned GetUInt32Value(unsigned field){assert(field==UNIT_CREATED_BY_SPELL);return created;}ObjectGuid GetSpawnerGuid(){return spawner;}
  float GetDistance(Unit*u){return std::abs(x-u->x);}Unit* GetVictim(){return victim;}};
 struct Group{};
+struct Map{bool regular=true;bool IsRegularDifficulty(){return regular;}};
 struct Player:Unit{Player(){player=true;}unsigned map=553;bool teleport=false;Group* group=nullptr;
+ Map instance;Map* GetMap(){return &instance;}
  unsigned GetMapId(){return map;}Group* GetGroup(){return group;}bool IsBeingTeleported(){return teleport;}bool IsInMap(Unit*u){return u&&u->phase==phase;}};
 struct PlayerbotAI{Player* bot;Unit* current=nullptr;std::map<unsigned,Unit*> units;std::list<ObjectGuid> near;bool ranged=true;
  bool IsRanged(Player*){return ranged;}
@@ -40,7 +42,7 @@ struct DungeonAddTargetAction{PlayerbotAI* ai;Player* bot;Unit* GetSummonObjecti
 __METHOD__
 int main(){
  struct Row{unsigned map,boss,add;};
- for(Row row: {Row{509,15340,15527},{531,15299,15667},{531,15510,15630},{553,17977,19949},{557,18344,18431},{556,18472,19203},{558,18373,18441},{558,18373,18478},{576,26731,26928},{608,29313,29321},{619,29310,30385},{632,36497,36535},{650,34928,34942}}){
+ for(Row row: {Row{230,9156,9178},{509,15340,15527},{531,15299,15667},{531,15510,15630},{553,17977,19949},{557,18344,18431},{556,18472,19203},{558,18373,18441},{558,18373,18478},{576,26731,26928},{608,29313,29321},{619,29310,30385},{632,36497,36535},{650,34928,34942}}){
   Group group,other;Player bot,tank,source;bot.map=row.map;bot.group=tank.group=source.group=&group;source.guid=4;
   Unit boss,add,duplicate;boss.guid=1;boss.entry=row.boss;boss.victim=&tank;boss.valid=false;
   add.guid=2;add.entry=row.add;add.spawner=1;add.combat=false;add.x=20;
@@ -51,13 +53,20 @@ int main(){
   if(row.map==632){add.spawner=4;add.created=68846;}
   PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&add},{4,&source}};ai.near={1,2};DungeonAddTargetAction a{&ai,&bot};
 #ifdef MANGOSBOT_ZERO
-  if(row.map!=509&&row.map!=531){assert(!a.GetSummonObjectiveTarget());continue;}
+  if(row.map!=230&&row.map!=509&&row.map!=531){assert(!a.GetSummonObjectiveTarget());continue;}
 #elif defined(MANGOSBOT_ONE)
-  if(row.map!=509&&row.map!=531&&row.map!=553&&row.map!=557&&row.map!=556&&row.map!=558){assert(!a.GetSummonObjectiveTarget());continue;}
+  if(row.map!=230&&row.map!=509&&row.map!=531&&row.map!=553&&row.map!=557&&row.map!=556&&row.map!=558){assert(!a.GetSummonObjectiveTarget());continue;}
 #endif
   assert(a.GetSummonObjectiveTarget()==&add);ai.current=&add;
   duplicate=add;duplicate.guid=3;duplicate.x=5;ai.units[3]=&duplicate;ai.near.push_back(3);
-  assert(a.GetSummonObjectiveTarget()==&add);add.alive=false;assert(a.GetSummonObjectiveTarget()==&duplicate);add.alive=true;ai.near.pop_back();
+  assert(a.GetSummonObjectiveTarget()==(row.map==230?&duplicate:&add));
+  if(row.map==230){
+   duplicate.x=20;assert(a.GetSummonObjectiveTarget()==&add); // Equal urgency preserves current target.
+   duplicate.x=25;assert(a.GetSummonObjectiveTarget()==&add);
+   duplicate.x=5;duplicate.spawner=99;assert(a.GetSummonObjectiveTarget()==&add);duplicate.spawner=1;
+   duplicate.cc=true;assert(a.GetSummonObjectiveTarget()==&add);duplicate.cc=false;
+  }
+  add.alive=false;assert(a.GetSummonObjectiveTarget()==&duplicate);add.alive=true;ai.near.pop_back();
   add.cc=true;assert(!a.GetSummonObjectiveTarget());add.cc=false;add.valid=false;assert(!a.GetSummonObjectiveTarget());add.valid=true;
   add.x=61;assert(!a.GetSummonObjectiveTarget());add.x=20;add.phase=2;assert(!a.GetSummonObjectiveTarget());add.phase=1;
   unsigned spawner=add.spawner;add.spawner=99;assert(!a.GetSummonObjectiveTarget());add.spawner=spawner;
@@ -120,7 +129,27 @@ int main(){
   tainted.cc=false;assert(a.GetSummonObjectiveTarget()==&tainted);
  }
 #endif
- std::cout<<"PASS: thirteen objectives, Vashj wave priorities and 25 memories; ownership, phases and lifecycle\n";
+#ifdef MANGOSBOT_TWO
+ {
+  Group group;Player bot,tank;bot.map=576;bot.group=tank.group=&group;bot.instance.regular=false;
+  Unit boss,add,other;boss.entry=26794;boss.guid=1;boss.victim=&tank;
+  add.entry=32665;add.guid=2;add.spawner=1;add.auras.insert(61555);
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&add},{3,&other}};ai.near={1,2};DungeonAddTargetAction a{&ai,&bot};
+  assert(a.GetSummonObjectiveTarget()==&add);
+  bot.instance.regular=true;assert(!a.GetSummonObjectiveTarget());bot.instance.regular=false;
+  add.auras.clear();assert(!a.GetSummonObjectiveTarget());add.auras.insert(61555);
+  add.spawner=3;assert(!a.GetSummonObjectiveTarget());add.spawner=1;
+  add.cc=true;assert(!a.GetSummonObjectiveTarget());add.cc=false;
+  boss.victim=&bot;assert(!a.GetSummonObjectiveTarget());boss.victim=&tank;
+  boss.combat=false;assert(!a.GetSummonObjectiveTarget());boss.combat=true;
+  add.phase=2;assert(!a.GetSummonObjectiveTarget());add.phase=1;
+  for(unsigned entry:{26928u,26929u,26930u}){add.entry=entry;assert(!a.GetSummonObjectiveTarget());}add.entry=32665;
+  other=boss;other.guid=3;other.entry=26731;other.auras.insert(47710);ai.near.push_back(3);
+  assert(!a.GetSummonObjectiveTarget()); // Ambiguous simultaneous encounters are not guessed.
+  other.auras.clear();assert(a.GetSummonObjectiveTarget()==&add);
+ }
+#endif
+ std::cout<<"PASS: fourteen objectives, Vashj wave priorities and 25 memories; ownership, phases and lifecycle\n";
 }
 '''.replace('__METHOD__',method)
 for era in ('ZERO','ONE','TWO'):

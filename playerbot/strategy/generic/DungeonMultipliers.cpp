@@ -15,7 +15,7 @@
 using namespace ai;
 float PreserveRotatingBeamMultiplier::GetValue(Action* action)
 {
-    if (!action || (ai->GetBot()->GetMapId() != 531 && ai->GetBot()->GetMapId() != 548) ||
+    if (!action || (ai->GetBot()->GetMapId() != 531 && ai->GetBot()->GetMapId() != 548 && ai->GetBot()->GetMapId() != 632) ||
         dynamic_cast<RotatingBeamAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
     CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
     if (!dynamic_cast<MovementAction*>(action) && !(spell && spell->HasMovementEffect())) return 1.0f;

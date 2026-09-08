@@ -8,6 +8,31 @@ these tests. Areas 3–5 remain open at the full mechanic-by-mechanic level.
 
 ## Fixed behavior
 
+The [ground-chain and Nexus continuation](ENCOUNTER-GROUND-CHAINS-AND-NEXUS-20260907.md)
+adds shared recognition of native triggered ground damage, normal Ormorok spike
+recovery and heroic Tangler priority. Its new database binding is prepared only.
+
+The [Soccothrates marker continuation](SOCCOTHRATES-CHARGE-MARKER-20260907.md)
+prevents failed charge-target allocation from reusing invalid Felfire coordinates
+and adds retry/revalidation for the native setup.
+
+The [counter initialization continuation](ENCOUNTER-COUNTER-INITIALIZATION-20260907.md)
+repairs six encounters' initial state or repeated cast sequences. These native
+fixes have focused executable coverage and separate development verification.
+
+The [phase and summon continuation](ENCOUNTER-PHASE-AND-SUMMON-RECOVERY-20260907.md)
+adds four native encounter corrections and records a separate unresolved
+Sindragosa Ice Tomb implementation/data gap. Its current development verification
+is separate from production deployment and full encounter completion.
+
+The [resurrection and hazard continuation](ENCOUNTER-RESURRECTION-AND-HAZARDS-20260907.md)
+adds six encounters' focused behavior and recovery fixes. All three native builds
+and the 146-runner suite passed for that development checkpoint.
+
+The [raid retry continuation](ENCOUNTER-RAID-RETRIES-20260907.md) records the next
+ten-encounter development batch and its native evidence. Its verification and
+deployment status are tracked separately from the already released patch notes.
+
 The [native transition recovery continuation](ENCOUNTER-TRANSITION-RECOVERY-20260907.md)
 repairs seven encounters across the applicable cores and records one combined
 build pass plus five focused regression runners. It distinguishes this source

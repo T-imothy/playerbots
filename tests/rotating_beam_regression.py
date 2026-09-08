@@ -107,18 +107,25 @@ int main(){
  assert(RotatingBeamRouteSafe({10,10,0},{{10,20,0}},geometry,20));
  geometry.orientation=2*M_PI_F;geometry.angularSpeed=0;assert(!OutsideRotatingBeam({20,0,0},geometry));
  geometry.halfAngle=-1;assert(!OutsideRotatingBeam({-20,0,0},geometry));
- for(bool lurker:{false,true}){
-  Player bot;bot.guid=1;bot.x=20;bot.map=lurker?548:531;
-  Unit boss;boss.entry=lurker?21217:15589;boss.map=bot.map;unsigned left=lurker?37429:26009,right=lurker?37430:26136,payload=lurker?37433:26029;
-  boss.auras={left};spells[left].EffectAmplitude[0]=spells[right].EffectAmplitude[0]=lurker?200:1000;cones[payload].coneAngle=lurker?10:5;
+ for(unsigned kind:{0u,1u,2u}){
+  const bool lurker=kind==1,devourer=kind==2;
+  Player bot;bot.guid=1;bot.x=20;bot.map=devourer?632:(lurker?548:531);
+  Unit boss;boss.entry=devourer?36502:(lurker?21217:15589);boss.map=bot.map;
+  unsigned left=devourer?68875:(lurker?37429:26009),right=devourer?68876:(lurker?37430:26136),payload=devourer?68873:(lurker?37433:26029);
+  const unsigned period=devourer?500:(lurker?200:1000);const float degrees=lurker?10:5;
+  boss.auras={left};spells[left].EffectAmplitude[0]=spells[right].EffectAmplitude[0]=period;cones[payload].coneAngle=degrees;
   units={&boss};PlayerbotAI ai{&bot};RotatingBeamPositionValue value{&ai,&bot};RotatingBeamAction action(&ai);
   PreserveRotatingBeamMultiplier multiplier{&ai};MovementAction chase(&ai);AttackAction attack(&ai);MoveAwayFromHazard hazard(&ai);CastSpellAction heal,charge;charge.movement=true;
   Event event;EncounterPosition p;RotatingBeam beam;
   auto load=[&](){return ai.context.plan.data=value.Calculate();};
 #ifdef MANGOSBOT_ZERO
-  if(lurker){assert(!load().active&&!ReadRotatingBeam(&ai,&boss,p,beam));continue;}
+  if(lurker||devourer){assert(!load().active&&!ReadRotatingBeam(&ai,&boss,p,beam));continue;}
+#endif
+#ifndef MANGOSBOT_TWO
+  if(devourer){assert(!load().active&&!ReadRotatingBeam(&ai,&boss,p,beam));continue;}
 #endif
   assert(ReadRotatingBeam(&ai,&boss,p,beam)&&beam.sweep>0);
+  if(devourer)assert(std::fabs(beam.angularSpeed-.18f)<.00001f);
   assert(std::fabs(beam.halfAngle-(lurker?5:2.5f)*M_PI_F/180)<.00001f);
   boss.auras={right};assert(ReadRotatingBeam(&ai,&boss,p,beam)&&beam.sweep<0);boss.auras={left,right};assert(!ReadRotatingBeam(&ai,&boss,p,beam));boss.auras={left};
   auto plan=load();assert(plan.active&&action.isUseful()&&action.ShouldReactionInterruptCast());
@@ -134,8 +141,8 @@ int main(){
   boss.instance=2;assert(!load().active);boss.instance=1;
   load();bot.instance=2;assert(!action.Execute(event));bot.instance=1;
   Unit duplicate=boss;duplicate.guid=11;units.push_back(&duplicate);assert(!load().active);units.pop_back();
-  radius=0;assert(!load().active);radius=100;spells[left].EffectAmplitude[0]=0;assert(!load().active);spells[left].EffectAmplitude[0]=lurker?200:1000;
-  cones[payload].coneAngle=0;assert(!load().active);cones[payload].coneAngle=lurker?10:5;
+  radius=0;assert(!load().active);radius=100;spells[left].EffectAmplitude[0]=0;assert(!load().active);spells[left].EffectAmplitude[0]=period;
+  cones[payload].coneAngle=0;assert(!load().active);cones[payload].coneAngle=degrees;
   bot.x=20;ai.valid=false;ai.checks=0;assert(!load().active&&ai.checks<=4);ai.valid=true;
   pathComplete=false;paths=0;assert(!load().active&&paths<=4);pathComplete=true;
   if(lurker){bot.water=true;bot.deep=true;load();assert(!action.ShouldReactionInterruptCast());

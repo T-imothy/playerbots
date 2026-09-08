@@ -16,29 +16,40 @@ code = r'''
 #include <cstdint>
 #include <cmath>
 #include <limits>
+using uint32 = uint32_t;
 enum {TYPEID_DYNAMICOBJECT=1, DYNAMIC_OBJECT_AREA_SPELL=2, MAX_EFFECT_INDEX=3,
  SPELL_AURA_PERIODIC_DAMAGE=4, SPELL_AURA_PERIODIC_DAMAGE_PERCENT=5, SPELL_AURA_PERIODIC_LEECH=6,
- EFFECT_INDEX_0=0, SPELL_AURA_DUMMY=7, SPELL_EFFECT_SCHOOL_DAMAGE=8};
+ EFFECT_INDEX_0=0, SPELL_AURA_DUMMY=7, SPELL_EFFECT_SCHOOL_DAMAGE=8,
+ SPELL_AURA_PERIODIC_TRIGGER_SPELL=23, SPELL_EFFECT_PERSISTENT_AREA_AURA=27, TARGET_UNIT_CASTER=1,
+ TYPEID_GAMEOBJECT=10, TYPEID_UNIT=11};
 struct Map {};
 struct WorldObject {
- Map* map=nullptr; bool world=true; int type=TYPEID_DYNAMICOBJECT;
+ Map* map=nullptr; bool world=true; unsigned phase=1; int type=TYPEID_DYNAMICOBJECT;
  bool IsInWorld() const {return world;} Map* GetMap() const {return map;}
  int GetTypeId() const {return type;}
+ bool IsUnit() const {return type==TYPEID_UNIT;}
 };
-struct Unit:WorldObject {unsigned entry=17257;bool charmed=false;unsigned GetEntry(){return entry;}bool HasCharmer(){return charmed;}};
+struct Unit:WorldObject {Unit(){type=TYPEID_UNIT;}bool alive=true;bool IsAlive()const{return alive;}
+ unsigned entry=17257;bool charmed=false;unsigned GetEntry(){return entry;}bool HasCharmer(){return charmed;}};
+struct GameObject:WorldObject {GameObject(){type=TYPEID_GAMEOBJECT;}bool spawned=true;bool IsSpawned()const{return spawned;}};
 struct Player:WorldObject {unsigned mapId=544;unsigned GetMapId(){return mapId;}
- bool IsInMap(WorldObject* o){return world&&o&&o->world&&o->map==map;}};
-struct SpellEntry {int EffectApplyAuraName[3]={SPELL_AURA_PERIODIC_DAMAGE,0,0};int Effect[3]={SPELL_EFFECT_SCHOOL_DAMAGE,0,0};};
-struct Facade {SpellEntry spell,damage; bool found=true,damageFound=true;
- const SpellEntry* LookupSpellInfo(int id) {return id==30631 ? (damageFound?&damage:nullptr) : (found ? &spell : nullptr);}
+ bool IsInMap(const WorldObject* o){return world&&o&&o->world&&o->map==map
+#ifndef MANGOSBOT_ZERO
+ && (phase&o->phase)!=0
+#endif
+ ;}};
+struct SpellEntry {int EffectApplyAuraName[3]={SPELL_AURA_PERIODIC_DAMAGE,0,0};int Effect[3]={SPELL_EFFECT_SCHOOL_DAMAGE,0,0};
+ int EffectTriggerSpell[3]={0,0,0},EffectImplicitTargetA[3]={1,0,0},EffectImplicitTargetB[3]={0,0,0};};
+struct Facade {SpellEntry spell,damage,payload; bool found=true,damageFound=true,payloadFound=true;
+ const SpellEntry* LookupSpellInfo(int id) {return id==35767 ? (payloadFound?&payload:nullptr) : id==30631 ? (damageFound?&damage:nullptr) : (id && found ? &spell : nullptr);}
 } sServerFacade;
 struct DynamicObject:WorldObject {
  int kind=DYNAMIC_OBJECT_AREA_SPELL, duration=5000, effect=0,spellId=1; float radius=8;Unit* caster=nullptr;
- bool enemy=true, attackable=true;
+ bool enemy=true, attackable=true;const SpellEntry* lastChecked=nullptr;
  int GetType() {return kind;} float GetRadius() {return radius;}
  int GetDuration() {return duration;} bool IsEnemy(Player*) {return enemy;}
  int GetSpellId() {return spellId;} int GetEffIndex() {return effect;}Unit* GetCaster(){return caster;}
- bool CanAttackSpell(Player*,const SpellEntry*,bool) {return attackable;}
+ bool CanAttackSpell(Player*,const SpellEntry* spell,bool) {lastChecked=spell;return attackable;}
 };
 struct WorldPosition {
  bool valid=false; const WorldObject* source=nullptr;
@@ -66,6 +77,14 @@ int main() {
  hazard.expired=true; assert(!hazard.IsValid(&ai));hazard.expired=false;
  hazard.guid.empty=false;hazard.object=&object;object.map=&second;assert(!hazard.IsValid(&ai));
  object.map=&first;object.world=false;assert(!hazard.IsValid(&ai));object.world=true;
+ ai.bot.world=false;assert(!hazard.IsValid(&ai));ai.bot.world=true;
+#ifndef MANGOSBOT_ZERO
+ object.phase=2;assert(!hazard.IsValid(&ai));object.phase=3;assert(hazard.IsValid(&ai));object.phase=1;
+#endif
+ GameObject lava;lava.map=&first;hazard.object=&lava;assert(hazard.IsValid(&ai));
+ lava.spawned=false;assert(!hazard.IsValid(&ai));lava.spawned=true;assert(hazard.IsValid(&ai));
+ Unit zone;zone.map=&first;hazard.object=&zone;assert(hazard.IsValid(&ai));
+ zone.alive=false;assert(!hazard.IsValid(&ai));zone.alive=true;assert(hazard.IsValid(&ai));hazard.object=&object;
  DynamicObject ground;ground.map=&first;HostileDamageAreaCheck check{&ai.bot};
  assert(&check.GetFocusObject()==&ai.bot);assert(check(&ground));assert(!check(nullptr));
  ground.world=false;assert(!check(&ground));ground.world=true;
@@ -82,6 +101,35 @@ int main() {
  sServerFacade.spell.EffectApplyAuraName[0]=99;assert(!check(&ground));
  sServerFacade.spell.EffectApplyAuraName[0]=SPELL_AURA_PERIODIC_DAMAGE_PERCENT;assert(check(&ground));
  sServerFacade.spell.EffectApplyAuraName[0]=SPELL_AURA_PERIODIC_LEECH;assert(check(&ground));
+ // An actual self-damage payload is required; do not flee heals, summons,
+ // scripted Flame Wreath dummies, missing payloads or attacks on other units.
+ auto saved=sServerFacade.spell;
+ auto& parent=sServerFacade.spell;auto& payload=sServerFacade.payload;
+ parent.EffectApplyAuraName[0]=SPELL_AURA_PERIODIC_TRIGGER_SPELL;
+ parent.Effect[0]=SPELL_EFFECT_PERSISTENT_AREA_AURA;parent.EffectTriggerSpell[0]=35767;
+ assert(check(&ground));assert(ground.lastChecked==&parent);
+ ground.enemy=false;assert(!check(&ground));ground.enemy=true;
+ ground.attackable=false;assert(!check(&ground));ground.attackable=true;
+ parent.Effect[0]=6;assert(!check(&ground));parent.Effect[0]=SPELL_EFFECT_PERSISTENT_AREA_AURA;
+ sServerFacade.payloadFound=false;assert(!check(&ground));sServerFacade.payloadFound=true;
+ parent.EffectTriggerSpell[0]=0;assert(!check(&ground));parent.EffectTriggerSpell[0]=35767;
+ for(int harmless : {3,6,10,28}) {payload.Effect[0]=harmless;assert(!check(&ground));}
+ payload.Effect[0]=SPELL_EFFECT_SCHOOL_DAMAGE;
+ payload.EffectImplicitTargetA[0]=6;assert(!check(&ground));payload.EffectImplicitTargetA[0]=1;
+ payload.EffectImplicitTargetB[0]=15;assert(!check(&ground));payload.EffectImplicitTargetB[0]=0;
+ // A later damage slot still has to hit the affected unit; native caster
+ // resolution is determined by the first slot's target.
+ payload.Effect[0]=6;payload.Effect[2]=SPELL_EFFECT_SCHOOL_DAMAGE;
+ payload.EffectImplicitTargetA[2]=1;assert(check(&ground));
+ payload.EffectImplicitTargetA[0]=6;assert(!check(&ground));payload.EffectImplicitTargetA[0]=1;
+ payload.EffectImplicitTargetA[2]=6;assert(!check(&ground));payload.EffectImplicitTargetA[2]=1;
+ payload.EffectImplicitTargetB[2]=15;assert(!check(&ground));payload.EffectImplicitTargetB[2]=0;
+ // The dynamic object's effect index selects the parent aura and payload.
+ parent.EffectApplyAuraName[0]=0;parent.EffectTriggerSpell[0]=0;
+ parent.EffectApplyAuraName[2]=SPELL_AURA_PERIODIC_TRIGGER_SPELL;
+ parent.Effect[2]=SPELL_EFFECT_PERSISTENT_AREA_AURA;parent.EffectTriggerSpell[2]=35767;
+ ground.effect=2;assert(check(&ground));ground.effect=1;assert(!check(&ground));ground.effect=0;
+ sServerFacade.spell=saved;
  Unit boss;boss.map=&first;ground.caster=&boss;ground.spellId=30632;
  sServerFacade.spell.EffectApplyAuraName[0]=SPELL_AURA_DUMMY;
 #ifdef MANGOSBOT_ZERO

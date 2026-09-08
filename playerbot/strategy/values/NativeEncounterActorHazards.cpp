@@ -14,7 +14,7 @@ void ai::AppendNativeEncounterActorHazards(PlayerbotAI* ai, std::list<HazardPosi
     const uint32 map = bot->GetMapId();
     bool supported = map == 534 || map == 546 || map == 564 || map == 568;
 #ifdef MANGOSBOT_TWO
-    supported = supported || map == 603 || map == 631;
+    supported = supported || map == 603 || map == 631 || map == 632;
 #endif
     if (!supported || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() ||
         !bot->GetGroup() || bot->IsBeingTeleported() || bot->HasCharmer() || ai->IsRealPlayer() ||
@@ -44,6 +44,7 @@ void ai::AppendNativeEncounterActorHazards(PlayerbotAI* ai, std::list<HazardPosi
         {603, 32930, 33802, 63977, 63976, 4.0f, 63701},
         {631, 36612, 36672, 69145, 69146, 2.0f}, // Marrowgar's moving Coldflame source.
         {631, 37955, 38163, 71267, 71268, 1.0f, 71266}, // Player-dropped Swarming Shadows, native spawn aura.
+        {632, 36502, 36536, 68854, 68863, 1.0f}, // Well of Souls; normal/heroic payloads share the native radius.
 #endif
     };
     struct ActorCheck

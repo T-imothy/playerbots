@@ -28,6 +28,14 @@ bool ai::ReadRotatingBeam(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan, 
         beam.shelteredInWater = bot->IsInWater() && bot->IsInHighLiquid();
     }
 #endif
+#ifdef MANGOSBOT_TWO
+    else if (bot->GetMapId() == 632 && boss->GetEntry() == 36502)
+    {
+        // Native Wailing Souls rotates by 0.09 radians each 500 ms aura tick.
+        // Both difficulties use the same cone/radius; spell damage stays native.
+        left = 68875; right = 68876; payload = 68873; step = 0.09f;
+    }
+#endif
     else return false;
     const bool turnsLeft = boss->GetSpellAuraHolder(left, boss->GetObjectGuid()) != nullptr;
     const bool turnsRight = boss->GetSpellAuraHolder(right, boss->GetObjectGuid()) != nullptr;
@@ -76,6 +84,9 @@ EncounterPosition RotatingBeamPositionValue::Calculate()
     uint32 entry = bot->GetMapId() == 531 ? 15589 : 0;
 #ifndef MANGOSBOT_ZERO
     if (bot->GetMapId() == 548) entry = 21217;
+#endif
+#ifdef MANGOSBOT_TWO
+    if (bot->GetMapId() == 632) entry = 36502;
 #endif
     if (!entry || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() || !bot->GetGroup()) return plan;
     std::list<Unit*> bosses;

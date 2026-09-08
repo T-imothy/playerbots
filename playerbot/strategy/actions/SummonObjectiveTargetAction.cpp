@@ -13,6 +13,7 @@ Unit* DungeonAddTargetAction::GetSummonObjectiveTarget()
     bool staticBeacon = false;
     switch (bot->GetMapId())
     {
+        case 230: bossEntry = 9156; addEntry = 9178; break; // Flamelash's approaching Burning Spirits.
         case 509: bossEntry = 15340; addEntry = 15527; break;
         case 531: bossEntry = 15299; addEntry = 15667; break;
 #ifndef MANGOSBOT_ZERO
@@ -22,7 +23,7 @@ Unit* DungeonAddTargetAction::GetSummonObjectiveTarget()
         case 557: bossEntry = 18344; addEntry = 18431; staticBeacon = true; break;
         case 558: bossEntry = 18373; break; // Maladaar's player souls and boss-owned avatar.
 #ifdef MANGOSBOT_TWO
-        case 576: bossEntry = 26731; phaseAura = 47710; break; // Telestra's split personalities.
+        case 576: bossEntry = 26731; break; // Telestra's split or heroic Ormorok's Tanglers.
         case 608: bossEntry = 29313; addEntry = 29321; break; // Ichoron globules, including after his first merge.
         case 619: bossEntry = 29310; addEntry = 30385; phaseAura = 56100; break;
         case 632: bossEntry = 36497; addEntry = 36535; playerSummonSpell = 68846; break;
@@ -47,8 +48,15 @@ Unit* DungeonAddTargetAction::GetSummonObjectiveTarget()
     for (const auto& guid : nearby)
     {
         Unit* candidate = ai->GetUnit(guid);
-        if (!live(candidate) || (candidate->GetEntry() != bossEntry &&
-            !(bot->GetMapId() == 531 && candidate->GetEntry() == 15510)) || !candidate->IsInCombat() ||
+        if (!live(candidate)) continue;
+        bool matchingBoss = candidate->GetEntry() == bossEntry ||
+            (bot->GetMapId() == 531 && candidate->GetEntry() == 15510);
+#ifdef MANGOSBOT_TWO
+        if (bot->GetMapId() == 576)
+            matchingBoss = (candidate->GetEntry() == 26731 && candidate->HasAura(47710)) ||
+                (candidate->GetEntry() == 26794 && !bot->GetMap()->IsRegularDifficulty());
+#endif
+        if (!matchingBoss || !candidate->IsInCombat() ||
             candidate->GetVictim() == bot || bot->GetDistance(candidate) > 100 ||
             (phaseAura && !candidate->HasAura(phaseAura))) continue;
         if (boss && boss != candidate) return nullptr;
@@ -77,7 +85,8 @@ Unit* DungeonAddTargetAction::GetSummonObjectiveTarget()
 #endif
 #ifdef MANGOSBOT_TWO
         if (bot->GetMapId() == 576)
-            entryMatches = add->GetEntry() >= 26928 && add->GetEntry() <= 26930;
+            entryMatches = boss->GetEntry() == 26731 ? add->GetEntry() >= 26928 && add->GetEntry() <= 26930 :
+                add->GetEntry() == 32665 && add->HasAura(61555);
         if (bot->GetMapId() == 650)
         {
             // Exact templates from the native 25-spell Summon Memory table.
@@ -117,6 +126,15 @@ Unit* DungeonAddTargetAction::GetSummonObjectiveTarget()
                 (rank(add) == rank(selected) && (add->GetEntry() == 21958 ?
                     add->GetDistance(boss) < selected->GetDistance(boss) :
                     add == current || (selected != current && bot->GetDistance(add) < bot->GetDistance(selected)))))
+                selected = add;
+            continue;
+        }
+        if (bot->GetMapId() == 230)
+        {
+            // A spirit that reaches Flamelash sacrifices itself to strengthen him.
+            // Stop the nearest one first, even when another spirit is selected.
+            if (!selected || add->GetDistance(boss) < selected->GetDistance(boss) ||
+                (add->GetDistance(boss) == selected->GetDistance(boss) && add == current))
                 selected = add;
             continue;
         }

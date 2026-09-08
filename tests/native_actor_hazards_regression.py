@@ -25,7 +25,8 @@ int main(){
   {603,33186,34188,64709,64709,0,1},{603,33186,34188,64734,64734,0,1},
   {603,32930,33632,63347,63346,63343,4},{603,32930,33632,63977,63976,63343,4},
   {603,32930,33802,63347,63346,63701,4},{603,32930,33802,63977,63976,63701,4},
-  {631,36612,36672,69145,69146,0,2},{631,37955,38163,71267,71268,71266,1}};
+  {631,36612,36672,69145,69146,0,2},{631,37955,38163,71267,71268,71266,1},
+  {632,36502,36536,68854,68863,0,1}};
  for(auto row:rows){
   Player bot,member;bot.guid=1;member.guid=2;bot.map=member.map=row.map;
   PlayerbotAI ai(&bot);Group group;group.Add(&bot);group.Add(&member);
@@ -39,7 +40,7 @@ int main(){
 #ifdef MANGOSBOT_ZERO
   assert(hazards.empty());continue;
 #elif defined(MANGOSBOT_ONE)
-  if(row.map==603||row.map==631){assert(hazards.empty());continue;}
+  if(row.map==603||row.map==631||row.map==632){assert(hazards.empty());continue;}
 #endif
   assert(hazards.size()==1&&hazards.front().second==7+row.padding); // Passive actors still count.
   actor.x=25;collect();assert(hazards.front().first.x==25);
