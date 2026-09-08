@@ -723,7 +723,6 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
 
 void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
 {
-    if (EadricRadianceAction::GetBoss(this)) return;
     faceTargetUpdateDelay = faceTargetUpdateDelay > elapsed ? faceTargetUpdateDelay - elapsed : 0U;
     if (faceTargetUpdateDelay <= 0U)
     {

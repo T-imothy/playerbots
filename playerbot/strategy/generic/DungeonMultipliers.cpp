@@ -35,26 +35,6 @@ float PreserveVashjCoreMultiplier::GetValue(Action* action)
     return 0.0f;
 }
 
-float PreserveEadricFacingMultiplier::GetValue(Action* action)
-{
-    if (!action || ai->GetBot()->GetMapId() != 650 || dynamic_cast<EadricRadianceAction*>(action) ||
-        dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
-    CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
-    if (!spell && !dynamic_cast<MovementAction*>(action)) return 1.0f;
-    Unit* boss = EadricRadianceAction::GetBoss(ai);
-    if (!boss) return 1.0f;
-    Player* bot = ai->GetBot();
-    if (spell && !spell->HasMovementEffect() && !bot->HasInArc(boss, 2.5f))
-    {
-        // Stationary friendly casts remain available when their automatic
-        // facing cannot turn the bot back into Radiance's frontal arc.
-        Unit* target = action->GetTarget();
-        if (target && sServerFacade.IsFriendlyTo(bot, target) &&
-            (target == bot || std::fabs(std::remainder(bot->GetAngle(target) - bot->GetAngle(boss), 2 * M_PI_F)) > 1.35f))
-            return 1.0f;
-    }
-    return 0.0f;
-}
 
 float PreserveHeiganDanceMultiplier::GetValue(Action* action)
 {

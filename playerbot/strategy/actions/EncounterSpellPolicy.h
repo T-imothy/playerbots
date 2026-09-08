@@ -22,7 +22,6 @@ namespace ai
     bool HasHakkarPoisonPreparation(Player* bot);
     bool HasEncounterThreatPause(Player* bot);
     bool HasEncounterSpellBomb(Player* bot);
-    bool HasEncounterBrand(Player* bot);
     bool HasEncounterWeaponPause(Player* bot);
     bool ShouldAvoidEncounterOffense(Player* bot, Unit* caster, const SpellEntry* spell, Unit* target);
     bool HasUnsafeEncounterOffense(Player* bot);

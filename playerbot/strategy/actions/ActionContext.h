@@ -403,7 +403,6 @@ namespace ai
             creators["avoid rotating beam"] = [](PlayerbotAI* ai) { return new RotatingBeamAction(ai); };
             creators["vashj core relay"] = [](PlayerbotAI* ai) { return new VashjCoreAction(ai); };
             creators["fight own inner demon"] = [](PlayerbotAI* ai) { return new InnerDemonAction(ai); };
-            creators["eadric face away"] = [](PlayerbotAI* ai) { return new EadricRadianceAction(ai); };
             creators["move against cold"] = [](PlayerbotAI* ai) { return new ColdMovementAction(ai); };
             creators["tharonja skeleton"] = [](PlayerbotAI* ai) { return new TharonjaSkeletonAction(ai); };
             creators["viscidus frost"] = [](PlayerbotAI* ai) { return new ViscidusFrostAction(ai); };

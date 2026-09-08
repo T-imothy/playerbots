@@ -28,26 +28,6 @@ uint32 ai::BossCoverMechanic(PlayerbotAI* ai, Unit* boss, bool keepCover)
         ai->IsRealPlayer() || !boss || !boss->IsInWorld() || !boss->IsAlive() ||
         boss->HasCharmer() || !bot->IsInMap(boss) || bot->GetDistance(boss) > 100 ||
         std::fabs(bot->GetPositionZ() - boss->GetPositionZ()) > 8) return 0;
-#ifdef MANGOSBOT_TWO
-    if (bot->GetMapId() == 631)
-    {
-        if (bot->HasAura(70157) || bot->HasAura(70126)) return 0;
-        if (boss->GetEntry() == 36853 && CurrentBossEscapeSpell(bot, boss)) return 0;
-        if (boss->GetEntry() == 37186 && boss->HasAura(70022))
-        {
-            // Markers need not be in combat. Only a live encounter owner's
-            // actual warning marker supplies the origin of the incoming bomb.
-            Unit* owner = ai->GetUnit(boss->GetSpawnerGuid());
-            return owner && owner->GetEntry() == 36853 && owner->IsInWorld() && owner->IsAlive() &&
-                owner->IsInCombat() && !owner->HasCharmer() && bot->IsInMap(owner) ? 69845 : 0;
-        }
-        if (boss->GetEntry() == 36853 && boss->IsInCombat() && boss->GetVictim() != bot)
-            for (uint32 spell : {70127u, 72528u, 72529u, 72530u})
-                if (const SpellAuraHolder* buffet = bot->GetSpellAuraHolder(spell, boss->GetObjectGuid()))
-                    if (keepCover || buffet->GetStackAmount() >= 5) return spell;
-        return 0;
-    }
-#endif
     if (!boss->IsInCombat()) return 0;
     // Native Sapphiron has different breath timing between eras. Air-phase
     // hover and an actual blocking Ice Block give warning even when the
@@ -94,7 +74,8 @@ uint32 ai::BossCoverMechanic(PlayerbotAI* ai, Unit* boss, bool keepCover)
         // The active tank uses the scripted forge pause to reset. Otherwise
         // dragging Garfrost around a rock also drags the source of Permafrost.
         if (boss->GetVictim() == bot && !forging) return 0;
-        for (uint32 spell : {68786u, 70336u})
+        // Heroic Permafrost ignores rock LOS in the restored upstream data.
+        for (uint32 spell : {68786u})
             if (const SpellAuraHolder* aura = bot->GetSpellAuraHolder(spell, boss->GetObjectGuid()))
                 if (keepCover || forging || aura->GetStackAmount() >= 5) return spell;
     }

@@ -126,7 +126,7 @@ int main(){
  ice.phase=2;assert(calculate().destination.x!=18);ice.phase=1;
  boss.auras.clear();assert(!action.Execute(event)&&!calculate().active);
  bot.map=boss.map=ice.map=658;boss.entry=36494;ice.entry=196485;
- for(unsigned aura:{68786u,70336u}){
+ for(unsigned aura:{68786u}){
   bot.auraId=aura;bot.aura.stacks=5;
 #ifdef MANGOSBOT_TWO
   assert(calculate().active);bot.aura.stacks=1;assert(calculate().active);
@@ -139,28 +139,10 @@ int main(){
   assert(!calculate().active);
 #endif
  }
- // A noncombat marker, absent from attackers, is the bomb's actual LOS source.
- bot.map=boss.map=ice.map=631;boss.entry=36853;boss.z=32;bot.aura.stacks=0;
- Unit marker;marker.map=631;marker.entry=37186;marker.guid=91;marker.owner=1;marker.combat=false;marker.auras={70022};
- ai.units[91]=&marker;gridMarkers={&marker};ice.entry=201722;
-#ifdef MANGOSBOT_TWO
- plan=calculate();assert(plan.active&&unsigned(plan.boss)==91&&plan.spell==69845&&plan.destination.x==18);
- marker.auras.clear();assert(!action.Execute(event)&&!calculate().active);marker.auras={70022};
- marker.owner=99;assert(!calculate().active);marker.owner=1;
- boss.combat=false;assert(!calculate().active);boss.combat=true;
- bot.auras={70126};assert(!calculate().active);bot.auras={70157};assert(!calculate().active);bot.auras.clear();
- marker.phase=2;assert(!calculate().active);marker.phase=1;
- gridMarkers.clear();boss.z=0;bot.auraId=72530;bot.aura.stacks=5;assert(calculate().active);
- bot.aura.stacks=1;assert(calculate().active);bot.aura.stacks=0;assert(!calculate().active);
- bot.aura.stacks=5;boss.victim=&bot;assert(!calculate().active);boss.victim=nullptr;
- plan=calculate();assert(plan.active);spacing={{{plan.destination.x,plan.destination.y,plan.destination.z},20}};
- assert(!action.Execute(event));auto spreadCover=calculate();assert(!spreadCover.active||encounter::OutsideCircles(spreadCover.destination,spacing));spacing.clear();
- plan=calculate();assert(plan.active);boss.cast=&cast;info.Id=70123;cast.state=SPELL_STATE_CASTING;
- assert(!action.Execute(event)&&!calculate().active);boss.cast=nullptr;assert(calculate().active);
-
-#else
+ // Heroic rock LOS and Sindragosa cover handlers were removed with the native audit.
+ bot.auraId=70336;bot.aura.stacks=5;assert(!calculate().active);
+ bot.map=boss.map=ice.map=631;boss.entry=36853;bot.auraId=72530;bot.aura.stacks=5;
  assert(!calculate().active);
-#endif
  std::cout<<"PASS: native cover mechanic gates, stack hysteresis, real-path requirement, stale-cover rejection and safe holds\n";
 }
 '''.replace('__METHODS__',methods).replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix())

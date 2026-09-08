@@ -29,11 +29,6 @@ bool InnerDemonTrigger::IsActive()
     return action.isUseful();
 }
 
-bool EadricRadianceTrigger::IsActive()
-{
-    EadricRadianceAction action(ai);
-    return action.isUseful();
-}
 
 bool HeiganDanceTrigger::IsActive()
 {

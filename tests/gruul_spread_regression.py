@@ -135,32 +135,11 @@ int main(){
 #else
  assert(!get());
 #endif
- bot.mapId=631;boss.entry=36853;bot.auras={70126};nativeRadius=10;
-#ifdef MANGOSBOT_TWO
- assert(get()&&plan.spell==70157&&multiplier.GetValue(&chase)==0);
- bot.auras={70157};assert(!get());bot.auras.clear();ally.auras={70126};assert(get());
- ally.auras={70157};assert(!get());ally.auras.clear();
- bot.auras={69766};assert(!get()); // normal has no splash
- map.difficulty=RAID_DIFFICULTY_10MAN_HEROIC;assert(get());
- BossCoverAction cover;assert(multiplier.GetValue(&cover)==1&&multiplier.GetValue(&chase)==0);
- std::vector<encounter::Circle> splash;EncounterPosition live;assert(GruulShatterThreats(&ai,live,splash));assert(splash[0].radius>20);
- bot.auras={70126,69766};splash.clear();assert(GruulShatterThreats(&ai,live,splash)&&splash[0].radius>20);
- SpellEntry cold; cold.Id=70123;Spell castCold{&cold};boss.cast=&castCold;assert(!get()&&multiplier.GetValue(&chase)==1);boss.cast=nullptr;
- bot.auras.clear();ally.auras={69766};map.difficulty=RAID_DIFFICULTY_25MAN_HEROIC;assert(get());ally.auras.clear();assert(!get());map.difficulty=RAID_DIFFICULTY_10MAN_NORMAL;
-
-#else
+ // Archived tomb/Backlash/falloff mechanics must not reserve movement.
+ bot.mapId=631;boss.entry=36853;bot.auras={70126,69766};nativeRadius=10;
  assert(!get());
-#endif
  bot.mapId=624;boss.entry=33993;bot.auras.clear();SpellEntry nova;Spell castNova{&nova};boss.cast=&castNova;
-#ifdef MANGOSBOT_TWO
- assert(get()&&plan.spell==65279);assert(multiplier.GetValue(&chase)==0);
- assert(encounter::Distance2d(plan.destination,{boss.x,boss.y,boss.z})>encounter::Distance2d({bot.x,bot.y,bot.z},{boss.x,boss.y,boss.z}));
- nova.Id=64216;assert(!get());nova.Id=65279;castNova.state=SPELL_STATE_FINISHED;assert(!get());castNova.state=SPELL_STATE_CASTING;
- boss.z=20;assert(!get());boss.z=0;ai.real=true;assert(!get());ai.real=false;
- boss.combat=false;assert(!get());boss.combat=true;
-#else
  assert(!get());
-#endif
  // Crowded geometry: minimize remaining overlap; no teleport, fictitious safe
  // point or unbounded candidate search when full separation cannot be achieved.
  std::vector<encounter::Circle> circles;

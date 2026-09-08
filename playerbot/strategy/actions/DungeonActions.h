@@ -38,15 +38,6 @@ namespace ai
     protected:
         Unit* GetTarget() override;
     };
-    class EadricRadianceAction : public Action
-    {
-    public:
-        EadricRadianceAction(PlayerbotAI* ai) : Action(ai, "eadric face away") {}
-        bool isUseful() override;
-        bool Execute(Event& event) override;
-        bool ShouldReactionInterruptCast() const override;
-        static Unit* GetBoss(PlayerbotAI* ai);
-    };
     class MoamManaControlAction : public CastSpellAction
     {
     public:

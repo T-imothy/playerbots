@@ -13,8 +13,6 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("avoid rotating beam", 108.0f), NULL)));
     triggers.push_back(new TriggerNode("vashj core relay",
         NextAction::array(0, new NextAction("vashj core relay", 104.0f), NULL)));
-    triggers.push_back(new TriggerNode("eadric face away",
-        NextAction::array(0, new NextAction("eadric face away", 109.0f), NULL)));
     triggers.push_back(new TriggerNode("moam mana control",
         NextAction::array(0, new NextAction("moam mana control", 54.0f), NULL)));
     triggers.push_back(new TriggerNode("tharonja skeleton",
@@ -143,8 +141,6 @@ void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("avoid rotating beam", 108.0f), NULL)));
     triggers.push_back(new TriggerNode("vashj core relay",
         NextAction::array(0, new NextAction("vashj core relay", 104.0f), NULL)));
-    triggers.push_back(new TriggerNode("eadric face away",
-        NextAction::array(0, new NextAction("eadric face away", 109.0f), NULL)));
     triggers.push_back(new TriggerNode("heigan dance",
         NextAction::array(0, new NextAction("heigan dance", 108.0f), NULL)));
     triggers.push_back(new TriggerNode("najentus spine rescue",
@@ -183,7 +179,6 @@ void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
     multipliers.push_back(new PreserveRotatingBeamMultiplier(ai));
     multipliers.push_back(new PreserveVashjCoreMultiplier(ai));
-    multipliers.push_back(new PreserveEadricFacingMultiplier(ai));
     multipliers.push_back(new PreserveHeiganDanceMultiplier(ai));
     multipliers.push_back(new PreserveNajentusSpineMultiplier(ai));
     multipliers.push_back(new PreserveLinkedBurstMultiplier(ai));
@@ -202,7 +197,6 @@ void DungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multiplier
 {
     multipliers.push_back(new PreserveRotatingBeamMultiplier(ai));
     multipliers.push_back(new PreserveVashjCoreMultiplier(ai));
-    multipliers.push_back(new PreserveEadricFacingMultiplier(ai));
     multipliers.push_back(new PreserveHeiganDanceMultiplier(ai));
     multipliers.push_back(new PreserveNajentusSpineMultiplier(ai));
     multipliers.push_back(new PreserveLinkedBurstMultiplier(ai));

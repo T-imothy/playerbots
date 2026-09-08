@@ -18,12 +18,6 @@ namespace ai
         PreserveVashjCoreMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve vashj core relay") {}
         float GetValue(Action* action) override;
     };
-    class PreserveEadricFacingMultiplier : public Multiplier
-    {
-    public:
-        PreserveEadricFacingMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve eadric facing") {}
-        float GetValue(Action* action) override;
-    };
     class PreserveHeiganDanceMultiplier : public Multiplier
     {
     public:

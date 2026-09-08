@@ -50,19 +50,6 @@ bool ai::HasEncounterThreatPause(Player* bot)
         boss->IsInCombat() && !boss->HasCharmer() && bot->IsInMap(boss);
 }
 
-bool ai::HasEncounterBrand(Player* bot)
-{
-#ifdef MANGOSBOT_TWO
-    if (!bot || bot->GetMapId() != 658 || !bot->IsInWorld() || !bot->IsAlive() ||
-        !bot->IsInCombat() || bot->HasCharmer() || bot->IsBeingTeleported() ||
-        !bot->GetPlayerbotAI() || bot->GetPlayerbotAI()->IsRealPlayer()) return false;
-    const SpellAuraHolder* brand = bot->GetSpellAuraHolder(69172);
-    Unit* boss = brand ? brand->GetCaster() : nullptr;
-    return boss && boss->GetEntry() == 36658 && boss->IsInWorld() && boss->IsAlive() &&
-        boss->IsInCombat() && !boss->HasCharmer() && bot->IsInMap(boss);
-#endif
-    return false;
-}
 
 bool ai::HasEncounterWeaponPause(Player* bot)
 {
@@ -89,24 +76,6 @@ bool ai::ShouldAvoidEncounterOffense(Player* bot, Unit* caster, const SpellEntry
     if (caster == bot && !positive && HasEncounterWeaponPause(bot) &&
         !spell->HasAttribute(SPELL_ATTR_EX3_SUPPRESS_CASTER_PROCS) &&
         (spell->DmgClass == SPELL_DAMAGE_CLASS_MELEE || spell->HasAttribute(SPELL_ATTR_EX2_AUTO_REPEAT))) return true;
-#ifdef MANGOSBOT_TWO
-    if (caster == bot && HasEncounterBrand(bot))
-    {
-        if (!positive) return true;
-        // Keep dispels, shields and ordinary buffs available. Healing and
-        // triggered payloads must wait because Brand also copies outgoing heals.
-        for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
-        {
-            const SpellEffectIndex effect = SpellEffectIndex(i);
-            if (spell->Effect[i] == SPELL_EFFECT_HEAL || spell->Effect[i] == SPELL_EFFECT_HEAL_MAX_HEALTH ||
-                spell->Effect[i] == SPELL_EFFECT_HEAL_PCT || spell->Effect[i] == SPELL_EFFECT_HEAL_MECHANICAL ||
-                (IsAuraApplyEffect(spell, effect) && (spell->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_HEAL ||
-                    spell->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_HEALTH_FUNNEL ||
-                    spell->EffectApplyAuraName[i] == SPELL_AURA_OBS_MOD_HEALTH)) ||
-                IsSpellEffectTriggerSpell(spell, effect) || IsSpellEffectTriggerSpellByAura(spell, effect)) return true;
-        }
-    }
-#endif
     if (caster == bot && HasEncounterSpellBomb(bot))
     {
         // A melee ability can still apply a bleed: later periodic ticks use a
@@ -134,21 +103,6 @@ bool ai::ShouldAvoidEncounterOffense(Player* bot, Unit* caster, const SpellEntry
 
 bool ai::HasEncounterSpellBomb(Player* bot)
 {
-#ifdef MANGOSBOT_TWO
-    if (bot && bot->GetMapId() == 631)
-    {
-        if (!bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() || bot->HasCharmer() ||
-            bot->IsBeingTeleported() || !bot->GetPlayerbotAI() || bot->GetPlayerbotAI()->IsRealPlayer()) return false;
-        const SpellAuraHolder* instability = bot->GetSpellAuraHolder(69766);
-        const SpellAuraHolder* unchained = bot->GetSpellAuraHolder(69762);
-        Unit* boss = unchained ? unchained->GetCaster() : nullptr;
-        // Three stacks is a conservative casting budget. Let the five-second
-        // native aura expire instead of refreshing it indefinitely, including
-        // through heals and buffs. Unaffected healers continue normally.
-        return instability && instability->GetStackAmount() >= 3 && boss && boss->GetEntry() == 36853 &&
-            boss->IsInWorld() && boss->IsAlive() && boss->IsInCombat() && !boss->HasCharmer() && bot->IsInMap(boss);
-    }
-#endif
 #ifndef MANGOSBOT_ZERO
     if (!bot || bot->GetMapId() != 556 || !bot->IsInWorld() || !bot->IsAlive() ||
         !bot->IsInCombat() || bot->HasCharmer() || bot->IsBeingTeleported() ||
@@ -163,7 +117,7 @@ bool ai::HasEncounterSpellBomb(Player* bot)
 
 bool ai::HasUnsafeEncounterOffense(Player* bot)
 {
-    const bool stopAttacks = HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot) || HasEncounterBrand(bot) || HasEncounterWeaponPause(bot);
+    const bool stopAttacks = HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot);
     if (!stopAttacks && !HasEncounterSpellBomb(bot)) return false;
     if (stopAttacks && bot->hasUnitState(UNIT_STAT_MELEE_ATTACKING)) return true;
     for (CurrentSpellTypes slot : {CURRENT_MELEE_SPELL, CURRENT_GENERIC_SPELL, CURRENT_AUTOREPEAT_SPELL, CURRENT_CHANNELED_SPELL})
@@ -179,7 +133,7 @@ bool ai::StopUnsafeEncounterOffense(Player* bot, Unit* caster)
 {
     if (!caster || !caster->IsInWorld() || !bot || !bot->IsInMap(caster)) return false;
     const bool stopAttacks = HasEncounterDamagePause(bot) ||
-        (caster == bot && (HasEncounterThreatPause(bot) || HasEncounterBrand(bot) || HasEncounterWeaponPause(bot)));
+        (caster == bot && (HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot)));
     if (!stopAttacks && !(caster == bot && HasEncounterSpellBomb(bot))) return false;
     bool stopped = false;
     if (stopAttacks && caster->hasUnitState(UNIT_STAT_MELEE_ATTACKING))

@@ -21,12 +21,6 @@ namespace ai
         InnerDemonTrigger(PlayerbotAI* ai) : Trigger(ai, "fight own inner demon", 1) {}
         bool IsActive() override;
     };
-    class EadricRadianceTrigger : public Trigger
-    {
-    public:
-        EadricRadianceTrigger(PlayerbotAI* ai) : Trigger(ai, "eadric face away", 1) {}
-        bool IsActive() override;
-    };
     class MoamManaControlTrigger : public Trigger
     {
     public:
