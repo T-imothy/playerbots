@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "PvpTriggers.h"
+#include "playerbot/strategy/values/PvpValues.h"
 #include "playerbot/ServerFacade.h"
 #include "BattleGround/BattleGroundWS.h"
 #include "playerbot/strategy/values/PositionValue.h"
@@ -34,24 +35,7 @@ bool EnemyPlayerNear::IsActive()
 
 bool PlayerHasNoFlag::IsActive()
 {
-#ifdef MANGOS
-    if (ai->GetBot()->InBattleGround())
-    {
-        if (ai->GetBot()->GetBattleGroundTypeId() == BattleGroundTypeId::BATTLEGROUND_WS)
-        {
-            BattleGroundWS *bg = (BattleGroundWS*)ai->GetBot()->GetBattleGround();
-            if (!(bg->GetFlagState(bg->GetOtherTeam(bot->GetTeam())) == BG_WS_FLAG_STATE_ON_PLAYER))
-                return true;
-            if (bot->GetObjectGuid() == bg->GetAllianceFlagCarrierGuid() || bot->GetObjectGuid() == bg->GetHordeFlagCarrierGuid())
-            {
-                return false;
-            }
-            return true;
-        }
-        return false;
-    }
-#endif
-    return false;
+    return ActualBattlegroundType(bot) == BATTLEGROUND_WS && !IsBattlegroundFlagCarrier(bot);
 }
 
 bool PlayerIsInBattleground::IsActive()
@@ -123,105 +107,26 @@ bool BgEndedTrigger::IsActive()
 
 bool PlayerIsInBattlegroundWithoutFlag::IsActive()
 {
-#ifdef MANGOS
-    if (ai->GetBot()->InBattleGround())
-    {
-        if (ai->GetBot()->GetBattleGroundTypeId() == BattleGroundTypeId::BATTLEGROUND_WS)
-        {
-            BattleGroundWS *bg = (BattleGroundWS*)ai->GetBot()->GetBattleGround();
-            if (!(bg->GetFlagState(bg->GetOtherTeam(bot->GetTeam())) == BG_WS_FLAG_STATE_ON_PLAYER))
-                return true;
-            if (bot->GetGUIDLow() == bg->GetAllianceFlagCarrierGuid() || bot->GetGUIDLow() == bg->GetHordeFlagCarrierGuid())
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-#endif
-    return false;
+    return bot->InBattleGround() && !IsBattlegroundFlagCarrier(bot);
 }
 
 bool PlayerHasFlag::IsActive()
 {
-    ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
-    if (bot->InBattleGround())
-    {
-        if (bot->GetBattleGroundTypeId() == BattleGroundTypeId::BATTLEGROUND_WS)
-        {
-            if (pos.isSet() && sServerFacade.GetDistance2d(bot, pos.x, pos.y) < 10.0f)
-                return false;
-
-            BattleGroundWS *bg = (BattleGroundWS*)ai->GetBot()->GetBattleGround();
-
-            if (!bg)
-                return false;
-
-            if (bot->GetObjectGuid() == bg->GetFlagCarrierGuid(TEAM_INDEX_ALLIANCE) || bot->GetObjectGuid() == bg->GetFlagCarrierGuid(TEAM_INDEX_HORDE))
-            {
-                return true;
-            }
-        }
-#ifndef MANGOSBOT_ZERO
-        if (bot->GetBattleGroundTypeId() == BattleGroundTypeId::BATTLEGROUND_EY)
-        {
-            BattleGroundEY* bg = (BattleGroundEY*)ai->GetBot()->GetBattleGround();
-            return bot->GetObjectGuid() == bg->GetFlagCarrierGuid();
-        }
-#endif
-        return false;
-    }
-    return false;
+    return IsBattlegroundFlagCarrier(bot);
 }
 
 bool TeamHasFlag::IsActive()
 {
-#ifdef MANGOS
-    if (ai->GetBot()->InBattleGround())
-    {
-        if (ai->GetBot()->GetBattleGroundTypeId() == BattleGroundTypeId::BATTLEGROUND_WS)
-        {
-            BattleGroundWS *bg = (BattleGroundWS*)ai->GetBot()->GetBattleGround();
-
-            if (bot->GetObjectGuid() == bg->GetAllianceFlagCarrierGuid() || bot->GetObjectGuid() == bg->GetHordeFlagCarrierGuid())
-            {
-                return false;
-            }
-
-            if (bg->GetFlagState(bg->GetOtherTeam(bot->GetTeam())) == BG_WS_FLAG_STATE_ON_PLAYER)
-                return true;
-        }
-        return false;
-    }
-#endif
-    return false;
+    if (ActualBattlegroundType(bot) != BATTLEGROUND_WS || IsBattlegroundFlagCarrier(bot)) return false;
+    BattleGroundWS* bg = static_cast<BattleGroundWS*>(bot->GetBattleGround());
+    return !bg->GetFlagCarrierGuid(GetTeamIndexByTeamId(bg->GetOtherTeam(bot->GetTeam()))).IsEmpty();
 }
 
 bool EnemyTeamHasFlag::IsActive()
 {
-    if (ai->GetBot()->InBattleGround())
-    {
-        if (ai->GetBot()->GetBattleGroundTypeId() == BattleGroundTypeId::BATTLEGROUND_WS)
-        {
-            BattleGroundWS *bg = (BattleGroundWS*)ai->GetBot()->GetBattleGround();
-
-            if (!bg)
-                return false;
-
-            if (bot->GetTeam() == HORDE)
-            {
-                if (!bg->GetFlagCarrierGuid(TEAM_INDEX_HORDE).IsEmpty())
-                    return true;
-            }
-            else
-            {
-                if (!bg->GetFlagCarrierGuid(TEAM_INDEX_ALLIANCE).IsEmpty())
-                    return true;
-            }
-        }
-        return false;
-    }
-    return false;
+    if (ActualBattlegroundType(bot) != BATTLEGROUND_WS) return false;
+    BattleGroundWS* bg = static_cast<BattleGroundWS*>(bot->GetBattleGround());
+    return !bg->GetFlagCarrierGuid(GetTeamIndexByTeamId(bot->GetTeam())).IsEmpty();
 }
 
 bool EnemyFlagCarrierNear::IsActive()

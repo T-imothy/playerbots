@@ -146,6 +146,19 @@ void GenericDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
 	CombatStrategy::InitCombatTriggers(triggers);
 
+    // PvP control complements the shared damage rotation. Native checks retain
+    // range, resource, immunity and cooldown restrictions.
+    if (ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT))
+    {
+        triggers.push_back(new TriggerNode("chains of ice",
+            NextAction::array(0, new NextAction("chains of ice", ACTION_INTERRUPT), NULL)));
+        triggers.push_back(new TriggerNode("strangulate",
+            NextAction::array(0, new NextAction("strangulate", ACTION_INTERRUPT), NULL)));
+        triggers.push_back(new TriggerNode("strangulate on enemy healer",
+            NextAction::array(0, new NextAction("strangulate on enemy healer", ACTION_INTERRUPT), NULL)));
+    }
+
+
 	triggers.push_back(new TriggerNode(
 		"melee high aoe",
 		NextAction::array(0,
@@ -165,7 +178,7 @@ void GenericDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 
     triggers.push_back(new TriggerNode(
         "mind freeze",
-        NextAction::array(0, new NextAction("mind freeze", ACTION_HIGH + 1), NULL)));
+        NextAction::array(0, new NextAction("mind freeze", ACTION_INTERRUPT + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "bone shield",
@@ -177,7 +190,7 @@ void GenericDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 
     triggers.push_back(new TriggerNode(
         "mind freeze on enemy healer",
-        NextAction::array(0, new NextAction("mind freeze on enemy healer", ACTION_HIGH + 1), NULL)));
+        NextAction::array(0, new NextAction("mind freeze on enemy healer", ACTION_INTERRUPT + 1), NULL)));
 
 	triggers.push_back(new TriggerNode(
 		"enemy out of melee",

@@ -164,7 +164,7 @@ Unit* FlagCarrierValue::Calculate()
 
     if (ai->GetBot()->InBattleGround())
     {
-        if (ai->GetBot()->GetBattleGroundTypeId() == BattleGroundTypeId::BATTLEGROUND_WS)
+        if (ActualBattlegroundType(bot) == BattleGroundTypeId::BATTLEGROUND_WS)
         {
             BattleGroundWS *bg = (BattleGroundWS*)ai->GetBot()->GetBattleGround();
 
@@ -188,7 +188,7 @@ Unit* FlagCarrierValue::Calculate()
             }
         }
 #ifndef MANGOSBOT_ZERO
-        if (ai->GetBot()->GetBattleGroundTypeId() == BattleGroundTypeId::BATTLEGROUND_EY)
+        if (ActualBattlegroundType(bot) == BattleGroundTypeId::BATTLEGROUND_EY)
         {
             BattleGroundEY* bg = (BattleGroundEY*)ai->GetBot()->GetBattleGround();
 
@@ -221,4 +221,119 @@ Unit* FlagCarrierValue::Calculate()
 #endif
     }
     return carrier;
+}
+
+BattleGroundTypeId ai::ActualBattlegroundType(Player* player)
+{
+    BattleGround* bg = player ? player->GetBattleGround() : nullptr;
+    if (!bg) return BATTLEGROUND_TYPE_NONE;
+#ifdef MANGOSBOT_TWO
+    if (bg->GetTypeId() == BATTLEGROUND_RB) return bg->GetTypeId(true);
+#endif
+    return bg->GetTypeId();
+}
+
+bool ai::IsBattlegroundFlagCarrier(Player* player)
+{
+    if (!player) return false;
+    BattleGround* bg = player->GetBattleGround();
+    if (ActualBattlegroundType(player) == BATTLEGROUND_WS)
+    {
+        BattleGroundWS* ws = static_cast<BattleGroundWS*>(bg);
+        return ws->GetFlagCarrierGuid(TEAM_INDEX_ALLIANCE) == player->GetObjectGuid() ||
+            ws->GetFlagCarrierGuid(TEAM_INDEX_HORDE) == player->GetObjectGuid();
+    }
+#ifndef MANGOSBOT_ZERO
+    if (ActualBattlegroundType(player) == BATTLEGROUND_EY)
+        return static_cast<BattleGroundEY*>(bg)->GetFlagCarrierGuid() == player->GetObjectGuid();
+#endif
+    return false;
+}
+
+WarsongObjective WarsongObjectiveValue::Calculate()
+{
+    WarsongObjective result;
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
+        ActualBattlegroundType(bot) != BATTLEGROUND_WS)
+        return result;
+    BattleGroundWS* bg = static_cast<BattleGroundWS*>(bot->GetBattleGround());
+    if (bg->GetStatus() != STATUS_IN_PROGRESS) return result;
+    const Team ownTeam = bot->GetTeam();
+    const Team enemyTeam = bg->GetOtherTeam(ownTeam);
+    auto flagState = [bg](Team team)
+    {
+        switch (bg->GetFlagState(team))
+        {
+            case BG_WS_FLAG_STATE_ON_PLAYER: return WarsongFlagState::Carried;
+            case BG_WS_FLAG_STATE_ON_GROUND: return WarsongFlagState::Dropped;
+            default: return WarsongFlagState::Base;
+        }
+    };
+
+    // The same roster ordering gives bots stable jobs. Death does not reshuffle
+    // jobs; roster changes can. Healers get the first escort/return slots.
+    std::vector<Player*> roster;
+    for (const auto& entry : bg->GetPlayers())
+    {
+        Player* member = bg->GetBgMap()->GetPlayer(entry.first);
+        if (!member || !member->IsInWorld()) continue;
+        if (entry.second.playerTeam != ownTeam)
+        {
+            if (member->IsAlive() && member->IsInCombat() && bot->IsWithinDistInMap(member, 30.0f) &&
+                (member->GetVictim() == bot || member->GetSelectionGuid() == bot->GetObjectGuid()))
+                result.pressured = true;
+            continue;
+        }
+        PlayerbotAI* memberAI = member->GetPlayerbotAI();
+        if (memberAI && !memberAI->IsRealPlayer() && !memberAI->HasRealPlayerMaster())
+            roster.push_back(member);
+    }
+    if (std::find(roster.begin(), roster.end(), bot) == roster.end()) roster.push_back(bot);
+    std::sort(roster.begin(), roster.end(), [this](Player* a, Player* b)
+    {
+        const bool healA = ai->IsHeal(a), healB = ai->IsHeal(b);
+        return healA != healB ? healA : a->GetObjectGuid() < b->GetObjectGuid();
+    });
+    const size_t slot = std::distance(roster.begin(), std::find(roster.begin(), roster.end(), bot));
+    const bool support = slot < (roster.size() + 2) / 3;
+    result.carrying = IsBattlegroundFlagCarrier(bot);
+    result.goal = SelectWarsongGoal(flagState(ownTeam), flagState(enemyTeam), result.carrying,
+        support, roster.size() == 1);
+
+    if (result.goal == WarsongGoal::Intercept || result.goal == WarsongGoal::Escort)
+    {
+        const Team flagTeam = result.goal == WarsongGoal::Intercept ? ownTeam : enemyTeam;
+        result.target = bg->GetFlagCarrierGuid(GetTeamIndexByTeamId(flagTeam));
+        Player* carrier = bg->GetBgMap()->GetPlayer(result.target);
+        if (carrier && carrier->IsInWorld() && carrier->IsAlive() && bot->IsInMap(carrier))
+            result.position.Set(carrier->GetPositionX(), carrier->GetPositionY(), carrier->GetPositionZ(), bot->GetMapId());
+        else result.goal = WarsongGoal::None; // state transition: retry next sample
+    }
+    else if (result.goal == WarsongGoal::Return || result.goal == WarsongGoal::Recover)
+    {
+        const Team flagTeam = result.goal == WarsongGoal::Return ? ownTeam : enemyTeam;
+        result.target = bg->GetDroppedFlagGuid(flagTeam);
+        GameObject* flag = bg->GetBgMap()->GetGameObject(result.target);
+        if (flag && flag->IsInWorld() && sServerFacade.isSpawned(flag))
+            result.position.Set(flag->GetPositionX(), flag->GetPositionY(), flag->GetPositionZ(), bot->GetMapId());
+        else result.goal = WarsongGoal::None; // don't send bots to an empty base
+    }
+    return result;
+}
+
+bool ai::ShouldAdvanceWarsongObjective(PlayerbotAI* ai)
+{
+    if (!ai) return false;
+    Player* bot = ai->GetBot();
+    if (!bot || ActualBattlegroundType(bot) != BATTLEGROUND_WS) return false;
+    AiObjectContext* context = ai->GetAiObjectContext();
+    const WarsongObjective objective = AI_VALUE(WarsongObjective, "warsong objective");
+    PositionEntry pos = AI_VALUE(PositionMap&, "position")["bg objective"];
+    if (objective.goal == WarsongGoal::None || !pos.isSet() || pos.mapId != bot->GetMapId()) return false;
+    const float distance = std::sqrt(bot->GetDistance(pos.x, pos.y, pos.z, DIST_CALC_NONE));
+    if (objective.carrying) return distance > 3.0f;
+    // Engage at the objective and defend against immediate pressure, but do not
+    // let a lingering combat flag strand runners in unrelated midfield fights.
+    return !ai->HasRealPlayerMaster() && !objective.pressured && distance > 15.0f &&
+        bot->GetHealthPercent() > sPlayerbotAIConfig.lowHealth;
 }

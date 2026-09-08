@@ -1,6 +1,9 @@
 
 #include "playerbot/playerbot.h"
 #include "BattlegroundStrategy.h"
+#include "playerbot/strategy/Multiplier.h"
+#include "playerbot/strategy/actions/MovementActions.h"
+#include "playerbot/strategy/values/PvpValues.h"
 
 using namespace ai;
 
@@ -56,6 +59,9 @@ void BattlegroundStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigge
 
 void WarsongStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 {
+    triggers.push_back(new TriggerNode("bg active",
+        NextAction::array(0, new NextAction("bg move to objective", ACTION_MOVE + 5), NULL)));
+
     triggers.push_back(new TriggerNode(
         "bg active",
         NextAction::array(0, new NextAction("bg check flag", 70.0f), NULL)));
@@ -79,13 +85,13 @@ void WarsongStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
     triggers.push_back(new TriggerNode(
         "player has flag",
         NextAction::array(0,
-            new NextAction("jump::position bg objective", 80.5f),
-            new NextAction("bg move to objective", 80.0f),
+            new NextAction("jump::position bg objective", ACTION_MOVE + 5.5f),
+            new NextAction("bg move to objective", ACTION_MOVE + 5),
             NULL)));
 
     triggers.push_back(new TriggerNode(
         "player has flag",
-        NextAction::array(0, new NextAction("rocket boots", 81.0f), NULL)));
+        NextAction::array(0, new NextAction("rocket boots", ACTION_INTERRUPT + 5), NULL)));
 
     triggers.push_back(new TriggerNode(
         "very often",
@@ -246,4 +252,52 @@ void ArenaStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 void ArenaStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     InitNonCombatTriggers(triggers);
+}
+
+namespace
+{
+    class WarsongObjectiveMultiplier : public Multiplier
+    {
+    public:
+        WarsongObjectiveMultiplier(PlayerbotAI* ai) : Multiplier(ai, "warsong objective") {}
+        float GetValue(Action* action) override
+        {
+            if (!action || ActualBattlegroundType(bot) != BATTLEGROUND_WS) return 1.0f;
+            const bool advance = ShouldAdvanceWarsongObjective(ai);
+            if (JumpAction* jump = dynamic_cast<JumpAction*>(action))
+                if (jump->getQualifier() == "position bg objective" && !advance) return 0.0f;
+            if (!advance) return 1.0f;
+            const std::string& name = action->getName();
+            const WarsongObjective objective = AI_VALUE(WarsongObjective, "warsong objective");
+            // Let native-legal mobility/support precede travel without outranking
+            // urgent heals. Never promote Cheetah into incoming pressure.
+            if (name == "sprint" || name == "dash" || name == "travel form" || name == "ghost wolf" ||
+                (name == "aspect of the cheetah" && !objective.pressured))
+            {
+                const float relevance = action->getRelevance();
+                return relevance > 0 && relevance < ACTION_INTERRUPT ? ACTION_INTERRUPT / relevance : 1.0f;
+            }
+            if (name == "attack enemy player" || name == "attack enemy flag carrier" ||
+                name == "dps assist" || name == "tank assist")
+            {
+                Unit* target = action->GetTarget();
+                if (target && target->GetObjectGuid() == objective.target && objective.goal == WarsongGoal::Intercept)
+                    return 1.0f;
+                return 0.0f;
+            }
+            // Healing, dispels, interrupts, consumables and self-defense retain
+            // their normal checks; movement priority beats ordinary damage.
+            return 1.0f;
+        }
+    };
+}
+
+void WarsongStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new WarsongObjectiveMultiplier(ai));
+}
+
+void WarsongStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+    multipliers.push_back(new WarsongObjectiveMultiplier(ai));
 }

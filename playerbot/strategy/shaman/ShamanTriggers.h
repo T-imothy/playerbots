@@ -1,4 +1,5 @@
 #pragma once
+#include "ShamanInterrupt.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "ShamanTotemSpells.h"
 
@@ -314,7 +315,7 @@ namespace ai
     class WindShearInterruptSpellTrigger : public InterruptSpellTrigger
     {
     public:
-        WindShearInterruptSpellTrigger(PlayerbotAI* ai) : InterruptSpellTrigger(ai, "wind shear") {}
+        WindShearInterruptSpellTrigger(PlayerbotAI* ai) : InterruptSpellTrigger(ai, ShamanInterruptSpell()) {}
     };
 
     class WaterShieldTrigger : public BuffTrigger
@@ -504,7 +505,7 @@ namespace ai
     class WindShearInterruptEnemyHealerSpellTrigger : public InterruptEnemyHealerTrigger
     {
     public:
-        WindShearInterruptEnemyHealerSpellTrigger(PlayerbotAI* ai) : InterruptEnemyHealerTrigger(ai, "wind shear") {}
+        WindShearInterruptEnemyHealerSpellTrigger(PlayerbotAI* ai) : InterruptEnemyHealerTrigger(ai, ShamanInterruptSpell()) {}
     };
 
     class CurePoisonTrigger : public NeedCureTrigger

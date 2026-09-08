@@ -149,9 +149,9 @@ namespace ai
     BUFF_ACTION(CastAntiMagicZoneAction, "anti-magic zone");
 
 
-	class CastChainsOfIceAction : public CastSpellAction {
+    class CastChainsOfIceAction : public CastSnareSpellAction {
 	public:
-		CastChainsOfIceAction(PlayerbotAI* ai) : CastSpellAction(ai, "chains of ice") {}
+        CastChainsOfIceAction(PlayerbotAI* ai) : CastSnareSpellAction(ai, "chains of ice") {}
 	};
 
 	class CastHungeringColdAction : public CastMeleeSpellAction {
@@ -289,10 +289,16 @@ namespace ai
 		CastMindFreezeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "mind freeze") {}
 	};
 
-	class CastStrangulateAction : public CastMeleeSpellAction {
+    class CastStrangulateAction : public CastSpellAction {
 	public:
-		CastStrangulateAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "strangulate") {}
+        CastStrangulateAction(PlayerbotAI* ai) : CastSpellAction(ai, "strangulate") {}
 	};
+
+    class CastStrangulateOnEnemyHealerAction : public CastSpellOnEnemyHealerAction
+    {
+    public:
+        CastStrangulateOnEnemyHealerAction(PlayerbotAI* ai) : CastSpellOnEnemyHealerAction(ai, "strangulate") {}
+    };
 
     class CastMindFreezeOnEnemyHealerAction : public CastSpellOnEnemyHealerAction
     {

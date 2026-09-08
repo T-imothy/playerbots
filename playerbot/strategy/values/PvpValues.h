@@ -1,10 +1,33 @@
 #pragma once
+#include "WarsongPolicy.h"
+#include "PositionValue.h"
 
 #include "playerbot/strategy/Value.h"
 #include "playerbot/strategy/AiObjectContext.h"
 
 namespace ai
 {
+    BattleGroundTypeId ActualBattlegroundType(Player* player);
+    bool IsBattlegroundFlagCarrier(Player* player);
+    bool ShouldAdvanceWarsongObjective(PlayerbotAI* ai);
+
+    struct WarsongObjective
+    {
+        WarsongGoal goal = WarsongGoal::None;
+        ObjectGuid target;
+        PositionEntry position;
+        bool carrying = false;
+        bool pressured = false;
+    };
+
+    class WarsongObjectiveValue : public CalculatedValue<WarsongObjective>
+    {
+    public:
+        // CalculatedValue intervals are halved internally: refresh once/second.
+        WarsongObjectiveValue(PlayerbotAI* ai) : CalculatedValue(ai, "warsong objective", 2) {}
+        WarsongObjective Calculate() override;
+    };
+
     class BgTypeValue : public ManualSetValue<uint32>
     {
     public:

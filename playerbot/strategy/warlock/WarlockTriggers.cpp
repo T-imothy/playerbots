@@ -99,7 +99,8 @@ bool NoCurseTrigger::IsActive()
 			   !ai->HasAura("curse of shadow", target, false, true) &&
 			   !ai->HasAura("curse of the elements", target, false, true) &&
 			   !ai->HasAura("curse of weakness", target, false, true) &&
-			   !ai->HasAura("curse of tongues", target, false, true);
+               !ai->HasAura("curse of tongues", target, false, true) &&
+                   !ai->HasAura("curse of exhaustion", target, false, true);
 	}
 
 	return false;
@@ -120,7 +121,8 @@ bool NoCurseOnAttackerTrigger::IsActive()
 				!ai->HasAura("curse of shadow", attacker, false, true) &&
 				!ai->HasAura("curse of the elements", attacker, false, true) &&
 				!ai->HasAura("curse of weakness", attacker, false, true) &&
-				!ai->HasAura("curse of tongues", attacker, false, true))
+                !ai->HasAura("curse of tongues", attacker, false, true) &&
+                   !ai->HasAura("curse of exhaustion", attacker, false, true))
 			{
 				return true;
 			}
