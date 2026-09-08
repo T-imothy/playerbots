@@ -5,6 +5,7 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
+#include "playerbot/strategy/values/PvpValues.h"
 
 bool DpsAssistAction::isUseful()
 {
