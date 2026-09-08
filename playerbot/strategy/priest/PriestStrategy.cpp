@@ -25,6 +25,11 @@ public:
         creators["prayer of mending"] = &prayer_of_mending;
         creators["circle of healing"] = &circle_of_healing;
         creators["lightwell"] = &lightwell;
+#ifdef MANGOSBOT_TWO
+        creators["hymn of hope"] = &hymn_of_hope;
+        creators["guardian spirit"] = &guardian_spirit;
+        creators["guardian spirit on party"] = &guardian_spirit_on_party;
+#endif
 #endif
 #ifdef MANGOSBOT_TWO
         creators["divine hymn"] = &divine_hymn;
@@ -95,6 +100,11 @@ private:
     ACTION_NODE_P(prayer_of_mending, "prayer of mending", "remove shadowform");
     ACTION_NODE_P(circle_of_healing, "circle of healing", "remove shadowform");
     ACTION_NODE_P(lightwell, "lightwell", "remove shadowform");
+#ifdef MANGOSBOT_TWO
+    ACTION_NODE_P(hymn_of_hope, "hymn of hope", "remove shadowform");
+    ACTION_NODE_P(guardian_spirit, "guardian spirit", "remove shadowform");
+    ACTION_NODE_P(guardian_spirit_on_party, "guardian spirit on party", "remove shadowform");
+#endif
 #endif
 #ifdef MANGOSBOT_TWO
     ACTION_NODE_P(divine_hymn, "divine hymn", "remove shadowform");
@@ -141,6 +151,29 @@ void PriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 void PriestStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitReactionTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "low health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member low health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "target of attacker",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+#endif
 }
 
 void PriestStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
@@ -383,6 +416,8 @@ void PriestBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "target of attacker",
         NextAction::array(0, new NextAction("elune's grace", ACTION_HIGH + 3), NULL)));
+
+
 }
 
 void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -450,6 +485,7 @@ void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
         "swimming",
         NextAction::array(0, new NextAction("levitate", ACTION_NORMAL), NULL)));
     */
+
 }
 
 void PriestBuffPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -706,6 +742,29 @@ void PriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 void PriestStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitReactionTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "low health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member low health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "target of attacker",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+#endif
 }
 
 void PriestStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
@@ -960,6 +1019,8 @@ void PriestBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "low mana",
         NextAction::array(0, new NextAction("shadowfiend", ACTION_HIGH), NULL)));
+
+
 }
 
 void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1027,6 +1088,7 @@ void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
         "swimming",
         NextAction::array(0, new NextAction("levitate", ACTION_NORMAL), NULL)));
     */
+
 }
 
 void PriestBuffPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1066,6 +1128,10 @@ void PriestBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "inner focus",
         NextAction::array(0, new NextAction("inner focus", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "power infusion",
+        NextAction::array(0, new NextAction("power infusion", ACTION_HIGH), NULL)));
 }
 
 void PriestBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1282,6 +1348,29 @@ void PriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 void PriestStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitReactionTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "low health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member low health",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "target of attacker",
+        NextAction::array(0, new NextAction("stop hymn of hope", ACTION_EMERGENCY), NULL)));
+#endif
 }
 
 void PriestStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
@@ -1528,6 +1617,8 @@ void PriestBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "low mana",
         NextAction::array(0, new NextAction("shadowfiend", ACTION_HIGH), NULL)));
+
+
 }
 
 void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1595,6 +1686,7 @@ void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
         "swimming",
         NextAction::array(0, new NextAction("levitate", ACTION_NORMAL), NULL)));
     */
+
 }
 
 void PriestBuffPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1634,6 +1726,10 @@ void PriestBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "inner focus",
         NextAction::array(0, new NextAction("inner focus", ACTION_HIGH + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "power infusion",
+        NextAction::array(0, new NextAction("power infusion", ACTION_HIGH), NULL)));
 }
 
 void PriestBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

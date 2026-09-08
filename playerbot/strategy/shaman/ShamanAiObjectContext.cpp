@@ -388,6 +388,12 @@ namespace ai
                 creators["update pve strats"] = [](PlayerbotAI* ai) { return new UpdateShamanPveStrategiesAction(ai); };
                 creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdateShamanPvpStrategiesAction(ai); };
                 creators["update raid strats"] = [](PlayerbotAI* ai) { return new UpdateShamanRaidStrategiesAction(ai); };
+                creators["nature's swiftness"] = [](PlayerbotAI* ai) { return new CastUrgentHealingBuffAction(ai, "nature's swiftness"); };
+                creators["nature's swiftness heal"] = [](PlayerbotAI* ai) { return new CastNaturesSwiftnessHealAction(ai, "healing wave", false); };
+                creators["nature's swiftness heal on party"] = [](PlayerbotAI* ai) { return new CastNaturesSwiftnessHealAction(ai, "healing wave", true); };
+#ifdef MANGOSBOT_TWO
+                creators["tidal force"] = [](PlayerbotAI* ai) { return new CastUrgentHealingBuffAction(ai, "tidal force"); };
+#endif
                 creators["earth shield on party tank"] = [](PlayerbotAI* ai) { return new CastEarthShieldOnPartyTankAction(ai); };
             }
         };

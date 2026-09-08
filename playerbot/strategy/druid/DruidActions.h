@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/actions/HealerSupportActions.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 
 namespace ai
@@ -245,6 +246,13 @@ namespace ai
     {
     public:
         CastBarskinAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "barkskin") {}
+        bool isUseful() override
+        {
+#ifdef MANGOSBOT_ZERO
+            if (ai->IsHeal(bot) && bot->GetHealthPercent() >= sPlayerbotAIConfig.criticalHealth) return false;
+#endif
+            return CastBuffSpellAction::isUseful();
+        }
     };
 
     class CastInnervateAction : public CastSpellTargetAction

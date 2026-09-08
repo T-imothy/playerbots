@@ -330,7 +330,9 @@ namespace ai
                 creators["tranquility"] = [](PlayerbotAI* ai) { return new CastTranquilityAction(ai); };
                 creators["bash on enemy healer"] = [](PlayerbotAI* ai) { return new CastBashOnEnemyHealerAction(ai); };
                 creators["omen of clarity"] = [](PlayerbotAI* ai) { return new CastOmenOfClarityAction(ai); };
-                creators["nature's swiftness"] = [](PlayerbotAI* ai) { return new CastNaturesSwiftnessAction(ai); };
+                creators["nature's swiftness heal"] = [](PlayerbotAI* ai) { return new CastNaturesSwiftnessHealAction(ai, "regrowth", false); };
+                creators["nature's swiftness heal on party"] = [](PlayerbotAI* ai) { return new CastNaturesSwiftnessHealAction(ai, "regrowth", true); };
+                creators["nature's swiftness"] = [](PlayerbotAI* ai) { return new CastUrgentHealingBuffAction(ai, "nature's swiftness"); };
                 creators["dash"] = [](PlayerbotAI* ai) { return new CastDashAction(ai); };
                 creators["shred"] = [](PlayerbotAI* ai) { return new CastShredAction(ai); };
                 creators["ravage"] = [](PlayerbotAI* ai) { return new CastRavageAction(ai); };

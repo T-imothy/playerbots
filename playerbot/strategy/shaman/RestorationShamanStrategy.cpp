@@ -72,11 +72,11 @@ void RestorationShamanStrategy::InitCombatTriggers(std::list<TriggerNode*> &trig
 
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("riptide", ACTION_CRITICAL_HEAL), NULL)));
+        NextAction::array(0, new NextAction("lesser healing wave", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("riptide on party", ACTION_CRITICAL_HEAL), NULL)));
+        NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "medium aoe heal",
@@ -97,6 +97,22 @@ void RestorationShamanStrategy::InitCombatTriggers(std::list<TriggerNode*> &trig
     triggers.push_back(new TriggerNode(
         "party member almost full health",
         NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_LIGHT_HEAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("lesser healing wave", ACTION_CRITICAL_HEAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal on party", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_CRITICAL_HEAL + 2), NULL)));
 }
 
 void RestorationShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -113,11 +129,11 @@ void RestorationShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
 
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("riptide", ACTION_CRITICAL_HEAL), NULL)));
+        NextAction::array(0, new NextAction("lesser healing wave", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("riptide on party", ACTION_CRITICAL_HEAL), NULL)));
+        NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "medium health",
@@ -134,6 +150,26 @@ void RestorationShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "party member almost full health",
         NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("lesser healing wave", ACTION_CRITICAL_HEAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal on party", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_CRITICAL_HEAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "medium aoe heal",
+        NextAction::array(0, new NextAction("chain heal", ACTION_MEDIUM_HEAL), NULL)));
 }
 
 void RestorationShamanStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -425,11 +461,25 @@ void RestorationShamanTotemsRaidStrategy::InitNonCombatTriggers(std::list<Trigge
 void RestorationShamanBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBuffStrategy::InitCombatTriggers(triggers);
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("earth shield on party tank", ACTION_HIGH), NULL)));
+#endif
 }
 
 void RestorationShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBuffStrategy::InitNonCombatTriggers(triggers);
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("earth shield on party tank", ACTION_NORMAL), NULL)));
+#endif
 }
 
 void RestorationShamanBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -439,7 +489,7 @@ void RestorationShamanBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*
 
     triggers.push_back(new TriggerNode(
         "shaman weapon",
-        NextAction::array(0, new NextAction("earthliving weapon", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("flametongue weapon", ACTION_HIGH), NULL)));
 }
 
 void RestorationShamanBuffPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -449,7 +499,7 @@ void RestorationShamanBuffPveStrategy::InitNonCombatTriggers(std::list<TriggerNo
 
     triggers.push_back(new TriggerNode(
         "shaman weapon",
-        NextAction::array(0, new NextAction("earthliving weapon", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("flametongue weapon", ACTION_NORMAL), NULL)));
 }
 
 void RestorationShamanBuffPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -459,7 +509,7 @@ void RestorationShamanBuffPvpStrategy::InitCombatTriggers(std::list<TriggerNode*
 
     triggers.push_back(new TriggerNode(
         "shaman weapon",
-        NextAction::array(0, new NextAction("earthliving weapon", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("flametongue weapon", ACTION_HIGH), NULL)));
 }
 
 void RestorationShamanBuffPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -469,7 +519,7 @@ void RestorationShamanBuffPvpStrategy::InitNonCombatTriggers(std::list<TriggerNo
 
     triggers.push_back(new TriggerNode(
         "shaman weapon",
-        NextAction::array(0, new NextAction("earthliving weapon", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("flametongue weapon", ACTION_NORMAL), NULL)));
 }
 
 void RestorationShamanBuffRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -491,6 +541,13 @@ void RestorationShamanBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerN
 void RestorationShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("tidal force", ACTION_CRITICAL_HEAL + 1), NULL)));
+#endif
 }
 
 void RestorationShamanBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -555,11 +612,11 @@ void RestorationShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("riptide", ACTION_CRITICAL_HEAL), NULL)));
+        NextAction::array(0, new NextAction("lesser healing wave", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("riptide on party", ACTION_CRITICAL_HEAL), NULL)));
+        NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "medium aoe heal",
@@ -580,6 +637,22 @@ void RestorationShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "party member almost full health",
         NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_LIGHT_HEAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("lesser healing wave", ACTION_CRITICAL_HEAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal on party", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_CRITICAL_HEAL + 2), NULL)));
 }
 
 void RestorationShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -596,11 +669,11 @@ void RestorationShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
 
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("riptide", ACTION_CRITICAL_HEAL), NULL)));
+        NextAction::array(0, new NextAction("lesser healing wave", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("riptide on party", ACTION_CRITICAL_HEAL), NULL)));
+        NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "medium health",
@@ -617,6 +690,26 @@ void RestorationShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "party member almost full health",
         NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_LIGHT_HEAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("lesser healing wave", ACTION_CRITICAL_HEAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal on party", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_CRITICAL_HEAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "medium aoe heal",
+        NextAction::array(0, new NextAction("chain heal", ACTION_MEDIUM_HEAL), NULL)));
 }
 
 void RestorationShamanStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -912,6 +1005,13 @@ void RestorationShamanBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
     triggers.push_back(new TriggerNode(
         "water shield",
         NextAction::array(0, new NextAction("water shield", ACTION_HIGH), NULL)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("earth shield on party tank", ACTION_HIGH), NULL)));
+#endif
 }
 
 void RestorationShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -921,6 +1021,13 @@ void RestorationShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*
     triggers.push_back(new TriggerNode(
         "water shield",
         NextAction::array(0, new NextAction("water shield", ACTION_NORMAL), NULL)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("earth shield on party tank", ACTION_NORMAL), NULL)));
+#endif
 }
 
 void RestorationShamanBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -930,7 +1037,7 @@ void RestorationShamanBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*
 
     triggers.push_back(new TriggerNode(
         "shaman weapon",
-        NextAction::array(0, new NextAction("earthliving weapon", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("flametongue weapon", ACTION_HIGH), NULL)));
 }
 
 void RestorationShamanBuffPveStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -940,7 +1047,7 @@ void RestorationShamanBuffPveStrategy::InitNonCombatTriggers(std::list<TriggerNo
 
     triggers.push_back(new TriggerNode(
         "shaman weapon",
-        NextAction::array(0, new NextAction("earthliving weapon", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("flametongue weapon", ACTION_NORMAL), NULL)));
 }
 
 void RestorationShamanBuffPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -950,7 +1057,7 @@ void RestorationShamanBuffPvpStrategy::InitCombatTriggers(std::list<TriggerNode*
 
     triggers.push_back(new TriggerNode(
         "shaman weapon",
-        NextAction::array(0, new NextAction("earthliving weapon", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("flametongue weapon", ACTION_HIGH), NULL)));
 }
 
 void RestorationShamanBuffPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -960,27 +1067,19 @@ void RestorationShamanBuffPvpStrategy::InitNonCombatTriggers(std::list<TriggerNo
 
         triggers.push_back(new TriggerNode(
         "shaman weapon",
-        NextAction::array(0, new NextAction("earthliving weapon", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("flametongue weapon", ACTION_NORMAL), NULL)));
 }
 
 void RestorationShamanBuffRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     RestorationShamanBuffStrategy::InitCombatTriggers(triggers);
     ShamanBuffRaidStrategy::InitCombatTriggers(triggers);
-
-    triggers.push_back(new TriggerNode(
-        "earth shield on party tank",
-        NextAction::array(0, new NextAction("earth shield on party tank", ACTION_HIGH), NULL)));
 }
 
 void RestorationShamanBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     RestorationShamanBuffStrategy::InitNonCombatTriggers(triggers);
     ShamanBuffRaidStrategy::InitNonCombatTriggers(triggers);
-
-    triggers.push_back(new TriggerNode(
-        "earth shield on party tank",
-        NextAction::array(0, new NextAction("earth shield on party tank", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "often",
@@ -990,6 +1089,13 @@ void RestorationShamanBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerN
 void RestorationShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("tidal force", ACTION_CRITICAL_HEAL + 1), NULL)));
+#endif
 }
 
 void RestorationShamanBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1079,6 +1185,38 @@ void RestorationShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "party member almost full health",
         NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_LIGHT_HEAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("riptide", ACTION_CRITICAL_HEAL + 3), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("lesser healing wave", ACTION_CRITICAL_HEAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal on party", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("riptide on party", ACTION_CRITICAL_HEAL + 3), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_CRITICAL_HEAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "medium health",
+        NextAction::array(0, new NextAction("riptide", ACTION_MEDIUM_HEAL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member medium health",
+        NextAction::array(0, new NextAction("riptide on party", ACTION_MEDIUM_HEAL + 1), NULL)));
 }
 
 void RestorationShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1116,6 +1254,42 @@ void RestorationShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "party member almost full health",
         NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_LIGHT_HEAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("riptide", ACTION_CRITICAL_HEAL + 3), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("lesser healing wave", ACTION_CRITICAL_HEAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("nature's swiftness heal on party", ACTION_CRITICAL_HEAL + 4), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("riptide on party", ACTION_CRITICAL_HEAL + 3), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member critical health",
+        NextAction::array(0, new NextAction("lesser healing wave on party", ACTION_CRITICAL_HEAL + 2), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "medium health",
+        NextAction::array(0, new NextAction("riptide", ACTION_MEDIUM_HEAL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "party member medium health",
+        NextAction::array(0, new NextAction("riptide on party", ACTION_MEDIUM_HEAL + 1), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "medium aoe heal",
+        NextAction::array(0, new NextAction("chain heal", ACTION_MEDIUM_HEAL), NULL)));
 }
 
 void RestorationShamanStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -1415,6 +1589,13 @@ void RestorationShamanBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
     triggers.push_back(new TriggerNode(
         "water shield",
         NextAction::array(0, new NextAction("water shield", ACTION_HIGH), NULL)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("earth shield on party tank", ACTION_HIGH), NULL)));
+#endif
 }
 
 void RestorationShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1428,6 +1609,13 @@ void RestorationShamanBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*
     triggers.push_back(new TriggerNode(
         "water shield",
         NextAction::array(0, new NextAction("water shield", ACTION_NORMAL), NULL)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("earth shield on party tank", ACTION_NORMAL), NULL)));
+#endif
 }
 
 void RestorationShamanBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1458,25 +1646,24 @@ void RestorationShamanBuffRaidStrategy::InitCombatTriggers(std::list<TriggerNode
 {
     RestorationShamanBuffStrategy::InitCombatTriggers(triggers);
     ShamanBuffRaidStrategy::InitCombatTriggers(triggers);
-
-    triggers.push_back(new TriggerNode(
-        "earth shield on party tank",
-        NextAction::array(0, new NextAction("earth shield on party tank", ACTION_HIGH), NULL)));
 }
 
 void RestorationShamanBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     RestorationShamanBuffStrategy::InitNonCombatTriggers(triggers);
     ShamanBuffRaidStrategy::InitNonCombatTriggers(triggers);
-
-    triggers.push_back(new TriggerNode(
-        "earth shield on party tank",
-        NextAction::array(0, new NextAction("earth shield on party tank", ACTION_NORMAL), NULL)));
 }
 
 void RestorationShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("tidal force", ACTION_CRITICAL_HEAL + 1), NULL)));
+#endif
 }
 
 void RestorationShamanBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

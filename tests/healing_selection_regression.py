@@ -108,7 +108,7 @@ int main(){
  enemy.damage=50;ai.preheal=false;owner.attackerReads=0;assert(selector.Calculate()==&owner&&owner.attackerReads==0);
  owner.phase=2;assert(selector.Calculate()==nullptr);owner.phase=1;owner.teleport=true;assert(selector.Calculate()==nullptr);owner.teleport=false;
  owner.friendly=false;assert(selector.Calculate()==nullptr);owner.friendly=true;owner.maxhp=0;assert(selector.Calculate()==nullptr);owner.maxhp=100;
- bot.bg=true;owner.distance=25;assert(selector.Calculate()==nullptr);bot.bg=false;assert(selector.Calculate()==&owner);owner.distance=0;
+ bot.bg=true;owner.distance=25;assert(selector.Calculate()==&owner);owner.distance=40;assert(selector.Calculate()==&owner);owner.distance=41;assert(selector.Calculate()==nullptr);bot.bg=false;assert(selector.Calculate()==nullptr);owner.distance=25;assert(selector.Calculate()==&owner);owner.distance=0;
  owner.hp=100;ai.rpg.unit=&pet;pet.hp=40;pet.instance=2;assert(selector.Calculate()==nullptr);pet.instance=1;assert(selector.Calculate()==&pet);ai.rpg.unit=nullptr;
  // De-duplicate selected+group candidates before distributing two healers.
  owner.pet=nullptr;a.hp=10;b.hp=20;healer.healer=true;group.Set({&healer,&bot,&a,&b});bot.selection=a.guid;

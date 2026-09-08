@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/actions/HealerSupportActions.h"
 #include "ShamanInterrupt.h"
 
 #include "playerbot/strategy/actions/GenericActions.h"
@@ -530,10 +531,10 @@ namespace ai
 #endif
     };
 
-    class CastEarthShieldOnPartyTankAction : public BuffOnTankAction
+    class CastEarthShieldOnPartyTankAction : public CastMaintainedHealerBuffAction
     {
     public:
-        CastEarthShieldOnPartyTankAction(PlayerbotAI* ai) : BuffOnTankAction(ai, "earth shield") {}
+        CastEarthShieldOnPartyTankAction(PlayerbotAI* ai) : CastMaintainedHealerBuffAction(ai, "earth shield") {}
     };
 
     class SetTotemBars : public Action

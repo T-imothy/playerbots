@@ -81,27 +81,27 @@ void HolyPaladinStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigger
 
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("holy light", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("holy light", ACTION_MEDIUM_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member low health",
-        NextAction::array(0, new NextAction("holy light on party", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("holy light on party", ACTION_MEDIUM_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "medium health",
-        NextAction::array(0, new NextAction("flash of light", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("flash of light", ACTION_MEDIUM_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member medium health",
-        NextAction::array(0, new NextAction("flash of light on party", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("flash of light on party", ACTION_MEDIUM_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "almost full health",
-        NextAction::array(0, new NextAction("flash of light", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("flash of light", ACTION_LIGHT_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member almost full health",
-        NextAction::array(0, new NextAction("flash of light on party", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("flash of light on party", ACTION_LIGHT_HEAL), NULL)));
 }
 
 void HolyPaladinStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -235,6 +235,13 @@ void HolyPaladinAoeRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& 
 void HolyPaladinBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PaladinBuffStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("beacon of light", ACTION_HIGH), new NextAction("sacred shield", ACTION_HIGH - 1), NULL)));
+#endif
 }
 
 void HolyPaladinBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -244,6 +251,13 @@ void HolyPaladinBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tri
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("apply oil", ACTION_NORMAL), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("beacon of light", ACTION_NORMAL), new NextAction("sacred shield", ACTION_NORMAL - 1), NULL)));
+#endif
 }
 
 void HolyPaladinBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -289,6 +303,13 @@ void HolyPaladinBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
     triggers.push_back(new TriggerNode(
         "divine favor",
         NextAction::array(0, new NextAction("divine favor", ACTION_HIGH), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("aura mastery", ACTION_CRITICAL_HEAL + 1), NULL)));
+#endif
 }
 
 void HolyPaladinBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -754,6 +775,13 @@ void HolyPaladinAoeRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& 
 void HolyPaladinBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PaladinBuffStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("beacon of light", ACTION_HIGH), new NextAction("sacred shield", ACTION_HIGH - 1), NULL)));
+#endif
 }
 
 void HolyPaladinBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -763,6 +791,13 @@ void HolyPaladinBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tri
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("apply oil", ACTION_NORMAL), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("beacon of light", ACTION_NORMAL), new NextAction("sacred shield", ACTION_NORMAL - 1), NULL)));
+#endif
 }
 
 void HolyPaladinBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -812,6 +847,13 @@ void HolyPaladinBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
     triggers.push_back(new TriggerNode(
         "divine favor",
         NextAction::array(0, new NextAction("divine favor", ACTION_HIGH), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("aura mastery", ACTION_CRITICAL_HEAL + 1), NULL)));
+#endif
 }
 
 void HolyPaladinBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1289,6 +1331,13 @@ void HolyPaladinAoeRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& 
 void HolyPaladinBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PaladinBuffStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("beacon of light", ACTION_HIGH), new NextAction("sacred shield", ACTION_HIGH - 1), NULL)));
+#endif
 }
 
 void HolyPaladinBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1298,6 +1347,13 @@ void HolyPaladinBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tri
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("apply oil", ACTION_NORMAL), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("beacon of light", ACTION_NORMAL), new NextAction("sacred shield", ACTION_NORMAL - 1), NULL)));
+#endif
 }
 
 void HolyPaladinBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1347,6 +1403,13 @@ void HolyPaladinBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
     triggers.push_back(new TriggerNode(
         "divine favor",
         NextAction::array(0, new NextAction("divine favor", ACTION_HIGH), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode(
+        "often",
+        NextAction::array(0, new NextAction("aura mastery", ACTION_CRITICAL_HEAL + 1), NULL)));
+#endif
 }
 
 void HolyPaladinBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

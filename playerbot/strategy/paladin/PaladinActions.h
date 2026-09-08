@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/actions/HealerSupportActions.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 
 namespace ai
@@ -7,6 +8,17 @@ namespace ai
     // Avoid imposing Divine Plea's healing penalty on a healing-role bot.
     BUFF_ACTION_U(CastDivinePleaAction, "divine plea", !ai->IsHeal(bot) && CastBuffSpellAction::isUseful());
     MELEE_ACTION(CastShieldOfRighteousnessAction, "shield of righteousness");
+    class CastHealingAuraMasteryAction : public CastBuffSpellAction
+    {
+    public:
+        CastHealingAuraMasteryAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "aura mastery") {}
+        bool isUseful() override
+        {
+            return !bot->getAttackers().empty() && ai->HasAura("concentration aura", bot) &&
+                HasHealingPressure(ai, sPlayerbotAIConfig.lowHealth) &&
+                !HasHealingPressure(ai, sPlayerbotAIConfig.criticalHealth) && CastBuffSpellAction::isUseful();
+        }
+    };
 #endif
 	// seals
 	BUFF_ACTION(CastSealOfRighteousnessAction, "seal of righteousness");

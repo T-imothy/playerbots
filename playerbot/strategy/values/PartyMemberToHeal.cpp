@@ -276,8 +276,16 @@ Unit* PartyMemberToProtect::Calculate()
         if (!pVictim || !pVictim->IsPlayer())
             continue;
 
-        if (pVictim == bot)
+        Player* player = static_cast<Player*>(pVictim);
+        if (pVictim == bot || !ai->IsSafe(player) || !player->IsInWorld() || !player->IsAlive() ||
+            player->IsBeingTeleported() || !bot->IsInMap(player) || !bot->IsInGroup(player) ||
+            !sServerFacade.IsFriendlyTo(bot, player) || player->duel)
             continue;
+
+#ifdef MANGOSBOT_TWO
+        if (!(bot->GetPhaseMask() & player->GetPhaseMask()))
+            continue;
+#endif
 
         if (sServerFacade.GetDistance2d(pVictim, bot) > 30.0f)
             continue;

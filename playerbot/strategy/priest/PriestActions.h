@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/actions/HealerSupportActions.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 
 namespace ai
@@ -7,6 +8,7 @@ namespace ai
     BUFF_ACTION_U(CastDispersionAction, "dispersion", bot->IsInCombat() && !ai->IsHeal(bot) && CastBuffSpellAction::isUseful());
     BUFF_ACTION_U(CastDivineHymnAction, "divine hymn", ai->IsHeal(bot) && CastBuffSpellAction::isUseful());
     HEAL_PARTY_ACTION(CastPenanceOnPartyAction, "penance");
+    HEAL_ACTION(CastPenanceAction, "penance");
 #endif
     // disc
     BUFF_ACTION(CastPowerWordFortitudeAction, "power word: fortitude");
@@ -45,8 +47,16 @@ namespace ai
     HEAL_ACTION(CastRenewAction, "renew");
     HEAL_HOT_PARTY_ACTION(CastRenewOnPartyAction, "renew");
     // holy 2.4.3
-    HEAL_PARTY_ACTION(CastPrayerOfMendingAction, "prayer of mending");
-    HEAL_PARTY_ACTION(CastBindingHealAction, "binding heal");
+    class CastPrayerOfMendingAction : public CastMaintainedHealerBuffAction
+    {
+    public:
+        CastPrayerOfMendingAction(PlayerbotAI* ai) : CastMaintainedHealerBuffAction(ai, "prayer of mending") {}
+    };
+    class CastBindingHealAction : public CastSelfAndPartyHealingAction
+    {
+    public:
+        CastBindingHealAction(PlayerbotAI* ai) : CastSelfAndPartyHealingAction(ai, "binding heal") {}
+    };
     
 #ifdef MANGOSBOT_TWO
     AOE_HEAL_ACTION(CastPrayerOfHealingAction, "prayer of healing");

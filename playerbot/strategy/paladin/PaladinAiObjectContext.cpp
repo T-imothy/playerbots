@@ -402,6 +402,9 @@ namespace ai
                 creators["hammer of wrath"] = [](PlayerbotAI* ai) { return new CastHammerOfWrathAction(ai); };
                 creators["holy shield"] = [](PlayerbotAI* ai) { return new CastHolyShieldAction(ai); };
 #ifdef MANGOSBOT_TWO
+                creators["beacon of light"] = [](PlayerbotAI* ai) { return new CastMaintainedHealerBuffAction(ai, "beacon of light"); };
+                creators["sacred shield"] = [](PlayerbotAI* ai) { return new CastMaintainedHealerBuffAction(ai, "sacred shield"); };
+                creators["aura mastery"] = [](PlayerbotAI* ai) { return new CastHealingAuraMasteryAction(ai); };
                 creators["divine plea"] = [](PlayerbotAI* ai) { return new CastDivinePleaAction(ai); };
                 creators["shield of righteousness"] = [](PlayerbotAI* ai) { return new CastShieldOfRighteousnessAction(ai); };
 #endif
