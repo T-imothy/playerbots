@@ -30,7 +30,9 @@ struct Config {uint32 lowHealth=50,criticalHealth=25,mediumHealth=70,lowMana=25;
 struct PlayerbotAI {Player* bot;Player* master=nullptr;Unit* patient=nullptr;bool baseUseful=true,nsReady=true;int casts=0;std::set<std::string> learned;
  Player* GetBot(){return bot;}Player* GetMaster(){return master;}bool IsSafe(Player*p){return p&&p->safe;}bool HasSpell(std::string s){return learned.count(s);}
  bool HasMyAura(std::string s,Player*p){return p->mine.count(s);}bool HasAura(std::string s,Unit*u){auto p=dynamic_cast<Player*>(u);return p&&(p->mine.count(s)||p->auras.count(s));}
- bool IsTank(Player*p){return p->tank;}bool CanCastSpell(std::string s,Player*){return HasSpell(s)&&nsReady;}};
+ bool IsTank(Player*p){return p->tank;}bool CanCastSpell(std::string s,Player*,unsigned){return HasSpell(s)&&nsReady;}
+ struct TargetValue{Unit* value;Unit* Get(){return value;}} cached;
+ PlayerbotAI* GetAiObjectContext(){return this;}template<class T>TargetValue* GetValue(std::string){cached.value=patient;return &cached;}};
 struct Facade {bool IsFriendlyTo(Player*,Player*p){return p->friendly;}float GetDistance2d(Player*,Player*p){return p->distance;}bool isMoving(Player*p){return p->moving;}}sServerFacade;
 #define AI_VALUE(type,key) (ai->patient)
 struct Event {};

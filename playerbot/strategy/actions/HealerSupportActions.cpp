@@ -8,7 +8,7 @@ using namespace ai;
 bool ai::HasHealingPressure(PlayerbotAI* ai, uint32 healthThreshold)
 {
     Player* bot = ai->GetBot();
-    Unit* patient = AI_VALUE(Unit*, "party member to heal");
+    Unit* patient = ai->GetAiObjectContext()->GetValue<Unit*>("party member to heal")->Get();
     const auto needsHeal = [&](Unit* unit) {
         return unit && unit->IsInWorld() && unit->IsAlive() && unit->GetMaxHealth() && bot->IsInMap(unit) &&
             (unit->GetHealthPercent() < healthThreshold || NeedsFullHealingToRemoveAura(unit) || RemainingHealingAbsorb(unit));
@@ -56,7 +56,7 @@ bool CastNaturesSwiftnessHealAction::isUseful()
 {
     Unit* target = GetTarget();
     return target && target->GetHealthPercent() < sPlayerbotAIConfig.criticalHealth &&
-        (ai->HasAura("nature's swiftness", bot) || ai->CanCastSpell("nature's swiftness", bot)) &&
+        (ai->HasAura("nature's swiftness", bot) || ai->CanCastSpell("nature's swiftness", bot, 0)) &&
         CastHealingSpellAction::isUseful();
 }
 
