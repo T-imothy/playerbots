@@ -418,6 +418,7 @@ namespace ai
                 creators["repentance on snare target"] = [](PlayerbotAI* ai) { return new CastRepentanceSnareAction(ai); };
                 creators["repentance on enemy healer"] = [](PlayerbotAI* ai) { return new CastRepentanceOnHealerAction(ai); };
                 creators["holy shock"] = [](PlayerbotAI* ai) { return new CastHolyShockAction(ai); };
+                creators["holy shock on self"] = [](PlayerbotAI* ai) { return new CastHolyShockOnSelfAction(ai); };
                 creators["holy shock on party"] = [](PlayerbotAI* ai) { return new CastHolyShockOnPartyAction(ai); };
                 creators["blessing of freedom"] = [](PlayerbotAI* ai) { return new CastBlessingOfFreedomAction(ai); };
                 creators["avenging wrath"] = [](PlayerbotAI* ai) { return new CastAvengingWrathAction(ai); };

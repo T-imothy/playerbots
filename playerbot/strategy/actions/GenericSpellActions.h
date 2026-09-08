@@ -204,7 +204,7 @@ namespace ai
     class CastHealingSpellAction : public CastAuraSpellAction
     {
     public:
-        CastHealingSpellAction(PlayerbotAI* ai, std::string spell, uint8 estAmount = 15.0f) : CastAuraSpellAction(ai, spell, true), estAmount(estAmount) {}
+        CastHealingSpellAction(PlayerbotAI* ai, std::string spell, uint8 estAmount = 15.0f, bool allowAuraRefresh = false) : CastAuraSpellAction(ai, spell, true), estAmount(estAmount), allowAuraRefresh(allowAuraRefresh) {}
         bool Execute(Event& event) override;
         
     protected:
@@ -215,6 +215,7 @@ namespace ai
 
     protected:
         uint8 estAmount;
+        bool allowAuraRefresh;
     };
 
     class CastAoeHealSpellAction : public CastHealingSpellAction

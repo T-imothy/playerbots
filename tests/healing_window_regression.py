@@ -18,19 +18,20 @@ struct SpellAuraHolder{Unit*caster;int duration=2000;Unit*GetCaster()const{retur
 struct Unit{unsigned entry=16011,map=533,phase=1;bool world=true,alive=true,combat=true,charmed=false;int reduction=-100;SpellAuraHolder*holder=nullptr;std::vector<Aura*>modifiers;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}unsigned GetEntry(){return entry;}
  const SpellAuraHolder*GetSpellAuraHolder(unsigned id){return id==55593?holder:nullptr;}const std::vector<Aura*>&GetAurasByType(unsigned){return modifiers;}
- int GetMaxNegativeAuraModifier(unsigned){return reduction;}
+ int GetMaxNegativeAuraModifier(unsigned){return reduction;}float GetHealthPercent(){return 100;}
 };
 struct Player:Unit{bool teleport=false;bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return map;}
  bool IsInMap(Unit*u){return u&&world&&u->world&&map==u->map&&phase==u->phase;}};
 struct SpellEntry{bool heal=true,channel=false;unsigned cast=2500;};
 bool IsSpellHaveEffect(const SpellEntry*s,unsigned){return s->heal;}bool IsChanneledSpell(const SpellEntry*s){return s->channel;}unsigned GetSpellCastTime(const SpellEntry*s,Player*){return s->cast;}
 struct Facade{SpellEntry spell;const SpellEntry*LookupSpellInfo(unsigned){return &spell;}}sServerFacade;
+struct {float lowHealth=50;}sPlayerbotAIConfig;
 struct Event{};
 struct CastSpellAction{Player*bot;Unit*target;unsigned casts=0;void RefreshSpellId(){}unsigned GetSpellID()const{return spellId;}Unit*GetTarget(){return target;}bool isUseful(){return true;}bool Execute(Event&){++casts;return true;}private:unsigned spellId=1;};
 struct CastAuraSpellAction:CastSpellAction{};
 namespace ai{
  unsigned UpcomingEncounterHealingWindow(Player*,Unit*);bool CanPrecastEncounterHeal(Player*,Unit*,const SpellEntry*);
- struct CastHealingSpellAction:CastAuraSpellAction{bool isUseful();bool Execute(Event&);};
+ struct CastHealingSpellAction:CastAuraSpellAction{bool allowAuraRefresh=false;bool isUseful();bool Execute(Event&);};
  struct CastAoeHealSpellAction:CastHealingSpellAction{bool isUseful();};
 }
 using namespace ai;

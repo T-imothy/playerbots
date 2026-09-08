@@ -19,6 +19,16 @@ public:
         creators["renew"] = &renew;
         creators["renew on party"] = &renew_on_party;
         creators["resurrection"] = &resurrection;
+        creators["prayer of healing"] = &prayer_of_healing;
+#ifndef MANGOSBOT_ZERO
+        creators["binding heal"] = &binding_heal;
+        creators["prayer of mending"] = &prayer_of_mending;
+        creators["circle of healing"] = &circle_of_healing;
+        creators["lightwell"] = &lightwell;
+#endif
+#ifdef MANGOSBOT_TWO
+        creators["divine hymn"] = &divine_hymn;
+#endif
     }
 
 private:
@@ -79,6 +89,16 @@ private:
     ACTION_NODE_P(renew_on_party, "renew on party", "remove shadowform");
 
     ACTION_NODE_P(resurrection, "resurrection", "remove shadowform");
+    ACTION_NODE_P(prayer_of_healing, "prayer of healing", "remove shadowform");
+#ifndef MANGOSBOT_ZERO
+    ACTION_NODE_P(binding_heal, "binding heal", "remove shadowform");
+    ACTION_NODE_P(prayer_of_mending, "prayer of mending", "remove shadowform");
+    ACTION_NODE_P(circle_of_healing, "circle of healing", "remove shadowform");
+    ACTION_NODE_P(lightwell, "lightwell", "remove shadowform");
+#endif
+#ifdef MANGOSBOT_TWO
+    ACTION_NODE_P(divine_hymn, "divine hymn", "remove shadowform");
+#endif
 };
 
 PriestStrategy::PriestStrategy(PlayerbotAI* ai) : ClassStrategy(ai)

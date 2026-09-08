@@ -14,9 +14,24 @@ public:
     }
 
 private:
+#ifdef MANGOSBOT_ZERO
     ACTION_NODE_A(lightwell, "lightwell", "circle of healing");
+#else
+    static ActionNode* lightwell(PlayerbotAI* ai)
+    {
+        return new ActionNode("lightwell",
+            NextAction::array(0, new NextAction("remove shadowform"), nullptr),
+            NextAction::array(0, new NextAction("circle of healing"), nullptr), nullptr);
+    }
 
-    ACTION_NODE_A(circle_of_healing, "circle of healing", "prayer of healing");
+#endif
+
+    static ActionNode* circle_of_healing(PlayerbotAI* ai)
+    {
+        return new ActionNode("circle of healing",
+            NextAction::array(0, new NextAction("remove shadowform"), nullptr),
+            NextAction::array(0, new NextAction("prayer of healing"), nullptr), nullptr);
+    }
 };
 
 HolyPriestStrategy::HolyPriestStrategy(PlayerbotAI* ai) : PriestStrategy(ai)

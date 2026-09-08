@@ -270,6 +270,7 @@ namespace ai
     {
     public:
         CastTranquilityAction(PlayerbotAI* ai) : CastAoeHealSpellAction(ai, "tranquility") {}
+        std::string GetTargetName() override { return "self target"; }
     };
 
     class CastNaturesSwiftnessAction : public CastBuffSpellAction
@@ -657,10 +658,10 @@ namespace ai
         CastEnrageAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "enrage") {}
     };
 
-    class CastLifebloomAction : public CastSpellAction
+    class CastLifebloomAction : public CastHealingSpellAction
     {
     public:
-        explicit CastLifebloomAction(PlayerbotAI* ai) : CastSpellAction(ai, "lifebloom") {}
+        explicit CastLifebloomAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "lifebloom", 15, true) {}
 
         std::string GetTargetName() override { return "party tank without lifebloom"; }
     };

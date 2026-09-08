@@ -26,7 +26,7 @@ void HolyPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("holy shock", ACTION_MEDIUM_HEAL + 2), 
+        NextAction::array(0, new NextAction("holy shock on self", ACTION_MEDIUM_HEAL + 2),
                              new NextAction("holy light", ACTION_MEDIUM_HEAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -545,7 +545,7 @@ void HolyPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "low health",
         NextAction::array(0, new NextAction("divine favor", ACTION_MEDIUM_HEAL + 3), 
-                             new NextAction("holy shock", ACTION_MEDIUM_HEAL + 2), 
+                             new NextAction("holy shock on self", ACTION_MEDIUM_HEAL + 2),
                              new NextAction("holy light", ACTION_MEDIUM_HEAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -1072,7 +1072,7 @@ void HolyPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "low health",
         NextAction::array(0, new NextAction("divine favor", ACTION_MEDIUM_HEAL + 3), 
-                             new NextAction("holy shock", ACTION_MEDIUM_HEAL + 2), 
+                             new NextAction("holy shock on self", ACTION_MEDIUM_HEAL + 2),
                              new NextAction("holy light", ACTION_MEDIUM_HEAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(

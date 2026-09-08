@@ -103,7 +103,7 @@ Unit* PartyMemberToHeal::Calculate()
 
             uint8 health = uint8((double(forecast(player)) * 100.0) / player->GetMaxHealth());
             if (isTank || ((health < sPlayerbotAIConfig.almostFullHealth || NeedsFullHealingToRemoveAura(player) || RemainingHealingAbsorb(player)) &&
-                !IsTargetOfSpellCast(player, predicate)))
+                (health < sPlayerbotAIConfig.criticalHealth || !IsTargetOfSpellCast(player, predicate))))
             { 
                 addCandidate(player);
             }
@@ -136,14 +136,19 @@ Unit* PartyMemberToHeal::Calculate()
         needHeals = tankTargets;
     }
 
+    // Distribute healers within the most urgent health band. A second healer
+    // must not be sent to a healthy tank while the only injured player waits.
+    const auto urgency = [&](Unit* target) {
+        if (target->GetHealthPercent() < sPlayerbotAIConfig.criticalHealth) return 0;
+        if (double(forecast(target)) * 100.0 / target->GetMaxHealth() < sPlayerbotAIConfig.lowHealth) return 1;
+        return 2;
+    };
     std::map<Unit*, uint64> healingNeed;
     for (Unit* target : needHeals)
         healingNeed[target] = uint64(target->GetMaxHealth() - forecast(target)) + RemainingHealingAbsorb(target);
     std::stable_sort(needHeals.begin(), needHeals.end(), [&](Unit* u1, Unit* u2) {
-        // An absorption objective must not outrank a critically injured player.
-        const bool critical1 = u1->GetHealthPercent() < sPlayerbotAIConfig.criticalHealth;
-        const bool critical2 = u2->GetHealthPercent() < sPlayerbotAIConfig.criticalHealth;
-        if (critical1 != critical2) return critical1;
+        const int urgency1 = urgency(u1), urgency2 = urgency(u2);
+        if (urgency1 != urgency2) return urgency1 < urgency2;
         return healingNeed.at(u1) > healingNeed.at(u2);
     });
 
@@ -175,7 +180,10 @@ Unit* PartyMemberToHeal::Calculate()
         healerIndex = 1;
     }
 
-    healerIndex = healerIndex % needHeals.size();
+    const int mostUrgent = urgency(needHeals.front());
+    const size_t sameUrgency = std::count_if(needHeals.begin(), needHeals.end(),
+        [&](Unit* target) { return urgency(target) == mostUrgent; });
+    healerIndex = healerIndex % sameUrgency;
     return needHeals[healerIndex];
 }
 

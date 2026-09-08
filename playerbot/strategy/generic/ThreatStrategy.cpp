@@ -11,6 +11,13 @@ float ThreatMultiplier::GetValue(Action* action)
     if (action == NULL || action->getThreatType() == ActionThreatType::ACTION_THREAT_NONE || action->getThreatType() == ActionThreatType::ACTION_THREAT_LOW)
         return 1.0f;
 
+    // Keep urgently needed healing available even when optional low-threat
+    // behavior is enabled. Threat reduction must not suppress a rescue heal.
+    if (dynamic_cast<CastHealingSpellAction*>(action))
+        if (Unit* target = action->GetTarget())
+            if (target->GetHealthPercent() < sPlayerbotAIConfig.lowHealth)
+                return 1.0f;
+
     if (!AI_VALUE(bool, "group"))
         return 1.0f;
 

@@ -76,7 +76,7 @@ struct PlayerbotAI{Player* bot;std::map<unsigned,Unit*> units;bool preheal=false
 };
 struct Facade{bool IsFriendlyTo(Unit*,Unit* u){return u&&u->friendly;}bool IsAlive(Unit* u){return u&&u->alive;}
  float GetDistance2d(Unit*,Unit* u){return u->distance;}}sServerFacade;
-struct Config{unsigned almostFullHealth=95,lowMana=20,criticalHealth=20;}sPlayerbotAIConfig;
+struct Config{unsigned almostFullHealth=95,lowMana=20,criticalHealth=20,lowHealth=50;}sPlayerbotAIConfig;
 struct SpellEntryPredicate{virtual bool Check(const SpellEntry*)=0;};
 struct PartyMemberValue{PlayerbotAI* ai;Player* bot;bool IsTargetOfSpellCast(Unit*,SpellEntryPredicate&);};
 struct PartyMemberToHeal:PartyMemberValue{Unit* Calculate();bool CanHealPet(Pet*);bool Check(Unit*);std::vector<Player*> GetPartyMembers();};
@@ -112,7 +112,13 @@ int main(){
  owner.hp=100;ai.rpg.unit=&pet;pet.hp=40;pet.instance=2;assert(selector.Calculate()==nullptr);pet.instance=1;assert(selector.Calculate()==&pet);ai.rpg.unit=nullptr;
  // De-duplicate selected+group candidates before distributing two healers.
  owner.pet=nullptr;a.hp=10;b.hp=20;healer.healer=true;group.Set({&healer,&bot,&a,&b});bot.selection=a.guid;
- assert(selector.Calculate()==&b);healer.maxmana=0;assert(selector.Calculate()==&a);healer.maxmana=100;
+ assert(selector.Calculate()==&a);healer.maxmana=0;assert(selector.Calculate()==&a);healer.maxmana=100;
+ // Low-health cloth wearer outranks a much healthier tank with more missing HP.
+ bot.selection=0;a.hp=30;b.maxhp=10000;b.hp=9000;b.tank=true;
+ assert(selector.Calculate()==&a); // healer index must stay within the urgent band
+ // An incoming cast is not a guarantee that a critically injured player is safe.
+ a.hp=10;healing.m_targets.unit=a.guid;healer.casts[0]=&healing;ai.nearest={healer.guid};
+ assert(selector.Calculate()==&a);ai.nearest.clear();b.tank=false;b.maxhp=100;
  // Absorb amount competes with ordinary missing health; actual critical health wins.
  healer.maxmana=0;ai.preheal=false;a.hp=100;a.absorb=60000;b.hp=50;
  assert(selector.Calculate()==&a);b.hp=10;assert(selector.Calculate()==&b);

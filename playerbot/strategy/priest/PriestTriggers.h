@@ -9,7 +9,11 @@ namespace ai
     DEBUFF_ENEMY_TRIGGER(PowerWordPainOnAttackerTrigger, "shadow word: pain");
     DEBUFF_TRIGGER(VampiricTouchTrigger, "vampiric touch");
     DEBUFF_ENEMY_TRIGGER(VampiricTouchOnAttackerTrigger, "vampiric touch");
+#ifdef MANGOSBOT_TWO
+    BUFF_TRIGGER(VampiricEmbraceTrigger, "vampiric embrace");
+#else
     DEBUFF_TRIGGER(VampiricEmbraceTrigger, "vampiric embrace");
+#endif
     CURE_TRIGGER(DispelMagicTrigger, "dispel magic", DISPEL_MAGIC);
     CURE_PARTY_TRIGGER(DispelMagicPartyMemberTrigger, "dispel magic", DISPEL_MAGIC);
     CURE_TRIGGER(CureDiseaseTrigger, "cure disease", DISPEL_DISEASE);

@@ -61,6 +61,12 @@ namespace ai
 	MELEE_DEBUFF_ACTION_R(CastJudgementOfJusticeAction, "judgement of justice", 10.0f);
 
 	SPELL_ACTION(CastHolyShockAction, "holy shock");
+    class CastHolyShockOnSelfAction : public CastHealingSpellAction
+    {
+    public:
+        CastHolyShockOnSelfAction(PlayerbotAI* ai) : CastHealingSpellAction(ai, "holy shock") {}
+        std::string getName() override { return "holy shock on self"; }
+    };
 	HEAL_PARTY_ACTION(CastHolyShockOnPartyAction, "holy shock");
 
 	// consecration

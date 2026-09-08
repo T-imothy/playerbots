@@ -2,6 +2,7 @@
 #include "GenericSpellActions.h"
 #include "EncounterSpellPolicy.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/PlayerbotAIConfig.h"
 
 using namespace ai;
 
@@ -69,6 +70,13 @@ bool CastHealingSpellAction::isUseful()
     Unit* target = GetTarget();
     if (target && target->GetMaxNegativeAuraModifier(SPELL_AURA_MOD_HEALING_PCT) <= -100 &&
         !CanPrecastEncounterHeal(bot, target, sServerFacade.LookupSpellInfo(GetSpellID()))) return false;
+    // Regrowth and Riptide also heal immediately. Their existing HoT must not
+    // prevent a needed direct heal; pure HoTs still avoid redundant refreshes.
+    const SpellEntry* spell = sServerFacade.LookupSpellInfo(GetSpellID());
+    // Stack/expiry-aware actions such as Lifebloom select their own refreshes.
+    if (allowAuraRefresh || (target && target->GetHealthPercent() < sPlayerbotAIConfig.lowHealth &&
+        spell && IsSpellHaveEffect(spell, SPELL_EFFECT_HEAL)))
+        return CastSpellAction::isUseful();
     return CastAuraSpellAction::isUseful();
 }
 

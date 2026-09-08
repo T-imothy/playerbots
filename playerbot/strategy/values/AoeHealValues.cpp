@@ -3,13 +3,14 @@
 #include "AoeHealValues.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/actions/EncounterSpellPolicy.h"
 
 using namespace ai;
 
 uint8 AoeHealValue::Calculate()
 {
     Group* group = bot->GetGroup();
-    if (!group)
+    if (!group || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported())
     	return 0;
 
     float range = 0;
@@ -25,7 +26,12 @@ uint8 AoeHealValue::Calculate()
 	for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
 	{
 		Player *player = sObjectMgr.GetPlayer(itr->guid);
-		if( !player || !sServerFacade.IsAlive(player) || sServerFacade.GetDistance2d(bot, player) > (bot->getClass() == CLASS_SHAMAN ? 40.0f : 30.0f))
+        if (!player || !player->IsInWorld() || !sServerFacade.IsAlive(player) ||
+            !player->GetMaxHealth() || player->IsBeingTeleported() || !bot->IsInMap(player) ||
+            !sServerFacade.IsFriendlyTo(bot, player) ||
+            (player->GetMaxNegativeAuraModifier(SPELL_AURA_MOD_HEALING_PCT) <= -100 &&
+                !UpcomingEncounterHealingWindow(bot, player)) ||
+            sServerFacade.GetDistance2d(bot, player) > (bot->getClass() == CLASS_SHAMAN ? 40.0f : 30.0f))
 			continue;
 
         if (bot->getClass() == CLASS_PRIEST && !bot->IsInGroup(player, true))
