@@ -79,7 +79,7 @@ bool AttackRTITargetAction::isUseful()
 
 bool AttackAction::Attack(Player* requester, Unit* target)
 {
-    if (HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot) || HasEncounterBrand(bot) || HasEncounterWeaponPause(bot))
+    if (HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot))
     {
         StopUnsafeEncounterOffense(bot, bot);
         return false;
