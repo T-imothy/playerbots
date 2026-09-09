@@ -776,7 +776,7 @@ bool PlayerbotAIConfig::Initialize()
         llmBlockedReplyChannels.insert(sourceName[channelName]);
 
     {
-        std::string promptsFile = config.GetStringDefault("AiPlayerbot.LLMDefaultPromptsFile", "llm_character_card");
+        std::string promptsFile = config.GetStringDefault("AiPlayerbot.LLMDefaultPromptsFile", "");
         LoadLLMDefaultPrompts(promptsFile);
     }
 
@@ -1287,6 +1287,9 @@ void PlayerbotAIConfig::LoadTalentSpecs()
 
 void PlayerbotAIConfig::LoadLLMDefaultPrompts(const std::string& fileName)
 {
+    if (fileName.empty())
+        return; // Optional file import disabled; inline prompts and stored personalities remain.
+
     std::ifstream file(fileName);
     if (!file.is_open())
     {
@@ -1324,7 +1327,9 @@ void PlayerbotAIConfig::LoadLLMDefaultPrompts(const std::string& fileName)
             continue;
         }
 
-        auto result = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s' LIMIT 1", name.c_str());
+        std::string escapedName = name;
+        CharacterDatabase.escape_string(escapedName);
+        auto result = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s' LIMIT 1", escapedName.c_str());
         if (!result)
         {
             sLog.outError("Character '%s' not found in characters DB while loading '%s'.", name.c_str(), fileName.c_str());

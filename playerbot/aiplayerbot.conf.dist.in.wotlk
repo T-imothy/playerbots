@@ -1125,7 +1125,8 @@ AiPlayerbot.PerfMonEnabled = 0
 # Mostlikely::I like to travel a lot.
 # Flekz::I hold the power of ancient wizardry.
 
-AiPlayerbot.LLMDefaultPromptsFile = llm_character_card.txt
+# Set to "" to disable optional character-card file import. Inline LLM prompts are unaffected.
+AiPlayerbot.LLMDefaultPromptsFile = ""
 
 # Should previous conversations from all channels be mixed?
 # AiPlayerbot.LLMGlobalContext = 0

@@ -52,6 +52,29 @@
 using namespace ai;
 using namespace MaNGOS;
 
+namespace
+{
+    // Measure maintenance stages without changing combat scheduling or decisions.
+    class BotMaintenanceTimer
+    {
+    public:
+        BotMaintenanceTimer(uint32 bot, const char* stage) : bot(bot), stage(stage), start(std::chrono::steady_clock::now()) {}
+        ~BotMaintenanceTimer() { Record(); }
+        void Next(const char* next) { Record(); stage = next; start = std::chrono::steady_clock::now(); }
+    private:
+        void Record() const
+        {
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+            if (elapsed >= 100)
+                sLog.outPerformance("SLOW_BOT_MAINTENANCE bot=%u stage=%s elapsed=%u ms", bot, stage, uint32(elapsed));
+        }
+        uint32 bot;
+        const char* stage;
+        std::chrono::steady_clock::time_point start;
+    };
+}
+
+
 INSTANTIATE_SINGLETON_1(RandomPlayerbotMgr);
 
 #ifdef CMANGOS
@@ -2555,6 +2578,7 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
         return false;
 
     uint32 bot = player->GetGUIDLow();
+    BotMaintenanceTimer timing(bot, "idle_state");
 
     if (player->InBattleGround())
         return false;
@@ -2578,6 +2602,7 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
         // Recheck clearly over-levelled residents of low-level areas instead
         // of making them wait for the normal multi-hour relocation timer.
         // The manager caller already protects nearby players and groups.
+        timing.Next("placement_check");
         const WorldPosition position(player);
         const int32 areaLevel = position.getAreaLevel();
         if (sPlayerbotAIConfig.autonomousTravel && sPlayerbotAIConfig.enableRandomTeleports &&
@@ -2596,6 +2621,7 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
             }
         }
 
+        timing.Next("guild_policy");
         uint32 randomize = GetEventValue(bot, "randomize");
         if (!randomize)
         {
@@ -2603,7 +2629,12 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
             if (player->GetGuildId())
             {
                 Guild* guild = sGuildMgr.GetGuildById(player->GetGuildId());
-                uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID(guild->GetLeaderGuid());
+                // Membership already carries the account ID, including offline leaders.
+                // Do not block the world loop on a character DB query for every bot.
+                MemberSlot* leader = guild ? guild->GetMemberSlot(guild->GetLeaderGuid()) : nullptr;
+                if (!leader || !leader->accountId)
+                    return false; // Incomplete guild state must not permit randomization.
+                uint32 accountId = leader->accountId;
                 if (!sPlayerbotAIConfig.IsInRandomAccountList(accountId))
                 {
                     int32 rank = guild->GetRank(player->GetObjectGuid());
@@ -2613,11 +2644,13 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
 
             if (randomiser)
             {
+                timing.Next("randomize");
                 Randomize(player);
                 return true;
             }
         }
 
+        timing.Next("change_strategy");
         uint32 changeStrategy = GetEventValue(bot, "change_strategy");
         if (!changeStrategy)
         {
@@ -2634,6 +2667,7 @@ bool RandomPlayerbotMgr::ProcessBot(Player* player)
             return true;
         }
 
+        timing.Next("teleport");
         uint32 teleport = GetEventValue(bot, "teleport");
         if (!teleport && players.size())
         {
