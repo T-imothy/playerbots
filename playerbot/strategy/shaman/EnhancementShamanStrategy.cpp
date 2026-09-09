@@ -29,7 +29,11 @@ private:
 
     ACTION_NODE_A(mana_spring_totem, "mana spring totem", "healing stream totem");
 
+#ifdef MANGOSBOT_TWO
     ACTION_NODE_C(magma_totem, "magma totem", "fire nova");
+#else
+    static ActionNode* magma_totem(PlayerbotAI*) { return new ActionNode("magma totem", nullptr, nullptr, nullptr); }
+#endif
 
     ACTION_NODE_A(strength_of_earth_totem, "strength of earth totem", "stoneskin totem");
 
@@ -52,6 +56,21 @@ NextAction** EnhancementShamanStrategy::GetDefaultCombatActions()
 
 void EnhancementShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("lava lash", ACTION_NORMAL), nullptr)));
+#endif
+
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("maelstrom weapon", NextAction::array(0, new NextAction("maelstrom lightning", ACTION_HIGH + 2), nullptr)));
+#endif
+
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("low mana", NextAction::array(0, new NextAction("shamanistic rage", ACTION_HIGH + 4), nullptr)));
+#endif
+
     ShamanStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -156,7 +175,7 @@ void EnhancementShamanAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
 
     triggers.push_back(new TriggerNode(
         "melee medium aoe",
-        NextAction::array(0, new NextAction("fire nova", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("fire nova", ACTION_HIGH + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "melee light aoe",
@@ -488,6 +507,21 @@ NextAction** EnhancementShamanStrategy::GetDefaultCombatActions()
 
 void EnhancementShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("lava lash", ACTION_NORMAL), nullptr)));
+#endif
+
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("maelstrom weapon", NextAction::array(0, new NextAction("maelstrom lightning", ACTION_HIGH + 2), nullptr)));
+#endif
+
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("low mana", NextAction::array(0, new NextAction("shamanistic rage", ACTION_HIGH + 4), nullptr)));
+#endif
+
     ShamanStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -596,7 +630,7 @@ void EnhancementShamanAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
 
     triggers.push_back(new TriggerNode(
         "melee medium aoe",
-        NextAction::array(0, new NextAction("fire nova", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("fire nova", ACTION_HIGH + 3), NULL)));
 
     //triggers.push_back(new TriggerNode(
         //"melee light aoe",
@@ -928,6 +962,21 @@ NextAction** EnhancementShamanStrategy::GetDefaultCombatActions()
 
 void EnhancementShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("lava lash", ACTION_NORMAL), nullptr)));
+#endif
+
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("maelstrom weapon", NextAction::array(0, new NextAction("maelstrom lightning", ACTION_HIGH + 2), nullptr)));
+#endif
+
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("low mana", NextAction::array(0, new NextAction("shamanistic rage", ACTION_HIGH + 4), nullptr)));
+#endif
+
     ShamanStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -1032,7 +1081,7 @@ void EnhancementShamanAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
 
     triggers.push_back(new TriggerNode(
         "melee medium aoe",
-        NextAction::array(0, new NextAction("fire nova", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("fire nova", ACTION_HIGH + 3), NULL)));
 
     //triggers.push_back(new TriggerNode(
         //"melee light aoe",

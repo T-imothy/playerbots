@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/MeleeAbilityActions.h"
 
 #include "playerbot/playerbot.h"
 #include "ShamanActions.h"
@@ -351,6 +352,12 @@ namespace ai
                 creators["chain heal"] = [](PlayerbotAI* ai) { return new CastChainHealAction(ai); };
                 creators["riptide"] = [](PlayerbotAI* ai) { return new CastRiptideAction(ai); };
                 creators["riptide on party"] = [](PlayerbotAI* ai) { return new CastRiptideOnPartyAction(ai); };
+#if !defined(MANGOSBOT_ZERO)
+                creators["shamanistic rage"] = [](PlayerbotAI* ai) { return new CastShamanisticRageAction(ai); };
+#endif
+#if defined(MANGOSBOT_TWO)
+                creators["maelstrom lightning"] = [](PlayerbotAI* ai) { return new CastMaelstromLightningAction(ai); };
+#endif
                 creators["stormstrike"] = [](PlayerbotAI* ai) { return new CastStormstrikeAction(ai); };
                 creators["lava lash"] = [](PlayerbotAI* ai) { return new CastLavaLashAction(ai); };
                 creators["fire nova"] = [](PlayerbotAI* ai) { return new CastFireNovaAction(ai); };

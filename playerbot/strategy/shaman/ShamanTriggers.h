@@ -132,7 +132,8 @@ namespace ai
             }
             else
             {
-                return !AI_VALUE2(bool, "has totem", "searing totem") &&
+                return !AI_VALUE2(bool, "has totem", "fire nova totem") &&
+                       !AI_VALUE2(bool, "has totem", "searing totem") &&
                        !AI_VALUE2(bool, "has totem", "magma totem") &&
                        !AI_VALUE2(bool, "has totem", "frost resistance totem") &&
                        !AI_VALUE2(bool, "has totem", "flametongue totem") &&
@@ -152,6 +153,7 @@ namespace ai
         virtual bool IsActive() override
         {
             return AI_VALUE(uint8, "attackers count") >= 3 &&
+                !AI_VALUE2(bool, "has totem", "fire nova totem") &&
                 !AI_VALUE2(bool, "has totem", "searing totem") &&
                 !AI_VALUE2(bool, "has totem", "magma totem") &&
                 !AI_VALUE2(bool, "has totem", "frost resistance totem") &&
@@ -500,6 +502,15 @@ namespace ai
     {
     public:
         MaelstromWeaponTrigger(PlayerbotAI* ai) : HasAuraTrigger(ai, "maelstrom weapon") {}
+        bool IsActive() override
+        {
+#ifdef MANGOSBOT_TWO
+            Aura* aura = ai->GetAura(53817, bot);
+            return aura && aura->GetStackAmount() >= 5;
+#else
+            return false;
+#endif
+        }
     };
 
     class WindShearInterruptEnemyHealerSpellTrigger : public InterruptEnemyHealerTrigger

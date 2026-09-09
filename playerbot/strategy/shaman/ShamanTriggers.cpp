@@ -33,7 +33,7 @@ bool ShamanWeaponTrigger::IsActive()
 
 bool ShockTrigger::IsActive()
 {
-    return SpellTrigger::IsActive() && !ai->HasAnyAuraOf(GetTarget(), "frost shock", "earth shock", "flame shock", NULL) && !HasMaxDebuffs();
+    return SpellTrigger::IsActive() && (ai->HasAura("earth shock", GetTarget()) || !HasMaxDebuffs());
 }
 
 bool FlameShockTrigger::IsActive()
