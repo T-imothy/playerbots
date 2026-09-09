@@ -144,7 +144,11 @@ void PullStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode(
         "pull start",
-        NextAction::array(0, new NextAction("pull start", ACTION_MOVE), new NextAction("pull action", ACTION_MOVE), NULL)));
+        NextAction::array(0, new NextAction("pull start", ACTION_MOVE), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "pull action",
+        NextAction::array(0, new NextAction("pull action", ACTION_MOVE), NULL)));
 
     triggers.push_back(new TriggerNode(
         "pull end",

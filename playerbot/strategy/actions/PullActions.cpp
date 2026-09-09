@@ -205,13 +205,16 @@ bool PullAction::Execute(Event& event)
             }
             // Check if we are on pull range
             const float distanceToTarget = target->GetDistance(bot);
-            if (distanceToTarget <= strategy->GetRange())
+            // Being in range does not mean the approach is complete. In
+            // particular, do not cancel a chase around a pillar or up stairs
+            // before the same LOS check used by Shoot accepts the position.
+            if (distanceToTarget <= strategy->GetRange() && sServerFacade.IsWithinLOSInMap(bot, target))
             {
                 if (sServerFacade.isMoving(bot))
                 {
                     // Force stop
                     ai->StopMoving();
-                    strategy->RequestPull(target, false);
+                    // The shot trigger will retry after movement has stopped.
                     return false;
                 }
 
@@ -227,11 +230,9 @@ bool PullAction::Execute(Event& event)
                 else
                     return false;
             }
-            else
-            {
-                // Retry the reach pull action
-                strategy->RequestPull(target, false);
-            }
+            // If range or LOS is still blocked, retain the running approach.
+            // The shot trigger schedules another reach/cast decision without
+            // repeating pre-pull buffs or extending the command deadline.
         }
     }
 

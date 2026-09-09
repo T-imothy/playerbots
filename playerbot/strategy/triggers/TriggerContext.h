@@ -92,6 +92,7 @@ namespace ai
             creators["resurrect"] = [](PlayerbotAI* ai) { return new ResurrectTrigger(ai); };
 
             creators["pull start"] = [](PlayerbotAI* ai) { return new PullStartTrigger(ai); };
+            creators["pull action"] = [](PlayerbotAI* ai) { return new PullActionTrigger(ai); };
             creators["pull end"] = [](PlayerbotAI* ai) { return new PullEndTrigger(ai); };
             creators["dps assist"] = [](PlayerbotAI* ai) { return new DpsAssistTrigger(ai); };
             creators["tank assist"] = [](PlayerbotAI* ai) { return new TankAssistTrigger(ai); };

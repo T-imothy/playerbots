@@ -10,6 +10,13 @@ namespace ai
 		bool IsActive() override;
 	};
 
+    class PullActionTrigger : public Trigger
+    {
+    public:
+        PullActionTrigger(PlayerbotAI* ai) : Trigger(ai, "pull action", 1) {}
+        bool IsActive() override;
+    };
+
     class PullEndTrigger : public Trigger
     {
     public:

@@ -53,7 +53,7 @@ namespace ai
                     chaseDist = (chaseDist - sPlayerbotAIConfig.contactDistance);
                 }
 
-                if (!isFriend && MoveStyleValue::WaitForEnemy(ai) && !AI_VALUE(Unit*, "rti cc target") && target->m_movementInfo.HasMovementFlag(movementFlagsMask) &&
+                if (CanWaitForEnemy() && !isFriend && MoveStyleValue::WaitForEnemy(ai) && !AI_VALUE(Unit*, "rti cc target") && target->m_movementInfo.HasMovementFlag(movementFlagsMask) &&
                         sServerFacade.IsInFront(target, bot, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT) &&
                         sServerFacade.IsDistanceGreaterThan(distanceToTarget, sPlayerbotAIConfig.tooCloseDistance))
                 {
@@ -139,6 +139,7 @@ namespace ai
         }
 
     protected:
+        virtual bool CanWaitForEnemy() const { return true; }
         float range;
         std::string spellName;
     };
@@ -213,6 +214,9 @@ namespace ai
         }
 
         std::string GetTargetName() override { return "pull target"; }
+
+    protected:
+        bool CanWaitForEnemy() const override { return false; }
     };
 
     class ReachPartyMemberToHealAction : public ReachTargetAction

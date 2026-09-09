@@ -20,6 +20,19 @@ bool PullStartTrigger::IsActive()
     return strategy->IsPullPendingToStart();
 }
 
+bool PullActionTrigger::IsActive()
+{
+    const PullStrategy* strategy = PullStrategy::Get(ai);
+    if (!strategy || !strategy->HasPullStarted() || strategy->IsPullPendingToStart() ||
+        strategy->HasPullActionIssued() || bot->IsNonMeleeSpellCasted(true)) return false;
+    Unit* target = strategy->GetTarget();
+    // Moving, a failed cast, or an engine reinitialization can consume the
+    // queued shot. Keep scheduling it without repeating preparation or
+    // resetting the original command deadline.
+    return target && target->IsAlive() && target->IsInWorld() && bot->IsInMap(target) &&
+        time(nullptr) - strategy->GetPullStartTime() < strategy->GetMaxPullTime();
+}
+
 bool PullEndTrigger::IsActive()
 {
     const PullStrategy* strategy = PullStrategy::Get(ai);
