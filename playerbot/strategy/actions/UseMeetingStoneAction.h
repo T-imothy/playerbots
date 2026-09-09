@@ -11,6 +11,7 @@ namespace ai
         bool isUseful() override { return true; }
         bool isUsefulWhenStunned() override { return true; }
         virtual bool Execute(Event& event) override;
+        bool ExecuteImmediate(Event& event);
 
     protected:
         bool Teleport(Player* requester, Player *summoner, Player *player);

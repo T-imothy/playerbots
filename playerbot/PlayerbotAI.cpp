@@ -17,6 +17,7 @@
 #include "LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
+#include "BotRecruitment.h"
 #include "CombatDiagnostics.h"
 #include "strategy/actions/EncounterSpellPolicy.h"
 #include "strategy/actions/DungeonActions.h"
@@ -1286,9 +1287,9 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 	DoNextAction(minimal);
 }
 
-void PlayerbotAI::QueueSummonRevival(uint32 mapId, float x, float y, float z)
+void PlayerbotAI::QueueSummonRevival(uint32 mapId, float x, float y, float z, uint32 instanceId)
 {
-    pendingSummonRevival = {true, mapId, x, y, z, time(nullptr) + 30};
+    pendingSummonRevival = {true, mapId, instanceId, x, y, z, time(nullptr) + 30};
 }
 
 void PlayerbotAI::CompleteSummonRevival()
@@ -1299,7 +1300,7 @@ void PlayerbotAI::CompleteSummonRevival()
     // bind. Only consume this request after reaching its accepted destination.
     if (!pending.active || time(nullptr) > pending.expires || IsRealPlayer() ||
         !bot->IsInWorld() || bot->IsBeingTeleported() || bot->IsAlive() ||
-        bot->GetMapId() != pending.mapId ||
+        (bot->GetMapId() != pending.mapId || bot->GetInstanceId() != pending.instanceId) ||
         !bot->IsWithinDist3d(pending.x, pending.y, pending.z, 1.0f) || !IsSafe(bot))
         return;
 
@@ -1533,6 +1534,14 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 
     if (type == CHAT_MSG_SYSTEM)
         return;
+
+    // These control-plane requests must not wait for combat/non-combat AI.
+    if (type == CHAT_MSG_WHISPER && fromPlayer.isRealPlayer() &&
+        (filtered == "who" || filtered == "summon"))
+    {
+        BotRecruitment::Queue(&fromPlayer, bot, filtered);
+        return;
+    }
 
     if (filtered.find(sPlayerbotAIConfig.commandSeparator) != std::string::npos)
     {

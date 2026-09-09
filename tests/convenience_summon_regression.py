@@ -27,12 +27,12 @@ struct Player;
 struct Map {bool allowed=true;bool CanEnter(Player*){return allowed;}};
 struct Player {
  bool world=true,real=false,teleporting=false,transport=false,taxi=false,combat=false,charmed=false,alive=true;
- bool accepted=true,los=true;uint32 mapId=0;float x=0,y=0,z=0;int teleports=0,resurrections=0,bones=0;
+ bool accepted=true,los=true;uint32 mapId=0,instanceId=0;float x=0,y=0,z=0;int teleports=0,resurrections=0,bones=0;
  Session session;Motion motion;Map* map=nullptr;
  bool isRealPlayer(){return real;}bool IsInWorld(){return world;}bool IsBeingTeleported(){return teleporting;}
  Session* GetSession(){return &session;}bool GetTransport(){return transport;}bool IsTaxiFlying(){return taxi;}
  bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}bool IsAlive(){return alive;}
- uint32 GetMapId(){return mapId;}Map* GetMap(){return map;}
+ uint32 GetMapId(){return mapId;}uint32 GetInstanceId(){return instanceId;}Map* GetMap(){return map;}
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}float GetOrientation(){return 0.4f;}
  void UpdateGroundPositionZ(float,float,float&){}float GetCollisionHeight(){return 2;}
  bool IsWithinLOS(float,float,float,bool){return los;}void ResurrectPlayer(float,bool){++resurrections;alive=true;}
@@ -45,12 +45,13 @@ int positionWrites=0;
 #define SET_AI_VALUE2(type,name,key,value) (++positionWrites)
 struct PlayerbotAI {
  Player* bot;bool safe=true,stay=true;
- struct PendingSummonRevival {bool active=false;uint32 mapId=0;float x=0,y=0,z=0;time_t expires=0;} pendingSummonRevival;
+ struct PendingSummonRevival {bool active=false;uint32 mapId=0,instanceId=0;float x=0,y=0,z=0;time_t expires=0;} pendingSummonRevival;
  bool IsRealPlayer(){return bot->real;}bool IsSafe(Player*){return safe;}float GetRange(const char*){return 0;}
  template<class... Args> void TellPlayerNoFacing(Args...){}
  bool HasStrategy(const char*,BotState){return stay;}
- void QueueSummonRevival(uint32,float,float,float);void CompleteSummonRevival();
+ void QueueSummonRevival(uint32,float,float,float,uint32=0);void CompleteSummonRevival();
 };
+struct Config {bool recruitmentRevive=true;} sPlayerbotAIConfig;
 struct Facade {bool UnitIsDead(Player* p){return !p->alive;}bool IsAlive(Player* p){return p->alive;}} sServerFacade;
 struct SummonAction {Player* bot;PlayerbotAI* ai;float GetFollowAngle(){return 0;}bool Teleport(Player*,Player*,Player*);};
 __TELEPORT__
@@ -58,7 +59,7 @@ __QUEUE__
 __COMPLETE__
 int main(){
  Map from,to;Player bot,leader;PlayerbotAI ai{&bot};SummonAction action{&bot,&ai};
- auto reset=[&](){from={};to={};bot=Player{};leader=Player{};bot.map=&from;leader.map=&to;leader.mapId=1;leader.real=true;ai.safe=true;ai.pendingSummonRevival={};positionWrites=0;};
+ auto reset=[&](){from={};to={};bot=Player{};leader=Player{};bot.map=&from;leader.map=&to;leader.mapId=1;leader.real=true;ai.safe=true;ai.pendingSummonRevival={};positionWrites=0;sPlayerbotAIConfig.recruitmentRevive=true;};
  auto reject=[&](){assert(!action.Teleport(&leader,&leader,&bot));assert(bot.motion.clears==0 && positionWrites==0 && bot.resurrections==0);};
  reset();assert(action.Teleport(&leader,&leader,&bot));assert(bot.teleports==1 && bot.motion.clears==1 && positionWrites==2);
  reset();bot.accepted=false;reject();assert(bot.teleports==1);
@@ -89,7 +90,10 @@ int main(){
  ai.CompleteSummonRevival();assert(bot.resurrections==0);
  reset();bot.alive=false;ai.QueueSummonRevival(0,0,0,0);bot.x=50;ai.CompleteSummonRevival();assert(bot.resurrections==0);
  reset();bot.alive=false;ai.QueueSummonRevival(0,0,0,0);bot.teleporting=true;ai.CompleteSummonRevival();assert(bot.resurrections==0);
- std::cout<<"PASS: convenience summon and post-ACK revival, 23 controlled scenarios; inn hearth independence\n";
+ reset();bot.alive=false;sPlayerbotAIConfig.recruitmentRevive=false;reject();
+ reset();bot.alive=false;ai.QueueSummonRevival(0,0,0,0,7);ai.CompleteSummonRevival();assert(bot.resurrections==0);
+ reset();bot.alive=false;bot.instanceId=7;ai.QueueSummonRevival(0,0,0,0,7);ai.CompleteSummonRevival();assert(bot.resurrections==1);
+ std::cout<<"PASS: convenience summon and post-ACK revival, 26 controlled scenarios; inn hearth independence\n";
 }
 '''.replace('__TELEPORT__', block(source, 'bool SummonAction::Teleport(')).replace(
     '__QUEUE__', block(ai_source, 'void PlayerbotAI::QueueSummonRevival(')).replace(

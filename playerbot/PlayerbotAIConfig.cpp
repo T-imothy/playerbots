@@ -654,6 +654,7 @@ bool PlayerbotAIConfig::Initialize()
     turnInRpg = config.GetBoolDefault("AiPlayerbot.TurnInRpg", false);
     globalSoundEffects = config.GetBoolDefault("AiPlayerbot.GlobalSoundEffects", false);
     nonGmFreeSummon = config.GetBoolDefault("AiPlayerbot.NonGmFreeSummon", false);
+    recruitmentRevive = config.GetBoolDefault("AiPlayerbot.Recruitment.Revive", true);
 
     //SPP automation
     autoPickReward = config.GetStringDefault("AiPlayerbot.AutoPickReward", "no");

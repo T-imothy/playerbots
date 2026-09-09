@@ -59,6 +59,8 @@ public:
     void EquipGearBest() { return InitEquipment(false, false, false); }
     void EquipGearPartialUpgrade() { return InitEquipment(false, false, true, true); }
     void UpgradeGear(bool syncWithMaster) { return InitEquipment(!syncWithMaster, syncWithMaster); }
+    void BeginSupplyRequest() { supplyRequest = true; supplyFailed = false; }
+    bool SupplyRequestFailed() const { return supplyFailed; }
     void AddReagents() { return InitReagents(); }
     void AddPotions() { return InitPotions(); }
     void AddConsumes() { return AddConsumables(); }
@@ -68,6 +70,9 @@ public:
     void InitPetSpells();
 
 private:
+    bool supplyRequest = false;
+    bool supplyFailed = false;
+    Item* StoreSupplyItem(uint32 entry, uint32 count);
     void Prepare();
     void InitSecondEquipmentSet();
     void Shuffle(std::vector<uint32>& items);

@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "UseMeetingStoneAction.h"
+#include "playerbot/BotRecruitment.h"
 #include "RitualSummonAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -77,6 +78,14 @@ private:
 };
 
 bool SummonAction::Execute(Event& event)
+{
+    Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    if (requester && requester->isRealPlayer())
+        return BotRecruitment::Queue(requester, bot, "summon");
+    return ExecuteImmediate(event);
+}
+
+bool SummonAction::ExecuteImmediate(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     if (!requester || !requester->IsInWorld() || requester->IsBeingTeleported())
@@ -197,6 +206,8 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
                 bool const revive = sServerFacade.UnitIsDead(player) && sServerFacade.IsAlive(summoner);
                 if (revive)
                 {
+                    if (!sPlayerbotAIConfig.recruitmentRevive)
+                        return false;
                     if (!ai->IsSafe(player) || !ai->IsSafe(summoner))
                         return false;
                 }
@@ -209,7 +220,7 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
                     return false;
                 }
                 if (revive)
-                    ai->QueueSummonRevival(mapId, x, y, z);
+                    ai->QueueSummonRevival(mapId, x, y, z, summoner->GetInstanceId());
                 player->GetMotionMaster()->Clear();
                     
                 if(ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))

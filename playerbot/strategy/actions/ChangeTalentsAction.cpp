@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/Talentspec.h"
 #include "ChangeTalentsAction.h"
+#include "playerbot/BotRecruitment.h"
 #include "playerbot/AiFactory.h"
 
 using namespace ai;
@@ -13,6 +14,17 @@ bool ChangeTalentsAction::Execute(Event& event)
     TalentSpec botSpec(bot);
     uint8 cls = bot->getClass();
     std::string param = event.getParam();
+
+    bool const query = param.empty() || param == "list" || param.find("list ") == 0;
+    if (requester && requester->isRealPlayer() && !query)
+    {
+        std::string reason = BotRecruitment::PreparationReason(requester, bot);
+        if (!reason.empty())
+        {
+            ai->TellPlayer(requester, "Talents refused: " + reason);
+            return false;
+        }
+    }
 
     if (!param.empty())
     {
@@ -117,18 +129,19 @@ bool ChangeTalentsAction::Execute(Event& event)
         }
 
         // learn available spells
-        ai->DoSpecificAction("auto learn spell");
+        if (!query)
+            ai->DoSpecificAction("auto learn spell");
     }
     else
     {
-        botSpec.ApplyTalents(bot, &out);
         out.str("");
         out.clear();
 
-        uint32 specId = sRandomPlayerbotMgr.GetValue(bot->GetGUIDLow(), "specNo") - 1;
+        uint32 specNo = sRandomPlayerbotMgr.GetValue(bot->GetGUIDLow(), "specNo");
+        uint32 specId = specNo ? specNo - 1 : 0;
         std::string specName = "";
         TalentPath* specPath;
-        if (specId)
+        if (specNo)
         {
             specPath = getPremadePath(bot->getClass(), specId);
 
@@ -384,6 +397,8 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
 TalentSpec* ChangeTalentsAction::GetBestPremadeSpec(Player* bot, int specId)
 {
     TalentPath* path = getPremadePath(bot->getClass(), specId);
+    if (!path)
+        return &sPlayerbotAIConfig.classSpecs[bot->getClass()].baseSpec;
     for (auto& spec : path->talentSpec)
     {
         if (spec.points >= bot->CalculateTalentsPoints())
@@ -392,7 +407,7 @@ TalentSpec* ChangeTalentsAction::GetBestPremadeSpec(Player* bot, int specId)
     if (path->talentSpec.size())
         return &path->talentSpec.back();
 
-    return &sPlayerbotAIConfig.classSpecs[bot->getClassMask()].baseSpec;
+    return &sPlayerbotAIConfig.classSpecs[bot->getClass()].baseSpec;
 }
 
 bool AutoSetTalentsAction::Execute(Event& event)

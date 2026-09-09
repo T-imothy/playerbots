@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "BotRecruitment.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotDbStore.h"
 #include "playerbot/PlayerbotFactory.h"
@@ -566,6 +567,9 @@ std::string PlayerbotHolder::ProcessBotCommand(std::string cmd, ObjectGuid guid,
         else
             realParam = param;            
 
+        if (BotRecruitment::IsPreparation(cmd))
+            return BotRecruitment::Prepare(master, bot, cmd, realParam,
+                [&]() { return (this->*it->second)(bot, master, realParam); });
         return (this->*it->second)(bot, master, realParam);
     }
 
@@ -589,6 +593,8 @@ bool PlayerbotMgr::HandlePlayerbotMgrCommand(ChatHandler* handler, char const* a
     }
 
     Player* player = m_session->GetPlayer();
+    if (BotRecruitment::HandleCommand(player, args ? args : ""))
+        return true;
     PlayerbotMgr* mgr = player->GetPlayerbotMgr();
     if (!mgr)
     {
@@ -2564,34 +2570,38 @@ std::string PlayerbotHolder::HandleBotTrainLearn(Player* bot, Player* master, co
 
 std::string PlayerbotHolder::HandleBotFoodDrink(Player* bot, Player* master, const std::string param)
 {
-    uint32 level = master ? master->GetLevel() : bot->GetLevel();
+    uint32 level = bot->GetLevel();
     PlayerbotFactory factory(bot, level, ITEM_QUALITY_NORMAL);
+    factory.BeginSupplyRequest();
     factory.AddFood();
-    return "food added";
+    return factory.SupplyRequestFailed() ? "refused: supply_storage_or_data" : "food added";
 }
 
 std::string PlayerbotHolder::HandleBotPotions(Player* bot, Player* master, const std::string param)
 {
-    uint32 level = master ? master->GetLevel() : bot->GetLevel();
+    uint32 level = bot->GetLevel();
     PlayerbotFactory factory(bot, level, ITEM_QUALITY_NORMAL);
+    factory.BeginSupplyRequest();
     factory.AddPotions();
-    return "potions added";
+    return factory.SupplyRequestFailed() ? "refused: supply_storage_or_data" : "potions added";
 }
 
 std::string PlayerbotHolder::HandleBotConsumes(Player* bot, Player* master, const std::string param)
 {
-    uint32 level = master ? master->GetLevel() : bot->GetLevel();
+    uint32 level = bot->GetLevel();
     PlayerbotFactory factory(bot, level, ITEM_QUALITY_NORMAL);
+    factory.BeginSupplyRequest();
     factory.AddConsumes();
-    return "consumables added";
+    return factory.SupplyRequestFailed() ? "refused: supply_storage_or_data" : "consumables added";
 }
 
 std::string PlayerbotHolder::HandleBotReagents(Player* bot, Player* master, const std::string param)
 {
-    uint32 level = master ? master->GetLevel() : bot->GetLevel();
+    uint32 level = bot->GetLevel();
     PlayerbotFactory factory(bot, level, ITEM_QUALITY_NORMAL);
+    factory.BeginSupplyRequest();
     factory.AddReagents();
-    return "reagents added";
+    return factory.SupplyRequestFailed() ? "refused: supply_storage_or_data" : "reagents added";
 }
 
 std::string PlayerbotHolder::HandleBotPrepare(Player* bot, Player* master, const std::string param)
@@ -2655,8 +2665,9 @@ std::string PlayerbotHolder::HandleBotEnchants(Player* bot, Player* master, cons
 std::string PlayerbotHolder::HandleBotAmmo(Player* bot, Player* master, const std::string param)
 {
     PlayerbotFactory factory(bot, bot->GetLevel(), ITEM_QUALITY_LEGENDARY);
+    factory.BeginSupplyRequest();
     factory.InitAmmo();
-    return "ok";
+    return factory.SupplyRequestFailed() ? "refused: supply_storage_or_data" : "ok";
 }
 
 std::string PlayerbotHolder::HandleBotPet(Player* bot, Player* master, const std::string param)

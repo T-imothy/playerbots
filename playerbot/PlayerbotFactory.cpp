@@ -2956,15 +2956,15 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
     }
 
     bool isRandomBot = sRandomPlayerbotMgr.IsRandomBot(bot) && bot->GetPlayerbotAI() && !bot->GetPlayerbotAI()->HasRealPlayerMaster() && !bot->GetPlayerbotAI()->IsInRealGuild();
+    uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
+    if (specId == 0)
+        return;
+
     if (!incremental)
     {
         DestroyItemsVisitor visitor(bot);
         ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_EQUIP);
     }
-
-    uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
-    if (specId == 0)
-        return;
 
     // choose type of weapon
     uint32 weaponType = 0;
@@ -4628,13 +4628,16 @@ void PlayerbotFactory::InitAmmo()
     }
 
     if (!entry)
+    {
+        supplyFailed = true;
         return;
+    }
 
     if (count < maxCount)
     {
         for (uint32 i = 0; i < maxCount - count; i++)
         {
-            Item* newItem = bot->StoreNewItemInInventorySlot(entry, 200);
+            Item* newItem = StoreSupplyItem(entry, 200);
         }
     }
 
@@ -4799,15 +4802,16 @@ void PlayerbotFactory::InitPotions()
         uint32 itemId = sRandomItemMgr.GetRandomPotion(level, effect);
         if (!itemId)
         {
+            supplyFailed = true;
             sLog.outDetail("No potions (type %d) available for bot %s (%d level)", effect, bot->GetName(), bot->GetLevel());
             continue;
         }
 
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
-        if (!proto) continue;
+        if (!proto) { supplyFailed = true; continue; }
 
         uint32 maxCount = proto->GetMaxStackSize();
-        Item* newItem = bot->StoreNewItemInInventorySlot(itemId, urand(maxCount / 2, maxCount));
+        Item* newItem = StoreSupplyItem(itemId, urand(maxCount / 2, maxCount));
     }
 }
 
@@ -4829,14 +4833,15 @@ void PlayerbotFactory::InitFood()
         uint32 itemId = sRandomItemMgr.GetFood(level, category);
         if (!itemId)
         {
+            supplyFailed = true;
             sLog.outDetail("No food (category %d) available for bot %s (%d level)", category, bot->GetName(), bot->GetLevel());
             continue;
         }
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
-        if (!proto) continue;
+        if (!proto) { supplyFailed = true; continue; }
 
         uint32 maxCount = proto->GetMaxStackSize();
-        Item* newItem = bot->StoreNewItemInInventorySlot(itemId, urand(maxCount / 2, maxCount));
+        Item* newItem = StoreSupplyItem(itemId, urand(maxCount / 2, maxCount));
    }
 }
 
@@ -4845,7 +4850,7 @@ void PlayerbotFactory::InitReagents()
     auto pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Reagents");
     std::list<uint32> items;
     uint32 regCount = 1;
-    switch (bot->getClass())
+    if (!supplyRequest) switch (bot->getClass())
     {
     case CLASS_MAGE:
         regCount = 2;
@@ -4910,11 +4915,30 @@ void PlayerbotFactory::InitReagents()
         break;
     }
 
+    if (supplyRequest)
+    {
+        // Use this expansion's learned class spells, including talent spells.
+        // Quest/generic item spells must not manufacture unrelated quest items.
+        for (auto const& known : bot->GetSpellMap())
+        {
+            if (known.second.state == PLAYERSPELL_REMOVED || known.second.disabled || IsPassiveSpell(known.first))
+                continue;
+            SpellEntry const* spell = sServerFacade.LookupSpellInfo(known.first);
+            if (!spell || spell->SpellFamilyName == SPELLFAMILY_GENERIC)
+                continue;
+            for (int32 reagent : spell->Reagent)
+                if (reagent > 0) items.push_back(uint32(reagent));
+        }
+        items.sort();
+        items.unique();
+    }
+
     for (std::list<uint32>::iterator i = items.begin(); i != items.end(); ++i)
     {
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(*i);
         if (!proto)
         {
+            supplyFailed = true;
             sLog.outError("No reagent (ItemId %d) found for bot %d (Class:%d)", *i, bot->GetGUIDLow(), bot->getClass());
             continue;
         }
@@ -4923,11 +4947,12 @@ void PlayerbotFactory::InitReagents()
 
         QueryItemCountVisitor visitor(*i);
         ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
-        if ((uint32)visitor.GetCount() > maxCount) continue;
+        if ((uint32)visitor.GetCount() >= maxCount) continue;
 
-        uint32 randCount = urand(maxCount / 2, maxCount * regCount);
+        uint32 randCount = supplyRequest ? maxCount - uint32(visitor.GetCount()) :
+            urand(maxCount / 2, maxCount * regCount);
 
-        Item* newItem = bot->StoreNewItemInInventorySlot(*i, randCount);
+        Item* newItem = StoreSupplyItem(*i, randCount);
 
         sLog.outDetail("Bot %d got reagent %s x%d", bot->GetGUIDLow(), proto->Name1, randCount);
     }
@@ -4953,11 +4978,12 @@ void PlayerbotFactory::InitReagents()
                 ItemPrototype const* proto = sObjectMgr.GetItemPrototype(totem);
                 if (!proto)
                 {
+                    supplyFailed = true;
                     sLog.outError("No totem (ItemId %d) found for bot %d (Class:%d)", totem, bot->GetGUIDLow(), bot->getClass());
                     continue;
                 }
 
-                Item* newItem = bot->StoreNewItemInInventorySlot(totem, 1);
+                Item* newItem = StoreSupplyItem(totem, 1);
 
                 sLog.outDetail("Bot %d got totem %s x%d", bot->GetGUIDLow(), proto->Name1, 1);
             }
@@ -4986,7 +5012,7 @@ void PlayerbotFactory::InitReagents()
                         continue;
                     }
 
-                    Item* newItem = bot->StoreNewItemInInventorySlot(itemId, 1);
+                    Item* newItem = StoreSupplyItem(itemId, 1);
 
                     sLog.outDetail("Bot %d got totem %s x%d", bot->GetGUIDLow(), proto->Name1, 1);
                 }
@@ -5028,6 +5054,13 @@ void PlayerbotFactory::InitInventorySkill()
     }
 }
 
+Item* PlayerbotFactory::StoreSupplyItem(uint32 entry, uint32 count)
+{
+    Item* item = bot->StoreNewItemInInventorySlot(entry, count);
+    if (!item) supplyFailed = true;
+    return item;
+}
+
 Item* PlayerbotFactory::StoreItem(uint32 itemId, uint32 count, bool ignoreCount)
 {
     if (!ignoreCount)
@@ -5036,11 +5069,16 @@ Item* PlayerbotFactory::StoreItem(uint32 itemId, uint32 count, bool ignoreCount)
             return nullptr;
     }
 
+    if (supplyRequest && !ignoreCount)
+        count -= bot->GetItemCount(itemId);
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
     ItemPosCountVec sDest;
     InventoryResult msg = bot->CanStoreNewItem(INVENTORY_SLOT_BAG_0, NULL_SLOT, sDest, itemId, count);
     if (msg != EQUIP_ERR_OK)
-        return NULL;
+    {
+        if (supplyRequest) supplyFailed = true;
+        return nullptr;
+    }
 
     return bot->StoreNewItem(sDest, itemId, true, Item::GenerateItemRandomPropertyId(itemId));
 }

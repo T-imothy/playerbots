@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "InviteToGroupAction.h"
+#include "playerbot/BotRecruitment.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/Formations.h"
 #include "Guilds/GuildMgr.h"
@@ -14,6 +15,8 @@ namespace ai
 
         if (inviter == player)
             return false;
+        if (inviter && inviter->isRealPlayer())
+            return BotRecruitment::Queue(inviter, player, "invite");
 
         if (!player->GetPlayerbotAI() && !ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, true, player))
             return false;
@@ -43,6 +46,10 @@ namespace ai
             return false;
 
         Player* master = event.getOwner();
+        if (!master)
+            return false;
+        if (master->isRealPlayer())
+            return BotRecruitment::Queue(master, bot, "invite");
 
         Group* group = master->GetGroup();
 

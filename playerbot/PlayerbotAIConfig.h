@@ -340,6 +340,7 @@ public:
 
     bool talentsInPublicNote;
     bool nonGmFreeSummon;
+    bool recruitmentRevive;
 
     BotSelfBotLevel selfBotLevel;
     uint32 iterationsPerTick;

@@ -4906,3 +4906,8 @@ AiPlayerbot.CombatDiagnostics.MaxFileMB = 8
 # A single ProcessBot call completes before the time budget is checked.
 AiPlayerbot.RandomBotManagerBudgetMs = 10
 AiPlayerbot.RandomBotManagerScanLimit = 512
+
+# Revive a dead bot only after a completed, validated convenience summon.
+# Group invitations never revive bots. Native summon/ritual rules are unchanged.
+# Default: 1 (preserves the existing convenience-summon revival policy).
+AiPlayerbot.Recruitment.Revive = 1

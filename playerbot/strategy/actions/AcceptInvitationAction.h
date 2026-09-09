@@ -1,6 +1,7 @@
 #pragma once
 
 #include "playerbot/strategy/Action.h"
+#include "playerbot/BotRecruitment.h"
 
 namespace ai
 {
@@ -17,6 +18,11 @@ namespace ai
 
             Player* inviter = sObjectMgr.GetPlayer(grp->GetLeaderGuid());
             if (!inviter)
+                return false;
+
+            // Human invitations are owned by the world-thread coordinator.
+            // Never let a delayed AI packet accept an expired invitation.
+            if (inviter->isRealPlayer() || BotRecruitment::HasPendingInvite(bot))
                 return false;
 
 			if (!ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, false, inviter))

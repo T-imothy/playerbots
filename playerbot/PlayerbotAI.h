@@ -389,7 +389,7 @@ public:
     void HandleMasterIncomingPacket(const WorldPacket& packet);
     void HandleMasterOutgoingPacket(const WorldPacket& packet);
 	void HandleTeleportAck();
-    void QueueSummonRevival(uint32 mapId, float x, float y, float z);
+    void QueueSummonRevival(uint32 mapId, float x, float y, float z, uint32 instanceId = 0);
     void CompleteSummonRevival();
     uint32 GetTransitionGeneration() const { return transitionGeneration.load(std::memory_order_acquire); }
     bool IsTransitionContextCurrent(uint32 generation, uint32 mapId, uint32 instanceId) const;
@@ -735,6 +735,7 @@ protected:
     {
         bool active = false;
         uint32 mapId = 0;
+        uint32 instanceId = 0;
         float x = 0, y = 0, z = 0;
         time_t expires = 0;
     };

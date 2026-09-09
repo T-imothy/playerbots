@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "WhoAction.h"
+#include "playerbot/BotRecruitment.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/RandomPlayerbotMgr.h"
@@ -29,6 +30,9 @@ bool WhoAction::Execute(Event& event)
 
     if (!sObjectMgr.GetPlayer(owner->GetObjectGuid()))
         return false;
+
+    if (owner->isRealPlayer() && event.getParam().empty())
+        return BotRecruitment::Queue(owner, bot, "who");
 
     std::ostringstream out;
     std::string text = event.getParam();
