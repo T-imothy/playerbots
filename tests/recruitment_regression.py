@@ -23,6 +23,7 @@ stubs=r'''
 #include <string>
 using uint32=uint32_t; using uint64=uint64_t;
 uint64 fakeNow=100;
+constexpr int POWER_MANA=0;
 enum {HIGHGUID_PLAYER, CHAT_MSG_WHISPER, LANG_UNIVERSAL, CHAT_TAG_NONE,
  CONFIG_BOOL_ALLOW_TWO_SIDE_INTERACTION_GROUP, CONFIG_UINT32_MAX_PLAYER_LEVEL,
  PLAYERBOT_SECURITY_ALLOW_ALL, PLAYERBOT_SECURITY_INVITE, BOT_STATE_NON_COMBAT,LFG_STATE_NONE};
@@ -58,7 +59,10 @@ struct Player {
  uint32 id,level=43,cls=1,guild=0,team=0,mapId=1,instance=0;bool real=false,world=true,transfer=false,alive=true,combat=false,
  taxi=false,transport=false,charm=false,bg=false,bgQueue=false,afk=false,los=true;float distance=0;
  std::string name,talents="0-0-10";WorldSession session;AI ai;Social social;Group* group=nullptr;Group* invite=nullptr;
- Map map;LfgData lfg;PlayerbotHolder holder;unsigned gear=0;int health=50;
+ Map map;LfgData lfg;PlayerbotHolder holder;unsigned gear=0;int health=50,maxHealth=100,mana=5,maxMana=100,otherPower=23;
+ uint32 GetMaxHealth(){return maxHealth;}void SetHealth(uint32 value){health=value;}
+ uint32 GetMaxPower(int power){assert(power==POWER_MANA);return maxMana;}
+ void SetPower(int power,uint32 value){assert(power==POWER_MANA);mana=value;}
  Player(uint32 n,bool human=false):id(n),real(human),name("Bot"+std::to_string(n)){session.player=this;session.account=human?n:1000;players[n]=this;}
  WorldSession* GetSession(){return &session;}bool isRealPlayer(){return real;}AI* GetPlayerbotAI(){return real?nullptr:&ai;}
  ObjectGuid GetObjectGuid(){return ObjectGuid(HIGHGUID_PLAYER,id);}uint32 GetGUIDLow(){return id;}uint32 GetGuildId(){return guild;}
@@ -114,6 +118,29 @@ void invite(Player& p,Player& b){WorldPacket packet;packet<<b.name;p.session.Han
 void command(Player& p,std::string args){assert(ai::BotRecruitment::HandleCommand(&p,"recruit v1 "+args));tick();}
 bool has(std::string t){for(auto const& m:messages)if(m.find(t)!=std::string::npos)return true;return false;}
 int main(){
+ // Successful legacy gear requests refill current post-equipment maxima,
+ // including cached repeats, without rerolling gear or touching other powers.
+ reset();{Player p(1,true),b(2);b.ai.master=&p;unsigned calls=0;
+ auto apply=[&](){++calls;b.maxHealth=140;b.maxMana=180;return std::string("random gear equipped");};
+ ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(calls==1&&b.health==140&&b.mana==180&&b.otherPower==23);
+ b.health=1;b.mana=2;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(calls==1&&b.health==140&&b.mana==180);
+ b.health=1;b.mana=2;b.combat=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==1&&b.mana==2);
+ b.combat=false;p.combat=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==1&&b.mana==2);
+ p.combat=false;b.alive=false;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==1&&b.mana==2);
+ b.alive=true;b.transfer=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==1&&b.mana==2);
+ b.transfer=false;b.real=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==1&&b.mana==2&&calls==1);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.maxMana=0;
+ auto apply=[](){return std::string("gear upgraded");};
+ ai::BotRecruitment::Prepare(&p,&b,"equip","upgrade",apply);assert(b.health==100&&b.mana==5&&b.otherPower==23);
+ b.health=1;ai::BotRecruitment::Prepare(&p,&b,"equip","upgrade",apply);assert(b.health==100&&b.otherPower==23);}
+ for(auto response:{"unknown gear command","refused: unsupported_spec","refused: busy"}){
+ reset();Player p(1,true),b(2);b.ai.master=&p;auto apply=[&](){return std::string(response);};
+ ai::BotRecruitment::Prepare(&p,&b,"gear","bad",apply);ai::BotRecruitment::Prepare(&p,&b,"gear","bad",apply);assert(b.health==50&&b.mana==5);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;auto apply=[](){return std::string("food added");};
+ ai::BotRecruitment::Prepare(&p,&b,"food","",apply);ai::BotRecruitment::Prepare(&p,&b,"food","",apply);assert(b.health==50&&b.mana==5);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;command(p,"refill prepare 2 gear");assert(b.health==100);
+ b.health=7;command(p,"refill prepare 2 gear");assert(b.health==7&&b.gear==1);}
+
  reset();{Player p(1,true),b(2);b.combat=true;b.alive=false;b.afk=true;invite(p,b);tick();assert(b.group==p.group&&b.group);assert(!b.alive&&b.combat&&b.health==50&&b.gear==0&&!b.transfer);assert(b.ai.master==&p&&!b.afk);}
  reset();{Player p(1,true),b(2);b.transfer=true;invite(p,b);tick();assert(!b.group);tick(15);assert(!b.invite&&!b.group&&has("timed_out"));b.transfer=false;tick();assert(!b.group);}
  reset();{Player p(1,true),b(2);b.transfer=true;invite(p,b);tick(10);b.invite=nullptr;invite(p,b);tick(6);assert(b.invite);b.transfer=false;tick();assert(b.group);}

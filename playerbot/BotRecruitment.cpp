@@ -634,11 +634,29 @@ std::string BotRecruitment::Prepare(Player* owner, Player* bot, const std::strin
     // No distance restriction for manual preparation. Pending summons must finish.
     auto summon = State().summons.find(bot->GetGUIDLow());
     if (summon != State().summons.end()) return "refused: summon_pending";
+    const bool gear = command == "gear" || command == "equip";
+    auto restoreGearResources = [&](const std::string& response)
+    {
+        // Repeated legacy gear commands reuse equipment work, but must retain
+        // the health/mana refill that equipment stat initialization provided.
+        // Only recognized successful gear responses qualify; supply commands
+        // and refused/unknown requests must not refill resources.
+        if (gear && (response == "random gear equipped" || response == "random green gear equipped" ||
+            response == "random blue gear equipped" || response == "random epic gear equipped" ||
+            response == "gear upgraded" || response == "random best gear equipped" ||
+            response == "random gear upgraded to some slots"))
+        {
+            bot->SetHealth(bot->GetMaxHealth());
+            if (bot->GetMaxPower(POWER_MANA))
+                bot->SetPower(POWER_MANA, bot->GetMaxPower(POWER_MANA));
+        }
+        return response;
+    };
     std::string key = std::to_string(owner->GetGUIDLow()) + ":" + std::to_string(bot->GetGUIDLow()) + ":" +
         command + ":" + parameter + ":" + std::to_string(bot->GetLevel()) + ":" + TalentSpec(bot).GetTalentLink();
     auto old = State().preparation.find(key);
     if (!State().explicitPreparation && old != State().preparation.end() && old->second.expires > Now())
-        return old->second.response;
+        return restoreGearResources(old->second.response);
     if (State().preparation.size() >= limits::MaxReceipts) return "refused: busy";
     if (State().preparationSecond != Now())
     {
@@ -646,14 +664,13 @@ std::string BotRecruitment::Prepare(Player* owner, Player* bot, const std::strin
         State().gearWork = State().supplyWork = 0;
         State().playerPreparationWork.clear();
     }
-    bool gear = command == "gear" || command == "equip";
     unsigned& work = gear ? State().gearWork : State().supplyWork;
     unsigned& playerWork = State().playerPreparationWork[owner->GetGUIDLow()];
     if (work >= (gear ? 2u : 32u) || playerWork >= 8) return "refused: preparation_rate_limit";
     ++work; ++playerWork;
     if ((command == "gear" || command == "equip") && !sRandomItemMgr.GetPlayerSpecId(bot))
         return "refused: unsupported_spec";
-    std::string result = apply();
+    std::string result = restoreGearResources(apply());
     if (result.find("refused:") != 0)
         State().preparation[key] = {"",result,Now() + limits::LegacyPreparationSeconds};
     return result;
