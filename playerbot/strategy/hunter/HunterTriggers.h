@@ -1,6 +1,7 @@
 #pragma once
 
 #include "playerbot/strategy/triggers/GenericTriggers.h"
+#include "HunterCombatPolicy.h"
 
 namespace ai
 {
@@ -17,6 +18,7 @@ namespace ai
     {
     public:
         AspectOfTheHawkTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "aspect of the hawk") {}
+        bool IsActive() override { return BuffTrigger::IsActive() && !HunterWantsViper(ai); }
     };
 
     class AspectOfTheWildTrigger : public BuffTrigger
@@ -62,7 +64,7 @@ namespace ai
     
         bool IsActive() override
         {
-            return BuffTrigger::IsActive() && !ai->HasAura("aspect of the hawk", bot);
+            return BuffTrigger::IsActive() && !HunterWantsViper(ai);
         }
     };
 
@@ -110,7 +112,7 @@ namespace ai
     public:
         FrostTrapTrigger(PlayerbotAI* ai, std::string spell = "frost trap") : MeleeLightAoeTrigger(ai)
         {
-            spellId = AI_VALUE2(uint32, "spell id", spell);
+            trapName = spell;
         }
 
         bool IsActive() override
@@ -123,11 +125,12 @@ namespace ai
             }
 #endif
 
-            return sServerFacade.IsSpellReady(bot, spellId) && MeleeLightAoeTrigger::IsActive();
+            const uint32 spellId = HunterSpell(ai, trapName);
+            return spellId && ai->HasSpell(spellId) && sServerFacade.IsSpellReady(bot, spellId) && MeleeLightAoeTrigger::IsActive();
         }
 
     private:
-        uint32 spellId;
+        std::string trapName;
     };
 
     class ExplosiveTrapTrigger : public RangedMediumAoeTrigger
@@ -135,7 +138,7 @@ namespace ai
     public:
         ExplosiveTrapTrigger(PlayerbotAI* ai, std::string spell = "explosive trap") : RangedMediumAoeTrigger(ai)
         {
-            spellId = AI_VALUE2(uint32, "spell id", spell);
+            trapName = spell;
         }
 
         bool IsActive() override
@@ -148,17 +151,19 @@ namespace ai
             }
 #endif
 
-            return sServerFacade.IsSpellReady(bot, spellId) && RangedMediumAoeTrigger::IsActive();
+            const uint32 spellId = HunterSpell(ai, trapName);
+            return spellId && ai->HasSpell(spellId) && sServerFacade.IsSpellReady(bot, spellId) && RangedMediumAoeTrigger::IsActive();
         }
 
     private:
-        uint32 spellId;
+        std::string trapName;
     };
 
     class RapidFireTrigger : public BuffTrigger
     {
     public:
         RapidFireTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "rapid fire") {}
+        bool IsActive() override { return BuffTrigger::IsActive() && HunterInShotRange(ai, AI_VALUE(Unit*, "current target")); }
     };
 
     class TrueshotAuraTrigger : public BuffTrigger
@@ -205,69 +210,29 @@ namespace ai
         virtual bool IsActive() override { return bot->GetGroup() && (AI_VALUE2(uint32, "item count", "ammo") < 100) && (AI_VALUE2(uint32, "item count", "ammo") > 0); }
     };
 
-    class HunterNoAmmoTrigger : public AmmoCountTrigger
-{
-public:
-    HunterNoAmmoTrigger(PlayerbotAI* ai)
-        : AmmoCountTrigger(ai, "ammo", 1, 10), lastCheckTime(0)
+    class HunterNoAmmoTrigger : public Trigger
     {
-    }
-
-    virtual bool IsActive() override
-    {
-        uint32 now = time(nullptr);
-
-        // Only check every 3 seconds to avoid spamming
-        if (now - lastCheckTime < 3)
-            return false;
-
-        lastCheckTime = now;
-
-        uint32 ammoId = bot->GetUInt32Value(PLAYER_AMMO_ID);
-
-        // No ammo equipped at all
-        if (ammoId == 0)
-            return AI_VALUE2(uint32, "item count", "ammo") > 0;
-
-        // Check if we still have THIS ammo in inventory
-        uint32 count = AI_VALUE2(uint32, "item count", std::to_string(ammoId));
-
-        // If equipped ammo is gone, but we have other ammo → trigger
-        return count == 0 && AI_VALUE2(uint32, "item count", "ammo") > 0;
-    }
-
-private:
-    time_t lastCheckTime;
-};
+    public:
+        HunterNoAmmoTrigger(PlayerbotAI* ai) : Trigger(ai, "no ammo", 3) {}
+        bool IsActive() override { return !HunterAmmoReady(ai) && HunterAmmoReserve(ai); }
+    };
     class HunterHasAmmoTrigger : public AmmoCountTrigger
     {
     public:
         HunterHasAmmoTrigger(PlayerbotAI* ai) : AmmoCountTrigger(ai, "ammo", 1, 10) {}
-        virtual bool IsActive() override { return !AmmoCountTrigger::IsActive(); }
+        virtual bool IsActive() override { return HunterAmmoReady(ai); }
     };
 
     class SwitchToRangedTrigger : public Trigger
     {
     public:
         SwitchToRangedTrigger(PlayerbotAI* ai) : Trigger(ai, "switch to ranged", 1) {}
-
         bool IsActive() override
         {
-#ifdef MANGOSBOT_ZERO
-            bool hasAmmo = ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "ammo");
-#else
-            bool hasAmmo = ai->HasCheat(BotCheatMask::item) || bot->HasAura(46699) || AI_VALUE2(uint32, "item count", "ammo");
-#endif
-            if (!hasAmmo)
-                return false;
-
             Unit* target = AI_VALUE(Unit*, "current target");
-            float distance = AI_VALUE2(float, "distance", "current target");
-            return target && ai->HasStrategy("close", BotState::BOT_STATE_COMBAT) &&
-                (target->GetVictim() != bot ||
-                target->IsImmobilizedState() ||
-                (target->GetSpeed(MOVE_RUN) <= (bot->GetSpeed(MOVE_RUN) / 2) && !((!bot->GetPet() || bot->GetPet()->IsDead()) && target->IsCreature() && target->GetHealthPercent() < 50.f && target->GetHealth() < bot->GetHealth())) ||
-                distance > 8.0f);
+            return ai->HasStrategy("close", BotState::BOT_STATE_COMBAT) && HunterAmmoReady(ai) &&
+                MeleeCombatTarget(ai, target) && (HunterInShotRange(ai, target, 1.0f) ||
+                target->GetVictim() != bot || target->IsImmobilizedState());
         }
     };
 
@@ -275,23 +240,15 @@ private:
     {
     public:
         SwitchToMeleeTrigger(PlayerbotAI* ai) : Trigger(ai, "switch to melee", 1) {}
-
         bool IsActive() override
         {
-#ifdef MANGOSBOT_ZERO
-            bool hasAmmo = ai->HasCheat(BotCheatMask::item) || AI_VALUE2(uint32, "item count", "ammo");
-#else
-            bool hasAmmo = ai->HasCheat(BotCheatMask::item) || bot->HasAura(46699) || AI_VALUE2(uint32, "item count", "ammo");
-#endif
-            if (!hasAmmo)
-                return true;
-
             Unit* target = AI_VALUE(Unit*, "current target");
-            return target && ((target->GetSpeed(MOVE_RUN) > (bot->GetSpeed(MOVE_RUN) / 2)) || ((!bot->GetPet() || bot->GetPet()->IsDead()) && target->GetHealthPercent() < 50.f && target->IsCreature() && target->GetHealth() < bot->GetHealth())) &&
-                !target->IsImmobilizedState() &&
-                ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT) &&
-                target->GetVictim() == bot &&
-                sServerFacade.IsDistanceLessOrEqualThan(AI_VALUE2(float, "distance", "current target"), 8.0f);
+            if (!ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT) || !MeleeCombatTarget(ai, target)) return false;
+            if (!HunterAmmoReady(ai)) return !HunterAmmoReserve(ai);
+            const auto bounds = HunterShotRange(ai, target);
+            return target->GetVictim() == bot && !target->IsImmobilizedState() &&
+                target->GetSpeed(MOVE_RUN) > bot->GetSpeed(MOVE_RUN) * 0.5f &&
+                bot->GetDistance(target, true, DIST_CALC_NONE) < bounds.first * bounds.first;
         }
     };
 
@@ -329,49 +286,54 @@ private:
     class AimedShotTrigger : public Trigger
     {
     public:
-        AimedShotTrigger(PlayerbotAI* ai) : Trigger(ai, "aimed shot", 2) {}
-        virtual std::string GetTargetName() override { return "current target"; }
-
-        virtual bool IsActive() override
+        AimedShotTrigger(PlayerbotAI* ai) : Trigger(ai, "aimed shot", 1) {}
+        bool IsActive() override
         {
-            if (!bot->HasSpell(19434) || !bot->IsSpellReady(19434))
-                return false;
-
-            Unit* target = GetTarget();
-            if (!target)
-                return false;
-
-            float distanceTo = AI_VALUE2(float, "distance", GetTargetName());
-            if (target->GetSelectionGuid() != bot->GetObjectGuid() && sServerFacade.IsDistanceGreaterOrEqualThan(distanceTo, 8.0f))
-                return true;
-
-            // victim
-            if (target->GetSelectionGuid() == bot->GetObjectGuid())
-            {
-                if (sServerFacade.IsDistanceGreaterOrEqualThan(distanceTo, 15.0f))
-                    return true;
-            }
-            return false;
+            Unit* target = AI_VALUE(Unit*, "current target");
+            if (!MeleeCombatTarget(ai, target) || !HunterAmmoReady(ai)) return false;
+#ifndef MANGOSBOT_TWO
+            if (sServerFacade.isMoving(bot) || (target->GetVictim() == bot && !target->IsImmobilizedState())) return false;
+#endif
+            return ai->CanCastSpell("aimed shot", target, 0);
         }
     };
 
-    class HunterNoPet : public Trigger 
+    class HunterNoPet : public Trigger
     {
     public:
-        HunterNoPet(PlayerbotAI* ai) : Trigger(ai, "no pet", 1) {}
-        virtual bool IsActive() override
+        HunterNoPet(PlayerbotAI* ai) : Trigger(ai, "no pet", 3) {}
+        bool IsActive() override
         {
-            if (AI_VALUE2(bool, "mounted", "self target"))
-            return false;
-
-            if (bot->GetPetGuid())
-            return false;
-
-            if (ai->CanCastSpell("call pet", bot, 0))
-            return false;
-
-            return ai->CanCastSpell("tame beast", bot, 0);
+            return !bot->GetPet() && !AI_VALUE2(bool, "mounted", "self target") &&
+                ai->CanCastSpell("call pet", bot, 0);
         }
+    };
+
+    class HunterActionReadyTrigger : public Trigger
+    {
+    public:
+        HunterActionReadyTrigger(PlayerbotAI* ai, std::string key) : Trigger(ai, key, 1), key(key) {}
+        bool IsActive() override
+        {
+            Action* action = context->GetAction(key);
+            return action && action->isUseful() && action->isPossible();
+        }
+    private:
+        std::string key;
+    };
+
+    class HunterViperRecoveryTrigger : public Trigger
+    {
+    public:
+        HunterViperRecoveryTrigger(PlayerbotAI* ai) : Trigger(ai, "hunter recover mana", 2) {}
+        bool IsActive() override { return HunterWantsViper(ai) && !ai->HasAura("aspect of the viper", bot); }
+    };
+
+    class HunterAmmoExhaustedTrigger : public Trigger
+    {
+    public:
+        HunterAmmoExhaustedTrigger(PlayerbotAI* ai) : Trigger(ai, "hunter ammo exhausted", 30) {}
+        bool IsActive() override { return bot->GetWeaponForAttack(RANGED_ATTACK) && !HunterAmmoReady(ai) && !HunterAmmoReserve(ai); }
     };
 
     class StealthedNearbyTrigger : public Trigger 

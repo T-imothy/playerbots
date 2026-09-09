@@ -8,10 +8,10 @@ using namespace ai;
 bool HunterNoStingsActiveTrigger::IsActive()
 {
 	Unit* target = AI_VALUE(Unit*, "current target");
-    return target && AI_VALUE2(uint8, "health", "current target") > 40 &&
-        !ai->HasAura("serpent sting", target) &&
-        !ai->HasAura("scorpid sting", target) &&
-        !ai->HasAura("viper sting", target);
+    return MeleeCombatTarget(ai, target) &&
+        !ai->HasMyAura("serpent sting", target) &&
+        !ai->HasMyAura("scorpid sting", target) &&
+        !ai->HasMyAura("viper sting", target);
 }
 
 bool HuntersPetDeadTrigger::IsActive()
@@ -36,12 +36,12 @@ bool ViperStingOnAttackerTrigger::IsActive()
     Unit* target = GetTarget();
     if (target)
     {
-        const bool noStings = !ai->HasAura("serpent sting", target) &&
-                              !ai->HasAura("scorpid sting", target) &&
-                              !ai->HasAura("viper sting", target);
+        const bool noStings = !ai->HasMyAura("serpent sting", target) &&
+                              !ai->HasMyAura("scorpid sting", target) &&
+                              !ai->HasMyAura("viper sting", target);
         if (noStings)
         {
-            if (target->GetPower(POWER_MANA) >= 10)
+            if (HunterWantsViperSting(ai, target))
             {
                 return DebuffOnAttackerTrigger::IsActive();
             }
@@ -56,12 +56,12 @@ bool SerpentStingOnAttackerTrigger::IsActive()
     Unit* target = GetTarget();
     if (target)
     {
-        const bool noStings = !ai->HasAura("serpent sting", target) &&
-                              !ai->HasAura("scorpid sting", target) &&
-                              !ai->HasAura("viper sting", target);
+        const bool noStings = !ai->HasMyAura("serpent sting", target) &&
+                              !ai->HasMyAura("scorpid sting", target) &&
+                              !ai->HasMyAura("viper sting", target);
         if (noStings)
         {
-            if (target->GetPower(POWER_MANA) < 10 || ai->HasStrategy("sting serpent", BotState::BOT_STATE_COMBAT))
+            if (!HunterWantsViperSting(ai, target))
             {
                 return DebuffOnAttackerTrigger::IsActive();
             }

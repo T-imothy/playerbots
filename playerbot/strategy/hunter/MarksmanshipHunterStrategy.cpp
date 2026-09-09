@@ -725,7 +725,7 @@ void MarksmanshipHunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
 
     triggers.push_back(new TriggerNode(
         "chimera shot",
-        NextAction::array(0, new NextAction("chimera shot", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("chimera shot", ACTION_HIGH + 1), NULL)));
 }
 
 void MarksmanshipHunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

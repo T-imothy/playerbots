@@ -25,25 +25,20 @@ bool IsDeadValue::Calculate()
 
 bool PetIsDeadValue::Calculate()
 {
-#ifdef MANGOSBOT_ZERO
-#ifdef MANGOS
-    PetDatabaseStatus status = Pet::GetStatusFromDB(bot);
-    if (status == PET_DB_DEAD)
-#endif
-#endif
-    if (!bot->GetPet())
+    if (Pet* pet = bot->GetPet())
     {
-        uint32 ownerid = bot->GetGUIDLow();
-        auto result = CharacterDatabase.PQuery("SELECT id FROM character_pet WHERE owner = '%u'", ownerid);
-        if (!result)
-            return false;
-
-        return true;
+        lastSavedPetCheck = 0;
+        return sServerFacade.GetDeathState(pet) != ALIVE;
     }
-    if (bot->GetPetGuid() && !bot->GetPet())
-        return true;
-
-    return bot->GetPet() && sServerFacade.GetDeathState(bot->GetPet()) != ALIVE;
+    if (bot->getClass() != CLASS_HUNTER || bot->IsMounted()) return false;
+    const time_t now = time(nullptr);
+    if (lastSavedPetCheck && now - lastSavedPetCheck < 5) return savedPetDead;
+    lastSavedPetCheck = now;
+    // Match the native summon selection; stable-only pets are not candidates.
+    auto result = CharacterDatabase.PQuery("SELECT curhealth FROM character_pet WHERE owner = '%u' AND (slot = '%u' OR slot > '%u') ORDER BY slot ASC LIMIT 1",
+        bot->GetGUIDLow(), PET_SAVE_AS_CURRENT, PET_SAVE_LAST_STABLE_SLOT);
+    savedPetDead = result && result->Fetch()[0].GetUInt32() == 0;
+    return savedPetDead;
 }
 
 bool PetIsHappyValue::Calculate()

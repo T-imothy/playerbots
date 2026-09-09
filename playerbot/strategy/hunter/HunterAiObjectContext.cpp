@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "HunterActions.h"
 #include "HunterTriggers.h"
+#include "playerbot/strategy/triggers/CureTriggers.h"
 #include "HunterAiObjectContext.h"
 #include "BeastMasteryHunterStrategy.h"
 #include "MarksmanshipHunterStrategy.h"
@@ -197,7 +198,20 @@ namespace ai
             TriggerFactoryInternal()
             {
                 creators["black arrow"] = [](PlayerbotAI* ai) { return new BlackArrowTrigger(ai); };
-                creators["black arrow on snare target"] = [](PlayerbotAI* ai) { return new BlackArrowSnareTrigger(ai); };
+                creators["hunter arcane shot"] = [](PlayerbotAI* ai) { return new HunterActionReadyTrigger(ai, "arcane shot"); };
+                creators["hunter mongoose bite"] = [](PlayerbotAI* ai) { return new HunterActionReadyTrigger(ai, "mongoose bite"); };
+                creators["hunter wyvern sting"] = [](PlayerbotAI* ai) { return new HunterActionReadyTrigger(ai, "hunter wyvern sting"); };
+                creators["hunter disengage"] = [](PlayerbotAI* ai) { return new HunterActionReadyTrigger(ai, "hunter disengage"); };
+                creators["hunter recover mana"] = [](PlayerbotAI* ai) { return new HunterViperRecoveryTrigger(ai); };
+                creators["hunter ammo exhausted"] = [](PlayerbotAI* ai) { return new HunterAmmoExhaustedTrigger(ai); };
+#ifndef MANGOSBOT_ZERO
+                creators["snake trap in place"] = [](PlayerbotAI* ai) { return new HunterActionReadyTrigger(ai, "snake trap in place"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["hunter master's call"] = [](PlayerbotAI* ai) { return new HunterActionReadyTrigger(ai, "hunter master's call"); };
+                creators["hunter freezing arrow"] = [](PlayerbotAI* ai) { return new HunterActionReadyTrigger(ai, "hunter freezing arrow"); };
+                creators["hunter dispel magic"] = [](PlayerbotAI* ai) { return new TargetAuraDispelTrigger(ai, "tranquilizing shot", DISPEL_MAGIC, 3); };
+#endif
                 creators["no stings"] = [](PlayerbotAI* ai) { return new HunterNoStingsActiveTrigger(ai); };
                 creators["hunters pet dead"] = [](PlayerbotAI* ai) { return new HuntersPetDeadTrigger(ai); };
                 creators["hunters pet low health"] = [](PlayerbotAI* ai) { return new HuntersPetLowHealthTrigger(ai); };
@@ -261,6 +275,16 @@ namespace ai
                 creators["chimera shot"] = [](PlayerbotAI* ai) { return new CastChimeraShotAction(ai); };
                 creators["explosive shot"] = [](PlayerbotAI* ai) { return new CastExplosiveShotAction(ai); };
                 creators["arcane shot"] = [](PlayerbotAI* ai) { return new CastArcaneShotAction(ai); };
+                creators["hunter wyvern sting"] = [](PlayerbotAI* ai) { return new HunterWyvernStingAction(ai); };
+                creators["hunter disengage"] = [](PlayerbotAI* ai) { return new HunterDisengageAction(ai); };
+#ifndef MANGOSBOT_ZERO
+                creators["snake trap in place"] = [](PlayerbotAI* ai) { return new HunterSnakeTrapAction(ai); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["hunter master's call"] = [](PlayerbotAI* ai) { return new HunterMastersCallAction(ai); };
+                creators["hunter freezing arrow"] = [](PlayerbotAI* ai) { return new HunterFreezingArrowAction(ai); };
+#endif
+
 #ifdef MANGOSBOT_TWO
                 creators["kill shot"] = [](PlayerbotAI* ai) { return new CastKillShotAction(ai); };
 #endif
@@ -304,13 +328,12 @@ namespace ai
                 creators["scare beast on cc"] = [](PlayerbotAI* ai) { return new CastScareBeastCcAction(ai); };
                 creators["remove feign death"] = [](PlayerbotAI* ai) { return new RemoveFeignDeathAction(ai); };
                 creators["scatter shot"] = [](PlayerbotAI* ai) { return new CastScatterShotAction(ai); };
-                creators["scatter shot on closest attacker targeting me"] = [](PlayerbotAI* ai) { return new CastScatterShotAction(ai); };
+                creators["scatter shot on closest attacker targeting me"] = [](PlayerbotAI* ai) { return new CastScatterShotOnClosestAttackerTargetingMeAction(ai); };
                 creators["intimidation"] = [](PlayerbotAI* ai) { return new IntimidationAction(ai); };
                 creators["deterrence"] = [](PlayerbotAI* ai) { return new DeterrenceAction(ai); };
                 creators["counterattack"] = [](PlayerbotAI* ai) { return new CastCounterattackAction(ai); };
                 creators["wyvern sting"] = [](PlayerbotAI* ai) { return new WyvernStingSnareAction(ai); };
                 creators["mongoose bite"] = [](PlayerbotAI* ai) { return new MongooseBiteAction(ai); };
-                creators["black arrow on snare target"] = [](PlayerbotAI* ai) { return new CastBlackArrowSnareAction(ai); };
                 creators["silencing shot"] = [](PlayerbotAI* ai) { return new CastSilencingShotAction(ai); };
                 creators["silencing shot on enemy healer"] = [](PlayerbotAI* ai) { return new CastSilencingShotOnHealerAction(ai); };
                 creators["readiness"] = [](PlayerbotAI* ai) { return new CastReadinessAction(ai); };

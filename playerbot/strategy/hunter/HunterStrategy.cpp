@@ -56,6 +56,11 @@ NextAction** HunterStrategy::GetDefaultCombatActions()
 void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("no ammo", NextAction::array(0, new NextAction("equip ammo", ACTION_MOVE + 2), NULL)));
+    triggers.push_back(new TriggerNode("hunter ammo exhausted", NextAction::array(0, new NextAction("say::no ammo", ACTION_IDLE), NULL)));
+    triggers.push_back(new TriggerNode("hunter arcane shot", NextAction::array(0, new NextAction("arcane shot", ACTION_NORMAL + 4), NULL)));
+    triggers.push_back(new TriggerNode("hunter mongoose bite", NextAction::array(0, new NextAction("mongoose bite", ACTION_NORMAL + 2), NULL)));
+
 
     triggers.push_back(new TriggerNode(
         "switch to ranged",
@@ -79,7 +84,7 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "aimed shot",
-        NextAction::array(0, new NextAction("aimed shot", ACTION_NORMAL + 2), NULL)));
+        NextAction::array(0, new NextAction("aimed shot", ACTION_NORMAL + 5), NULL)));
 
     triggers.push_back(new TriggerNode(
         "enemy is close",
@@ -87,7 +92,7 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "no pet",
-        NextAction::array(0, new NextAction("tame beast", ACTION_EMERGENCY), NULL)));
+        NextAction::array(0, new NextAction("call pet", ACTION_NORMAL + 2), NULL)));
 }
 
 void HunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -107,12 +112,15 @@ void HunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "no pet",
-        NextAction::array(0, new NextAction("tame beast", ACTION_EMERGENCY), NULL)));
+        NextAction::array(0, new NextAction("call pet", ACTION_NORMAL + 2), NULL)));
 }
 
 void HunterStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitReactionTriggers(triggers);
+#ifdef MANGOSBOT_TWO
+    triggers.push_back(new TriggerNode("hunter dispel magic", NextAction::array(0, new NextAction("tranquilizing shot", ACTION_DISPEL), NULL)));
+#endif
 
     triggers.push_back(new TriggerNode(
         "dispel enrage",
@@ -349,6 +357,16 @@ void HunterBoostRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tri
 void HunterCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     CcStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("hunter wyvern sting", NextAction::array(0, new NextAction("hunter wyvern sting", ACTION_INTERRUPT + 1), NULL)));
+    triggers.push_back(new TriggerNode("hunter disengage", NextAction::array(0, new NextAction("hunter disengage", ACTION_INTERRUPT + 2), NULL)));
+#ifndef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("snake trap in place", NextAction::array(0, new NextAction("snake trap in place", ACTION_INTERRUPT), NULL)));
+#endif
+#ifdef MANGOSBOT_TWO
+    triggers.push_back(new TriggerNode("hunter master's call", NextAction::array(0, new NextAction("hunter master's call", ACTION_INTERRUPT + 4), NULL)));
+    triggers.push_back(new TriggerNode("hunter freezing arrow", NextAction::array(0, new NextAction("hunter freezing arrow", ACTION_INTERRUPT + 1), NULL)));
+#endif
+
 
     // Traps must be on ACTION_INTERRUPT or higher due to its movements and chained actions
     triggers.push_back(new TriggerNode(
@@ -368,6 +386,7 @@ void HunterCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void HunterCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     CcStrategy::InitNonCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("hunter wyvern sting", NextAction::array(0, new NextAction("hunter wyvern sting", ACTION_INTERRUPT + 1), NULL)));
 }
 
 void HunterCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -455,11 +474,15 @@ void HunterStingPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigger
 
 void HunterStingRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-
+    HunterStingPveStrategy::InitCombatTriggers(triggers);
 }
 
 void HunterAspectStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#ifndef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("hunter recover mana", NextAction::array(0, new NextAction("aspect of the viper", ACTION_HIGH + 6), NULL)));
+#endif
+
     triggers.push_back(new TriggerNode(
         "aspect of the hawk",
         NextAction::array(0, new NextAction("aspect of the hawk", ACTION_HIGH + 5), NULL)));
@@ -467,6 +490,10 @@ void HunterAspectStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void HunterAspectStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#ifndef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("hunter recover mana", NextAction::array(0, new NextAction("aspect of the viper", ACTION_HIGH + 6), NULL)));
+#endif
+
     triggers.push_back(new TriggerNode(
         "aspect of the hawk",
         NextAction::array(0, new NextAction("aspect of the hawk", ACTION_NORMAL), NULL)));
@@ -525,6 +552,11 @@ NextAction** HunterStrategy::GetDefaultCombatActions()
 void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("no ammo", NextAction::array(0, new NextAction("equip ammo", ACTION_MOVE + 2), NULL)));
+    triggers.push_back(new TriggerNode("hunter ammo exhausted", NextAction::array(0, new NextAction("say::no ammo", ACTION_IDLE), NULL)));
+    triggers.push_back(new TriggerNode("hunter arcane shot", NextAction::array(0, new NextAction("arcane shot", ACTION_NORMAL + 4), NULL)));
+    triggers.push_back(new TriggerNode("hunter mongoose bite", NextAction::array(0, new NextAction("mongoose bite", ACTION_NORMAL + 2), NULL)));
+
 
     triggers.push_back(new TriggerNode(
         "switch to ranged",
@@ -546,17 +578,17 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "hunter's mark",
         NextAction::array(0, new NextAction("hunter's mark", ACTION_NORMAL + 6), NULL)));
 
-    triggers.push_back(new TriggerNode(
-        "arcane shot",
-        NextAction::array(0, new NextAction("arcane shot", ACTION_NORMAL + 2), NULL)));
+
 
     triggers.push_back(new TriggerNode(
         "kill command",
         NextAction::array(0, new NextAction("kill command", ACTION_NORMAL + 6), NULL)));
 
+    triggers.push_back(new TriggerNode("aimed shot", NextAction::array(0, new NextAction("aimed shot", ACTION_NORMAL - 1), NULL)));
+
     triggers.push_back(new TriggerNode(
         "steady shot",
-        NextAction::array(0, new NextAction("steady shot", ACTION_NORMAL + 5), NULL)));
+        NextAction::array(0, new NextAction("steady shot", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "enemy is close",
@@ -564,7 +596,7 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "no pet",
-        NextAction::array(0, new NextAction("tame beast", ACTION_EMERGENCY), NULL)));    
+        NextAction::array(0, new NextAction("call pet", ACTION_NORMAL + 2), NULL)));
 }
 
 void HunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -584,12 +616,15 @@ void HunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "no pet",
-        NextAction::array(0, new NextAction("tame beast", ACTION_EMERGENCY), NULL)));
+        NextAction::array(0, new NextAction("call pet", ACTION_NORMAL + 2), NULL)));
 }
 
 void HunterStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitReactionTriggers(triggers);
+#ifdef MANGOSBOT_TWO
+    triggers.push_back(new TriggerNode("hunter dispel magic", NextAction::array(0, new NextAction("tranquilizing shot", ACTION_DISPEL), NULL)));
+#endif
 
     triggers.push_back(new TriggerNode(
         "dispel enrage",
@@ -822,6 +857,16 @@ void HunterBoostRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tri
 void HunterCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     CcStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("hunter wyvern sting", NextAction::array(0, new NextAction("hunter wyvern sting", ACTION_INTERRUPT + 1), NULL)));
+    triggers.push_back(new TriggerNode("hunter disengage", NextAction::array(0, new NextAction("hunter disengage", ACTION_INTERRUPT + 2), NULL)));
+#ifndef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("snake trap in place", NextAction::array(0, new NextAction("snake trap in place", ACTION_INTERRUPT), NULL)));
+#endif
+#ifdef MANGOSBOT_TWO
+    triggers.push_back(new TriggerNode("hunter master's call", NextAction::array(0, new NextAction("hunter master's call", ACTION_INTERRUPT + 4), NULL)));
+    triggers.push_back(new TriggerNode("hunter freezing arrow", NextAction::array(0, new NextAction("hunter freezing arrow", ACTION_INTERRUPT + 1), NULL)));
+#endif
+
 
     triggers.push_back(new TriggerNode(
         "target of attacker close",
@@ -848,6 +893,7 @@ void HunterCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void HunterCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     CcStrategy::InitNonCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("hunter wyvern sting", NextAction::array(0, new NextAction("hunter wyvern sting", ACTION_INTERRUPT + 1), NULL)));
 }
 
 void HunterCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -918,11 +964,15 @@ void HunterStingPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigger
 
 void HunterStingRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-
+    HunterStingPveStrategy::InitCombatTriggers(triggers);
 }
 
 void HunterAspectStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#ifndef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("hunter recover mana", NextAction::array(0, new NextAction("aspect of the viper", ACTION_HIGH + 6), NULL)));
+#endif
+
     triggers.push_back(new TriggerNode(
         "aspect of the hawk",
         NextAction::array(0, new NextAction("aspect of the hawk", ACTION_HIGH + 5), NULL)));
@@ -930,6 +980,10 @@ void HunterAspectStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void HunterAspectStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#ifndef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("hunter recover mana", NextAction::array(0, new NextAction("aspect of the viper", ACTION_HIGH + 6), NULL)));
+#endif
+
     triggers.push_back(new TriggerNode(
         "aspect of the hawk",
         NextAction::array(0, new NextAction("aspect of the hawk", ACTION_NORMAL), NULL)));
@@ -995,10 +1049,15 @@ NextAction** HunterStrategy::GetDefaultCombatActions()
 void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("no ammo", NextAction::array(0, new NextAction("equip ammo", ACTION_MOVE + 2), NULL)));
+    triggers.push_back(new TriggerNode("hunter ammo exhausted", NextAction::array(0, new NextAction("say::no ammo", ACTION_IDLE), NULL)));
+    triggers.push_back(new TriggerNode("hunter arcane shot", NextAction::array(0, new NextAction("arcane shot", ACTION_NORMAL + 4), NULL)));
+    triggers.push_back(new TriggerNode("hunter mongoose bite", NextAction::array(0, new NextAction("mongoose bite", ACTION_NORMAL + 2), NULL)));
+
 
     triggers.push_back(new TriggerNode(
         "kill shot",
-        NextAction::array(0, new NextAction("kill shot", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("kill shot", ACTION_HIGH + 5), NULL)));
 
     triggers.push_back(new TriggerNode(
         "switch to ranged",
@@ -1026,7 +1085,7 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "aimed shot",
-        NextAction::array(0, new NextAction("aimed shot", ACTION_NORMAL + 2), NULL)));
+        NextAction::array(0, new NextAction("aimed shot", ACTION_NORMAL + 5), NULL)));
 
     triggers.push_back(new TriggerNode(
         "enemy is close",
@@ -1034,7 +1093,7 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "no pet",
-        NextAction::array(0, new NextAction("tame beast", ACTION_EMERGENCY), NULL)));
+        NextAction::array(0, new NextAction("call pet", ACTION_NORMAL + 2), NULL)));
 }
 
 void HunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1054,12 +1113,15 @@ void HunterStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "no pet",
-        NextAction::array(0, new NextAction("tame beast", ACTION_EMERGENCY), NULL)));
+        NextAction::array(0, new NextAction("call pet", ACTION_NORMAL + 2), NULL)));
 }
 
 void HunterStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitReactionTriggers(triggers);
+#ifdef MANGOSBOT_TWO
+    triggers.push_back(new TriggerNode("hunter dispel magic", NextAction::array(0, new NextAction("tranquilizing shot", ACTION_DISPEL), NULL)));
+#endif
 
     triggers.push_back(new TriggerNode(
         "dispel enrage",
@@ -1292,6 +1354,16 @@ void HunterBoostRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tri
 void HunterCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     CcStrategy::InitCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("hunter wyvern sting", NextAction::array(0, new NextAction("hunter wyvern sting", ACTION_INTERRUPT + 1), NULL)));
+    triggers.push_back(new TriggerNode("hunter disengage", NextAction::array(0, new NextAction("hunter disengage", ACTION_INTERRUPT + 2), NULL)));
+#ifndef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("snake trap in place", NextAction::array(0, new NextAction("snake trap in place", ACTION_INTERRUPT), NULL)));
+#endif
+#ifdef MANGOSBOT_TWO
+    triggers.push_back(new TriggerNode("hunter master's call", NextAction::array(0, new NextAction("hunter master's call", ACTION_INTERRUPT + 4), NULL)));
+    triggers.push_back(new TriggerNode("hunter freezing arrow", NextAction::array(0, new NextAction("hunter freezing arrow", ACTION_INTERRUPT + 1), NULL)));
+#endif
+
 
     triggers.push_back(new TriggerNode(
         "target of attacker close",
@@ -1318,6 +1390,7 @@ void HunterCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void HunterCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     CcStrategy::InitNonCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("hunter wyvern sting", NextAction::array(0, new NextAction("hunter wyvern sting", ACTION_INTERRUPT + 1), NULL)));
 }
 
 void HunterCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1388,11 +1461,15 @@ void HunterStingPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigger
 
 void HunterStingRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-
+    HunterStingPveStrategy::InitCombatTriggers(triggers);
 }
 
 void HunterAspectStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#ifndef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("hunter recover mana", NextAction::array(0, new NextAction("aspect of the viper", ACTION_HIGH + 6), NULL)));
+#endif
+
     triggers.push_back(new TriggerNode(
         "aspect of the dragonhawk",
         NextAction::array(0, new NextAction("aspect of the dragonhawk", ACTION_HIGH + 5), NULL)));
@@ -1400,6 +1477,10 @@ void HunterAspectStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void HunterAspectStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#ifndef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("hunter recover mana", NextAction::array(0, new NextAction("aspect of the viper", ACTION_HIGH + 6), NULL)));
+#endif
+
     triggers.push_back(new TriggerNode(
         "aspect of the dragonhawk",
         NextAction::array(0, new NextAction("aspect of the dragonhawk", ACTION_NORMAL), NULL)));
