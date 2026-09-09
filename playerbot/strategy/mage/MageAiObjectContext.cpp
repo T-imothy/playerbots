@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/CasterCombatActions.h"
 #include "playerbot/strategy/Strategy.h"
 #include "MageActions.h"
 #include "MageAiObjectContext.h"
@@ -154,6 +155,18 @@ namespace ai
         public:
             TriggerFactoryInternal()
             {
+#ifndef MANGOSBOT_ZERO
+                creators["slow"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "slow"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["focus magic"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "focus magic"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["arcane barrage"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "arcane barrage"); };
+#endif
+                creators["caster fallback"] = [](PlayerbotAI* ai) { return new CasterFallbackTrigger(ai); };
+                creators["caster instant spell"] = [](PlayerbotAI* ai) { return new CasterProcTrigger(ai, "caster instant spell"); };
+
                 creators["fireball"] = [](PlayerbotAI* ai) { return new FireballTrigger(ai); };
                 creators["pyroblast"] = [](PlayerbotAI* ai) { return new PyroblastTrigger(ai); };
                 creators["combustion"] = [](PlayerbotAI* ai) { return new CombustionTrigger(ai); };
@@ -204,6 +217,18 @@ namespace ai
         public:
             AiObjectContextInternal()
             {
+#ifndef MANGOSBOT_ZERO
+                creators["slow"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "slow"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["focus magic"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "focus magic"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["arcane barrage"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "arcane barrage"); };
+#endif
+                creators["caster fallback"] = [](PlayerbotAI* ai) { return new CasterFallbackAction(ai); };
+                creators["caster instant spell"] = [](PlayerbotAI* ai) { return new CasterInstantAction(ai); };
+
                 creators["arcane power"] = [](PlayerbotAI* ai) { return new CastArcanePowerAction(ai); };
                 creators["presence of mind"] = [](PlayerbotAI* ai) { return new CastPresenceOfMindAction(ai); };
                 creators["frostbolt"] = [](PlayerbotAI* ai) { return new CastFrostboltAction(ai); };
@@ -239,7 +264,6 @@ namespace ai
                 creators["lesser invisibility"] = [](PlayerbotAI* ai) { return new CastLesserInvisibilityAction(ai); };
                 creators["evocation"] = [](PlayerbotAI* ai) { return new CastEvocationAction(ai); };
                 creators["arcane blast"] = [](PlayerbotAI* ai) { return new CastArcaneBlastAction(ai); };
-                creators["arcane barrage"] = [](PlayerbotAI* ai) { return new CastArcaneBarrageAction(ai); };
                 creators["arcane missiles"] = [](PlayerbotAI* ai) { return new CastArcaneMissilesAction(ai); };
                 creators["counterspell on enemy healer"] = [](PlayerbotAI* ai) { return new CastCounterspellOnEnemyHealerAction(ai); };
                 creators["fire ward"] = [](PlayerbotAI* ai) { return new CastFireWardAction(ai); };

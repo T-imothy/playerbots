@@ -9,10 +9,12 @@ class ShadowPriestStrategyActionNodeFactory : public NamedObjectFactory<ActionNo
 public:
     ShadowPriestStrategyActionNodeFactory()
     {
+        creators["mind flay"] = &mind_flay;
         creators["dispersion"] = &dispersion;
     }
 
 private:
+    ACTION_NODE_A(mind_flay, "mind flay", "shoot");
     ACTION_NODE_A(dispersion, "dispersion", "mana potion");
 };
 
@@ -55,6 +57,8 @@ void ShadowPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no mana",
         NextAction::array(0, new NextAction("shoot", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
 }
 
 void ShadowPriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -151,6 +155,11 @@ void ShadowPriestAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
     triggers.push_back(new TriggerNode(
         "shadow word: pain on attacker",
         NextAction::array(0, new NextAction("shadow word: pain on attacker", ACTION_HIGH + 1), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("mind sear", NextAction::array(0, new NextAction("mind sear", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void ShadowPriestAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -328,6 +337,11 @@ void ShadowPriestCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 {
     ShadowPriestCcStrategy::InitCombatTriggers(triggers);
     PriestCcPvpStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("psychic horror", NextAction::array(0, new NextAction("psychic horror", ACTION_INTERRUPT + 2), nullptr)));
+#endif
 }
 
 void ShadowPriestCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -437,6 +451,8 @@ void ShadowPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no mana",
         NextAction::array(0, new NextAction("shoot", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
 }
 
 void ShadowPriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -537,6 +553,11 @@ void ShadowPriestAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
     triggers.push_back(new TriggerNode(
         "vampiric touch on attacker",
         NextAction::array(0, new NextAction("vampiric touch on attacker", ACTION_HIGH), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("mind sear", NextAction::array(0, new NextAction("mind sear", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void ShadowPriestAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -714,6 +735,11 @@ void ShadowPriestCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 {
     ShadowPriestCcStrategy::InitCombatTriggers(triggers);
     PriestCcPvpStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("psychic horror", NextAction::array(0, new NextAction("psychic horror", ACTION_INTERRUPT + 2), nullptr)));
+#endif
 }
 
 void ShadowPriestCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -828,6 +854,8 @@ void ShadowPriestStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no mana",
         NextAction::array(0, new NextAction("shoot", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
 }
 
 void ShadowPriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -928,6 +956,11 @@ void ShadowPriestAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
     triggers.push_back(new TriggerNode(
         "vampiric touch on attacker",
         NextAction::array(0, new NextAction("vampiric touch on attacker", ACTION_HIGH), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("mind sear", NextAction::array(0, new NextAction("mind sear", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void ShadowPriestAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1111,6 +1144,11 @@ void ShadowPriestCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 {
     ShadowPriestCcStrategy::InitCombatTriggers(triggers);
     PriestCcPvpStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("psychic horror", NextAction::array(0, new NextAction("psychic horror", ACTION_INTERRUPT + 2), nullptr)));
+#endif
 }
 
 void ShadowPriestCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

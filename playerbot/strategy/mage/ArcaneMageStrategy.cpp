@@ -38,6 +38,11 @@ NextAction** ArcaneMageStrategy::GetDefaultCombatActions()
 void ArcaneMageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     MageStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("arcane barrage", NextAction::array(0, new NextAction("arcane barrage", ACTION_NORMAL + 2), nullptr)));
+#endif
 }
 
 void ArcaneMageStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -303,6 +308,11 @@ void ArcaneMageCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 {
     ArcaneMageCcStrategy::InitCombatTriggers(triggers);
     MageCcPvpStrategy::InitCombatTriggers(triggers);
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("slow", NextAction::array(0, new NextAction("slow", ACTION_INTERRUPT), nullptr)));
+#endif
 }
 
 void ArcaneMageCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -384,6 +394,11 @@ void ArcaneMageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "arcane blast",
         NextAction::array(0, new NextAction("arcane blast", ACTION_NORMAL), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("arcane barrage", NextAction::array(0, new NextAction("arcane barrage", ACTION_NORMAL + 2), nullptr)));
+#endif
 }
 
 void ArcaneMageStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -649,6 +664,11 @@ void ArcaneMageCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 {
     ArcaneMageCcStrategy::InitCombatTriggers(triggers);
     MageCcPvpStrategy::InitCombatTriggers(triggers);
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("slow", NextAction::array(0, new NextAction("slow", ACTION_INTERRUPT), nullptr)));
+#endif
 }
 
 void ArcaneMageCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -734,6 +754,11 @@ void ArcaneMageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "missile barrage",
         NextAction::array(0, new NextAction("arcane missiles", ACTION_NORMAL), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("arcane barrage", NextAction::array(0, new NextAction("arcane barrage", ACTION_NORMAL + 2), nullptr)));
+#endif
 }
 
 void ArcaneMageStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -876,14 +901,6 @@ void ArcaneMageAoeRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& t
 void ArcaneMageBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     MageBuffStrategy::InitCombatTriggers(triggers);
-
-    triggers.push_back(new TriggerNode(
-        "arcane power",
-        NextAction::array(0, new NextAction("arcane power", ACTION_HIGH + 2), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "presence of mind",
-        NextAction::array(0, new NextAction("presence of mind", ACTION_HIGH + 1), NULL)));
 }
 
 void ArcaneMageBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1007,6 +1024,11 @@ void ArcaneMageCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 {
     ArcaneMageCcStrategy::InitCombatTriggers(triggers);
     MageCcPvpStrategy::InitCombatTriggers(triggers);
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("slow", NextAction::array(0, new NextAction("slow", ACTION_INTERRUPT), nullptr)));
+#endif
 }
 
 void ArcaneMageCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

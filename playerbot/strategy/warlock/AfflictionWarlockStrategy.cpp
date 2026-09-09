@@ -19,7 +19,7 @@ void AfflictionWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 
     triggers.push_back(new TriggerNode(
         "low mana",
-        NextAction::array(0, new NextAction("dark pact", ACTION_HIGH + 2), NULL)));
+        NextAction::array(0, new NextAction("dark pact", ACTION_HIGH + 4), NULL)));
 
     triggers.push_back(new TriggerNode(
         "siphon life",
@@ -388,7 +388,7 @@ void AfflictionWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 
     triggers.push_back(new TriggerNode(
         "low mana",
-        NextAction::array(0, new NextAction("dark pact", ACTION_HIGH + 2), NULL)));
+        NextAction::array(0, new NextAction("dark pact", ACTION_HIGH + 4), NULL)));
 
     triggers.push_back(new TriggerNode(
         "unstable affliction",
@@ -769,7 +769,7 @@ void AfflictionWarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 
     triggers.push_back(new TriggerNode(
         "low mana",
-        NextAction::array(0, new NextAction("dark pact", ACTION_HIGH + 2), NULL)));
+        NextAction::array(0, new NextAction("dark pact", ACTION_HIGH + 4), NULL)));
 
     triggers.push_back(new TriggerNode(
         "unstable affliction",

@@ -52,6 +52,13 @@ void ElementalShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
     triggers.push_back(new TriggerNode(
         "shock",
         NextAction::array(0, new NextAction("earth shock", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("thunderstorm", NextAction::array(0, new NextAction("thunderstorm", ACTION_HIGH + 1), nullptr)));
+#endif
 }
 
 void ElementalShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -206,6 +213,11 @@ void ElementalShamanCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "frost shock snare",
         NextAction::array(0, new NextAction("frost shock", ACTION_HIGH), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("hex", NextAction::array(0, new NextAction("hex", ACTION_INTERRUPT + 1), nullptr)));
+#endif
 }
 
 void ElementalShamanCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -301,11 +313,11 @@ void ElementalShamanTotemsStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
 
     triggers.push_back(new TriggerNode(
         "air totem",
-        NextAction::array(0, new NextAction("windfury totem", ACTION_HIGH + 1), NULL)));
+        NextAction::array(0, new NextAction("windfury totem", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "air totem",
-        NextAction::array(0, new NextAction("wrath of air totem", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("wrath of air totem", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "water totem",
@@ -438,6 +450,18 @@ void ElementalShamanBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNod
 void ElementalShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode("elemental mastery", NextAction::array(0, new NextAction("elemental mastery", ACTION_HIGH + 1), nullptr)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("fire elemental totem", NextAction::array(0, new NextAction("fire elemental totem", ACTION_HIGH + 2), nullptr)));
+#endif
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("earth elemental totem", NextAction::array(0, new NextAction("earth elemental totem", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void ElementalShamanBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -496,6 +520,13 @@ void ElementalShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
     triggers.push_back(new TriggerNode(
         "shock",
         NextAction::array(0, new NextAction("earth shock", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("thunderstorm", NextAction::array(0, new NextAction("thunderstorm", ACTION_HIGH + 1), nullptr)));
+#endif
 }
 
 void ElementalShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -650,6 +681,11 @@ void ElementalShamanCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "frost shock snare",
         NextAction::array(0, new NextAction("frost shock", ACTION_HIGH), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("hex", NextAction::array(0, new NextAction("hex", ACTION_INTERRUPT + 1), nullptr)));
+#endif
 }
 
 void ElementalShamanCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -745,11 +781,11 @@ void ElementalShamanTotemsStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
 
     triggers.push_back(new TriggerNode(
         "air totem",
-        NextAction::array(0, new NextAction("windfury totem", ACTION_HIGH + 1), NULL)));
+        NextAction::array(0, new NextAction("windfury totem", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "air totem",
-        NextAction::array(0, new NextAction("wrath of air totem", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("wrath of air totem", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "water totem",
@@ -886,6 +922,18 @@ void ElementalShamanBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNod
 void ElementalShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode("elemental mastery", NextAction::array(0, new NextAction("elemental mastery", ACTION_HIGH + 1), nullptr)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("fire elemental totem", NextAction::array(0, new NextAction("fire elemental totem", ACTION_HIGH + 2), nullptr)));
+#endif
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("earth elemental totem", NextAction::array(0, new NextAction("earth elemental totem", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void ElementalShamanBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -951,6 +999,13 @@ void ElementalShamanStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
     triggers.push_back(new TriggerNode(
         "shock",
         NextAction::array(0, new NextAction("earth shock", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("thunderstorm", NextAction::array(0, new NextAction("thunderstorm", ACTION_HIGH + 1), nullptr)));
+#endif
 }
 
 void ElementalShamanStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1105,6 +1160,11 @@ void ElementalShamanCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "frost shock snare",
         NextAction::array(0, new NextAction("frost shock", ACTION_HIGH), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("hex", NextAction::array(0, new NextAction("hex", ACTION_INTERRUPT + 1), nullptr)));
+#endif
 }
 
 void ElementalShamanCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1200,11 +1260,11 @@ void ElementalShamanTotemsStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
 
     triggers.push_back(new TriggerNode(
         "air totem",
-        NextAction::array(0, new NextAction("windfury totem", ACTION_HIGH + 1), NULL)));
+        NextAction::array(0, new NextAction("windfury totem", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "air totem",
-        NextAction::array(0, new NextAction("wrath of air totem", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("wrath of air totem", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "water totem",
@@ -1345,6 +1405,18 @@ void ElementalShamanBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNod
 void ElementalShamanBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     ShamanBoostStrategy::InitCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode("elemental mastery", NextAction::array(0, new NextAction("elemental mastery", ACTION_HIGH + 1), nullptr)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("fire elemental totem", NextAction::array(0, new NextAction("fire elemental totem", ACTION_HIGH + 2), nullptr)));
+#endif
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("earth elemental totem", NextAction::array(0, new NextAction("earth elemental totem", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void ElementalShamanBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

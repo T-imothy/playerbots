@@ -10,12 +10,15 @@ class WarlockStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
 public:
     WarlockStrategyActionNodeFactory()
     {
+        creators["incinerate"] = &incinerate;
         creators["banish"] = &banish;
         creators["fel armor"] = &fel_armor;
         creators["demon armor"] = &demon_armor;
     }
 
 private:
+    ACTION_NODE_A(incinerate, "incinerate", "shadow bolt");
+
     ACTION_NODE_A(banish, "banish", "fear");
 
     ACTION_NODE_A(fel_armor, "fel armor", "demon armor");
@@ -61,6 +64,8 @@ void WarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no mana",
         NextAction::array(0, new NextAction("shoot", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
 }
 
 void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -93,6 +98,8 @@ void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 void WarlockStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitReactionTriggers(triggers);
+
+    triggers.push_back(new TriggerNode("stop unsafe health channel", NextAction::array(0, new NextAction("stop unsafe health channel", ACTION_EMERGENCY + 1), nullptr)));
 }
 
 void WarlockStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
@@ -187,6 +194,13 @@ void WarlockAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "ranged high aoe",
         NextAction::array(0, new NextAction("rain of fire", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode("hellfire", NextAction::array(0, new NextAction("hellfire", ACTION_HIGH), nullptr)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("shadowflame", NextAction::array(0, new NextAction("shadowflame", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void WarlockAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -377,6 +391,16 @@ void WarlockCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "fear pvp",
         NextAction::array(0, new NextAction("fear", ACTION_INTERRUPT + 1), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("demonic circle: summon", NextAction::array(0, new NextAction("demonic circle: summon", ACTION_NORMAL), nullptr)));
+#endif
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("demonic circle: teleport", NextAction::array(0, new NextAction("demonic circle: teleport", ACTION_EMERGENCY), nullptr)));
+#endif
 }
 
 void WarlockCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -407,11 +431,19 @@ void WarlockCcRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigg
 void WarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
 
+
+    triggers.push_back(new TriggerNode("health funnel", NextAction::array(0, new NextAction("health funnel", ACTION_HIGH + 1), nullptr)));
+
+    triggers.push_back(new TriggerNode("fel domination", NextAction::array(0, new NextAction("fel domination", ACTION_HIGH + 4), nullptr)));
+
+    triggers.push_back(new TriggerNode("recover demon", NextAction::array(0, new NextAction("recover demon", ACTION_HIGH + 3), nullptr)));
 }
 
 void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
 
+
+    triggers.push_back(new TriggerNode("health funnel", NextAction::array(0, new NextAction("health funnel", ACTION_HIGH + 1), nullptr)));
 }
 
 void WarlockPetPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -521,6 +553,8 @@ void WarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no mana",
         NextAction::array(0, new NextAction("shoot", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
 }
 
 void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -549,6 +583,8 @@ void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 void WarlockStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitReactionTriggers(triggers);
+
+    triggers.push_back(new TriggerNode("stop unsafe health channel", NextAction::array(0, new NextAction("stop unsafe health channel", ACTION_EMERGENCY + 1), nullptr)));
 }
 
 void WarlockStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
@@ -651,6 +687,13 @@ void WarlockAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "ranged high aoe",
         NextAction::array(0, new NextAction("rain of fire", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode("hellfire", NextAction::array(0, new NextAction("hellfire", ACTION_HIGH), nullptr)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("shadowflame", NextAction::array(0, new NextAction("shadowflame", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void WarlockAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -841,6 +884,16 @@ void WarlockCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "fear pvp",
         NextAction::array(0, new NextAction("fear", ACTION_INTERRUPT + 1), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("demonic circle: summon", NextAction::array(0, new NextAction("demonic circle: summon", ACTION_NORMAL), nullptr)));
+#endif
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("demonic circle: teleport", NextAction::array(0, new NextAction("demonic circle: teleport", ACTION_EMERGENCY), nullptr)));
+#endif
 }
 
 void WarlockCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -871,6 +924,12 @@ void WarlockCcRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigg
 void WarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
 
+
+    triggers.push_back(new TriggerNode("health funnel", NextAction::array(0, new NextAction("health funnel", ACTION_HIGH + 1), nullptr)));
+
+    triggers.push_back(new TriggerNode("fel domination", NextAction::array(0, new NextAction("fel domination", ACTION_HIGH + 4), nullptr)));
+
+    triggers.push_back(new TriggerNode("recover demon", NextAction::array(0, new NextAction("recover demon", ACTION_HIGH + 3), nullptr)));
 }
 
 void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -878,6 +937,8 @@ void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("initialize pet", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("health funnel", NextAction::array(0, new NextAction("health funnel", ACTION_HIGH + 1), nullptr)));
 }
 
 void WarlockPetPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -987,6 +1048,8 @@ void WarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no mana",
         NextAction::array(0, new NextAction("shoot", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
 }
 
 void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1015,6 +1078,8 @@ void WarlockStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 void WarlockStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     ClassStrategy::InitReactionTriggers(triggers);
+
+    triggers.push_back(new TriggerNode("stop unsafe health channel", NextAction::array(0, new NextAction("stop unsafe health channel", ACTION_EMERGENCY + 1), nullptr)));
 }
 
 void WarlockStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
@@ -1117,6 +1182,13 @@ void WarlockAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "ranged high aoe",
         NextAction::array(0, new NextAction("rain of fire", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode("hellfire", NextAction::array(0, new NextAction("hellfire", ACTION_HIGH), nullptr)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("shadowflame", NextAction::array(0, new NextAction("shadowflame", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void WarlockAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1304,6 +1376,16 @@ void WarlockCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "fear pvp",
         NextAction::array(0, new NextAction("fear", ACTION_INTERRUPT + 1), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("demonic circle: summon", NextAction::array(0, new NextAction("demonic circle: summon", ACTION_NORMAL), nullptr)));
+#endif
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("demonic circle: teleport", NextAction::array(0, new NextAction("demonic circle: teleport", ACTION_EMERGENCY), nullptr)));
+#endif
 }
 
 void WarlockCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1334,11 +1416,19 @@ void WarlockCcRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trigg
 void WarlockPetStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
 
+
+    triggers.push_back(new TriggerNode("health funnel", NextAction::array(0, new NextAction("health funnel", ACTION_HIGH + 1), nullptr)));
+
+    triggers.push_back(new TriggerNode("fel domination", NextAction::array(0, new NextAction("fel domination", ACTION_HIGH + 4), nullptr)));
+
+    triggers.push_back(new TriggerNode("recover demon", NextAction::array(0, new NextAction("recover demon", ACTION_HIGH + 3), nullptr)));
 }
 
 void WarlockPetStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
 
+
+    triggers.push_back(new TriggerNode("health funnel", NextAction::array(0, new NextAction("health funnel", ACTION_HIGH + 1), nullptr)));
 }
 
 void WarlockPetPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

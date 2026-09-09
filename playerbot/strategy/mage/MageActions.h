@@ -398,7 +398,7 @@ namespace ai
             }
             else
             {
-                const std::vector<uint32> manaGemIds = { 5514, 5513, 8007, 8008, 22044, 33312 };
+                const std::vector<uint32> manaGemIds = { 33312, 22044, 8008, 8007, 5513, 5514 };
                 for (const uint32 manaGemId : manaGemIds)
                 {
                     if (bot->HasItemCount(manaGemId, 1))

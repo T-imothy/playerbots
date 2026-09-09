@@ -22,6 +22,11 @@ CastSpellAction::CastSpellAction(PlayerbotAI* ai, std::string spell)
     }
 }
 
+ActionThreatType CastSpellAction::getThreatType()
+{
+    return CasterSpellArea(GetSpellName()) == CasterArea::None ? ActionThreatType::ACTION_THREAT_SINGLE : ActionThreatType::ACTION_THREAT_AOE;
+}
+
 bool CastSpellAction::HasMovementEffect()
 {
     RefreshSpellId();
@@ -51,6 +56,7 @@ bool CastSpellAction::HasMovementEffect()
 bool CastSpellAction::Execute(Event& event)
 {
     RefreshSpellId();
+    if (!CasterSpellAreaSafe(ai, GetSpellName(), GetTarget()) || !CasterHealthCostSafe(ai, GetSpellName())) return false;
     bool executed = false;
     uint32 observedSpellId = spellId;
     uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
@@ -194,6 +200,10 @@ bool CastSpellAction::isPossible()
     if (bot->getClass() == CLASS_HUNTER && nativeSpell->HasAttribute(SPELL_ATTR_USES_RANGED_SLOT))
         return ai->CanCastSpell(spellName, spellTarget, 0);
 
+    // Self-centred caster bursts use native range, not melee weapon reach.
+    if (CasterSpellArea(GetSpellName()) == CasterArea::Self)
+        return ai->CanCastSpell(spellName, spellTarget, 0);
+
     bool canReach = false;
     if (spellTarget == bot)
     {
@@ -276,6 +286,12 @@ bool CastSpellAction::isUseful()
     if (bot->getClass() == CLASS_HUNTER && spellTarget != bot &&
         getThreatType() != ActionThreatType::ACTION_THREAT_NONE &&
         spellTarget->HasBreakableByDamageCrowdControlAura() && bot->CanAttack(spellTarget)) return false;
+
+    if (!CasterSpellAreaSafe(ai, GetSpellName(), spellTarget) || !CasterHealthCostSafe(ai, GetSpellName())) return false;
+
+    if ((bot->getClass() == CLASS_MAGE || bot->getClass() == CLASS_WARLOCK || bot->getClass() == CLASS_PRIEST ||
+         bot->getClass() == CLASS_DRUID || bot->getClass() == CLASS_SHAMAN) && spellTarget != bot &&
+        CasterDamageSpell(sServerFacade.LookupSpellInfo(spellId)) && MeleeCcCheck(ai).Protected(spellTarget)) return false;
 
     const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(spellId);
     if (ShouldAvoidCorruptedHealing(bot, pSpellInfo, spellTarget))

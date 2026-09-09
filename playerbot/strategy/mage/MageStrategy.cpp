@@ -42,7 +42,7 @@ private:
         return new ActionNode("dragon's breath",
             /*P*/ NULL,
             /*A*/ NextAction::array(0, new NextAction("blast wave"), NULL),
-            /*C*/ NextAction::array(0, new NextAction("flamestrike", 71.0f), NULL));
+            /*C*/ NULL);
     }
 
     static ActionNode* blast_wave(PlayerbotAI* ai)
@@ -50,7 +50,7 @@ private:
         return new ActionNode("blast wave",
             /*P*/ NULL,
             /*A*/ NextAction::array(0, new NextAction("frost nova"), NULL),
-            /*C*/ NextAction::array(0, new NextAction("flamestrike", 71.0f), NULL));
+            /*C*/ NULL);
     }
 
     ACTION_NODE_A(invisibility, "invisibility", "lesser invisibility");
@@ -104,6 +104,13 @@ void MageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no mana",
         NextAction::array(0, new NextAction("shoot", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("caster instant spell", NextAction::array(0, new NextAction("caster instant spell", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void MageStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -293,6 +300,11 @@ void MageBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("apply oil", ACTION_NORMAL), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("focus magic", NextAction::array(0, new NextAction("focus magic", ACTION_NORMAL + 1), nullptr)));
+#endif
 }
 
 void MageBuffPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -531,6 +543,13 @@ void MageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no mana",
         NextAction::array(0, new NextAction("shoot", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("caster instant spell", NextAction::array(0, new NextAction("caster instant spell", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void MageStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -716,6 +735,11 @@ void MageBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("apply oil", ACTION_NORMAL), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("focus magic", NextAction::array(0, new NextAction("focus magic", ACTION_NORMAL + 1), nullptr)));
+#endif
 }
 
 void MageBuffPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -954,6 +978,13 @@ void MageStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "no mana",
         NextAction::array(0, new NextAction("shoot", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("caster instant spell", NextAction::array(0, new NextAction("caster instant spell", ACTION_HIGH + 2), nullptr)));
+#endif
 }
 
 void MageStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1143,6 +1174,11 @@ void MageBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("apply oil", ACTION_NORMAL), NULL)));
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("focus magic", NextAction::array(0, new NextAction("focus magic", ACTION_NORMAL + 1), nullptr)));
+#endif
 }
 
 void MageBuffPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

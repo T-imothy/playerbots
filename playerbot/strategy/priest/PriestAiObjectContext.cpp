@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/CasterCombatActions.h"
 #include "PriestActions.h"
 #include "PriestTriggers.h"
 #include "PriestAiObjectContext.h"
@@ -169,6 +170,14 @@ namespace ai
         public:
             TriggerFactoryInternal()
             {
+#ifdef MANGOSBOT_TWO
+                creators["mind sear"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "mind sear"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["psychic horror"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "psychic horror"); };
+#endif
+                creators["caster fallback"] = [](PlayerbotAI* ai) { return new CasterFallbackTrigger(ai); };
+
                 creators["devouring plague"] = [](PlayerbotAI* ai) { return new DevouringPlagueTrigger(ai); };
                 creators["shadow word: pain"] = [](PlayerbotAI* ai) { return new PowerWordPainTrigger(ai); };
                 creators["shadow word: pain on attacker"] = [](PlayerbotAI* ai) { return new PowerWordPainOnAttackerTrigger(ai); };
@@ -216,6 +225,14 @@ namespace ai
         public:
             AiObjectContextInternal()
             {
+#ifdef MANGOSBOT_TWO
+                creators["mind sear"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "mind sear"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["psychic horror"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "psychic horror"); };
+#endif
+                creators["caster fallback"] = [](PlayerbotAI* ai) { return new CasterFallbackAction(ai); };
+
                 creators["power infusion"] = [](PlayerbotAI* ai) { return new CastPowerInfusionAction(ai); };
                 creators["inner focus"] = [](PlayerbotAI* ai) { return new CastInnerFocusAction(ai); };
                 creators["shadow word: pain"] = [](PlayerbotAI* ai) { return new CastPowerWordPainAction(ai); };

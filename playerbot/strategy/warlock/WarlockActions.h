@@ -129,7 +129,21 @@ namespace ai
 		CastSoulFireAction(PlayerbotAI* ai) : CastSpellAction(ai, "soul fire") {}
     };
 
-	BUFF_ACTION(CastDarkPactAction, "dark pact");
+    class CastDarkPactAction : public CastBuffSpellAction
+    {
+    public:
+        CastDarkPactAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "dark pact") {}
+        bool isUseful() override
+        {
+            Pet* pet = bot->GetPet();
+            // Native execution can transfer zero mana. Do not let a ready but
+            // empty pet drain outrank Life Tap indefinitely; retain pet reserves.
+            return pet && pet->IsAlive() && pet->GetMaxPower(POWER_MANA) &&
+                pet->GetPower(POWER_MANA) > pet->GetMaxPower(POWER_MANA) / 5 &&
+                bot->GetPower(POWER_MANA) < bot->GetMaxPower(POWER_MANA) * sPlayerbotAIConfig.lowMana / 100 &&
+                CastBuffSpellAction::isUseful();
+        }
+    };
 
 	class CastDrainManaAction : public CastSpellAction
 	{

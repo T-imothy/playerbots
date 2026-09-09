@@ -126,6 +126,17 @@ namespace ai
                     if (strstri(fire->GetName(), "fire nova totem")) return false;
 #endif
 
+            // A manual air choice must not be overwritten by default spec routes.
+            if (name == "windfury totem" || name == "wrath of air totem")
+            {
+                const std::pair<const char*, const char*> choices[] = {
+                    {"totem air grace", "grace of air totem"}, {"totem air grounding", "grounding totem"},
+                    {"totem air resistance", "nature resistance totem"}, {"totem air tranquil", "tranquil air totem"},
+                    {"totem air windfury", "windfury totem"}, {"totem air windwall", "windwall totem"}, {"totem air wrath", "wrath of air totem"}};
+                for (const auto& choice : choices)
+                    if (ai->HasStrategy(choice.first, BotState::BOT_STATE_COMBAT) && name != choice.second) return false;
+            }
+
             Group* group = bot->GetGroup();
             if (!group)
                 return !AI_VALUE2(bool, "has totem", name);
@@ -495,10 +506,11 @@ namespace ai
         CastLightningBoltAction(PlayerbotAI* ai) : CastSpellAction(ai, "lightning bolt") {}
     };
 
-    class CastThunderstormAction : public CastMeleeSpellAction
+    class CastThunderstormAction : public CastSpellAction
     {
     public:
-        CastThunderstormAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "thunderstorm") {}
+        std::string GetTargetName() override { return "self target"; }
+        CastThunderstormAction(PlayerbotAI* ai) : CastSpellAction(ai, "thunderstorm") {}
     };
 
     class CastHeroismAction : public CastBuffSpellAction

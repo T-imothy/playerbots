@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/CasterCombatPolicy.h"
 #include "playerbot/strategy/Action.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotAI.h"
@@ -9,7 +10,7 @@ namespace ai
     {
     public:
         CastSpellAction(PlayerbotAI* ai, std::string spell);
-        virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_SINGLE; }
+        virtual ActionThreatType getThreatType() override;
         virtual bool Execute(Event& event) override;
         virtual bool isPossible() override;
         virtual bool isUseful() override;
@@ -146,7 +147,7 @@ namespace ai
         
     protected:
         virtual std::string GetReachActionName() override { return "reach spell"; }
-        virtual std::string GetTargetName() override { return "attacker without aura"; }
+        virtual std::string GetTargetName() override { return CasterPersonalDot(GetSpellName()) ? "attacker without my aura" : "attacker without aura"; }
         virtual std::string GetTargetQualifier() override { return GetSpellName(); }
         virtual std::string getName() override { return GetSpellName() + " on attacker"; }
         virtual ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }

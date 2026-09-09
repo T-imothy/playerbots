@@ -26,7 +26,7 @@ bool InfernoTrigger::IsActive()
 bool CorruptionTrigger::IsActive()
 {
 	Unit* target = GetTarget();
-	return target && !ai->HasAura("corruption", target) && !ai->HasAura("seed of corruption", target) && !HasMaxDebuffs();
+    return target && !ai->HasAura("corruption", target, false, true) && !ai->HasAura("seed of corruption", target, false, true) && !HasMaxDebuffs();
 }
 
 bool LifeTapTrigger::IsActive()
@@ -46,6 +46,13 @@ bool LifeTapTrigger::IsActive()
 
 bool DrainSoulTrigger::IsActive()
 {
+#ifdef MANGOSBOT_TWO
+    // Execute damage is independent of shard farming and item cheats.
+    Unit* target = AI_VALUE(Unit*, "current target");
+    if (ai->HasStrategy("affliction", BotState::BOT_STATE_COMBAT) && MeleeCombatTarget(ai, target) && target->GetHealthPercent() <= 25.0f)
+        return true;
+#endif
+
 	// If no item cheats enabled
     if (!ai->HasCheat(BotCheatMask::item))
     {
@@ -179,7 +186,11 @@ bool ConflagrateTrigger::IsActive()
 		if (aura)
 		{
 			// Check if immolate is about to expire
-			if (aura->GetAuraDuration() <= 7000)
+            if (
+#ifdef MANGOSBOT_TWO
+                bot->HasAura(56235) || // Native Glyph of Conflagrate preserves Immolate.
+#endif
+                aura->GetAuraDuration() <= 7000)
 			{
 				return true;
 			}

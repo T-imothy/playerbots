@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/CasterCombatActions.h"
 #include "WarlockActions.h"
 #include "WarlockAiObjectContext.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
@@ -192,6 +193,40 @@ namespace ai
         public:
             TriggerFactoryInternal()
             {
+                creators["health funnel"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "health funnel"); };
+                creators["fel domination"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "fel domination"); };
+                creators["hellfire"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "hellfire"); };
+#ifdef MANGOSBOT_TWO
+                creators["demonic empowerment"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "demonic empowerment"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["shadowflame"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "shadowflame"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["demonic circle: summon"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "demonic circle: summon"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["demonic circle: teleport"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "demonic circle: teleport"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["immolation aura"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "immolation aura"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["shadow cleave"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "shadow cleave"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["demon charge"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "demon charge"); };
+#endif
+                creators["caster fallback"] = [](PlayerbotAI* ai) { return new CasterFallbackTrigger(ai); };
+                creators["recover demon"] = [](PlayerbotAI* ai) { return new CasterProcTrigger(ai, "recover demon"); };
+                creators["stop unsafe health channel"] = [](PlayerbotAI* ai) { return new CasterStopHealthChannelTrigger(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["caster decimation"] = [](PlayerbotAI* ai) { return new CasterProcTrigger(ai, "caster decimation"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["caster molten core"] = [](PlayerbotAI* ai) { return new CasterProcTrigger(ai, "caster molten core"); };
+#endif
+
                 creators["shadow trance"] = [](PlayerbotAI* ai) { return new ShadowTranceTrigger(ai); };
                 creators["demon armor"] = [](PlayerbotAI* ai) { return new DemonArmorTrigger(ai); };
                 creators["no healthstone"] = [](PlayerbotAI* ai) { return new HasHealthstoneTrigger(ai); };
@@ -261,6 +296,34 @@ namespace ai
         public:
             AiObjectContextInternal()
             {
+                creators["health funnel"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "health funnel"); };
+                creators["fel domination"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "fel domination"); };
+                creators["hellfire"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "hellfire"); };
+#ifdef MANGOSBOT_TWO
+                creators["demonic empowerment"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "demonic empowerment"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["shadowflame"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "shadowflame"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["demonic circle: summon"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "demonic circle: summon"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["demonic circle: teleport"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "demonic circle: teleport"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["immolation aura"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "immolation aura"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["shadow cleave"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "shadow cleave"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["demon charge"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "demon charge"); };
+#endif
+                creators["caster fallback"] = [](PlayerbotAI* ai) { return new CasterFallbackAction(ai); };
+                creators["recover demon"] = [](PlayerbotAI* ai) { return new CasterRecoverPetAction(ai); };
+                creators["stop unsafe health channel"] = [](PlayerbotAI* ai) { return new CasterStopHealthChannelAction(ai); };
+
                 creators["fel armor"] = [](PlayerbotAI* ai) { return new CastFelArmorAction(ai); };
 #ifdef MANGOSBOT_TWO
                 creators["chaos bolt"] = [](PlayerbotAI* ai) { return new CastChaosBoltAction(ai); };

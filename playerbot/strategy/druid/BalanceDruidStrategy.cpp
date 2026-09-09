@@ -62,6 +62,8 @@ void BalanceDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "faerie fire",
         NextAction::array(0, new NextAction("faerie fire", ACTION_NORMAL + 3), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
 }
 
 void BalanceDruidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -295,6 +297,11 @@ void BalanceDruidBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "nature's swiftness",
         NextAction::array(0, new NextAction("nature's swiftness", ACTION_HIGH), NULL)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("force of nature", NextAction::array(0, new NextAction("force of nature", ACTION_HIGH + 1), nullptr)));
+#endif
 }
 
 void BalanceDruidBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -353,6 +360,11 @@ void BalanceDruidCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigger
     triggers.push_back(new TriggerNode(
         "enemy five yards",
         NextAction::array(0, new NextAction("nature's grasp", ACTION_HIGH), NULL)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("cyclone", NextAction::array(0, new NextAction("cyclone", ACTION_INTERRUPT + 1), nullptr)));
+#endif
 }
 
 void BalanceDruidCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -376,6 +388,11 @@ void BalanceDruidCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 {
     BalanceDruidCcStrategy::InitCombatTriggers(triggers);
     DruidCcPvpStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("typhoon", NextAction::array(0, new NextAction("typhoon", ACTION_INTERRUPT + 2), nullptr)));
+#endif
 }
 
 void BalanceDruidCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -483,6 +500,8 @@ void BalanceDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "very often",
         NextAction::array(0, new NextAction("starfire", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
 }
 
 void BalanceDruidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -692,6 +711,11 @@ void BalanceDruidBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "nature's swiftness",
         NextAction::array(0, new NextAction("nature's swiftness", ACTION_HIGH), NULL)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("force of nature", NextAction::array(0, new NextAction("force of nature", ACTION_HIGH + 1), nullptr)));
+#endif
 }
 
 void BalanceDruidBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -750,6 +774,11 @@ void BalanceDruidCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigger
     triggers.push_back(new TriggerNode(
         "enemy five yards",
         NextAction::array(0, new NextAction("nature's grasp", ACTION_HIGH), NULL)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("cyclone", NextAction::array(0, new NextAction("cyclone", ACTION_INTERRUPT + 1), nullptr)));
+#endif
 }
 
 void BalanceDruidCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -773,6 +802,11 @@ void BalanceDruidCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 {
     BalanceDruidCcStrategy::InitCombatTriggers(triggers);
     DruidCcPvpStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("typhoon", NextAction::array(0, new NextAction("typhoon", ACTION_INTERRUPT + 2), nullptr)));
+#endif
 }
 
 void BalanceDruidCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -888,6 +922,8 @@ void BalanceDruidStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "often",
         NextAction::array(0, new NextAction("starfire", ACTION_NORMAL), NULL)));
+
+    triggers.push_back(new TriggerNode("caster fallback", NextAction::array(0, new NextAction("caster fallback", ACTION_NORMAL - 1), nullptr)));
 }
 
 void BalanceDruidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1097,6 +1133,11 @@ void BalanceDruidBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "nature's swiftness",
         NextAction::array(0, new NextAction("nature's swiftness", ACTION_HIGH), NULL)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("force of nature", NextAction::array(0, new NextAction("force of nature", ACTION_HIGH + 1), nullptr)));
+#endif
 }
 
 void BalanceDruidBoostStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1155,6 +1196,11 @@ void BalanceDruidCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigger
     triggers.push_back(new TriggerNode(
         "enemy five yards",
         NextAction::array(0, new NextAction("nature's grasp", ACTION_HIGH), NULL)));
+
+#ifndef MANGOSBOT_ZERO
+
+    triggers.push_back(new TriggerNode("cyclone", NextAction::array(0, new NextAction("cyclone", ACTION_INTERRUPT + 1), nullptr)));
+#endif
 }
 
 void BalanceDruidCcStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1178,6 +1224,11 @@ void BalanceDruidCcPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 {
     BalanceDruidCcStrategy::InitCombatTriggers(triggers);
     DruidCcPvpStrategy::InitCombatTriggers(triggers);
+
+#ifdef MANGOSBOT_TWO
+
+    triggers.push_back(new TriggerNode("typhoon", NextAction::array(0, new NextAction("typhoon", ACTION_INTERRUPT + 2), nullptr)));
+#endif
 }
 
 void BalanceDruidCcPvpStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

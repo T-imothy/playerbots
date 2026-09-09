@@ -1,6 +1,7 @@
 #include "playerbot/strategy/actions/MeleeAbilityActions.h"
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/CasterCombatActions.h"
 #include "DruidActions.h"
 #include "DruidAiObjectContext.h"
 #include "TankFeralDruidStrategy.h"
@@ -196,6 +197,17 @@ namespace ai
         public:
             TriggerFactoryInternal()
             {
+#ifndef MANGOSBOT_ZERO
+                creators["force of nature"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "force of nature"); };
+#endif
+#ifndef MANGOSBOT_ZERO
+                creators["cyclone"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "cyclone"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["typhoon"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "typhoon"); };
+#endif
+                creators["caster fallback"] = [](PlayerbotAI* ai) { return new CasterFallbackTrigger(ai); };
+
                 creators["omen of clarity"] = [](PlayerbotAI* ai) { return new OmenOfClarityTrigger(ai); };
                 creators["thorns"] = [](PlayerbotAI* ai) { return new ThornsTrigger(ai); };
                 creators["thorns on party"] = [](PlayerbotAI* ai) { return new ThornsOnPartyTrigger(ai); };
@@ -252,6 +264,17 @@ namespace ai
         public:
             AiObjectContextInternal()
             {
+#ifndef MANGOSBOT_ZERO
+                creators["force of nature"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "force of nature"); };
+#endif
+#ifndef MANGOSBOT_ZERO
+                creators["cyclone"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "cyclone"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["typhoon"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "typhoon"); };
+#endif
+                creators["caster fallback"] = [](PlayerbotAI* ai) { return new CasterFallbackAction(ai); };
+
                 creators["feral charge - bear"] = [](PlayerbotAI* ai) { return new CastFeralChargeBearAction(ai); };
                 creators["feral charge - cat"] = [](PlayerbotAI* ai) { return new CastFeralChargeCatAction(ai); };
                 creators["swipe (bear)"] = [](PlayerbotAI* ai) { return new CastSwipeBearAction(ai); };

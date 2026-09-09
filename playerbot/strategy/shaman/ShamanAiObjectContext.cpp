@@ -1,6 +1,7 @@
 #include "playerbot/strategy/actions/MeleeAbilityActions.h"
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/CasterCombatActions.h"
 #include "ShamanActions.h"
 #include "ShamanAiObjectContext.h"
 #include "ShamanTriggers.h"
@@ -255,6 +256,21 @@ namespace ai
         public:
             TriggerFactoryInternal()
             {
+                creators["elemental mastery"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "elemental mastery"); };
+#ifdef MANGOSBOT_TWO
+                creators["hex"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "hex"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["thunderstorm"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "thunderstorm"); };
+#endif
+#ifndef MANGOSBOT_ZERO
+                creators["fire elemental totem"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "fire elemental totem"); };
+#endif
+#ifndef MANGOSBOT_ZERO
+                creators["earth elemental totem"] = [](PlayerbotAI* ai) { return new CasterAbilityTrigger(ai, "earth elemental totem"); };
+#endif
+                creators["caster fallback"] = [](PlayerbotAI* ai) { return new CasterFallbackTrigger(ai); };
+
                 creators["wind shear"] = [](PlayerbotAI* ai) { return new WindShearInterruptSpellTrigger(ai); };
                 creators["purge"] = [](PlayerbotAI* ai) { return new PurgeTrigger(ai); };
                 creators["shaman weapon"] = [](PlayerbotAI* ai) { return new ShamanWeaponTrigger(ai); };
@@ -307,6 +323,21 @@ namespace ai
         public:
             AiObjectContextInternal()
             {
+                creators["elemental mastery"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "elemental mastery"); };
+#ifdef MANGOSBOT_TWO
+                creators["hex"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "hex"); };
+#endif
+#ifdef MANGOSBOT_TWO
+                creators["thunderstorm"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "thunderstorm"); };
+#endif
+#ifndef MANGOSBOT_ZERO
+                creators["fire elemental totem"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "fire elemental totem"); };
+#endif
+#ifndef MANGOSBOT_ZERO
+                creators["earth elemental totem"] = [](PlayerbotAI* ai) { return new CasterAbilityAction(ai, "earth elemental totem"); };
+#endif
+                creators["caster fallback"] = [](PlayerbotAI* ai) { return new CasterFallbackAction(ai); };
+
                 creators["water shield"] = [](PlayerbotAI* ai) { return new CastWaterShieldAction(ai); };
                 creators["lightning shield"] = [](PlayerbotAI* ai) { return new CastLightningShieldAction(ai); };
                 creators["strength of earth totem"] = [](PlayerbotAI* ai) { return new CastStrengthOfEarthTotemAction(ai); };
@@ -379,7 +410,6 @@ namespace ai
                 creators["lava burst"] = [](PlayerbotAI* ai) { return new CastLavaBurstAction(ai); };
                 creators["feral spirit"] = [](PlayerbotAI* ai) { return new CastFeralSpiritAction(ai); };
 #endif
-                creators["thunderstorm"] = [](PlayerbotAI* ai) { return new CastThunderstormAction(ai); };
                 creators["heroism"] = [](PlayerbotAI* ai) { return new CastHeroismAction(ai); };
                 creators["bloodlust"] = [](PlayerbotAI* ai) { return new CastBloodlustAction(ai); };
                 creators["cure disease"] = [](PlayerbotAI* ai) { return new CastCureDiseaseAction(ai); };
