@@ -4,6 +4,7 @@
 #include <iomanip>
 
 #include "Engine.h"
+#include "warrior/WarriorCombatPolicy.h"
 #include "actions/GenericActions.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotDiagnostics.h"
@@ -88,6 +89,22 @@ std::string Engine::GetFailureKey(Action* action, const Event& event, ActionResu
     return out.str();
 }
 
+std::string Engine::GetFailureReadiness(Action* action) const
+{
+    auto spell = dynamic_cast<CastSpellAction*>(action);
+    if (!spell) return "";
+    Player* bot = ai->GetBot();
+    std::ostringstream out;
+    out << bot->GetPower(bot->GetPowerType()) << '|' << uint32(bot->GetShapeshiftForm()) << '|'
+        << bot->GetPositionX() << '|' << bot->GetPositionY() << '|' << bot->GetPositionZ();
+    if (Unit* target = action->GetTarget())
+        out << '|' << target->GetPositionX() << '|' << target->GetPositionY() << '|' << target->GetPositionZ();
+    // Native possibility includes resources, cooldown, range/LOS and proc state.
+    // Recheck only actions with a live failure entry, not every scheduled action.
+    out << '|' << spell->isPossible();
+    return out.str();
+}
+
 bool Engine::IsFailureBackedOff(Action* action, const Event& event, ActionResult reason) const
 {
     // A fresh player request must be evaluated and receive its normal reply.
@@ -100,7 +117,8 @@ bool Engine::IsFailureBackedOff(Action* action, const Event& event, ActionResult
         return false;
 
     const uint32 now = WorldTimer::getMSTime();
-    return static_cast<int32>(existing->second.retryAfter - now) > 0;
+    if (static_cast<int32>(existing->second.retryAfter - now) <= 0) return false;
+    return existing->second.readiness == GetFailureReadiness(action);
 }
 
 void Engine::RecordFailure(Action* action, const Event& event, ActionResult reason)
@@ -154,6 +172,7 @@ void Engine::RecordFailure(Action* action, const Event& event, ActionResult reas
     const uint64 delay = static_cast<uint64>(sPlayerbotAIConfig.failedActionRetryBase) << shift;
     failure.retryAfter = now + static_cast<uint32>(std::min<uint64>(delay, sPlayerbotAIConfig.failedActionRetryMax));
     failure.lastFailure = now;
+    failure.readiness = GetFailureReadiness(action);
 }
 
 void Engine::ClearFailures(Action* action, const Event& event)
@@ -454,9 +473,18 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     if (!skipPrerequisites)
                     {
                         LogAction("A:%s - PREREQ", action->getName().c_str());
-                        if (MultiplyAndPush(actionNode->getPrerequisites(), relevance + 0.02, false, event, "prereq"))
+                        float prerequisiteRelevance = relevance;
+                        if (ai->GetBot()->getClass() == CLASS_WARRIOR)
+                            if (auto spellAction = dynamic_cast<CastSpellAction*>(action))
+                            {
+                                const auto spell = sServerFacade.LookupSpellInfo(spellAction->GetDecisionSpellId());
+                                if (CanPlanWarriorSpell(ai, action->getName(), action->GetTarget()) &&
+                                    !WarriorStancePrerequisite(ai, spell).empty())
+                                    prerequisiteRelevance = std::max(relevance, float(ACTION_MOVE + 1));
+                            }
+                        if (MultiplyAndPush(actionNode->getPrerequisites(), prerequisiteRelevance + 0.02, false, event, "prereq"))
                         {
-                            PushAgain(actionNode, relevance + 0.01, event);
+                            PushAgain(actionNode, prerequisiteRelevance + 0.01, event);
                             continue;
                         }
                     }

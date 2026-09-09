@@ -18,6 +18,9 @@ float ThreatMultiplier::GetValue(Action* action)
             if (target->GetHealthPercent() < sPlayerbotAIConfig.lowHealth)
                 return 1.0f;
 
+    if (ai->IsTank(bot))
+        return 1.0f;
+
     if (!AI_VALUE(bool, "group"))
         return 1.0f;
 

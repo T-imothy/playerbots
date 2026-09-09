@@ -1,3 +1,4 @@
+#include "playerbot/strategy/MeleeCombatPolicy.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
@@ -264,6 +265,8 @@ bool NoThreatTrigger::IsActive()
 
 bool AoeTrigger::IsActive()
 {
+    if (range <= 5.0f)
+        return SafeMeleeTargetCount(ai, range) >= amount;
     std::list<ObjectGuid> aoeEnemies = AoeCountValue::FindMaxDensity(bot, range);
     return aoeEnemies.size() >= amount;
 }

@@ -24,7 +24,8 @@ struct Action{virtual ~Action()=default;};struct ChatCommandAction:Action{};
 enum ActionResult{ACTION_RESULT_FAILED,ACTION_RESULT_IMPOSSIBLE};
 struct WorldTimer{static uint32 getMSTime(){return 100;}};
 __HELPER__
-struct Engine {struct Failure {uint32 retryAfter;};std::unordered_map<std::string,Failure> actionFailures;
+struct Engine {struct Failure {uint32 retryAfter;std::string readiness="same";};std::string readiness="same";
+ std::string GetFailureReadiness(Action*)const{return readiness;}std::unordered_map<std::string,Failure> actionFailures;
  std::string GetFailureKey(Action*,const Event&,ActionResult)const{return "previous failure";}
  bool IsFailureBackedOff(Action*,const Event&,ActionResult)const;};
 __METHOD__
@@ -39,6 +40,10 @@ int main(){Engine e;e.actionFailures["previous failure"]={200};Player human{true
  assert(e.IsFailureBackedOff(&command,Event{&bot},reason));
  assert(e.IsFailureBackedOff(&automatic,Event{&human},reason));
  }
+#ifndef EXPECT_BEFORE
+ e.readiness="changed";assert(!e.IsFailureBackedOff(&automatic,Event{nullptr},ACTION_RESULT_IMPOSSIBLE));
+ e.readiness="same";assert(e.IsFailureBackedOff(&automatic,Event{nullptr},ACTION_RESULT_IMPOSSIBLE));
+#endif
  e.actionFailures.begin()->second.retryAfter=99;assert(!e.IsFailureBackedOff(&automatic,Event{nullptr},ACTION_RESULT_FAILED));
 #ifdef EXPECT_BEFORE
  std::cout<<"REPRODUCED: repeated player command suppressed by automatic failure cache\n";

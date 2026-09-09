@@ -122,6 +122,7 @@ namespace ai
         void LogValues();
         std::string GetFailureKey(Action* action, const Event& event, ActionResult reason) const;
         bool IsFailureBackedOff(Action* action, const Event& event, ActionResult reason) const;
+        std::string GetFailureReadiness(Action* action) const;
         void RecordFailure(Action* action, const Event& event, ActionResult reason);
         void ClearFailures(Action* action, const Event& event);
         void PruneActionFailures(uint32 now, bool enforceLimit = false);
@@ -133,6 +134,7 @@ namespace ai
             uint32 failures = 0;
             uint32 retryAfter = 0;
             uint32 lastFailure = 0;
+            std::string readiness;
         };
 
     protected:
