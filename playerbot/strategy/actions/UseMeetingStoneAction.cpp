@@ -170,9 +170,9 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
     // mixes world coordinates with transport offsets before the worldport ACK.
     if (summoner->GetTransport() || player->GetTransport() ||
         summoner->IsTaxiFlying() || player->IsTaxiFlying() ||
-        player->IsInCombat() || player->HasCharmer())
+        player->HasCharmer())
     {
-        ai->TellPlayerNoFacing(requester, "I cannot be summoned while in combat, controlled, or travelling on a transport.");
+        ai->TellPlayerNoFacing(requester, "I cannot be summoned while controlled or travelling on a transport.");
         return false;
     }
 
@@ -212,6 +212,8 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
                         return false;
                 }
 
+                // Combat does not block an explicit convenience summon. The native
+                // teleport stops the summoned bot's combat; the requester stays in combat.
                 // TeleportTo owns access checks, pets and transfer state. True
                 // means accepted (possibly delayed), not a completed worldport.
                 if (!player->TeleportTo(mapId, x, y, z, summoner->GetOrientation()))

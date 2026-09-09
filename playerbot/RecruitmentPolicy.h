@@ -32,11 +32,12 @@ namespace ai
         {
             return ValidSize(selected) && members < selected && members < (raid ? 40u : 5u);
         }
-        inline bool Arrived(bool inWorld, bool transferring, bool alive, bool combat,
+        inline bool Arrived(bool inWorld, bool transferring, bool alive,
             uint32_t map, uint32_t instance, uint32_t targetMap, uint32_t targetInstance,
             float distance, bool lineOfSight)
         {
-            return inWorld && !transferring && alive && !combat && map == targetMap &&
+            // Arrival describes location; combat readiness belongs to preparation.
+            return inWorld && !transferring && alive && map == targetMap &&
                 instance == targetInstance && distance <= 10.0f && lineOfSight;
         }
     }

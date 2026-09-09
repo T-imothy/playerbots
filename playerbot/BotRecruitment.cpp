@@ -227,7 +227,6 @@ namespace
         if (!owner->IsInWorld() || owner->IsBeingTeleported() || !bot->IsInWorld() || bot->IsBeingTeleported()) return "transfer";
         if (owner->GetTransport() || bot->GetTransport() || owner->IsTaxiFlying() || bot->IsTaxiFlying()) return "transport";
         if (bot->HasCharmer()) return "controlled";
-        if (owner->IsInCombat() || bot->IsInCombat()) return "combat";
         if (!owner->IsAlive()) return "requester_dead";
         if (owner->InBattleGround() || IsBusyQueue(bot)) return "queued_activity";
         if (!bot->IsAlive() && !sPlayerbotAIConfig.recruitmentRevive) return "revival_disabled";
@@ -237,7 +236,7 @@ namespace
     {
         return owner->IsInWorld() && !owner->IsBeingTeleported() && bot->IsInWorld() &&
             !bot->IsBeingTeleported() && bot->GetMap() == owner->GetMap() &&
-            limits::Arrived(bot->IsInWorld(), bot->IsBeingTeleported(), bot->IsAlive(), bot->IsInCombat(),
+            limits::Arrived(bot->IsInWorld(), bot->IsBeingTeleported(), bot->IsAlive(),
                 bot->GetMapId(), bot->GetInstanceId(), owner->GetMapId(), owner->GetInstanceId(),
                 bot->GetDistance(owner), bot->GetMap() == owner->GetMap() && bot->IsWithinLOSInMap(owner));
     }

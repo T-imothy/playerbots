@@ -150,7 +150,9 @@ int main(){
  reset();{Player p(1,true),b(2);b.session.account=999;assert(ai::BotRecruitment::Eligibility(&p,&b)=="not_authorized");b.session.account=1;assert(ai::BotRecruitment::Eligibility(&p,&b).empty());b.session.account=999;p.guild=b.guild=7;sPlayerbotAIConfig.allowGuildBots=true;assert(ai::BotRecruitment::Eligibility(&p,&b).empty());}
  reset();{Player p(1,true),b(2);b.team=1;assert(ai::BotRecruitment::Eligibility(&p,&b)=="wrong_faction");sWorld.cross=true;assert(ai::BotRecruitment::Eligibility(&p,&b).empty());b.bgQueue=true;assert(ai::BotRecruitment::Eligibility(&p,&b)=="queued_activity");}
  reset();{Player p(1,true),b(2);b.transfer=true;invite(p,b);players.erase(1);tick();assert(!b.invite&&!b.group);}
- reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;b.combat=true;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(!b.transfer);b.combat=false;b.taxi=true;tick();assert(!b.transfer);b.taxi=false;tick();assert(b.transfer&&!has("arrived"));b.transfer=false;b.distance=0;tick();assert(has("arrived"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;b.combat=true;p.combat=true;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(b.transfer&&!has("arrived"));assert(p.combat);b.transfer=false;b.distance=0;tick();assert(has("arrived"));assert(b.combat&&p.combat);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;b.taxi=true;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(!b.transfer);b.taxi=false;b.transport=true;tick();assert(!b.transfer);b.transport=false;b.charm=true;tick();assert(!b.transfer);b.charm=false;b.transfer=true;tick();assert(!has("teleport_started"));b.transfer=false;b.combat=true;tick();assert(b.transfer&&has("teleport_started"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;p.combat=true;command(p,"combat summon 2");assert(b.transfer&&has("teleport_started"));command(p,"combat summon 2");assert(b.transfer);b.transfer=false;b.distance=0;b.combat=true;tick();assert(has("arrived"));command(p,"prep prepare 2 gear");assert(b.gear==0&&has("combat"));}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.instance=1;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(!b.transfer&&has("different_instance"));}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.alive=false;sPlayerbotAIConfig.recruitmentRevive=false;command(p,"s summon 2");assert(!b.transfer&&has("revival_disabled"));}
  reset();{Player p(1,true),b(2);b.ai.master=&p;command(p,"g prepare 2 gear");assert(b.gear==1);command(p,"g prepare 2 gear");assert(b.gear==1);command(p,"g summon 2");assert(has("id_conflict"));}
@@ -165,7 +167,7 @@ int main(){
  reset();{Player p(1,true),b(2),leader(3);Group g;g.leader=leader.GetObjectGuid();g.assistant=p.GetObjectGuid();p.group=leader.group=&g;invite(p,b);assert(ai::BotRecruitment::HasPendingInvite(&b));tick();assert(b.group==&g&&b.ai.master==&p&&!ai::BotRecruitment::HasPendingInvite(&b));}
  reset();{std::vector<std::unique_ptr<Player>> owners,bots;for(unsigned n=1;n<=32;++n){owners.emplace_back(new Player(n,true));for(unsigned j=1;j<=16;++j){bots.emplace_back(new Player(100+n*16+j));ai::BotRecruitment::Queue(owners.back().get(),bots.back().get(),"who");}}assert(State().incoming.size()==256);tick();assert(State().incoming.size()==248);}
  reset();{Player p(1,true),b(2);command(p,"bad accept 2");assert(has("unsupported_operation")&&!b.group);}
- assert(!limits::Arrived(true,false,true,false,1,2,1,3,0,true));assert(!limits::HasVacancy(25,25,true));
+ assert(!limits::Arrived(true,false,true,1,2,1,3,0,true));assert(!limits::HasVacancy(25,25,true));
  std::cout<<"PASS: actual coordinator permissions, native-invite scheduling, stale/replaced invites, ownership, combat/death, session loss, transports, arrival, replay, cancellation, mixed 40-member capacity, bounded discovery/work\n";
 }
 '''

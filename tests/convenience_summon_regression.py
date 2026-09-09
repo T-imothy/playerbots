@@ -67,7 +67,11 @@ int main(){
  reset();bot.real=true;reject();
  reset();bot.teleporting=true;reject();
  reset();leader.teleporting=true;reject();
- reset();bot.combat=true;reject();
+ reset();bot.combat=true;assert(action.Teleport(&leader,&leader,&bot));assert(bot.teleports==1);
+ reset();leader.combat=true;assert(action.Teleport(&leader,&leader,&bot));assert(leader.combat);
+ reset();bot.combat=true;leader.combat=true;leader.mapId=0;leader.map=&from;
+ assert(action.Teleport(&leader,&leader,&bot));assert(bot.teleports==1&&leader.combat);
+ reset();bot.combat=true;bot.accepted=false;reject();assert(bot.teleports==1);
  reset();bot.charmed=true;reject();
  reset();bot.transport=true;reject();
  reset();leader.transport=true;reject();
@@ -93,7 +97,7 @@ int main(){
  reset();bot.alive=false;sPlayerbotAIConfig.recruitmentRevive=false;reject();
  reset();bot.alive=false;ai.QueueSummonRevival(0,0,0,0,7);ai.CompleteSummonRevival();assert(bot.resurrections==0);
  reset();bot.alive=false;bot.instanceId=7;ai.QueueSummonRevival(0,0,0,0,7);ai.CompleteSummonRevival();assert(bot.resurrections==1);
- std::cout<<"PASS: convenience summon and post-ACK revival, 26 controlled scenarios; inn hearth independence\n";
+ std::cout<<"PASS: convenience summon and post-ACK revival, combat and controlled scenarios; inn hearth independence\n";
 }
 '''.replace('__TELEPORT__', block(source, 'bool SummonAction::Teleport(')).replace(
     '__QUEUE__', block(ai_source, 'void PlayerbotAI::QueueSummonRevival(')).replace(
