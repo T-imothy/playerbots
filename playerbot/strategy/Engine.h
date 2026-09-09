@@ -112,7 +112,7 @@ namespace ai
         void Reset();
         void ProcessTriggers(bool minimal);
         void PushDefaultActions();
-        void PushAgain(ActionNode* actionNode, float relevance, const Event& event);
+        void PushAgain(ActionNode* actionNode, float relevance, const Event& event, bool skipPrerequisites = true);
         ActionNode* CreateActionNode(const std::string& name);
         virtual Action* InitializeAction(ActionNode* actionNode);
         virtual bool ListenAndExecute(Action* action, Event& event);

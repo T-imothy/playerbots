@@ -2,6 +2,7 @@
 
 #include <iterator>
 #include <map>
+#include <functional>
 #include <unordered_map>
 
 #pragma once
@@ -20,7 +21,8 @@ public:
 	int Size();
 	void RemoveExpired();
 private:
-    using RelevanceQueue = std::multimap<float, ActionBasket*>;
+    // Highest relevance first; equivalent keys retain insertion order.
+    using RelevanceQueue = std::multimap<float, ActionBasket*, std::greater<float>>;
     RelevanceQueue actions;
     std::unordered_map<std::string, RelevanceQueue::iterator> actionsByName;
 };

@@ -39,6 +39,7 @@ bool ReactionEngine::FindReaction(bool isStunned)
     // Don't find a new reaction if the previous reaction is still running
     if(!IsReacting())
     {
+        queue.RemoveExpired();
         aiObjectContext->Update();
 
         ai->HandleCommands();
@@ -84,6 +85,14 @@ bool ReactionEngine::FindReaction(bool isStunned)
                                     // Multiplier made reaction useless
                                     break;
                                 }
+                            }
+
+                            // A blocked reaction must not manufacture a positive-priority
+                            // prerequisite or fallback from the +0.02/+0.03 offsets.
+                            if (reactionRelevance <= 0.0f)
+                            {
+                                delete reactionNode;
+                                continue;
                             }
 
                             // Process prerequisites

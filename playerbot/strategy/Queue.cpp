@@ -43,7 +43,7 @@ ActionNode* Queue::Pop(ActionBasket* action)
     if (selection == nullptr)
     {
         if (!actions.empty())
-            selectionIterator = std::prev(actions.end());
+            selectionIterator = actions.begin();
     }
     else
     {
@@ -67,7 +67,7 @@ ActionNode* Queue::Pop(ActionBasket* action)
 
 ActionBasket* Queue::Peek()
 {
-    return actions.empty() ? nullptr : std::prev(actions.end())->second;
+    return actions.empty() ? nullptr : actions.begin()->second;
 }
 
 int Queue::Size()

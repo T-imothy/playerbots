@@ -337,6 +337,8 @@ void Engine::Init()
 bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 {
     PruneActionFailures(WorldTimer::getMSTime());
+    // Expire old plans before fresh triggers deduplicate against them.
+    queue.RemoveExpired();
 
     const bool collectDiagnostics = sPlayerbotDiagnostics.ShouldSampleEngineTick();
     const auto diagnosticStart = std::chrono::steady_clock::now();
@@ -462,11 +464,20 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         }
                     }
 
+                    // A strategy veto also vetoes its prerequisites and alternatives.
+                    // Negative default relevance is intentional; only zero means blocked.
+                    if (!relevance)
+                    {
+                        delete actionNode;
+                        continue;
+                    }
+
                     ActionBasket* peekAction = queue.Peek();
                     if (relevance < oldRelevance && peekAction && peekAction->getRelevance() > relevance) //Relevance changed. Try again.
                     {
                         modifiedActions.push_back(action);
-                        PushAgain(actionNode, relevance, event);
+                        // Reordering is not proof that prerequisites have run.
+                        PushAgain(actionNode, relevance, event, skipPrerequisites);
                         continue;
                     }
 
@@ -729,7 +740,8 @@ ActionResult Engine::ExecuteAction(const std::string& name, Event& event)
                     bool executionResult = ListenAndExecute(action, event);
                     pmo4.reset();
 
-                    MultiplyAndPush(action->getContinuers(), 0.0f, false, event, "default");
+                    if (executionResult)
+                        MultiplyAndPush(action->getContinuers(), 0.0f, false, event, "default");
                     actionResult = executionResult ? ACTION_RESULT_OK : ACTION_RESULT_FAILED;
                 }
                 else
@@ -941,12 +953,12 @@ std::list<std::string_view> Engine::GetStrategies()
     return result;
 }
 
-void Engine::PushAgain(ActionNode* actionNode, float relevance, const Event& event)
+void Engine::PushAgain(ActionNode* actionNode, float relevance, const Event& event, bool skipPrerequisites)
 {
     NextAction** nextAction = new NextAction*[2];
     nextAction[0] = new NextAction(actionNode->getName(), relevance);
     nextAction[1] = NULL;
-    MultiplyAndPush(nextAction, relevance, true, event, "again");
+    MultiplyAndPush(nextAction, relevance, skipPrerequisites, event, "again");
     delete actionNode;
 }
 
