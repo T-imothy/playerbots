@@ -4,6 +4,7 @@
 #include "playerbot/strategy/Value.h"
 #include "Groups/Group.h"
 #include "TargetValue.h"
+#include "PossibleTargetsValue.h"
 
 namespace ai
 {
@@ -48,7 +49,7 @@ namespace ai
             if (std::find(attackers.begin(), attackers.end(), guid) == attackers.end()) return NULL;
 
             Unit* unit = ai->GetUnit(ObjectGuid(guid));
-            if (!unit || sServerFacade.UnitIsDead(unit) ||
+            if (!PossibleTargetsValue::IsValid(unit, bot, true) ||
                 !bot->IsWithinDistInMap(unit, sPlayerbotAIConfig.sightDistance, false))
                 return NULL;
 

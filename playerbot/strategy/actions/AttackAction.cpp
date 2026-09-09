@@ -1,6 +1,8 @@
 
 #include "playerbot/playerbot.h"
 #include "AttackAction.h"
+#include "playerbot/strategy/MeleeCombatPolicy.h"
+#include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "EncounterSpellPolicy.h"
 #include "MotionGenerators/MovementGenerator.h"
 #include "AI/BaseAI/CreatureAI.h"
@@ -15,7 +17,7 @@ bool AttackAction::Execute(Event& event)
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
 
     Unit* target = GetTarget();
-    if (target && target->IsInWorld() && target->GetMapId() == bot->GetMapId())
+    if (PossibleTargetsValue::IsValid(target, bot, true) && !MeleeCcCheck(ai).Protected(target))
     {
         return Attack(requester, target);
     }
@@ -259,7 +261,7 @@ bool AttackAction::PetAttack(Player* requester, Unit* target)
 
 bool AttackAction::IsTargetValid(Player* requester, Unit* target)
 {
-    if (!target)
+    if (!target || !target->IsInWorld() || !bot->IsInMap(target))
     {
         if (verbose) 
         {
@@ -305,7 +307,8 @@ bool AttackAction::IsTargetValid(Player* requester, Unit* target)
         return false;
     }
 
-    return true;
+    // The native attackability state may have changed since target selection.
+    return PossibleTargetsValue::IsValid(target, bot, true);
 }
 
 bool AttackDuelOpponentAction::isUseful()

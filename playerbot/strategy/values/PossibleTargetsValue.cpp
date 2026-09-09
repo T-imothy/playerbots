@@ -92,13 +92,17 @@ bool PossibleTargetsValue::IsAttackable(Unit* target, Player* player)
 bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
 {
     // If the target is available
-    if (target && target->IsInWorld() && (target->GetMapId() == player->GetMapId()))
+    if (player && player->IsInWorld() && target && target->IsInWorld() && player->IsInMap(target))
     {
         // If the target is dead
         if (sServerFacade.UnitIsDead(target))
         {
             return false;
         }
+
+        // Cached selections must not retain a creature after it starts evading.
+        if (const Creature* creature = dynamic_cast<const Creature*>(target))
+            if (creature->GetCombatManager().IsInEvadeMode()) return false;
 
         // If the target is friendly
         if (IsFriendly(target, player))

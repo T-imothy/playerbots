@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/strategy/Value.h"
 #include "TargetValue.h"
+#include "PossibleAttackTargetsValue.h"
 
 namespace ai
 {
@@ -18,7 +19,8 @@ namespace ai
             if (attacker->IsPlayer())
                 return;
 
-            if (IsCcTarget(attacker))
+            if (!PossibleAttackTargetsValue::IsPossibleTarget(attacker, ai->GetBot(), sPlayerbotAIConfig.sightDistance, true) ||
+                attacker->HasBreakableByDamageCrowdControlAura() || IsCcTarget(attacker))
                 return;
 
             Group* group = ai->GetBot()->GetGroup();

@@ -3,6 +3,7 @@
 #include "EnemyPlayerValue.h"
 #include "TargetValue.h"
 #include "PvpValues.h"
+#include "playerbot/strategy/MeleeCombatPolicy.h"
 
 using namespace ai;
 
@@ -41,6 +42,9 @@ std::list<ObjectGuid> EnemyPlayersValue::Calculate()
 
 bool EnemyPlayersValue::IsValid(Unit* target, Player* player)
 {
+    if (!PossibleTargetsValue::IsValid(target, player, true)) return false;
+    if (PlayerbotAI* ai = player->GetPlayerbotAI())
+        if (MeleeCcCheck(ai).Protected(target)) return false;
     if (target)
     {
         // If the target is a player
@@ -48,7 +52,7 @@ bool EnemyPlayersValue::IsValid(Unit* target, Player* player)
         if (enemyPlayer)
         {
             // If the target is friendly to the player
-            if (sServerFacade.IsFriendlyTo(target, player))
+            if (PossibleTargetsValue::IsFriendly(target, player))
             {
                 return false;
             }
@@ -124,19 +128,12 @@ Unit* EnemyPlayerValue::Calculate()
         uint32 bestEnemyPlayerHealth = std::numeric_limits<uint32>::max();
         float bestEnemyPlayerDistance = std::numeric_limits<float>::max();
       
-        // Use the first enemy player as a base
-        Unit* firstTarget = ai->GetUnit(enemyPlayers.front());
-        if (firstTarget)
-        {
-            bestEnemyPlayerDistance = firstTarget->GetDistance(bot, false);
-            bestEnemyPlayerHealth = firstTarget->GetHealth();
-            bestEnemyPlayer = firstTarget;
-        }
+        // Score only freshly validated candidates, including the first cached GUID.
 
         for (const ObjectGuid& targetGuid : enemyPlayers)
         {
             Unit* target = ai->GetUnit(targetGuid);
-            if (target)
+            if (EnemyPlayersValue::IsValid(target, bot))
             {
                 // Prioritize an enemy player if it has a battleground flag
                 if ((bot->GetTeam() == HORDE && target->HasAura(23333)) ||

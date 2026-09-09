@@ -2,6 +2,8 @@
 #include "playerbot/playerbot.h"
 #include "DpsTargetValue.h"
 #include "LeastHpTargetValue.h"
+#include "PossibleAttackTargetsValue.h"
+#include "playerbot/strategy/MeleeCombatPolicy.h"
 
 using namespace ai;
 
@@ -9,7 +11,8 @@ using namespace ai;
 Unit* DpsTargetValue::Calculate()
 {
     Unit* rti = RtiTargetValue::Calculate();
-    if (rti) return rti;
+    if (rti && PossibleAttackTargetsValue::IsPossibleTarget(rti, bot, sPlayerbotAIConfig.sightDistance, true) &&
+        !MeleeCcCheck(ai).Protected(rti)) return rti;
 
     FindLeastHpTargetStrategy strategy(ai);
     return TargetValue::FindTarget(&strategy);
@@ -26,6 +29,8 @@ public:
 public:
     virtual void CheckAttacker(Unit* attacker, ThreatManager* threatManager) override
     {
+        if (!PossibleAttackTargetsValue::IsPossibleTarget(attacker, ai->GetBot(), sPlayerbotAIConfig.sightDistance, true) ||
+            MeleeCcCheck(ai).Protected(attacker)) return;
         Group* group = ai->GetBot()->GetGroup();
         if (group)
         {
@@ -44,7 +49,8 @@ protected:
 Unit* DpsAoeTargetValue::Calculate()
 {
     Unit* rti = RtiTargetValue::Calculate();
-    if (rti) return rti;
+    if (rti && PossibleAttackTargetsValue::IsPossibleTarget(rti, bot, sPlayerbotAIConfig.sightDistance, true) &&
+        !MeleeCcCheck(ai).Protected(rti)) return rti;
 
     FindMaxHpTargetStrategy strategy(ai);
     return TargetValue::FindTarget(&strategy);

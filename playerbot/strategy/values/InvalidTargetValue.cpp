@@ -1,6 +1,8 @@
 
 #include "playerbot/playerbot.h"
 #include "InvalidTargetValue.h"
+#include "PossibleTargetsValue.h"
+#include "playerbot/strategy/MeleeCombatPolicy.h"
 #include "PossibleAttackTargetsValue.h"
 #include "EnemyPlayerValue.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -11,7 +13,7 @@ using namespace ai;
 bool InvalidTargetValue::Calculate()
 {
     Unit* target = AI_VALUE(Unit*, qualifier);
-    if (!target || !target->IsInWorld() || target->GetMapId() != bot->GetMapId())
+    if (!PossibleTargetsValue::IsValid(target, bot, true) || MeleeCcCheck(ai).Protected(target))
     {
         return true;
     }
@@ -34,7 +36,8 @@ bool InvalidTargetValue::Calculate()
     if (!validTarget)
     {
         std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
-        if (std::find(attackers.begin(), attackers.end(), target->GetObjectGuid()) != attackers.end())
+        if (std::find(attackers.begin(), attackers.end(), target->GetObjectGuid()) != attackers.end() &&
+            PossibleAttackTargetsValue::IsPossibleTarget(target, bot, sPlayerbotAIConfig.sightDistance, true))
         {
             return false;
         }

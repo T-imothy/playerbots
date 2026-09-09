@@ -347,6 +347,8 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
 
 bool PossibleAttackTargetsValue::IsPossibleTarget(Unit* target, Player* player, float range, bool ignoreCC)
 {
+    // This path is also used with a cached attacker list and attacker validation disabled.
+    if (!PossibleTargetsValue::IsValid(target, player, true)) return false;
     if(target)
     {
         // If the target is in an attackable distance

@@ -599,7 +599,7 @@ bool TankAssistTrigger::IsActive()
     Unit* enemy = AI_VALUE(Unit*, "enemy player target");
     if (enemy)
     {
-        return currentTarget != enemy;
+        return false; // Enemy-player actions own this switch; tank target is a different value.
     }
 
     Unit* tankTarget = AI_VALUE(Unit*, "tank target");
@@ -615,30 +615,24 @@ bool TankAssistTrigger::IsActive()
 
 bool DpsAssistTrigger::IsActive()
 {
-    if (!AI_VALUE(bool, "has attackers"))
-        return false;
-
+    if (!AI_VALUE(bool, "has attackers")) return false;
     Unit* currentTarget = AI_VALUE(Unit*, "current target");
-    if (!currentTarget)
-        return false;
+    // PvP selection has its own actions; a PvE assist must not keep replacing it.
+    if ((currentTarget && currentTarget->IsPlayer()) || AI_VALUE(Unit*, "enemy player target")) return false;
+    Unit* target = AI_VALUE(Unit*, "dps target");
+    if (!target) return false;
+    if (target != currentTarget) return true;
+    if (WaitForAttackStrategy* strategy = WaitForAttackStrategy::Get(ai))
+        if (strategy->ShouldWait(ai)) return false;
+    if (ai->HasStrategy("stealthed", BotState::BOT_STATE_COMBAT)) return false;
+    if (bot->GetVictim() != target) return true;
 
-    // If owner is waiting this will trigger attack again to call for pet
-    WaitForAttackStrategy* strategy = WaitForAttackStrategy::Get(ai);
-    bool isWaitingForAttack = false;
-    if (strategy)
-        isWaitingForAttack = strategy->ShouldWait(ai); 
-        
+    // Reissue only when the pet actually needs the order (including after the
+    // tank-opening wait), not every two seconds while already fighting.
     Pet* pet = bot->GetPet();
-    if (pet)
-    {
-        UnitAI* creatureAI = ((Creature*)pet)->AI();
-        if (creatureAI)
-        {
-            if (isWaitingForAttack)
-                return false;
-        }
-    }
-
+    if (!pet || !pet->IsAlive() || pet->GetVictim() == target) return false;
+    if (bot->getClass() == CLASS_WARLOCK && pet->GetEntry() == 416 && pet->HasAura(4511) &&
+        pet->AI() && pet->AI()->HasReactState(REACT_PASSIVE)) return false;
     return true;
 }
 
@@ -702,7 +696,7 @@ bool NotDpsTargetActiveTrigger::IsActive()
             Unit* enemy = AI_VALUE(Unit*, "enemy player target");
             if (enemy)
             {
-                return target != enemy;
+                return false; // Do not trigger a PvE assist to select a PvP target.
             }
 
             Unit* dps = AI_VALUE(Unit*, "dps target");
@@ -732,7 +726,7 @@ bool NotDpsAoeTargetActiveTrigger::IsActive()
             Unit* enemy = AI_VALUE(Unit*, "enemy player target");
             if (enemy)
             {
-                return target != enemy;
+                return false; // Do not trigger a PvE assist to select a PvP target.
             }
 
             Unit* dps = AI_VALUE(Unit*, "dps aoe target");

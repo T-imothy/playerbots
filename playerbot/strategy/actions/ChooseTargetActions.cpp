@@ -1,5 +1,6 @@
 #include "playerbot/strategy/Action.h"
 #include "ChooseTargetActions.h"
+#include "Spells/Spell.h"
 #include "MotionGenerators/MovementGenerator.h"
 #include "AI/BaseAI/CreatureAI.h"
 #include "playerbot/TravelMgr.h"
@@ -107,6 +108,11 @@ bool AttackEnemyFlagCarrierAction::isUseful()
 
 bool SelectNewTargetAction::Execute(Event& event)
 {
+    const ObjectGuid previousSelection = bot->GetSelectionGuid();
+    Unit* victim = bot->GetVictim();
+    Pet* activePet = bot->GetPet();
+    const bool clearedSelection = previousSelection || victim ||
+        (activePet && activePet->GetVictim()) || AI_VALUE(Unit*, "current target");
     Unit* target = AI_VALUE(Unit*, "current target");
     if (target && sServerFacade.UnitIsDead(target))
     {
@@ -130,12 +136,23 @@ bool SelectNewTargetAction::Execute(Event& event)
     if(target)
     {
         SET_AI_VALUE(Unit*, "old target", target);
-        SET_AI_VALUE(Unit*, "current target", nullptr);
     }
+    SET_AI_VALUE(Unit*, "current target", nullptr);
     
     // Stop attacking
     bot->SetSelectionGuid(ObjectGuid());
-    ai->InterruptSpell();
+    // Preserve a heal/buff on an ally while abandoning an enemy. Include
+    // hostile channels on the old target, which InterruptSpell() excludes.
+    for (int type = CURRENT_MELEE_SPELL; type <= CURRENT_CHANNELED_SPELL; ++type)
+    {
+        Spell* spell = bot->GetCurrentSpell(static_cast<CurrentSpellTypes>(type));
+        if (!spell || !spell->CanBeInterrupted() || IsPositiveSpell(spell->m_spellInfo)) continue;
+        if (type != CURRENT_MELEE_SPELL && type != CURRENT_AUTOREPEAT_SPELL &&
+            (!previousSelection || spell->m_targets.getUnitTargetGuid() != previousSelection)) continue;
+        const uint32 spellId = spell->m_spellInfo->Id;
+        bot->InterruptSpell(static_cast<CurrentSpellTypes>(type));
+        ai->SpellInterrupted(spellId);
+    }
     bot->AttackStop();
     // Stop pet attacking
     Pet* pet = bot->GetPet();
@@ -159,33 +176,31 @@ bool SelectNewTargetAction::Execute(Event& event)
         }
     }
 
-    bool moreAttackers = false;
-    // Check if there is any enemy targets available to attack
+    // Invalidate ranked choices so the dead/controlled target cannot win again
+    // merely because its previous selection is still cached.
+    context->GetValue<Unit*>("dps target")->Reset();
+    context->GetValue<Unit*>("dps aoe target")->Reset();
+    context->GetValue<Unit*>("tank target")->Reset();
+    context->GetValue<Unit*>("enemy player target")->Reset();
+
+    bool selectedReplacement = false;
     if (AI_VALUE(bool, "has attackers"))
     {
-        if (ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT) ||
-            ai->HasStrategy("duel", BotState::BOT_STATE_COMBAT))
+        if ((ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT) ||
+            ai->HasStrategy("duel", BotState::BOT_STATE_COMBAT)) &&
+            AI_VALUE(bool, "has enemy player targets"))
         {
-            // Check if there is an enemy player nearby
-            if (AI_VALUE(bool, "has enemy player targets"))
-            {
-                moreAttackers = true;
-                return ai->DoSpecificAction("attack enemy player", event, true);
-            }
+            if (ai->DoSpecificAction("attack enemy player", event, true)) return true;
         }
 
-        // Let the dps/tank assist pick a target to attack
-        if (ai->HasStrategy("dps assist", BotState::BOT_STATE_NON_COMBAT))
-        {
-            moreAttackers = true;
-            return ai->DoSpecificAction("dps assist", event, true);
-        }
-        else if (ai->HasStrategy("tank assist", BotState::BOT_STATE_NON_COMBAT))
-        {
-            moreAttackers = true;
-            return ai->DoSpecificAction("tank assist", event, true);
-        }
+        // Recovery runs in combat. Tank role takes precedence if both assists are enabled.
+        if (ai->HasStrategy("tank assist", BotState::BOT_STATE_COMBAT))
+            selectedReplacement = ai->DoSpecificAction("tank assist", event, true);
+        else if (ai->HasStrategy("dps assist", BotState::BOT_STATE_COMBAT))
+            selectedReplacement = ai->DoSpecificAction("dps assist", event, true);
     }
 
-    return false;
+    // Count actual cleanup as success, but an already-empty selection must
+    // not consume every tick ahead of healing and other combat actions.
+    return selectedReplacement || clearedSelection;
 }

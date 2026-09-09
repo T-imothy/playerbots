@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "TargetValue.h"
+#include "PossibleTargetsValue.h"
 
 #include "playerbot/ServerFacade.h"
 #include "RtiTargetValue.h"
@@ -16,7 +17,8 @@ Unit* TargetValue::FindTarget(FindTargetStrategy* strategy)
     for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); ++i)
     {
         Unit* unit = ai->GetUnit(*i);
-        if (!unit)
+        // Revalidate cached GUIDs before scoring; keep LOS movement available.
+        if (!PossibleTargetsValue::IsValid(unit, ai->GetBot(), true))
             continue;
 
         ThreatManager &threatManager = sServerFacade.GetThreatManager(unit);
