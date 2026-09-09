@@ -239,7 +239,7 @@ bool CastReadinessAction::isUseful()
 bool HunterDisengageAction::isUseful()
 {
     if (!CastSpellAction::isUseful() || !bot->IsInCombat()) return false;
-    Unit* enemy = AI_VALUE(Unit*, "closest attacker targeting me target");
+    Unit* enemy = AI_VALUE(Unit*, "closest attacker targeting me");
     if (!MeleeCombatTarget(ai, enemy) || !bot->CanReachWithMeleeAttack(enemy)) return false;
     if (!bot->IsSpellReady(HunterSpell(ai, "disengage"))) return false;
 #ifdef MANGOSBOT_TWO

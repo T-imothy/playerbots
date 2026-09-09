@@ -60,7 +60,7 @@ public:
     {
     public:
         CastScatterShotOnClosestAttackerTargetingMeAction(PlayerbotAI* ai) : CastRangedDebuffSpellAction(ai, "scatter shot") {}
-        std::string GetTargetName() override { return "closest attacker targeting me target"; }
+        std::string GetTargetName() override { return "closest attacker targeting me"; }
         bool Execute(Event& event) override;
     };
 
@@ -512,7 +512,7 @@ private:
         HunterSnakeTrapAction(PlayerbotAI* ai) : TrapInPlace(ai, "snake trap") {}
         bool isUseful() override
         {
-            Unit* attacker = AI_VALUE(Unit*, "closest attacker targeting me target");
+            Unit* attacker = AI_VALUE(Unit*, "closest attacker targeting me");
             return MeleeCombatTarget(ai, attacker) && bot->CanReachWithMeleeAttack(attacker) && TrapInPlace::isUseful();
         }
     };
