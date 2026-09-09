@@ -4,6 +4,7 @@ from behavior_regression import block
 
 def code():
     common=COMMON.replace('struct Unit;struct Player;', 'struct Group;struct Unit;struct Player;')
+    common=common.replace('Unit* GetUnit(ObjectGuid g){return bot->bg->map.GetPlayer(g);}', '')
     common=common.replace('Unit* victim=nullptr;', 'bool periodic=false,mana=true,immobile=false;std::map<std::string,bool> ownAuras;Unit* victim=nullptr;')
     common=common.replace('bool IsInWorld(){', '''bool HasAuraType(int){return periodic;}bool HasMana(){return mana;}
  bool IsImmobilizedState(){return immobile;}uint32 GetMaxHealth(){return 100;}
@@ -18,7 +19,6 @@ struct Player:Unit{Group* group=nullptr;Group* GetGroup(){return group;}''')
  bool HasAura(std::string name,Unit* u,bool,bool){return u&&u->ownAuras[name];}
  bool HasMyAura(std::string name,Unit* u){return u&&u->ownAuras[name];}''')
     common=common.replace('struct Facade{', '''struct Facade{
- float GetDistance2d(Unit* a,Unit* b){return std::sqrt((a->x-b->x)*(a->x-b->x)+(a->y-b->y)*(a->y-b->y));}
  float GetDistance2d(Unit* a,float x,float y){return std::sqrt((a->x-x)*(a->x-x)+(a->y-y)*(a->y-y));}
  bool IsDistanceLessOrEqualThan(float a,float b){return a<=b;}bool IsAlive(Unit* u){return u->alive;}''')
     common=common.replace('struct Config{float lowHealth=40;}', 'struct Config{float lowHealth=40,mediumHealth=50,sightDistance=75,aoeRadius=10;}')

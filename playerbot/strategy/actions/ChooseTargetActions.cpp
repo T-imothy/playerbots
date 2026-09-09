@@ -98,6 +98,8 @@ bool AttackEnemyPlayerAction::isUseful()
 bool AttackEnemyFlagCarrierAction::isUseful()
 {
     Unit* target = AI_VALUE(Unit*, "enemy flag carrier");
+    if (ActualBattlegroundType(bot) == BATTLEGROUND_WS && !ai->HasRealPlayerMaster() &&
+        target != AI_VALUE(Unit*, "enemy player target")) return false;
     return target && target->IsInWorld() && target->IsAlive() && bot->IsInMap(target) &&
         !sServerFacade.IsFriendlyTo(bot, target) && !IsBattlegroundFlagCarrier(bot) &&
         target != AI_VALUE(Unit*, "current target") && bot->IsWithinDistInMap(target, 75.0f);

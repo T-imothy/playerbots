@@ -10,6 +10,8 @@ namespace ai
     BattleGroundTypeId ActualBattlegroundType(Player* player);
     bool IsBattlegroundFlagCarrier(Player* player);
     bool ShouldAdvanceWarsongObjective(PlayerbotAI* ai);
+    bool IsWarsongLocalThreat(PlayerbotAI* ai, Unit* enemy, Unit* protectedPlayer);
+    Unit* SelectWarsongCombatTarget(PlayerbotAI* ai);
 
     struct WarsongObjective
     {

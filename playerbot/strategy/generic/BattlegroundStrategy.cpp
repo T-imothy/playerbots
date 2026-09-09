@@ -4,6 +4,8 @@
 #include "playerbot/strategy/Multiplier.h"
 #include "playerbot/strategy/actions/MovementActions.h"
 #include "playerbot/strategy/values/PvpValues.h"
+#include "playerbot/strategy/actions/GenericSpellActions.h"
+#include "playerbot/strategy/actions/AttackAction.h"
 
 using namespace ai;
 
@@ -263,12 +265,51 @@ namespace
         float GetValue(Action* action) override
         {
             if (!action || ActualBattlegroundType(bot) != BATTLEGROUND_WS) return 1.0f;
+            if (ai->HasRealPlayerMaster()) return 1.0f;
             const bool advance = ShouldAdvanceWarsongObjective(ai);
             if (JumpAction* jump = dynamic_cast<JumpAction*>(action))
                 if (jump->getQualifier() == "position bg objective" && !advance) return 0.0f;
-            if (!advance) return 1.0f;
             const std::string& name = action->getName();
             const WarsongObjective objective = AI_VALUE(WarsongObjective, "warsong objective");
+            Unit* preferred = AI_VALUE(Unit*, "enemy player target");
+            // Assist strategies must not undo the same automatic target choice
+            // used by normal PvP and flag-carrier attacks.
+            if ((name == "dps assist" || name == "tank assist") && preferred && action->GetTarget() != preferred)
+                return 0.0f;
+            if (!advance) return 1.0f;
+            if (objective.carrying)
+            {
+                // Keep existing hostile selections from reopening pursuit after
+                // pickup. Friendly healing approaches and native escape checks
+                // are preserved. Generic fleeing must not replace the home route.
+                if (dynamic_cast<AttackAction*>(action) || name == "reach melee" || name == "reach spell" ||
+                    name == "set behind" || name == "flee") return 0.0f;
+                if (JumpAction* jump = dynamic_cast<JumpAction*>(action))
+                    if (jump->getQualifier() == "chase") return 0.0f;
+                if (CastSpellAction* cast = dynamic_cast<CastSpellAction*>(action))
+                {
+                    const SpellEntry* spell = sServerFacade.LookupSpellInfo(cast->GetDecisionSpellId());
+                    if (spell && !IsPositiveSpell(spell, bot, action->GetTarget()))
+                    {
+                        // Instant control can help escape; damage casts and
+                        // charges toward enemies cannot override carrying home.
+                        bool control = IsSpellHaveEffect(spell, SPELL_EFFECT_INTERRUPT_CAST);
+                        for (unsigned i = 0; i < MAX_EFFECT_INDEX; ++i)
+                            control = control || spell->EffectApplyAuraName[i] == SPELL_AURA_MOD_DECREASE_SPEED ||
+                                spell->EffectApplyAuraName[i] == SPELL_AURA_MOD_ROOT ||
+                                spell->EffectApplyAuraName[i] == SPELL_AURA_MOD_STUN ||
+                                spell->EffectApplyAuraName[i] == SPELL_AURA_MOD_FEAR ||
+                                spell->EffectApplyAuraName[i] == SPELL_AURA_MOD_CONFUSE ||
+                                spell->EffectApplyAuraName[i] == SPELL_AURA_MOD_SILENCE;
+                        Unit* target = action->GetTarget();
+                        const bool pressure = target == bot ? objective.pressured : IsWarsongLocalThreat(ai, target, bot);
+                        if (!control || !pressure || GetSpellCastTime(spell, bot) || IsChanneledSpell(spell) ||
+                            cast->HasMovementEffect()) return 0.0f;
+                        const float relevance = action->getRelevance();
+                        return relevance > 0 && relevance < ACTION_INTERRUPT ? ACTION_INTERRUPT / relevance : 1.0f;
+                    }
+                }
+            }
             // Let native-legal mobility/support precede travel without outranking
             // urgent heals. Never promote Cheetah into incoming pressure.
             if (name == "sprint" || name == "dash" || name == "travel form" || name == "ghost wolf" ||

@@ -250,8 +250,61 @@ bool ai::IsBattlegroundFlagCarrier(Player* player)
     return false;
 }
 
+// Limit threat recognition to nearby, observable combat. Selecting a player
+// while fighting someone else is not by itself evidence of an attack.
+bool ai::IsWarsongLocalThreat(PlayerbotAI* ai, Unit* enemy, Unit* protectedPlayer)
+{
+    if (!ai || !enemy || !protectedPlayer) return false;
+    Player* bot = ai->GetBot();
+    if (ActualBattlegroundType(bot) != BATTLEGROUND_WS || !enemy->IsInWorld() ||
+        !enemy->IsAlive() || !protectedPlayer->IsInWorld() || !protectedPlayer->IsAlive() ||
+        !bot->IsWithinDistInMap(enemy, 30.0f) || !bot->IsWithinDistInMap(protectedPlayer, 30.0f) ||
+        !bot->IsWithinLOSInMap(enemy) || !enemy->IsInCombat() ||
+        sServerFacade.IsFriendlyTo(bot, enemy)) return false;
+    return enemy->GetVictim() == protectedPlayer ||
+        (enemy->IsNonMeleeSpellCasted(false) && enemy->GetSelectionGuid() == protectedPlayer->GetObjectGuid());
+}
+
+// Use one eligible candidate set for automatic WSG attack and carrier actions.
+// Native visibility, hostility, range and crowd-control filtering happens when
+// constructing enemy player targets; no distant carrier is added around it.
+Unit* ai::SelectWarsongCombatTarget(PlayerbotAI* ai)
+{
+    if (!ai || ActualBattlegroundType(ai->GetBot()) != BATTLEGROUND_WS || ai->HasRealPlayerMaster())
+        return nullptr;
+    Player* bot = ai->GetBot();
+    AiObjectContext* context = ai->GetAiObjectContext();
+    BattleGroundWS* bg = static_cast<BattleGroundWS*>(bot->GetBattleGround());
+    if (bg->GetStatus() != STATUS_IN_PROGRESS) return nullptr;
+    const ObjectGuid enemyCarrier = bg->GetFlagCarrierGuid(GetTeamIndexByTeamId(bot->GetTeam()));
+    Unit* friendlyCarrier = bg->GetBgMap()->GetPlayer(bg->GetFlagCarrierGuid(
+        GetTeamIndexByTeamId(bg->GetOtherTeam(bot->GetTeam()))));
+    Unit* best = nullptr;
+    int bestRank = 100, bestBand = 100;
+    float bestHealth = 101.0f;
+    const std::list<ObjectGuid> candidates = AI_VALUE(std::list<ObjectGuid>, "enemy player targets");
+    for (const ObjectGuid& guid : candidates)
+    {
+        Unit* enemy = ai->GetUnit(guid);
+        if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || !bot->IsInMap(enemy) ||
+            sServerFacade.IsFriendlyTo(bot, enemy)) continue;
+        const int rank = guid == enemyCarrier ? 0 :
+            (IsWarsongLocalThreat(ai, enemy, friendlyCarrier) || IsWarsongLocalThreat(ai, enemy, bot)) ? 1 : 2;
+        const int band = static_cast<int>(sServerFacade.GetDistance2d(bot, enemy) / 10.0f);
+        const float health = enemy->GetHealthPercent();
+        if (!best || rank < bestRank || (rank == bestRank &&
+            (band < bestBand || (band == bestBand && (health < bestHealth ||
+                (health == bestHealth && guid < best->GetObjectGuid()))))))
+        {
+            best = enemy; bestRank = rank; bestBand = band; bestHealth = health;
+        }
+    }
+    return best;
+}
+
 WarsongObjective WarsongObjectiveValue::Calculate()
 {
+    AiObjectContext* context = ai->GetAiObjectContext();
     WarsongObjective result;
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
         ActualBattlegroundType(bot) != BATTLEGROUND_WS)
@@ -279,9 +332,7 @@ WarsongObjective WarsongObjectiveValue::Calculate()
         if (!member || !member->IsInWorld()) continue;
         if (entry.second.playerTeam != ownTeam)
         {
-            if (member->IsAlive() && member->IsInCombat() && bot->IsWithinDistInMap(member, 30.0f) &&
-                (member->GetVictim() == bot || member->GetSelectionGuid() == bot->GetObjectGuid()))
-                result.pressured = true;
+            if (IsWarsongLocalThreat(ai, member, bot)) result.pressured = true;
             continue;
         }
         PlayerbotAI* memberAI = member->GetPlayerbotAI();
@@ -317,6 +368,15 @@ WarsongObjective WarsongObjectiveValue::Calculate()
         if (flag && flag->IsInWorld() && sServerFacade.isSpawned(flag))
             result.position.Set(flag->GetPositionX(), flag->GetPositionY(), flag->GetPositionZ(), bot->GetMapId());
         else result.goal = WarsongGoal::None; // don't send bots to an empty base
+    }
+    // Escorts may peel for a nearby carrier even when nobody is attacking the
+    // escort. Beyond this leash they close the distance instead of chasing.
+    if (result.goal == WarsongGoal::Escort)
+    {
+        Unit* carrier = bg->GetBgMap()->GetPlayer(result.target);
+        const std::list<ObjectGuid> enemies = AI_VALUE(std::list<ObjectGuid>, "enemy player targets");
+        for (const ObjectGuid& guid : enemies)
+            if (IsWarsongLocalThreat(ai, ai->GetUnit(guid), carrier)) { result.pressured = true; break; }
     }
     return result;
 }

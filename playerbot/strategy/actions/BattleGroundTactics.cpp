@@ -2318,6 +2318,8 @@ bool BGTactics::wsgPaths()
     ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
 
     uint32 Preference = context->GetValue<uint32>("bg role")->Get();
+    const bool carrying = IsBattlegroundFlagCarrier(bot);
+    if (carrying) Preference = 0; // existing tunnel exit; retain ordinary route variety
 
     bool atAllyGY = bot->GetPositionX() > 1388.f && bot->GetPositionY() > 1515.f && bot->GetPositionZ() > 335.0f;
     bool atHordeGY = bot->GetPositionY() < 1400.0f && bot->GetPositionX() < 1075.0f && bot->GetPositionZ() > 330.0f;
@@ -2338,7 +2340,7 @@ bool BGTactics::wsgPaths()
                     return MoveTo(bg->GetMapId(), 1125.778076f, 1460.059937f, 316.0f);
             }
         }
-        else if (Preference < 7 || (atHordeGY && urand(0, 2))) { // preference < 7 = move through graveyard (BUGGED)
+        else if (Preference < 7 || (atHordeGY && (carrying || urand(0, 2)))) { // preference < 7 = move through graveyard (BUGGED)
             if (bot->GetPositionX() < 985.f) //to the gate at the upper tunnel
             {
                 return MoveTo(bg->GetMapId(), 985.940125f, 1423.260254f, 345.418121f);
@@ -2454,7 +2456,7 @@ bool BGTactics::wsgPaths()
                     return MoveTo(bg->GetMapId(), 1227.446289f, 1476.235718f + frand(-2, +2), 307.484589f);
             }
         }
-        else if (Preference < 7 || (atAllyGY && urand(0, 2))) // through the graveyard
+        else if (Preference < 7 || (atAllyGY && (carrying || urand(0, 2)))) // through the graveyard
         {
             if (bot->GetPositionX() > 1510.2f) //To the first gate
             {
