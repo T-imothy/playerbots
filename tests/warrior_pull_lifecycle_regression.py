@@ -13,16 +13,24 @@ prefix=r'''
 #include <list>
 #include <string>
 #include <vector>
+#include <algorithm>
 using uint32=uint32_t;using uint64=uint64_t;using time_t=long long;
 time_t clockNow=100;time_t time(std::nullptr_t){return clockNow;}time_t time(int){return clockNow;}
 enum SpellCastResult{SPELL_CAST_OK,SPELL_FAILED_ONLY_SHAPESHIFT,SPELL_FAILED_NOT_SHAPESHIFT,SPELL_FAILED_NO_POWER,SPELL_FAILED_NOT_READY};
+constexpr int SPELL_AURA_OVERRIDE_CLASS_SCRIPTS=1,PLAYERSPELL_REMOVED=1,SPELLFAMILY_WARRIOR=4,EFFECT_INDEX_0=0;
 constexpr int POWER_RAGE=1;enum AuraState{PROC=1};constexpr int CLASS_WARRIOR=1,FORM_BATTLESTANCE=17,FORM_DEFENSIVESTANCE=18,FORM_BERSERKERSTANCE=19;
-struct SpellEntry{uint32 Id=1;uint64 Stances=0;uint32 CasterAuraState=0;int powerType=1;};
+struct SpellEntry{uint32 Id=1;uint64 Stances=0;uint32 CasterAuraState=0;int powerType=1;uint32 SpellFamilyName=SPELLFAMILY_WARRIOR,SpellIconID=139;};
 SpellCastResult GetErrorAtShapeshiftedCast(const SpellEntry* s,uint32 form){return !s->Stances||(s->Stances&(uint64(1)<<(form-1)))?SPELL_CAST_OK:SPELL_FAILED_ONLY_SHAPESHIFT;}
 struct Unit {bool alive=true,world=true,combat=false,casting=false;Unit* victim=nullptr;float distance=20;bool IsAlive(){return alive;}bool IsInWorld(){return world;}bool IsInCombat(){return combat;}Unit* GetVictim(){return victim;}float GetDistance(Unit*,bool=false,int=0){return distance;}float GetDistance(float,float,float){return distance;}};
 struct UnitAI{int react=2;void SetReactState(int state){react=state;}};
 struct Creature:Unit{UnitAI controller;UnitAI* AI(){return &controller;}};using Pet=Creature;
-struct Player:Unit{int rage=30;int GetPower(int){return rage;}int klass=CLASS_WARRIOR,form=FORM_BERSERKERSTANCE;bool proc=false;Pet* pet=nullptr;Unit* ally=nullptr;bool sameMap=true;
+struct Aura {struct Mod{int m_amount=10,m_miscvalue=832;} mod;Mod* GetModifier(){return &mod;}};
+struct Learned{int state=0;};
+struct Player:Unit{uint32 rage=30;uint32 GetPower(int){return rage;}int klass=CLASS_WARRIOR,form=FORM_BERSERKERSTANCE;bool proc=false;Pet* pet=nullptr;Unit* ally=nullptr;bool sameMap=true;bool mastery=true;Aura retention;
+ Aura* GetOverrideScript(int){return nullptr;}
+ std::list<Aura*> GetAurasByType(int){return mastery?std::list<Aura*>{&retention}:std::list<Aura*>{};}
+ std::map<uint32,Learned> GetSpellMap(){return mastery?std::map<uint32,Learned>{{2,Learned{}}}:std::map<uint32,Learned>{};}
+ int CalculateSpellEffectValue(Player*,const SpellEntry*,int){return 10;}
  int getClass(){return klass;}int GetShapeshiftForm(){return form;}bool HasAuraState(AuraState){return proc;}Pet* GetPet(){return pet;}
  bool IsInMap(Unit*){return sameMap;}bool IsInGroup(Unit* u){return u==ally;}bool IsNonMeleeSpellCasted(bool){return casting;}};
 struct Spell{static uint32 CalculatePowerCost(const SpellEntry*,Player*){return 10;}};
@@ -62,6 +70,7 @@ int main(){
  auto& spell=sServerFacade.spell;spell.Stances=uint64(1)<<(FORM_BATTLESTANCE-1);
  assert(WarriorStancePrerequisite(&ai,&spell)=="battle stance");
  assert(CanPlanWarriorSpell(&ai,"overpower",&mob));spell.CasterAuraState=PROC;assert(!CanPlanWarriorSpell(&ai,"overpower",&mob));tank.proc=true;assert(CanPlanWarriorSpell(&ai,"overpower",&mob));
+ tank.mastery=false;assert(!CanPlanWarriorSpell(&ai,"overpower",&mob));tank.mastery=true;
  tank.rage=0;assert(!CanPlanWarriorSpell(&ai,"overpower",&mob));tank.rage=30;
  ai.castResult=SPELL_FAILED_NO_POWER;assert(!CanPlanWarriorSpell(&ai,"overpower",&mob));ai.castResult=SPELL_FAILED_ONLY_SHAPESHIFT;
  ai.stanceUsable=false;assert(!CanPlanWarriorSpell(&ai,"overpower",&mob));ai.stanceUsable=true;ai.known=false;assert(WarriorStancePrerequisite(&ai,&spell).empty());ai.known=true;
@@ -86,7 +95,8 @@ int main(){
 '''
 with tempfile.TemporaryDirectory(prefix='warrior-pull-regression-') as tmp:
  p=Path(tmp);(p/'test.cpp').write_text(code)
- result=subprocess.run(['cl','/nologo','/std:c++17','/EHsc','test.cpp','/Fe:test.exe'],cwd=p,capture_output=True,text=True)
- if result.returncode:raise RuntimeError(result.stdout+result.stderr)
- subprocess.run([str(p/'test.exe')],cwd=p,check=True)
+ for era in ['MANGOSBOT_ZERO','MANGOSBOT_ONE','MANGOSBOT_TWO']:
+  result=subprocess.run(['cl','/nologo','/std:c++17','/EHsc','/D'+era,'test.cpp','/Fe:test.exe'],cwd=p,capture_output=True,text=True)
+  if result.returncode:raise RuntimeError(result.stdout+result.stderr)
+  subprocess.run([str(p/'test.exe')],cwd=p,check=True)
 print('PASS: native stance planning, proc/resource/GCD guards; pull phases, ally rescue, pull-back, retries, deadlines, cancellation and pet restoration')

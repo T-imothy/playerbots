@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/MeleeAbilityActions.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/NamedObjectContext.h"
@@ -188,6 +189,9 @@ namespace ai
                 creators["devastate"] = [](PlayerbotAI* ai) { return new CastDevastateAction(ai); };
                 creators["overpower"] = [](PlayerbotAI* ai) { return new CastOverpowerAction(ai); };
                 creators["charge"] = [](PlayerbotAI* ai) { return new CastChargeAction(ai); };
+#if defined(MANGOSBOT_TWO)
+                creators["heroic fury"] = [](PlayerbotAI* ai) { return new CastHeroicFuryAction(ai); };
+#endif
                 creators["bloodthirst"] = [](PlayerbotAI* ai) { return new CastBloodthirstAction(ai); };
                 creators["rend"] = [](PlayerbotAI* ai) { return new CastRendAction(ai); };
                 creators["rend on attacker"] = [](PlayerbotAI* ai) { return new CastRendOnAttackerAction(ai); };

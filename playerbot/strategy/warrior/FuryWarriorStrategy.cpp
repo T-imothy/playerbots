@@ -39,6 +39,11 @@ NextAction** FuryWarriorStrategy::GetDefaultCombatActions()
 
 void FuryWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("heroic fury", ACTION_DISPEL), nullptr)));
+#endif
+
     WarriorStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -163,6 +168,16 @@ void FuryWarriorRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers
 
 void FuryWarriorAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("melee light aoe", NextAction::array(0, new NextAction("whirlwind", ACTION_HIGH + 4), nullptr)));
+#endif
+
+#if defined(MANGOSBOT_ONE)
+
+    triggers.push_back(new TriggerNode("melee light aoe", NextAction::array(0, new NextAction("sweeping strikes", ACTION_HIGH + 6), nullptr)));
+#endif
+
     WarriorAoeStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -395,6 +410,11 @@ NextAction** FuryWarriorStrategy::GetDefaultCombatActions()
 
 void FuryWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("heroic fury", ACTION_DISPEL), nullptr)));
+#endif
+
     WarriorStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -519,6 +539,16 @@ void FuryWarriorRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers
 
 void FuryWarriorAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("melee light aoe", NextAction::array(0, new NextAction("whirlwind", ACTION_HIGH + 4), nullptr)));
+#endif
+
+#if defined(MANGOSBOT_ONE)
+
+    triggers.push_back(new TriggerNode("melee light aoe", NextAction::array(0, new NextAction("sweeping strikes", ACTION_HIGH + 6), nullptr)));
+#endif
+
     WarriorAoeStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -751,6 +781,11 @@ NextAction** FuryWarriorStrategy::GetDefaultCombatActions()
 
 void FuryWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("heroic fury", ACTION_DISPEL), nullptr)));
+#endif
+
     WarriorStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -884,6 +919,16 @@ void FuryWarriorAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trig
 
 void FuryWarriorAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("melee light aoe", NextAction::array(0, new NextAction("whirlwind", ACTION_HIGH + 4), nullptr)));
+#endif
+
+#if defined(MANGOSBOT_ONE)
+
+    triggers.push_back(new TriggerNode("melee light aoe", NextAction::array(0, new NextAction("sweeping strikes", ACTION_HIGH + 6), nullptr)));
+#endif
+
     WarriorAoeStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(

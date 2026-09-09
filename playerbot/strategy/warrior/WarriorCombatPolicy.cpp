@@ -33,8 +33,34 @@ bool ai::CanPlanWarriorSpell(PlayerbotAI* ai, const std::string& name, Unit* tar
     // toward Overpower/Revenge unless their native reactive state exists.
     if (!spell || (spell->CasterAuraState && !ai->GetBot()->HasAuraState(AuraState(spell->CasterAuraState))))
         return false;
-    if (spell->powerType == POWER_RAGE &&
-        ai->GetBot()->GetPower(POWER_RAGE) < Spell::CalculatePowerCost(spell, ai->GetBot()))
-        return false;
+    if (spell->powerType == POWER_RAGE)
+    {
+        Player* bot = ai->GetBot();
+        uint32 retained = 0;
+        if (bot->GetShapeshiftForm() == FORM_DEFENSIVESTANCE)
+            if (Aura* aura = bot->GetOverrideScript(831))
+                retained += aura->GetModifier()->m_amount * 10;
+#ifdef MANGOSBOT_ZERO
+        for (Aura* aura : bot->GetAurasByType(SPELL_AURA_OVERRIDE_CLASS_SCRIPTS))
+        {
+            const int script = aura->GetModifier()->m_miscvalue;
+            if (script >= 831 && script <= 835)
+            {
+                retained += (script - 830) * 50;
+                break;
+            }
+        }
+#else
+        for (const auto& entry : bot->GetSpellMap())
+        {
+            if (entry.second.state == PLAYERSPELL_REMOVED) continue;
+            const SpellEntry* passive = sServerFacade.LookupSpellInfo(entry.first);
+            if (passive && passive->SpellFamilyName == SPELLFAMILY_WARRIOR && passive->SpellIconID == 139)
+                retained += bot->CalculateSpellEffectValue(bot, passive, EFFECT_INDEX_0) * 10;
+        }
+#endif
+        if (std::min(bot->GetPower(POWER_RAGE), retained) < Spell::CalculatePowerCost(spell, bot))
+            return false;
+    }
     return !WarriorStancePrerequisite(ai, spell).empty();
 }

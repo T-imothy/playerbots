@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/MeleeAbilityActions.h"
 #pragma once
 #include "playerbot/strategy/actions/GenericActions.h"
 
@@ -32,7 +33,12 @@ namespace ai
     MELEE_DEBUFF_ACTION(CastRendAction, "rend");
     MELEE_DEBUFF_ENEMY_ACTION(CastRendOnAttackerAction, "rend");
     MELEE_DEBUFF_ACTION_R(CastThunderClapAction, "thunder clap", 8.0f);
-    SPELL_ACTION(CastThunderClapThreatAction, "thunder clap");
+    class CastThunderClapThreatAction : public CastSpellAction
+    {
+    public:
+        CastThunderClapThreatAction(PlayerbotAI* ai) : CastSpellAction(ai, "thunder clap") {}
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
+    };
     SNARE_ACTION(CastThunderClapSnareAction, "thunder clap");
     SNARE_ACTION(CastHamstringAction, "hamstring");
     MELEE_ACTION(CastOverpowerAction, "overpower");
@@ -45,19 +51,34 @@ namespace ai
     
     // arms talents
     MELEE_ACTION(CastMortalStrikeAction, "mortal strike");
-    BUFF_ACTION(CastSweepingStrikesAction, "sweeping strikes");
+    BUFF_ACTION_U(CastSweepingStrikesAction, "sweeping strikes", CastBuffSpellAction::isUseful() && MeleeOpportunity(ai) && SafeMeleeTargetCount(ai, 5.0f) >= 2);
     // arms talents 3.3.5
-    BUFF_ACTION(CastBladestormAction, "bladestorm");
+    class CastBladestormAction : public CastBuffSpellAction
+    {
+    public:
+        CastBladestormAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "bladestorm") {}
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
+    };
 
     // fury
-    MELEE_ACTION(CastCleaveAction, "cleave");
+    class CastCleaveAction : public CastMeleeSpellAction
+    {
+    public:
+        CastCleaveAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "cleave") {}
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
+        bool isUseful() override { return CastMeleeSpellAction::isUseful() && SafeMeleeTargetCount(ai, 5.0f) >= 2; }
+    };
     MELEE_ACTION(CastExecuteAction, "execute");
     REACH_ACTION(CastInterceptAction, "intercept", 8.0f);
     ENEMY_HEALER_ACTION(CastInterceptOnEnemyHealerAction, "intercept");
     SNARE_ACTION(CastInterceptOnSnareTargetAction, "intercept");
     MELEE_ACTION(CastSlamAction, "slam");
     BUFF_ACTION(CastBerserkerRageAction, "berserker rage");
-    MELEE_ACTION(CastWhirlwindAction, "whirlwind");
+    class CastWhirlwindAction : public CastSafeMeleeAreaAction
+    {
+    public:
+        CastWhirlwindAction(PlayerbotAI* ai) : CastSafeMeleeAreaAction(ai, "whirlwind", 8.0f) {}
+    };
     MELEE_ACTION(CastPummelAction, "pummel");
     ENEMY_HEALER_ACTION(CastPummelOnEnemyHealerAction, "pummel");
     BUFF_ACTION(CastRecklessnessAction, "recklessness");
@@ -65,7 +86,24 @@ namespace ai
     MELEE_ACTION(CastVictoryRushAction, "victory rush");
     // fury 3.3.5
     BUFF_ACTION(CastEnragedRegenerationAction, "enraged regeneration");
-    BUFF_ACTION(CastHeroicFuryAction, "heroic fury");
+    class CastHeroicFuryAction : public CastBuffSpellAction
+    {
+    public:
+        CastHeroicFuryAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "heroic fury") {}
+        bool isUseful() override
+        {
+#ifdef MANGOSBOT_TWO
+            if (!CastBuffSpellAction::isUseful()) return false;
+            if (bot->HasAuraType(SPELL_AURA_MOD_ROOT)) return true;
+            Unit* target = AI_VALUE(Unit*, "current target");
+            const uint32 intercept = AI_VALUE2(uint32, "spell id", "intercept");
+            return MeleeCombatTarget(ai, target) && intercept && !bot->IsSpellReady(intercept) &&
+                bot->GetDistance(target) >= 8.0f && bot->GetDistance(target) <= 25.0f && bot->IsWithinLOSInMap(target);
+#else
+            return false;
+#endif
+        }
+    };
 
     // fury talents
     BUFF_ACTION(CastDeathWishAction, "death wish");
