@@ -613,13 +613,13 @@ bool BotRecruitment::IsPreparation(const std::string& command)
         command == "reagents" || command == "regs" || command == "reg" || command == "ammo";
 }
 
-std::string BotRecruitment::PreparationReason(Player* owner, Player* bot)
+std::string BotRecruitment::PreparationReason(Player* owner, Player* bot, bool allowCombat)
 {
     std::string reason = Control(owner,bot);
     if (!reason.empty()) return reason;
     if (!owner->IsInWorld() || owner->IsBeingTeleported() || !bot->IsInWorld() || bot->IsBeingTeleported()) return "transfer";
     if (!bot->IsAlive()) return "dead";
-    if (bot->IsInCombat() || owner->IsInCombat()) return "combat";
+    if (!allowCombat && (bot->IsInCombat() || owner->IsInCombat())) return "combat";
     if (bot->HasCharmer() || bot->GetTransport() || bot->IsTaxiFlying()) return "transport_or_controlled";
     if (owner->InBattleGround() || bot->InBattleGround()) return "battleground";
     return "";
@@ -628,12 +628,12 @@ std::string BotRecruitment::PreparationReason(Player* owner, Player* bot)
 std::string BotRecruitment::Prepare(Player* owner, Player* bot, const std::string& command,
     const std::string& parameter, const std::function<std::string()>& apply)
 {
-    std::string reason = PreparationReason(owner,bot);
+    const bool gear = command == "gear" || command == "equip";
+    std::string reason = PreparationReason(owner,bot,gear);
     if (!reason.empty()) return "refused: " + reason;
     // No distance restriction for manual preparation. Pending summons must finish.
     auto summon = State().summons.find(bot->GetGUIDLow());
     if (summon != State().summons.end()) return "refused: summon_pending";
-    const bool gear = command == "gear" || command == "equip";
     auto restoreGearResources = [&](const std::string& response)
     {
         // Repeated legacy gear commands reuse equipment work, but must retain

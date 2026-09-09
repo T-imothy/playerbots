@@ -19,7 +19,7 @@ namespace ai
         static bool HasPendingInvite(Player* bot);
         static void Update(uint32 diff);
         static std::string Eligibility(Player* requester, Player* bot);
-        static std::string PreparationReason(Player* requester, Player* bot);
+        static std::string PreparationReason(Player* requester, Player* bot, bool allowCombat = false);
         static bool IsPreparation(const std::string& command);
         static std::string Prepare(Player* requester, Player* bot, const std::string& command,
             const std::string& parameter, const std::function<std::string()>& apply);

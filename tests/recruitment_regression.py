@@ -124,12 +124,12 @@ int main(){
  auto apply=[&](){++calls;b.maxHealth=140;b.maxMana=180;return std::string("random gear equipped");};
  ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(calls==1&&b.health==140&&b.mana==180&&b.otherPower==23);
  b.health=1;b.mana=2;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(calls==1&&b.health==140&&b.mana==180);
- b.health=1;b.mana=2;b.combat=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==1&&b.mana==2);
- b.combat=false;p.combat=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==1&&b.mana==2);
- p.combat=false;b.alive=false;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==1&&b.mana==2);
+ b.health=1;b.mana=2;b.combat=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==140&&b.mana==180&&b.combat&&calls==1);
+ b.health=1;b.mana=2;b.combat=false;p.combat=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==140&&b.mana==180&&p.combat&&calls==1);
+ b.health=1;b.mana=2;p.combat=false;b.alive=false;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==1&&b.mana==2);
  b.alive=true;b.transfer=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==1&&b.mana==2);
  b.transfer=false;b.real=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(b.health==1&&b.mana==2&&calls==1);}
- reset();{Player p(1,true),b(2);b.ai.master=&p;b.maxMana=0;
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.maxMana=0;b.combat=true;p.combat=true;
  auto apply=[](){return std::string("gear upgraded");};
  ai::BotRecruitment::Prepare(&p,&b,"equip","upgrade",apply);assert(b.health==100&&b.mana==5&&b.otherPower==23);
  b.health=1;ai::BotRecruitment::Prepare(&p,&b,"equip","upgrade",apply);assert(b.health==100&&b.otherPower==23);}
@@ -138,8 +138,17 @@ int main(){
  ai::BotRecruitment::Prepare(&p,&b,"gear","bad",apply);ai::BotRecruitment::Prepare(&p,&b,"gear","bad",apply);assert(b.health==50&&b.mana==5);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;auto apply=[](){return std::string("food added");};
  ai::BotRecruitment::Prepare(&p,&b,"food","",apply);ai::BotRecruitment::Prepare(&p,&b,"food","",apply);assert(b.health==50&&b.mana==5);}
- reset();{Player p(1,true),b(2);b.ai.master=&p;command(p,"refill prepare 2 gear");assert(b.health==100);
- b.health=7;command(p,"refill prepare 2 gear");assert(b.health==7&&b.gear==1);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.combat=true;p.combat=true;command(p,"refill prepare 2 gear");assert(b.health==100);
+ b.health=7;command(p,"refill prepare 2 gear");assert(b.health==7&&b.gear==1&&b.combat&&p.combat);}
+ for(bool requesterCombat:{false,true}){reset();Player p(1,true),b(2);b.ai.master=&p;p.combat=requesterCombat;b.combat=!requesterCombat;
+ assert(ai::BotRecruitment::PreparationReason(&p,&b)=="combat");
+ for(auto cmd:{"food","drink","potions","pots","consumes","reagents","ammo"}){
+ unsigned calls=0;auto apply=[&](){++calls;return std::string("food added");};
+ assert(ai::BotRecruitment::Prepare(&p,&b,cmd,"",apply)=="refused: combat"&&calls==0);}
+ unsigned calls=0;auto apply=[&](){++calls;return std::string("random gear equipped");};
+ assert(ai::BotRecruitment::Prepare(&p,&b,"gear","",apply)=="random gear equipped");assert(calls==1&&b.health==100&&b.mana==100);
+ assert(p.combat==requesterCombat&&b.combat!=requesterCombat);}
+
 
  reset();{Player p(1,true),b(2);b.combat=true;b.alive=false;b.afk=true;invite(p,b);tick();assert(b.group==p.group&&b.group);assert(!b.alive&&b.combat&&b.health==50&&b.gear==0&&!b.transfer);assert(b.ai.master==&p&&!b.afk);}
  reset();{Player p(1,true),b(2);b.transfer=true;invite(p,b);tick();assert(!b.group);tick(15);assert(!b.invite&&!b.group&&has("timed_out"));b.transfer=false;tick();assert(!b.group);}
@@ -152,7 +161,7 @@ int main(){
  reset();{Player p(1,true),b(2);b.transfer=true;invite(p,b);players.erase(1);tick();assert(!b.invite&&!b.group);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;b.combat=true;p.combat=true;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(b.transfer&&!has("arrived"));assert(p.combat);b.transfer=false;b.distance=0;tick();assert(has("arrived"));assert(b.combat&&p.combat);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;b.taxi=true;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(!b.transfer);b.taxi=false;b.transport=true;tick();assert(!b.transfer);b.transport=false;b.charm=true;tick();assert(!b.transfer);b.charm=false;b.transfer=true;tick();assert(!has("teleport_started"));b.transfer=false;b.combat=true;tick();assert(b.transfer&&has("teleport_started"));}
- reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;p.combat=true;command(p,"combat summon 2");assert(b.transfer&&has("teleport_started"));command(p,"combat summon 2");assert(b.transfer);b.transfer=false;b.distance=0;b.combat=true;tick();assert(has("arrived"));command(p,"prep prepare 2 gear");assert(b.gear==0&&has("combat"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;p.combat=true;command(p,"combat summon 2");assert(b.transfer&&has("teleport_started"));command(p,"combat summon 2");assert(b.transfer);b.transfer=false;b.distance=0;b.combat=true;tick();assert(has("arrived"));command(p,"prep prepare 2 gear");assert(b.gear==1&&b.combat&&p.combat);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.instance=1;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(!b.transfer&&has("different_instance"));}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.alive=false;sPlayerbotAIConfig.recruitmentRevive=false;command(p,"s summon 2");assert(!b.transfer&&has("revival_disabled"));}
  reset();{Player p(1,true),b(2);b.ai.master=&p;command(p,"g prepare 2 gear");assert(b.gear==1);command(p,"g prepare 2 gear");assert(b.gear==1);command(p,"g summon 2");assert(has("id_conflict"));}
