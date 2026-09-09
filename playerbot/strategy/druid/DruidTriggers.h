@@ -362,7 +362,10 @@ namespace ai
 
         bool IsActive() override
         {
-            if (ai->HasAura("cat form", bot) &&
+#ifdef MANGOSBOT_TWO
+            return false;
+#else
+            if (ai->HasAura("furor", bot) && ai->HasAura("cat form", bot) &&
                 AI_VALUE2(uint8, "energy", "self target") < 20 &&
                 AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.lowMana)
             {
@@ -370,6 +373,7 @@ namespace ai
             }
 
             return false;
+#endif
         }
     };
 

@@ -1,3 +1,4 @@
+#include "playerbot/strategy/MeleeCombatPolicy.h"
 #pragma once
 #include "playerbot/strategy/actions/HealerSupportActions.h"
 #include "playerbot/strategy/actions/GenericActions.h"
@@ -426,6 +427,18 @@ namespace ai
     {
     public:
         CastBerserkAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "berserk") {}
+        bool isUseful() override
+        {
+#ifdef MANGOSBOT_TWO
+            if (!MeleeOpportunity(ai) || !CastBuffSpellAction::isUseful()) return false;
+            const auto form = bot->GetShapeshiftForm();
+            return (form == FORM_CAT && bot->GetPower(POWER_ENERGY) >= 40) ||
+                ((form == FORM_BEAR || form == FORM_DIREBEAR) &&
+                 (SafeMeleeTargetCount(ai, 5.0f) >= 2 || AI_VALUE2(uint8, "health", "self target") < 50));
+#else
+            return false;
+#endif
+        }
     };
 
     class CastTigersFuryAction : public CastBuffSpellAction
@@ -455,6 +468,7 @@ namespace ai
     class CastSwipeCatAction : public CastMeleeSpellAction
     {
     public:
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
         CastSwipeCatAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "swipe (cat)") {}
     };
 
@@ -612,6 +626,7 @@ namespace ai
     class CastSwipeAction : public CastMeleeSpellAction
     {
     public:
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
         CastSwipeAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "swipe") {}
     };
 
@@ -630,6 +645,7 @@ namespace ai
     class CastSwipeBearAction : public CastMeleeSpellAction
     {
     public:
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
 #ifdef MANGOSBOT_TWO
         CastSwipeBearAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai, "swipe (bear)") {}
 #else

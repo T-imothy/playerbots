@@ -331,6 +331,11 @@ void TankFeralDruidBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode
 
 void TankFeralDruidBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("berserk", ACTION_HIGH + 4), nullptr)));
+#endif
+
     DruidBoostStrategy::InitCombatTriggers(triggers);
 }
 
@@ -781,6 +786,11 @@ void TankFeralDruidBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode
 
 void TankFeralDruidBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("berserk", ACTION_HIGH + 4), nullptr)));
+#endif
+
     DruidBoostStrategy::InitCombatTriggers(triggers);
 }
 
@@ -1231,6 +1241,11 @@ void TankFeralDruidBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode
 
 void TankFeralDruidBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("berserk", ACTION_HIGH + 4), nullptr)));
+#endif
+
     DruidBoostStrategy::InitCombatTriggers(triggers);
 }
 

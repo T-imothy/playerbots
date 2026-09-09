@@ -352,6 +352,11 @@ void DpsFeralDruidBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*
 
 void DpsFeralDruidBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("berserk", ACTION_HIGH + 4), nullptr)));
+#endif
+
     DruidBoostStrategy::InitCombatTriggers(triggers);
 }
 
@@ -398,6 +403,11 @@ void DpsFeralDruidBoostRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode
 
 void DpsFeralDruidCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("maim", ACTION_INTERRUPT), nullptr)));
+#endif
+
     DruidCcStrategy::InitCombatTriggers(triggers);
 }
 
@@ -847,6 +857,11 @@ void DpsFeralDruidBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*
 
 void DpsFeralDruidBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("berserk", ACTION_HIGH + 4), nullptr)));
+#endif
+
     DruidBoostStrategy::InitCombatTriggers(triggers);
 }
 
@@ -893,6 +908,11 @@ void DpsFeralDruidBoostRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode
 
 void DpsFeralDruidCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("maim", ACTION_INTERRUPT), nullptr)));
+#endif
+
     DruidCcStrategy::InitCombatTriggers(triggers);
 }
 
@@ -1349,6 +1369,11 @@ void DpsFeralDruidBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*
 
 void DpsFeralDruidBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("berserk", ACTION_HIGH + 4), nullptr)));
+#endif
+
     DruidBoostStrategy::InitCombatTriggers(triggers);
 }
 
@@ -1395,6 +1420,11 @@ void DpsFeralDruidBoostRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode
 
 void DpsFeralDruidCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("maim", ACTION_INTERRUPT), nullptr)));
+#endif
+
     DruidCcStrategy::InitCombatTriggers(triggers);
 }
 

@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/MeleeAbilityActions.h"
 
 #include "playerbot/playerbot.h"
 #include "DruidActions.h"
@@ -301,6 +302,9 @@ namespace ai
                 creators["abolish poison on party"] = [](PlayerbotAI* ai) { return new CastAbolishPoisonOnPartyAction(ai); };
                 creators["remove curse"] = [](PlayerbotAI* ai) { return new CastRemoveCurseAction(ai); };
                 creators["remove curse on party"] = [](PlayerbotAI* ai) { return new CastRemoveCurseOnPartyAction(ai); };
+#if !defined(MANGOSBOT_ZERO)
+                creators["maim"] = [](PlayerbotAI* ai) { return new CastMaimAction(ai); };
+#endif
                 creators["berserk"] = [](PlayerbotAI* ai) { return new CastBerserkAction(ai); };
                 creators["tiger's fury"] = [](PlayerbotAI* ai) { return new CastTigersFuryAction(ai); };
                 creators["mark of the wild"] = [](PlayerbotAI* ai) { return new CastMarkOfTheWildAction(ai); };
