@@ -4,6 +4,23 @@
 
 namespace ai
 {
+    inline const char* PaladinFreedomSpell()
+    {
+#ifdef MANGOSBOT_TWO
+        return "hand of freedom";
+#else
+        return "blessing of freedom";
+#endif
+    }
+    inline const char* PaladinVengeanceSpell(PlayerbotAI* ai)
+    {
+#ifdef MANGOSBOT_TWO
+        if (!ai->HasSpell("seal of vengeance") && ai->HasSpell("seal of corruption"))
+            return "seal of corruption";
+#endif
+        return "seal of vengeance";
+    }
+
 #ifdef MANGOSBOT_TWO
     // Avoid imposing Divine Plea's healing penalty on a healing-role bot.
     BUFF_ACTION_U(CastDivinePleaAction, "divine plea", !ai->IsHeal(bot) && CastBuffSpellAction::isUseful());
@@ -24,9 +41,56 @@ namespace ai
 	BUFF_ACTION(CastSealOfRighteousnessAction, "seal of righteousness");
 	BUFF_ACTION(CastSealOfJusticeAction, "seal of justice");
 	BUFF_ACTION(CastSealOfLightAction, "seal of light");
-	BUFF_ACTION(CastSealOfWisdomAction, "seal of wisdom");
+    BUFF_ACTION(CastSealOfWisdomAction, "seal of wisdom");
+    class RetSealRecoveryAction : public CastBuffSpellAction
+    {
+    public:
+        RetSealRecoveryAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "seal of wisdom") {}
+        std::string getName() override { return "ret seal recovery"; }
+        bool isUseful() override
+        {
+            Aura* wisdom = ai->GetAura("seal of wisdom", bot, true);
+            if (!previous.empty())
+            {
+                // A player-selected seal, recast or natural expiry cancels ownership.
+                if (!wisdom || wisdom->GetAuraApplyMSTime() != applied)
+                {
+                    previous.clear();
+                    return false;
+                }
+                if (AI_VALUE2(uint8, "mana", "self target") < 60) return false;
+                SetSpellName(previous);
+            }
+            else
+            {
+                if (wisdom || AI_VALUE2(uint8, "mana", "self target") >= sPlayerbotAIConfig.lowMana) return false;
+                SetSpellName("seal of wisdom");
+            }
+            return CastBuffSpellAction::isUseful();
+        }
+        bool Execute(Event& event) override
+        {
+            if (!isUseful()) return false;
+            std::string old;
+            if (previous.empty())
+                for (const char* seal : { "seal of command", "seal of vengeance", "seal of corruption",
+                     "seal of blood", "seal of righteousness", "seal of the crusader", "seal of light", "seal of justice" })
+                    if (ai->HasAura(seal, bot)) { old = seal; break; }
+            if (!CastBuffSpellAction::Execute(event)) return false;
+            if (previous.empty())
+            {
+                previous = old.empty() ? (ai->HasSpell("seal of command") ? "seal of command" : "seal of righteousness") : old;
+                if (Aura* aura = ai->GetAura("seal of wisdom", bot, true)) applied = aura->GetAuraApplyMSTime();
+            }
+            else previous.clear();
+            return true;
+        }
+    private:
+        std::string previous;
+        uint32 applied = 0;
+    };
 	BUFF_ACTION(CastSealOfCommandAction, "seal of command");
-	BUFF_ACTION(CastSealOfVengeanceAction, "seal of vengeance");
+    BUFF_ACTION(CastSealOfVengeanceAction, PaladinVengeanceSpell(ai));
     BUFF_ACTION(CastSealOfTheCrusaderAction, "seal of the crusader");
     BUFF_ACTION(CastSealOfBloodAction, "seal of blood");
 
@@ -69,9 +133,21 @@ namespace ai
 	};
 
 	// judgements
+#ifdef MANGOSBOT_TWO
+    SPELL_ACTION(CastJudgementOfLightAction, "judgement of light");
+#else
 	MELEE_DEBUFF_ACTION_R(CastJudgementOfLightAction, "judgement of light", 10.0f);
+#endif
+#ifdef MANGOSBOT_TWO
+    SPELL_ACTION(CastJudgementOfWisdomAction, "judgement of wisdom");
+#else
 	MELEE_DEBUFF_ACTION_R(CastJudgementOfWisdomAction, "judgement of wisdom", 10.0f);
+#endif
+#ifdef MANGOSBOT_TWO
+    SPELL_ACTION(CastJudgementOfJusticeAction, "judgement of justice");
+#else
 	MELEE_DEBUFF_ACTION_R(CastJudgementOfJusticeAction, "judgement of justice", 10.0f);
+#endif
 
 	SPELL_ACTION(CastHolyShockAction, "holy shock");
     class CastHolyShockOnSelfAction : public CastHealingSpellAction
@@ -97,7 +173,7 @@ namespace ai
 	BUFF_ACTION(CastDivineFavorAction, "divine favor");
 
 	// blessings
-	BUFF_ACTION(CastBlessingOfFreedomAction, "blessing of freedom");
+    BUFF_ACTION(CastBlessingOfFreedomAction, PaladinFreedomSpell());
 	// fury
 	BUFF_ACTION(CastRighteousFuryAction, "righteous fury");
 	BUFF_ACTION(CastAvengingWrathAction, "avenging wrath");
@@ -107,6 +183,7 @@ namespace ai
 	class CastDivineStormAction : public CastBuffSpellAction
 	{
 	public:
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
 		CastDivineStormAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "divine storm") {}
 	};
 
@@ -696,7 +773,7 @@ namespace ai
     class CastBlessingOfFreedomOnPartyAction : public CastSpellAction
     {
     public:
-		CastBlessingOfFreedomOnPartyAction(PlayerbotAI* ai) : CastSpellAction(ai, "blessing of freedom") {}
+        CastBlessingOfFreedomOnPartyAction(PlayerbotAI* ai) : CastSpellAction(ai, PaladinFreedomSpell()) {}
         bool isUseful() override { return CastSpellAction::isUseful() && !ai->HasAura(GetSpellName(), GetTarget()); }
         std::string GetReachActionName() override { return "reach spell"; }
         std::string GetTargetName() override { return "party member to remove roots"; }

@@ -11,6 +11,7 @@ bool SealTrigger::IsActive()
 	return !ai->HasAura("seal of justice", target) &&
         !ai->HasAura("seal of command", target) &&
         !ai->HasAura("seal of vengeance", target) &&
+        !ai->HasAura("seal of corruption", target) &&
 		!ai->HasAura("seal of righteousness", target) &&
         !ai->HasAura("seal of the crusader", target) &&
 		!ai->HasAura("seal of light", target) &&

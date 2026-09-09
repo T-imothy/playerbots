@@ -77,8 +77,8 @@ void RetributionPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
         NextAction::array(0, new NextAction("holy light", ACTION_MEDIUM_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "low mana",
-        NextAction::array(0, new NextAction("seal of wisdom", ACTION_HIGH + 1), NULL)));
+        "very often",
+        NextAction::array(0, new NextAction("ret seal recovery", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "target critical health",
@@ -576,8 +576,8 @@ void RetributionPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
                              new NextAction("holy light", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "low mana",
-        NextAction::array(0, new NextAction("seal of wisdom", ACTION_HIGH + 1), NULL)));
+        "very often",
+        NextAction::array(0, new NextAction("ret seal recovery", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "target critical health",
@@ -1071,8 +1071,8 @@ void RetributionPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& tri
                              new NextAction("holy light", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "low mana",
-        NextAction::array(0, new NextAction("seal of wisdom", ACTION_HIGH + 1), NULL)));
+        "very often",
+        NextAction::array(0, new NextAction("ret seal recovery", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "target critical health",

@@ -34,8 +34,29 @@ namespace ai
 
     // judgements
     DEBUFF_TRIGGER(JudgementTrigger, "judgement");
+#ifdef MANGOSBOT_TWO
+    CAN_CAST_TRIGGER(JudgementOfLightTrigger, "judgement of light");
+#else
     DEBUFF_TRIGGER(JudgementOfLightTrigger, "judgement of light");
+#endif
+#ifdef MANGOSBOT_TWO
+    class JudgementOfWisdomTrigger : public SpellCanBeCastedTrigger
+    {
+    public:
+        JudgementOfWisdomTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "judgement of wisdom") {}
+        bool IsActive() override
+        {
+            if (!SpellCanBeCastedTrigger::IsActive()) return false;
+            Unit* target = GetTarget();
+            // Cover Light when Wisdom is already supplied and Light is missing;
+            // once both exist, the normal preferred judgement remains damaging.
+            return !ai->HasAura("judgement of wisdom", target) || ai->HasAura("judgement of light", target) ||
+                !ai->CanCastSpell("judgement of light", target, 0);
+        }
+    };
+#else
     DEBUFF_TRIGGER(JudgementOfWisdomTrigger, "judgement of wisdom");
+#endif
 
     class ConsecrationTrigger : public SpellNoCooldownTrigger
     {

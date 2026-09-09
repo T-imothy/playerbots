@@ -315,6 +315,10 @@ namespace ai
             AiObjectContextInternal()
             {
                 creators["seal of command"] = [](PlayerbotAI* ai) { return new CastSealOfCommandAction(ai); };
+                creators["ret seal recovery"] = [](PlayerbotAI* ai) { return new RetSealRecoveryAction(ai); };
+#if defined(MANGOSBOT_TWO)
+                creators["seal of corruption"] = [](PlayerbotAI* ai) { return new CastBuffSpellAction(ai, "seal of corruption"); };
+#endif
                 creators["seal of vengeance"] = [](PlayerbotAI* ai) { return new CastSealOfVengeanceAction(ai); };
                 creators["seal of blood"] = [](PlayerbotAI* ai) { return new CastSealOfBloodAction(ai); };
                 creators["seal of the crusader"] = [](PlayerbotAI* ai) { return new CastSealOfTheCrusaderAction(ai); };
