@@ -53,7 +53,7 @@ namespace ai
             if (!previous.empty())
             {
                 // A player-selected seal, recast or natural expiry cancels ownership.
-                if (!wisdom || wisdom->GetAuraApplyMSTime() != applied)
+                if (!wisdom || wisdom->GetHolder()->GetAuraApplyMSTime() != applied)
                 {
                     previous.clear();
                     return false;
@@ -80,7 +80,7 @@ namespace ai
             if (previous.empty())
             {
                 previous = old.empty() ? (ai->HasSpell("seal of command") ? "seal of command" : "seal of righteousness") : old;
-                if (Aura* aura = ai->GetAura("seal of wisdom", bot, true)) applied = aura->GetAuraApplyMSTime();
+                if (Aura* aura = ai->GetAura("seal of wisdom", bot, true)) applied = aura->GetHolder()->GetAuraApplyMSTime();
             }
             else previous.clear();
             return true;

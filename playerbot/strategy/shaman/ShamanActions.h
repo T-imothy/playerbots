@@ -8,6 +8,8 @@
 #include "playerbot/strategy/actions/ChangeStrategyAction.h"
 #include "ShamanTotemSpells.h"
 
+char* strstri(const char* haystack, const char* needle);
+
 namespace ai
 {
 #ifdef MANGOSBOT_TWO

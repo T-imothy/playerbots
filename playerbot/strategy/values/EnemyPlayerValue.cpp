@@ -51,12 +51,6 @@ bool EnemyPlayersValue::IsValid(Unit* target, Player* player)
         Player* enemyPlayer = dynamic_cast<Player*>(target);
         if (enemyPlayer)
         {
-            // If the target is friendly to the player
-            if (PossibleTargetsValue::IsFriendly(target, player))
-            {
-                return false;
-            }
-
             // Check that the target is not a mind controlled ally
             if (target->HasAuraType(SPELL_AURA_MOD_CHARM) || target->HasAuraType(SPELL_AURA_MOD_POSSESS))
             {

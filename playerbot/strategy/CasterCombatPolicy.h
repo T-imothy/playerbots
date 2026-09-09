@@ -1,6 +1,7 @@
 #pragma once
 
 #include "playerbot/strategy/MeleeCombatPolicy.h"
+#include "playerbot/ServerFacade.h"
 #include "Spells/SpellMgr.h"
 #include <algorithm>
 #include <vector>

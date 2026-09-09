@@ -41,7 +41,8 @@ assert block(tank,'Unit* TankTargetValue::Calculate').index('return rti') < bloc
 enemy=read('values/EnemyPlayerValue.cpp')
 assert 'firstTarget' not in block(enemy,'Unit* EnemyPlayerValue::Calculate')
 assert 'EnemyPlayersValue::IsValid(target, bot)' in block(enemy,'Unit* EnemyPlayerValue::Calculate')
-assert 'PossibleTargetsValue::IsFriendly(target, player)' in block(enemy,'bool EnemyPlayersValue::IsValid')
+assert 'PossibleTargetsValue::IsValid(target, player, true)' in block(enemy,'bool EnemyPlayersValue::IsValid')
+assert 'IsFriendly(target, player)' in basic
 attack=read('actions/AttackAction.cpp')
 assert 'MeleeCcCheck(ai).Protected(target)' in block(attack,'bool AttackAction::Execute')
 assert 'PossibleTargetsValue::IsValid' in block(attack,'bool AttackAction::IsTargetValid')
