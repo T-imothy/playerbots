@@ -133,7 +133,14 @@ namespace ai
 	{
 	public:
         CastSummonGargoyleAction(PlayerbotAI* ai) : CastSpellAction(ai, "summon gargoyle") {}
-        bool isUseful() override { return ai->IsStateActive(BotState::BOT_STATE_COMBAT) && ai->HasStrategy("boost", BotState::BOT_STATE_COMBAT) && MeleeCombatTarget(ai, GetTarget()) && bot->GetPower(POWER_RUNIC_POWER) >= 600 && CastSpellAction::isUseful(); }
+        bool isUseful() override
+        {
+#ifdef MANGOSBOT_TWO
+            return ai->IsStateActive(BotState::BOT_STATE_COMBAT) && ai->HasStrategy("boost", BotState::BOT_STATE_COMBAT) && MeleeCombatTarget(ai, GetTarget()) && bot->GetPower(POWER_RUNIC_POWER) >= 600 && CastSpellAction::isUseful();
+#else
+            return false;
+#endif
+        }
 	};
 
 	class CastGhoulFrenzyAction : public CastBuffSpellAction
@@ -241,7 +248,14 @@ namespace ai
 	{
 	public:
         CastDancingWeaponAction(PlayerbotAI* ai) : CastSpellAction(ai, "dancing rune weapon") {}
-        bool isUseful() override { return ai->HasStrategy("boost", BotState::BOT_STATE_COMBAT) && MeleeOpportunity(ai) && bot->GetPower(POWER_RUNIC_POWER) >= 600 && CastSpellAction::isUseful(); }
+        bool isUseful() override
+        {
+#ifdef MANGOSBOT_TWO
+            return ai->HasStrategy("boost", BotState::BOT_STATE_COMBAT) && MeleeOpportunity(ai) && bot->GetPower(POWER_RUNIC_POWER) >= 600 && CastSpellAction::isUseful();
+#else
+            return false;
+#endif
+        }
 	};
 
 	class CastEmpowerRuneWeaponAction : public CastBuffSpellAction
