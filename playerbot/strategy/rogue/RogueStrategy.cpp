@@ -188,6 +188,11 @@ void RogueRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
 
 void RogueAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("melee light aoe", NextAction::array(0, new NextAction("fan of knives", ACTION_HIGH + 3), nullptr)));
+#endif
+
     AoeStrategy::InitCombatTriggers(triggers);
 }
 
@@ -308,6 +313,16 @@ void RogueBoostRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trig
 
 void RogueCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("deadly throw", ACTION_HIGH + 2), nullptr)));
+#endif
+
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("shiv", ACTION_HIGH + 1), nullptr)));
+#endif
+
     CcStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -630,6 +645,11 @@ void RogueRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
 
 void RogueAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("melee light aoe", NextAction::array(0, new NextAction("fan of knives", ACTION_HIGH + 3), nullptr)));
+#endif
+
     AoeStrategy::InitCombatTriggers(triggers);
 }
 
@@ -750,6 +770,16 @@ void RogueBoostRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trig
 
 void RogueCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("deadly throw", ACTION_HIGH + 2), nullptr)));
+#endif
+
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("shiv", ACTION_HIGH + 1), nullptr)));
+#endif
+
     CcStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -1070,6 +1100,11 @@ void RogueRaidStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
 
 void RogueAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("melee light aoe", NextAction::array(0, new NextAction("fan of knives", ACTION_HIGH + 3), nullptr)));
+#endif
+
     AoeStrategy::InitCombatTriggers(triggers);
 }
 
@@ -1190,6 +1225,16 @@ void RogueBoostRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& trig
 
 void RogueCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("deadly throw", ACTION_HIGH + 2), nullptr)));
+#endif
+
+#if !defined(MANGOSBOT_ZERO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("shiv", ACTION_HIGH + 1), nullptr)));
+#endif
+
     CcStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(

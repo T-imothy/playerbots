@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/MeleeAbilityActions.h"
 
 #include "playerbot/playerbot.h"
 #include "RogueActions.h"
@@ -258,6 +259,18 @@ namespace ai
 #endif
                 creators["vanish"] = [](PlayerbotAI* ai) { return new CastVanishAction(ai); };
                 creators["evasion"] = [](PlayerbotAI* ai) { return new CastEvasionAction(ai); };
+#if !defined(MANGOSBOT_ZERO)
+                creators["shiv"] = [](PlayerbotAI* ai) { return new CastShivAction(ai); };
+#endif
+#if !defined(MANGOSBOT_ZERO)
+                creators["deadly throw"] = [](PlayerbotAI* ai) { return new CastDeadlyThrowAction(ai); };
+#endif
+#if defined(MANGOSBOT_TWO)
+                creators["shadow dance"] = [](PlayerbotAI* ai) { return new CastShadowDanceAction(ai); };
+#endif
+#if defined(MANGOSBOT_TWO)
+                creators["shadow dance opener"] = [](PlayerbotAI* ai) { return new CastShadowDanceOpenerAction(ai); };
+#endif
                 creators["kick"] = [](PlayerbotAI* ai) { return new CastKickAction(ai); };
                 creators["feint"] = [](PlayerbotAI* ai) { return new CastFeintAction(ai); };
                 creators["backstab"] = [](PlayerbotAI* ai) { return new CastBackstabAction(ai); };
@@ -277,7 +290,9 @@ namespace ai
                 creators["killing spree"] = [](PlayerbotAI* ai) { return new CastKillingSpreeAction(ai); };
                 creators["tricks of the trade"] = [](PlayerbotAI* ai) { return new CastTricksOfTheTradeOnPartyAction(ai); };
                 creators["cloak of shadows"] = [](PlayerbotAI* ai) { return new CastCloakOfShadowsAction(ai); };
-                //creators["fan of knives"] = [](PlayerbotAI* ai) { return new CastFanOfKnivesAction(ai); };
+#ifdef MANGOSBOT_TWO
+                creators["fan of knives"] = [](PlayerbotAI* ai) { return new CastSafeMeleeAreaAction(ai, "fan of knives", 8.0f, 2); };
+#endif
                 creators["cold blood"] = [](PlayerbotAI* ai) { return new CastColdBloodAction(ai); };
                 creators["preparation"] = [](PlayerbotAI* ai) { return new CastPreparationAction(ai); };
                 creators["premeditation"] = [](PlayerbotAI* ai) { return new CastPremeditationAction(ai); };

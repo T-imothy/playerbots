@@ -34,6 +34,11 @@ SubtletyRogueStrategy::SubtletyRogueStrategy(PlayerbotAI* ai) : RogueStrategy(ai
 
 void SubtletyRogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("shadow dance opener", ACTION_HIGH + 3), nullptr)));
+#endif
+
     RogueStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -242,6 +247,11 @@ void SubtletyRogueBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*
 
 void SubtletyRogueBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("shadow dance", ACTION_HIGH + 4), nullptr)));
+#endif
+
     RogueBoostStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -437,6 +447,11 @@ void SubtletyRoguePoisonsRaidStrategy::InitNonCombatTriggers(std::list<TriggerNo
 
 void SubtletyRogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("shadow dance opener", ACTION_HIGH + 3), nullptr)));
+#endif
+
     RogueStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -649,6 +664,11 @@ void SubtletyRogueBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*
 
 void SubtletyRogueBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("shadow dance", ACTION_HIGH + 4), nullptr)));
+#endif
+
     RogueBoostStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -848,6 +868,11 @@ void SubtletyRoguePoisonsRaidStrategy::InitNonCombatTriggers(std::list<TriggerNo
 
 void SubtletyRogueStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("shadow dance opener", ACTION_HIGH + 3), nullptr)));
+#endif
+
     RogueStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
@@ -1060,6 +1085,11 @@ void SubtletyRogueBuffRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*
 
 void SubtletyRogueBoostStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("shadow dance", ACTION_HIGH + 4), nullptr)));
+#endif
+
     RogueBoostStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
