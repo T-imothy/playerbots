@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/ServerFacade.h"
 #include "BattlegroundStrategy.h"
 #include "playerbot/strategy/Multiplier.h"
 #include "playerbot/strategy/actions/MovementActions.h"
