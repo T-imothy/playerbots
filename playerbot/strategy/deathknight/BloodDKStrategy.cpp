@@ -72,6 +72,16 @@ NextAction** BloodDKStrategy::GetDefaultCombatActions()
 
 void BloodDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("hysteria", ACTION_HIGH + 2), nullptr)));
+#endif
+
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("dancing rune weapon", ACTION_HIGH + 3), nullptr)));
+#endif
+
     GenericDKStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(

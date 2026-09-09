@@ -60,6 +60,11 @@ NextAction** UnholyDKStrategy::GetDefaultCombatActions()
 
 void UnholyDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("summon gargoyle", ACTION_HIGH + 3), nullptr)));
+#endif
+
     GenericDKStrategy::InitCombatTriggers(triggers);
 
 	triggers.push_back(new TriggerNode(

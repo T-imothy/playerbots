@@ -1,3 +1,4 @@
+#include "playerbot/strategy/actions/MeleeAbilityActions.h"
 
 #include "BloodDKStrategy.h"
 #include "DKActions.h"
@@ -163,6 +164,13 @@ namespace ai
 				creators["vampiric blood"] = [](PlayerbotAI* ai) { return new CastVampiricBloodAction(ai); };
 				creators["death pact"] = [](PlayerbotAI* ai) { return new CastDeathPactAction(ai); };
 				creators["death rune_mastery"] = [](PlayerbotAI* ai) { return new CastDeathRuneMasteryAction(ai); };
+                creators["dancing rune weapon"] = [](PlayerbotAI* ai) { return new CastDancingWeaponAction(ai); };
+#if defined(MANGOSBOT_TWO)
+                creators["hysteria"] = [](PlayerbotAI* ai) { return new CastHysteriaAction(ai); };
+#endif
+#if defined(MANGOSBOT_TWO)
+                creators["lichborne"] = [](PlayerbotAI* ai) { return new CastLichborneAction(ai); };
+#endif
 				creators["dancing weapon"] = [](PlayerbotAI* ai) { return new CastDancingWeaponAction(ai); };
 				creators["dark command"] = [](PlayerbotAI* ai) { return new CastDarkCommandAction(ai); };
 				creators["mind freeze on enemy healer"] = [](PlayerbotAI* ai) { return new CastMindFreezeOnEnemyHealerAction(ai); };

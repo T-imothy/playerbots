@@ -144,6 +144,11 @@ GenericDKStrategy::GenericDKStrategy(PlayerbotAI* ai) : CombatStrategy(ai)
 
 void GenericDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 {
+#if defined(MANGOSBOT_TWO)
+
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("lichborne", ACTION_DISPEL), nullptr)));
+#endif
+
 	CombatStrategy::InitCombatTriggers(triggers);
 
     // PvP control complements the shared damage rotation. Native checks retain
@@ -228,20 +233,20 @@ void GenericDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 		"melee high aoe",
 		NextAction::array(0,
 			new NextAction("death and decay", ACTION_NORMAL + 5),
-			new NextAction("pestilence", ACTION_NORMAL + 4),
+            new NextAction("pestilence", ACTION_HIGH + 2),
 			new NextAction("blood boil", ACTION_NORMAL + 3), NULL)));
 
 	triggers.push_back(new TriggerNode(
 		"melee medium aoe",
 		NextAction::array(0,
 			new NextAction("death and decay", ACTION_NORMAL + 5),
-			new NextAction("pestilence", ACTION_NORMAL + 4),
+            new NextAction("pestilence", ACTION_HIGH + 2),
 			new NextAction("blood boil", ACTION_NORMAL + 3), NULL)));
 
 	triggers.push_back(new TriggerNode("melee light aoe",
 		NextAction::array(0,
 			new NextAction("howling blast", ACTION_NORMAL + 5),
-			new NextAction("pestilence", ACTION_NORMAL + 4),
+            new NextAction("pestilence", ACTION_HIGH + 2),
             new NextAction("heart strike", ACTION_NORMAL + 3),
 			new NextAction("blood boil", ACTION_NORMAL + 3), NULL)));
 }

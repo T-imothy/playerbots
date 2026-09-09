@@ -1,3 +1,4 @@
+#include "playerbot/strategy/MeleeCombatPolicy.h"
 #pragma once
 
 #include "playerbot/strategy/actions/GenericActions.h"
@@ -23,6 +24,7 @@ namespace ai
 	class CastDeathchillAction : public CastBuffSpellAction {
 	public:
 		CastDeathchillAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "deathchill") {}
+        bool isUseful() override { return ai->HasStrategy("boost", BotState::BOT_STATE_COMBAT) && MeleeOpportunity(ai) && (ai->CanCastSpell("frost strike", AI_VALUE(Unit*, "current target"), 0) || ai->CanCastSpell("obliterate", AI_VALUE(Unit*, "current target"), 0) || ai->CanCastSpell("icy touch", AI_VALUE(Unit*, "current target"), 0)) && CastBuffSpellAction::isUseful(); }
 
 	};
 
@@ -131,6 +133,7 @@ namespace ai
 	{
 	public:
         CastSummonGargoyleAction(PlayerbotAI* ai) : CastSpellAction(ai, "summon gargoyle") {}
+        bool isUseful() override { return ai->IsStateActive(BotState::BOT_STATE_COMBAT) && ai->HasStrategy("boost", BotState::BOT_STATE_COMBAT) && MeleeCombatTarget(ai, GetTarget()) && bot->GetPower(POWER_RUNIC_POWER) >= 600 && CastSpellAction::isUseful(); }
 	};
 
 	class CastGhoulFrenzyAction : public CastBuffSpellAction
@@ -238,6 +241,7 @@ namespace ai
 	{
 	public:
         CastDancingWeaponAction(PlayerbotAI* ai) : CastSpellAction(ai, "dancing rune weapon") {}
+        bool isUseful() override { return ai->HasStrategy("boost", BotState::BOT_STATE_COMBAT) && MeleeOpportunity(ai) && bot->GetPower(POWER_RUNIC_POWER) >= 600 && CastSpellAction::isUseful(); }
 	};
 
 	class CastEmpowerRuneWeaponAction : public CastBuffSpellAction
@@ -276,6 +280,7 @@ namespace ai
 	{
 	public:
 		CastUnbreakableArmorAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "unbreakable armor") {}
+        bool isUseful() override { return MeleeOpportunity(ai) && (ai->HasStrategy("boost", BotState::BOT_STATE_COMBAT) || AI_VALUE2(uint8, "health", "self target") < 50) && CastBuffSpellAction::isUseful(); }
 	};
 
 	class CastVampiricBloodAction : public CastBuffSpellAction

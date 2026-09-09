@@ -1,3 +1,4 @@
+#include "playerbot/strategy/MeleeCombatPolicy.h"
 
 #include "playerbot/playerbot.h"
 #include "DKActions.h"
@@ -10,6 +11,7 @@ bool CastPestilenceAction::isUseful()
 #ifdef MANGOSBOT_TWO
     if (!CastSpellAction::isUseful()) return false;
     Unit* source = GetTarget();
+    if (!MeleeCombatTarget(ai, source) || SafeMeleeTargetCount(ai, 10.0f, source) == 0) return false;
     Aura* plague = ai->GetAura(55078, source, true);
     Aura* fever = ai->GetAura(55095, source, true);
     if (!plague && !fever) return false;
