@@ -7027,6 +7027,28 @@ std::string PlayerbotAI::HandleRemoteCommand(std::string command)
 
         return out.str();
     }
+    else if (command == "travelpath")
+    {
+        std::ostringstream out;
+        const LastMovement& move = GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get();
+        TravelPath path = move.lastPath;
+        WorldPosition position(bot);
+        out << "position=" << position.getMapId() << ":" << position.getX() << "," << position.getY() << "," << position.getZ()
+            << " moving=" << sServerFacade.isMoving(bot) << " transport=" << (bot->GetTransport() ? bot->GetTransport()->GetEntry() : 0)
+            << " wait=" << std::max<time_t>(0, move.nextTeleport - time(nullptr)) << " points=" << path.getPath().size();
+        unsigned index = 0, printed = 0;
+        for (const auto& point : path.getPath())
+        {
+            if (printed < 48 && (index < 10 || !point.isWalkable() || index + 1 == path.getPath().size()))
+            {
+                out << "\n#" << index << " type=" << unsigned(point.type) << " entry=" << point.entry
+                    << " position=" << point.point.getMapId() << ":" << point.point.getX() << "," << point.point.getY() << "," << point.point.getZ();
+                ++printed;
+            }
+            ++index;
+        }
+        return out.str();
+    }
     else if (command == "traveldetail")
     {
         std::ostringstream out;
