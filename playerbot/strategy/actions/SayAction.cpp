@@ -450,6 +450,10 @@ delayedPackets ChatReplyAction::GenerateResponsePackets(const std::string json
 
 void ChatReplyAction::ChatReplyDo(Player* bot, uint32 type, uint32 guid1, uint32 guid2, std::string msg, std::string chanName, std::string name)
 {
+    // Chat v2 owns grounded replies in every channel. A legacy queued reply
+    // must not launch a second unconstrained model or canned conversation.
+    if (sPlayerbotAIConfig.chatDirectorV2)
+        return;
     // if we're just commanding bots around, don't respond...
     // first one is for exact word matches
     if (noReplyMsgs.find(msg) != noReplyMsgs.end())
@@ -678,6 +682,7 @@ bool ChatReplyAction::HandleThunderfuryReply(Player* bot, ChatChannelSource chat
     placeholders["%thunderfury_link"] = bot->GetPlayerbotAI()->GetChatHelper()->formatItem(thunderfuryProto);
 
     std::string responseMessage = BOT_TEXT2("thunderfury_spam", placeholders);
+    if (responseMessage.empty()) return false;
 
     switch (chatChannelSource)
     {
@@ -705,6 +710,8 @@ bool ChatReplyAction::HandleThunderfuryReply(Player* bot, ChatChannelSource chat
 
 bool ChatReplyAction::HandleToxicLinksReply(Player* bot, ChatChannelSource chatChannelSource, std::string msg, std::string name)
 {
+    if (sPlayerbotAIConfig.chatDirectorV2)
+        return false;
     //quests
     std::vector<uint32> incompleteQuests;
     for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)

@@ -37,13 +37,24 @@ bool SuggestWhatToDoAction::isUseful()
 
     std::string qualifier = "suggest what to do";
     time_t lastSaid = AI_VALUE2(time_t, "last said", qualifier);
-    return (time(0) - lastSaid) > 30;
+    return (time(0) - lastSaid) > (sPlayerbotAIConfig.chatDirectorV2 ? 600 : 30);
 }
 
 bool SuggestWhatToDoAction::Execute(Event& event)
 {
-    int index = rand() % suggestions.size();
-    (this->*suggestions[index])();
+    if (sPlayerbotAIConfig.chatDirectorV2)
+    {
+        if (!isUseful()) return false;
+        // A real unfinished quest can justify asking for company. Economic,
+        // profession and guild advertisements belong to their validated goal
+        // executors, never to the random material/reputation suggestion pool.
+        specificQuest();
+    }
+    else
+    {
+        int index = rand() % suggestions.size();
+        (this->*suggestions[index])();
+    }
 
     std::string qualifier = "suggest what to do";
     time_t lastSaid = AI_VALUE2(time_t, "last said", qualifier);
@@ -122,7 +133,7 @@ std::vector<uint32> SuggestWhatToDoAction::GetIncompletedQuests()
             continue;
 
         QuestStatus status = bot->GetQuestStatus(questId);
-        if (status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_NONE)
+        if (status == QUEST_STATUS_INCOMPLETE)
             result.push_back(questId);
     }
 
@@ -271,6 +282,8 @@ private:
 
 bool SuggestTradeAction::isUseful()
 {
+    if (sPlayerbotAIConfig.chatDirectorV2)
+        return false;
     if (!sRandomPlayerbotMgr.IsRandomBot(bot) || bot->GetGroup() || bot->GetInstanceId())
         return false;
 
@@ -279,6 +292,10 @@ bool SuggestTradeAction::isUseful()
 
 bool SuggestTradeAction::Execute(Event& event)
 {
+    // Inventory presence alone does not prove that a reserved stack is for sale
+    // or that the quoted price has been accepted by the transaction broker.
+    if (sPlayerbotAIConfig.chatDirectorV2)
+        return false;
     uint32 quality = urand(0, 100);
     if (quality > 95)
         quality = ITEM_QUALITY_LEGENDARY;

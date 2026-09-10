@@ -6,6 +6,18 @@
 #include "Database/DatabaseEnv.h"
 #include "PlayerbotAI.h"
 
+namespace
+{
+    bool IsUngroundedSuggestion(const std::string& name)
+    {
+        // These legacy families mix random items with fictional stock, prices,
+        // guild history, and accomplishments. They have no authoritative actor
+        // or capability reference. Block at lookup, before any channel dispatch.
+        return sPlayerbotAIConfig.chatDirectorV2 &&
+            (name.compare(0, 8, "suggest_") == 0 || name == "thunderfury_spam");
+    }
+}
+
 PlayerbotTextMgr::PlayerbotTextMgr()
 {
     for (uint8 i = 1; i < MAX_LOCALE; ++i)
@@ -85,6 +97,8 @@ void PlayerbotTextMgr::LoadBotTextChance()
 
 std::string PlayerbotTextMgr::GetBotText(std::string name)
 {
+    if (IsUngroundedSuggestion(name))
+        return "";
     if (botTexts.empty())
     {
         sLog.outError("Can't get bot text %s! No bots texts loaded!", name.c_str());
@@ -112,6 +126,9 @@ std::string PlayerbotTextMgr::GetBotText(std::string name)
 
 std::string PlayerbotTextMgr::GetBotText(std::string name, std::map<std::string, std::string> placeholders)
 {
+    // A deliberate suppression must not fall back to printing its template key.
+    if (IsUngroundedSuggestion(name))
+        return "";
     std::string botText = GetBotText(name);
     if (botText.empty())
         botText = name;

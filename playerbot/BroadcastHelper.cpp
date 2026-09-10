@@ -829,12 +829,25 @@ bool BroadcastHelper::BroadcastSuggestQuest(
     Player* bot
 )
 {
+    if (!bot || quests.empty()) return false;
     if (urand(1, sPlayerbotAIConfig.broadcastChanceMaxValue) <= sPlayerbotAIConfig.broadcastChanceSuggestQuest)
     {
 
         int index = rand() % quests.size();
 
         Quest const* quest = sObjectMgr.GetQuestTemplate(quests[index]);
+
+        if (!quest || bot->GetQuestStatus(quests[index]) != QUEST_STATUS_INCOMPLETE)
+            return false;
+        if (sPlayerbotAIConfig.chatDirectorV2)
+        {
+            // Only claim the log fact checked above. Difficulty, deaths, guild
+            // resources, and promises require their own authoritative events.
+            const std::string message = "Anyone working on " + ai->GetChatHelper()->formatQuest(quest) +
+                "? I'd like to group up.";
+            return BroadcastToChannelWithGlobalChance(ai, message,
+                { {TO_LOOKING_FOR_GROUP, 50}, {TO_GUILD, 50}, {TO_GENERAL, 100} });
+        }
 
         std::map<std::string, std::string> placeholders;
         placeholders["%my_role"] = ai->GetChatHelper()->formatClass(bot, AiFactory::GetPlayerSpecTab(bot));
