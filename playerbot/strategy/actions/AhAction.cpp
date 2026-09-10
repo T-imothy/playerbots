@@ -1,12 +1,111 @@
 
 #include "playerbot/playerbot.h"
 #include "AhAction.h"
+#include "playerbot/PlayerbotActionBroker.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
+#include <chrono>
+#include <fstream>
+#include <regex>
+#include <sstream>
 
 using namespace ai;
+
+namespace
+{
+    struct OrganicAuctionPolicy
+    {
+        std::string mode = "observe";
+        bool posting = false;
+        bool buying = false;
+        uint32 humanPreference = 5;
+        uint32 maxPurchasesPerHour = 3;
+        uint32 maxDailySpendPercent = 25;
+    };
+
+    bool JsonBool(const std::string& source, const std::string& key, bool fallback)
+    {
+        std::smatch match;
+        std::regex pattern("\\\"" + key + "\\\"\\s*:\\s*(true|false)");
+        return std::regex_search(source, match, pattern) ? match[1].str() == "true" : fallback;
+    }
+
+    uint32 JsonUInt(const std::string& source, const std::string& key, uint32 fallback)
+    {
+        std::smatch match;
+        std::regex pattern("\\\"" + key + "\\\"\\s*:\\s*([0-9]+)");
+        return std::regex_search(source, match, pattern) ? uint32(std::stoul(match[1].str())) : fallback;
+    }
+
+    OrganicAuctionPolicy GetOrganicAuctionPolicy()
+    {
+        static OrganicAuctionPolicy policy;
+        static std::chrono::steady_clock::time_point loaded;
+        std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+        if (loaded.time_since_epoch().count() && now - loaded < std::chrono::seconds(60))
+            return policy;
+        loaded = now;
+        std::ifstream input("/srv/living-wow/config/economy.json");
+        if (!input)
+            return policy;
+        std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        std::smatch mode;
+        if (std::regex_search(source, mode, std::regex("\\\"mode\\\"\\s*:\\s*\\\"(off|observe|active)\\\"")))
+            policy.mode = mode[1].str();
+        policy.posting = JsonBool(source, "characterAuctionPosting", false);
+        policy.buying = JsonBool(source, "characterAuctionBuying", false);
+        policy.humanPreference = std::min<uint32>(5, JsonUInt(source, "humanListingPreferencePercent", 5));
+        policy.maxPurchasesPerHour = std::min<uint32>(20, JsonUInt(source, "maximumPurchasesPerBotPerHour", 3));
+        policy.maxDailySpendPercent = std::min<uint32>(100, JsonUInt(source, "maximumDiscretionarySpendPercentPerDay", 25));
+        return policy;
+    }
+
+    uint32 ListingLimit(uint32 level)
+    {
+        if (level < 20) return 3;
+        if (level < 40) return 7;
+        if (level < 60) return 12;
+        return 20;
+    }
+
+    uint32 CharacterAuctionCount(uint32 guid)
+    {
+        std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery(
+            "SELECT COUNT(*) FROM auction WHERE itemowner='%u'", guid);
+        return result ? (*result)[0].GetUInt32() : 0;
+    }
+
+    uint32 CharacterAccount(uint32 guid)
+    {
+        static std::map<uint32, uint32> accounts;
+        static std::chrono::steady_clock::time_point refreshed;
+        std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+        if (!refreshed.time_since_epoch().count() || now - refreshed > std::chrono::seconds(60))
+        {
+            accounts.clear();
+            refreshed = now;
+        }
+        std::map<uint32, uint32>::const_iterator found = accounts.find(guid);
+        if (found != accounts.end()) return found->second;
+        std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery(
+            "SELECT account FROM characters WHERE guid='%u'", guid);
+        uint32 account = result ? (*result)[0].GetUInt32() : 0;
+        accounts[guid] = account;
+        return account;
+    }
+
+    uint32 RecentPurchases(uint32 guid, uint32 seconds, uint32* spent = nullptr)
+    {
+        std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery(
+            "SELECT COUNT(*),COALESCE(SUM(unit_price_copper*quantity),0) FROM organic_economy_auction_history "
+            "WHERE buyer_guid='%u' AND outcome IN ('bid','sold') AND occurred_at>DATE_SUB(NOW(),INTERVAL %u SECOND)", guid, seconds);
+        if (!result) { if (spent) *spent = 0; return 0; }
+        if (spent) *spent = (*result)[1].GetUInt32();
+        return (*result)[0].GetUInt32();
+    }
+}
 
 bool AhAction::Execute(Event& event)
 {
@@ -45,6 +144,13 @@ bool AhAction::ExecuteCommand(Player* requester, std::string text, Unit* auction
 
     if (text == "vendor")
     {
+        OrganicAuctionPolicy policy = GetOrganicAuctionPolicy();
+        if (policy.mode != "active" || !policy.posting)
+            return false;
+        uint32 listingLimit = ListingLimit(bot->GetLevel());
+        uint32 activeListings = CharacterAuctionCount(bot->GetGUIDLow());
+        if (activeListings >= listingLimit)
+            return false;
         AuctionHouseEntry const* auctionHouseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->GetObjectGuid());
         if (!auctionHouseEntry)
             return false;
@@ -61,6 +167,13 @@ bool AhAction::ExecuteCommand(Player* requester, std::string text, Unit* auction
 
         for (auto item : items)
         {
+            if (activeListings + postedItems >= listingLimit)
+                break;
+            if (sPlayerbotActionBroker.IsItemReserved(item->GetGUIDLow()))
+                continue;
+            if (std::unique_ptr<QueryResult> acquired = CharacterDatabase.PQuery(
+                "SELECT 1 FROM organic_economy_auction_history WHERE buyer_guid='%u' AND item_entry='%u' AND outcome='sold' AND occurred_at>DATE_SUB(NOW(),INTERVAL 1 DAY) LIMIT 1", bot->GetGUIDLow(), item->GetEntry()))
+                continue;
             RESET_AI_VALUE2(ItemUsage, "item usage", ItemQualifier(item).GetQualifier());
             if(AI_VALUE2(ItemUsage, "item usage", ItemQualifier(item).GetQualifier()) != ItemUsage::ITEM_USAGE_AH)
                 continue;
@@ -149,6 +262,12 @@ bool AhAction::PostItem(Player* requester, Item* item, uint32 price, Unit* aucti
     if (bot->GetItemByGuid(itemGuid))
         return false;
 
+    AuctionHouseEntry const* house = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->GetObjectGuid());
+    uint32 deposit = house ? AuctionHouseMgr::GetAuctionDeposit(house, time * MINUTE, item) : 0;
+    CharacterDatabase.PExecute("INSERT INTO organic_economy_auction_history "
+        "(auction_id,auction_house_id,seller_guid,item_guid,item_entry,quantity,unit_price_copper,deposit_copper,outcome) "
+        "VALUES (0,'%u','%u','%u','%u','%u','%u','%u','posted')",
+        house ? house->houseId : 0, bot->GetGUIDLow(), itemGuid.GetCounter(), proto->ItemId, cnt, price / std::max<uint32>(1, cnt), deposit);
     sPlayerbotAIConfig.logEvent(ai, "AhAction", proto->Name1, std::to_string(proto->ItemId));
 
     std::ostringstream out;
@@ -159,6 +278,9 @@ bool AhAction::PostItem(Player* requester, Item* item, uint32 price, Unit* aucti
 
 bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auctioneer)
 {
+    OrganicAuctionPolicy policy = GetOrganicAuctionPolicy();
+    if (text == "vendor" && (policy.mode != "active" || !policy.buying))
+        return false;
     AuctionHouseEntry const* auctionHouseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->GetObjectGuid());
     if (!auctionHouseEntry)
         return false;
@@ -221,6 +343,16 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
 
             if (auction->owner == bot->GetGUIDLow())
                 continue;
+            uint32 sellerAccount = CharacterAccount(auction->owner);
+            if (!sellerAccount || sellerAccount == bot->GetSession()->GetAccountId())
+                continue;
+            if (RecentPurchases(bot->GetGUIDLow(), HOUR) >= policy.maxPurchasesPerHour)
+                break;
+            std::unique_ptr<QueryResult> loop = CharacterDatabase.PQuery(
+                "SELECT COUNT(*) FROM organic_economy_auction_history WHERE seller_guid='%u' AND buyer_guid='%u' "
+                "AND outcome='sold' AND occurred_at>DATE_SUB(NOW(),INTERVAL 7 DAY)", auction->owner, bot->GetGUIDLow());
+            if (loop && (*loop)[0].GetUInt32() >= 3)
+                continue;
 
             uint32 totalCost = std::min(auction->buyout, uint32(std::max(auction->bid, auction->startbid) * frand(1.05f, 1.25f)));
 
@@ -239,6 +371,8 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
                 break;
             case ItemUsage::ITEM_USAGE_AH:
             {
+                // Organic buyers must have a real use; pure bot arbitrage creates churn.
+                continue;
                 auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, "IsWorthBuyingFromAhToResellAtAH", ai);
                 bool isWorthBuyingFromAhToResellAtAH = ItemUsageValue::IsWorthBuyingFromAhToResellAtAH(sObjectMgr.GetItemPrototype(auction->itemTemplate), totalCost, auction->itemCount);
                 pmo.reset();
@@ -262,6 +396,11 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
 
             power *= 1000;
             power /= (totalCost +1);
+            if (!sPlayerbotAIConfig.IsInRandomAccountList(sellerAccount))
+                power = uint32(double(power) * (1.0 + double(policy.humanPreference) / 100.0));
+            uint32 spentToday = 0;
+            RecentPurchases(bot->GetGUIDLow(), DAY, &spentToday);
+            if (spentToday + totalCost > (bot->GetMoney() + spentToday) * policy.maxDailySpendPercent / 100) continue;
 
             auctionPowers.push_back(std::make_pair(auction, power));
         }
@@ -423,6 +562,11 @@ bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price
 
     if (bot->GetMoney() < oldMoney)
     {
+        CharacterDatabase.PExecute("INSERT INTO organic_economy_auction_history "
+            "(auction_id,auction_house_id,seller_guid,buyer_guid,item_guid,item_entry,quantity,unit_price_copper,outcome) "
+            "VALUES ('%u','%u','%u','%u','%u','%u','%u','%u','%s')", auction->Id, auctionHouseEntry->houseId,
+            auction->owner, bot->GetGUIDLow(), auction->itemGuidLow, auction->itemTemplate, count,
+            price / std::max<uint32>(1, count), isBuyout ? "sold" : "bid");
         sPlayerbotAIConfig.logEvent(ai, "AhBidAction", proto->Name1, std::to_string(proto->ItemId));
         std::ostringstream out;
         if (isBuyout)

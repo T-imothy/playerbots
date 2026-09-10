@@ -43,6 +43,7 @@ public:
     static PlayerbotActionBroker& instance();
     PlayerbotActionResult Create(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event);
     bool Authorizes(Player* bot, Player* trader) const;
+    bool IsItemReserved(uint32 itemGuid) const;
     bool PopulateTrade(Player* bot, Player* trader);
     bool ValidateTrade(Player* bot, Player* trader);
     void CompleteTrade(Player* bot, Player* trader);

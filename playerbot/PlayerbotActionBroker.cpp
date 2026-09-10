@@ -466,6 +466,11 @@ bool PlayerbotActionBroker::Authorizes(Player* bot, Player* trader) const
     return bot && trader && Find(bot->GetGUIDLow(), trader->GetGUIDLow()) != nullptr;
 }
 
+bool PlayerbotActionBroker::IsItemReserved(uint32 itemGuid) const
+{
+    return reservedItems.find(itemGuid) != reservedItems.end();
+}
+
 bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
 {
     Transaction* transaction = bot && trader ? Find(bot->GetGUIDLow(), trader->GetGUIDLow()) : nullptr;
