@@ -1229,6 +1229,9 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         TravelTarget* recoveryTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
             GetValue<TravelTarget*>("travel target")->Get();
         bool boundedRecoveryTarget = false;
+        bool recoveryMoveUseful = false;
+        bool recoveryMovePossible = false;
+        std::string recoveryMoveResult = "not_applicable";
         if (recoveryCanary && state.recoveryStep > 0 && recoveryTarget)
         {
             for (std::string const& condition : recoveryTarget->GetConditions())
@@ -1245,8 +1248,32 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         if (!excluded && boundedRecoveryTarget &&
             (recoveryStatus == TravelStatus::TRAVEL_STATUS_READY ||
              recoveryStatus == TravelStatus::TRAVEL_STATUS_TRAVEL))
-            bot->GetPlayerbotAI()->DoSpecificAction(
-                "move to travel target", Event("living progression route continuation"), true);
+        {
+            // A movement generator that has reported movement while producing
+            // no position change for the full stall threshold is stale. Clear
+            // it before asking the ordinary guarded action to continue; this
+            // does not relocate the bot or bypass path validation.
+            if (stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds &&
+                sServerFacade.isMoving(bot))
+            {
+                bot->GetPlayerbotAI()->StopMoving();
+                recoveryMoveResult = "stale_movement_cleared";
+            }
+            recoveryMoveUseful = bot->GetPlayerbotAI()->CanDoSpecificAction(
+                "move to travel target", true, false);
+            recoveryMovePossible = bot->GetPlayerbotAI()->CanDoSpecificAction(
+                "move to travel target", false, true);
+            if (recoveryMoveUseful && recoveryMovePossible)
+            {
+                bool advanced = bot->GetPlayerbotAI()->DoSpecificAction(
+                    "move to travel target", Event("living progression route continuation"), true);
+                recoveryMoveResult = advanced ? "movement_started" : "movement_failed";
+            }
+            else if (!recoveryMoveUseful)
+                recoveryMoveResult = "movement_not_useful";
+            else
+                recoveryMoveResult = "movement_impossible";
+        }
 
         float terrainZ = bot->GetMap()->GetHeight(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ() + 2.0f);
         bool validTerrain = terrainZ > -100000.0f;
@@ -1298,6 +1325,11 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recoveries_last_hour\":" << state.recoveryAttempts.size()
              << ",\"recovery_step\":" << state.recoveryStep
              << ",\"recovery_target_quest_id\":" << state.recoveryQuestId
+             << ",\"recovery_target_status\":" << (uint32)recoveryStatus
+             << ",\"recovery_target_bounded\":" << (boundedRecoveryTarget ? "true" : "false")
+             << ",\"recovery_move_useful\":" << (recoveryMoveUseful ? "true" : "false")
+             << ",\"recovery_move_possible\":" << (recoveryMovePossible ? "true" : "false")
+             << ",\"recovery_move_result\":\"" << recoveryMoveResult << "\""
              << ",\"grouped\":" << (bot->GetGroup() ? "true" : "false") << "}";
         samples.push_back(json.str());
     }

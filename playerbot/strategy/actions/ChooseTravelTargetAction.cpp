@@ -74,6 +74,13 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         newTarget.SetForced(true);
         newTarget.SetRelevance(std::max<uint32>(targetRelevance, 197u));
     }
+    else if (AI_VALUE2(std::string, "manual string", "future travel condition") == "can move around")
+    {
+        // Keep an exact, validated recovery route from being replaced by
+        // incidental low-priority RPG travel while the bot starts moving.
+        // It remains unforced so normal arrival and cooldown behavior applies.
+        newTarget.SetRelevance(std::max<uint32>(targetRelevance, 199u));
+    }
     else
     {
         newTarget.SetRelevance(targetRelevance);
