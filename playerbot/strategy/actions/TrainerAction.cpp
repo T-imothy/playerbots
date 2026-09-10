@@ -197,7 +197,9 @@ bool TrainerAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     std::string text = event.getParam();
-    suppressOperationalChat = sPlayerbotAIConfig.chatDirectorV2 && sPlayerbotAIConfig.chatDirectorSuppressLegacyOperationalChat && event.getSource() == "rpg action";
+    const bool explicitHumanRequest = event.getSource() == "trainer" && requester && requester->isRealPlayer();
+    suppressOperationalChat = sPlayerbotAIConfig.chatDirectorV2 &&
+        sPlayerbotAIConfig.chatDirectorSuppressLegacyOperationalChat && !explicitHumanRequest;
     Creature* creature = nullptr;
 
     if (event.getSource() == "rpg action")

@@ -16,6 +16,7 @@ namespace ai
 
     private:
         bool BuyItem(Player* requester, VendorItemData const* tItems, ObjectGuid vendorguid, const ItemPrototype* proto, UsageBoughtList& bought, ItemUsage usage = ItemUsage::ITEM_USAGE_NONE);
+        bool suppressOperationalChat = false;
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "buy"; } //Must equal iternal name
