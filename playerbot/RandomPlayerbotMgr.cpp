@@ -3578,6 +3578,18 @@ void RandomPlayerbotMgr::HandleCommand(uint32 type, const std::string& text, Pla
             }
         }
 
+        // This is the authoritative public-channel fan-out. Chat v2 needs each
+        // eligible listener as a candidate, but the legacy chat-command parser
+        // must not run once per listener (notably its built-in WTS action).
+        if (sPlayerbotAIConfig.chatDirectorV2 && fromPlayer.isRealPlayer() &&
+            type != CHAT_MSG_WHISPER && type != CHAT_MSG_ADDON &&
+            type != CHAT_MSG_SYSTEM && lang != LANG_ADDON)
+        {
+            sPlayerbotChatDirector.Observe(bot, type, fromPlayer.GetGUIDLow(),
+                fromPlayer.GetName(), text, channelName);
+            return;
+        }
+
         bot->GetPlayerbotAI()->HandleCommand(type, text, fromPlayer, lang);
     });
 }

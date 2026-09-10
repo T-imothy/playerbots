@@ -1373,6 +1373,20 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 {
     std::string filtered = text;
 
+    // Public chat reaches Playerbots through several manager-level fan-out
+    // paths before the normal outgoing packet observer. Never let one public
+    // WTS/LFG sentence execute as a legacy command independently on every bot.
+    // RandomPlayerbotMgr supplies the real channel name when it can; this is
+    // the safety net for owned/group bots and other manager paths.
+    if (sPlayerbotAIConfig.chatDirectorV2 && fromPlayer.isRealPlayer() &&
+        type != CHAT_MSG_WHISPER && type != CHAT_MSG_ADDON &&
+        type != CHAT_MSG_SYSTEM && lang != LANG_ADDON)
+    {
+        sPlayerbotChatDirector.Observe(bot, type, fromPlayer.GetGUIDLow(),
+            fromPlayer.GetName(), text, "");
+        return;
+    }
+
     // Observe human whispers at the direct server handoff. An autonomous bot can
     // be in Playerbots' minimal/AFK activity state, where its queued chat packet
     // is not processed promptly. Pending conversations and transactions must not
