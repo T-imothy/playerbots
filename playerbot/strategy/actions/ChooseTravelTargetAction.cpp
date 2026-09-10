@@ -760,22 +760,25 @@ bool ProgressionResetTravelTargetAction::isUseful()
 
 bool RequestProgressionQuestTravelTargetAction::isUseful()
 {
+    // Progression recovery invokes this immediately after an authoritative
+    // reset. "travel target active" is a calculated value cached for five
+    // seconds, so consulting it here can still report the target that was just
+    // cleared and reject every same-tick replacement request. The outer
+    // recovery gate and reset already exclude unsafe states; the live target
+    // status is the non-cached source of truth needed here.
     return !bot->InBattleGround() && AI_VALUE(bool, "can move around") &&
-        !AI_VALUE(bool, "travel target active") &&
         AI_VALUE(TravelTarget*, "travel target")->GetStatus() != TravelStatus::TRAVEL_STATUS_PREPARE;
 }
 
 bool RequestProgressionVendorTravelTargetAction::isUseful()
 {
     return !bot->InBattleGround() && AI_VALUE(bool, "can move around") &&
-        !AI_VALUE(bool, "travel target active") &&
         AI_VALUE(TravelTarget*, "travel target")->GetStatus() != TravelStatus::TRAVEL_STATUS_PREPARE;
 }
 
 bool RequestQuestTurninTargetAction::isUseful()
 {
     return !bot->InBattleGround() && AI_VALUE(bool, "can move around") &&
-        !AI_VALUE(bool, "travel target active") &&
         AI_VALUE(TravelTarget*, "travel target")->GetStatus() != TravelStatus::TRAVEL_STATUS_PREPARE;
 }
 
