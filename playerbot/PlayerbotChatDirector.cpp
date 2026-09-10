@@ -2259,12 +2259,23 @@ void PlayerbotChatDirector::Update()
     sPlayerbotActionBroker.Update();
     sPlayerbotSocialActionBroker.Update();
 
+    // Do not create one std::async thread for every queued chat event. The
+    // provider also has a concurrency gate, but threads waiting behind that
+    // gate still consume realm resources during an event burst.
+    size_t maxRequests = sPlayerbotAIConfig.llmMaxSimultaniousGenerations ?
+        sPlayerbotAIConfig.llmMaxSimultaniousGenerations : 1;
+    size_t requestSlots = active.size() < maxRequests ? maxRequests - active.size() : 0;
     std::vector<ChatDirectorEvent> ready;
     {
         std::lock_guard<std::mutex> guard(mutex);
         for (auto it = pending.begin(); it != pending.end();)
         {
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second.firstSeen).count() < 150)
+            {
+                ++it;
+                continue;
+            }
+            if (ready.size() >= requestSlots)
             {
                 ++it;
                 continue;
