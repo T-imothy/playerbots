@@ -1,5 +1,6 @@
 #include "botpch.h"
 #include "PlayerbotOrganicEconomy.h"
+#include "LivingServiceExecution.h"
 #include "LivingProfessionPlan.h"
 #include "PlayerbotInventoryPressure.h"
 #include "PlayerbotActionBroker.h"
@@ -18,6 +19,7 @@
 #include "strategy/values/TravelValues.h"
 #include "strategy/actions/BankAction.h"
 #include "strategy/actions/AhAction.h"
+#include "strategy/actions/MovementActions.h"
 #include "Entities/GameObject.h"
 #include "Mails/Mail.h"
 
@@ -30,6 +32,33 @@
 
 namespace
 {
+    constexpr uint32 FocusService = 0x80000000u;
+    class RecipeServiceMovement : public ai::MovementAction {
+    public:
+        explicit RecipeServiceMovement(PlayerbotAI* ai) : MovementAction(ai,"recipe service") {}
+        bool To(const WorldPosition& position) {
+            return MoveTo(position.getMapId(),position.getX(),position.getY(),position.getZ());
+        }
+    };
+
+    // Immutable world spawns, cached once per requested focus, not per bot tick.
+    // Actual availability and range are still checked by native CheckCast.
+    const std::vector<WorldPosition>& CraftStations(uint32 focus) {
+        static std::map<uint32,std::vector<WorldPosition>> cache;
+        auto found=cache.find(focus);if(found!=cache.end()) return found->second;
+        auto& points=cache[focus];
+        auto rows=WorldDatabase.PQuery("SELECT g.map,g.position_x,g.position_y,g.position_z FROM gameobject g JOIN gameobject_template t ON t.entry=g.id WHERE t.type=%u AND t.data0=%u AND g.map IN (0,1,530) ORDER BY g.guid LIMIT 1024",uint32(GAMEOBJECT_TYPE_SPELL_FOCUS),focus);
+        if(rows) do {auto* f=rows->Fetch();points.emplace_back(f[0].GetUInt32(),f[1].GetFloat(),f[2].GetFloat(),f[3].GetFloat());} while(rows->NextRow());
+        return points;
+    }
+
+    uint32 GoalRecipe(uint32 guid,const std::string& goal) {
+        const std::string prefix="profession:"+std::to_string(guid)+":";
+        if(goal.compare(0,prefix.size(),prefix)!=0) return 0;
+        const std::string suffix=goal.substr(prefix.size());
+        if(suffix.empty()||suffix.size()>9||suffix.find_first_not_of("0123456789")!=std::string::npos) return 0;
+        return uint32(std::stoul(suffix));
+    }
     std::vector<uint32> EconomyWorkOrder(std::vector<uint32> ready, const std::set<uint32>& verifying, uint32 cursor)
     {
         if (ready.empty()) return ready;
@@ -152,8 +181,15 @@ namespace
         {
             if (known.second.state == PLAYERSPELL_REMOVED || known.second.disabled) continue;
             const auto* spell = sServerFacade.LookupSpellInfo(known.first);
-            if (CraftSkill(bot, spell) && SafeCraftReagents(bot, spell) &&
-                bot->GetPlayerbotAI()->CanCastSpell(known.first, bot, 0, true)) return known.first;
+            if (!CraftSkill(bot, spell) || !SafeCraftReagents(bot, spell)) continue;
+            SpellCastResult result=SPELL_CAST_OK;
+            if (bot->GetPlayerbotAI()->CanCastSpell(known.first, bot, 0, true, nullptr, false, false, false, &result) ||
+                result==SPELL_FAILED_MOVING || result==SPELL_FAILED_NOT_STANDING) return known.first;
+            if(result==SPELL_FAILED_REQUIRES_SPELL_FOCUS && spell->RequiresSpellFocus) {
+                const WorldPosition here(bot);
+                for(const auto& point:CraftStations(spell->RequiresSpellFocus))
+                    if(point.getMapId()==bot->GetMapId() && here.distance(point)<=600) return known.first;
+            }
         }
         return 0;
     }
@@ -405,6 +441,7 @@ bool PlayerbotOrganicEconomy::AllowsServiceAction(uint32 guid, const std::string
     if(found==serviceTrips.end() || sPlayerbotRendezvousManager.GetPartyActivityOwner(guid)!=
         PlayerbotRendezvousManager::PartyActivityOwner::economy_service) return true;
     const auto& trip=found->second;
+    if(LivingServiceExecution::DisruptiveMaintenance(action)) return false;
     if(action.find("request travel target")==0) return trip.requesting;
     if(action=="choose travel target") return !trip.local;
     if(action=="travel" || action=="move to travel target") {
@@ -445,7 +482,7 @@ void PlayerbotOrganicEconomy::ReachRecipeService(Player* bot,uint32 purpose,cons
     using Phase=PlayerbotRendezvousManager::PartyActivityPhase;
     const uint32 guid=bot->GetGUIDLow(), now=uint32(time(nullptr));
     if(!SafeForEconomy(bot)) {ReleaseRecipeService(guid,"recipe_service_safety_pause");return;}
-    if(bot->IsNonMeleeSpellCasted(false)||bot->GetTradeData()) {blocker="recipe_finishing_cast_or_trade";return;}
+    if(!LivingServiceExecution::Prepare(bot)) {blocker="recipe_finishing_cast_or_trade";return;}
     if(serviceRetry[guid]>now) {blocker="recipe_service_retry_wait";return;}
     auto* ai=bot->GetPlayerbotAI();auto* context=ai->GetAiObjectContext();
     auto* target=context->GetValue<ai::TravelTarget*>("travel target")->Get();
@@ -469,18 +506,20 @@ void PlayerbotOrganicEconomy::ReachRecipeService(Player* bot,uint32 purpose,cons
     // Generic RPG destinations consider the neighbourhood an arrival. Finish
     // the last metres against an actual service, not the RPG work/idle loop.
     WorldObject* service=nullptr;float distance=1e30f;
+    const bool focus=(purpose&FocusService)!=0;
     const bool mail=purpose==uint32(ai::TravelDestinationPurpose::Mail);
     const uint32 flag=purpose==uint32(ai::TravelDestinationPurpose::Bank)?UNIT_NPC_FLAG_BANKER:
         purpose==uint32(ai::TravelDestinationPurpose::Vendor)?UNIT_NPC_FLAG_VENDOR:UNIT_NPC_FLAG_AUCTIONEER;
-    for(auto id:context->GetValue<std::list<ObjectGuid>>(mail?"nearest game objects no los":"nearest npcs no los")->Get()) {
+    for(auto id:context->GetValue<std::list<ObjectGuid>>((mail||focus)?"nearest game objects no los":"nearest npcs no los")->Get()) {
         WorldObject* candidate=nullptr;
-        if(mail) {auto* go=ai->GetGameObject(id);if(go && go->GetGoType()==GAMEOBJECT_TYPE_MAILBOX) candidate=go;}
+        if(mail||focus) {auto* go=ai->GetGameObject(id);if(go && (mail?go->GetGoType()==GAMEOBJECT_TYPE_MAILBOX:
+            go->GetGoType()==GAMEOBJECT_TYPE_SPELL_FOCUS && go->GetGOInfo()->spellFocus.focusId==(purpose&~FocusService))) candidate=go;}
         else {auto* npc=ai->GetUnit(id);if(npc && npc->HasFlag(UNIT_NPC_FLAGS,flag) && !sServerFacade.IsHostileTo(npc,bot)) candidate=npc;}
         if(candidate && candidate->GetMap()==bot->GetMap() && bot->GetDistance(candidate)<distance) {
             service=candidate;distance=bot->GetDistance(candidate);
         }
     }
-    trip.local=service!=nullptr;
+    trip.local=focus||service!=nullptr;
     if(service) {
         if(distance+1<trip.distance) {trip.distance=distance;trip.progress=now;}
         if(now>=trip.nextMove) {
@@ -490,6 +529,17 @@ void PlayerbotOrganicEconomy::ReachRecipeService(Player* bot,uint32 purpose,cons
                 bot->GetMotionMaster()->MovePoint(240,x,y,z);
         }
         blocker="recipe_approaching_service";
+    } else if(focus) {
+        const WorldPosition here(bot);const WorldPosition* closest=nullptr;
+        for(const auto& point:CraftStations(purpose&~FocusService)) {
+            if(point.getMapId()!=bot->GetMapId()) continue;
+            const float remaining=here.distance(point);
+            if(remaining<=600 && remaining<distance) {closest=&point;distance=remaining;}
+        }
+        if(!closest) {ReleaseRecipeService(guid,"recipe_station_unavailable_locally");serviceRetry[guid]=now+300;blocker="recipe_station_unavailable_locally";return;}
+        if(distance+1<trip.distance) {trip.distance=distance;trip.progress=now;}
+        if(now>=trip.nextMove) {trip.nextMove=now+5;RecipeServiceMovement movement(ai);movement.To(*closest);}
+        blocker="recipe_traveling_to_crafting_station";
     } else {
         bool same=target && target->GetDestination() && uint32(target->GetDestination()->GetPurpose())==purpose && target->IsActive();
         if(same && target->GetPosition() && target->GetPosition()->getMapId()==bot->GetMapId()) {
@@ -808,20 +858,18 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
                 craftAttempts.erase(pending);
                 return true; // Actual skill gain, never a queued command.
             }
-            if (bot->IsNonMeleeSpellCasted(true) || epoch < attempt.started + 30)
+            if (bot->IsNonMeleeSpellCasted(true, false, true) || epoch < attempt.started + 30)
             { failureReason = "awaiting_profession_result"; return false; }
             failureReason = bot->GetItemCount(attempt.output, false) > attempt.beforeOutput ?
                 "crafted_without_skill_gain" : "craft_interrupted_or_rejected";
             craftAttempts.erase(pending);
             return false;
         }
-        if(bot->IsNonMeleeSpellCasted(false)||bot->GetTradeData())
+        if(!LivingServiceExecution::Prepare(bot))
         {failureReason="recipe_finishing_cast_or_trade";return false;}
-        const std::string prefix = "profession:" + std::to_string(bot->GetGUIDLow()) + ":";
-        const std::string suffix = goalId.compare(0, prefix.size(), prefix) == 0 ? goalId.substr(prefix.size()) : "";
-        if (suffix.empty() || suffix.size() > 9 || suffix.find_first_not_of("0123456789") != std::string::npos)
+        const uint32 recipe = GoalRecipe(bot->GetGUIDLow(),goalId);
+        if (!recipe)
         { failureReason = "invalid_profession_recipe"; return false; }
-        const uint32 recipe = uint32(std::stoul(suffix));
         const auto* spell = sServerFacade.LookupSpellInfo(recipe);
         const uint32 skill = CraftSkill(bot, spell);
         if (!bot->HasSpell(recipe) || !spell)
@@ -830,7 +878,7 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
         // recipe is still useful for leveling or another reagent is available.
         for(uint32 i=0;i<MAX_SPELL_REAGENTS;++i) {
             if(spell->Reagent[i]<=0 || !ai::AhBidAction::HasPendingMaterial(bot,spell->Reagent[i])) continue;
-            if(bot->IsNonMeleeSpellCasted(false)||bot->GetTradeData()) {failureReason="recipe_finishing_cast_or_trade";return false;}
+            if(!LivingServiceExecution::Prepare(bot)) {failureReason="recipe_finishing_cast_or_trade";return false;}
             if(!PrepareRecipeMail(bot,spell->Reagent[i],goalId,failureReason)) return false;
             ai::AhBidAction market(ai);
             market.CollectRecipeMaterial(spell->Reagent[i],failureReason);
@@ -886,9 +934,26 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
             }
             if (!SafeCraftReagents(bot, spell)) return false;
         }
-        ReleaseRecipeService(bot->GetGUIDLow(),"recipe_materials_prepared");
-        if (!ai->CanCastSpell(recipe, bot, 0, true))
-        { failureReason = "recipe_requires_safe_local_tools_or_space"; return false; }
+        // Release only a completed material-service leg. Keep a station leg's
+        // progress/deadline until native CheckCast actually accepts the recipe.
+        auto trip=serviceTrips.find(bot->GetGUIDLow());
+        if(trip!=serviceTrips.end() && !(trip->second.purpose&FocusService))
+            ReleaseRecipeService(bot->GetGUIDLow(),"recipe_materials_prepared");
+        SpellCastResult castResult=SPELL_CAST_OK;
+        bool canCraft=ai->CanCastSpell(recipe, bot, 0, true, nullptr, false, false, false, &castResult);
+        // Perform the cheap safe preparation and recheck in this same turn.
+        // Returning for another 20-second sweep lets ordinary movement restart.
+        if(!canCraft && (castResult==SPELL_FAILED_MOVING || castResult==SPELL_FAILED_NOT_STANDING)) {
+            bot->StopMoving();bot->SetStandState(UNIT_STAND_STATE_STAND);
+            canCraft=ai->CanCastSpell(recipe, bot, 0, true, nullptr, false, false, false, &castResult);
+        }
+        if (!canCraft) {
+            if(castResult==SPELL_FAILED_REQUIRES_SPELL_FOCUS && spell->RequiresSpellFocus)
+                ReachRecipeService(bot,FocusService|spell->RequiresSpellFocus,goalId,failureReason);
+            else failureReason="recipe_cast_requirement_"+std::to_string(uint32(castResult));
+            return false;
+        }
+        ReleaseRecipeService(bot->GetGUIDLow(),"recipe_station_ready");
         CraftAttempt attempt;
         attempt.goal = goalId; attempt.spell = recipe; attempt.skill = skill;
         attempt.beforeSkill = bot->GetSkillValuePure(skill);
@@ -1057,6 +1122,12 @@ void PlayerbotOrganicEconomy::ApplyPlans(const std::string& response, const Poli
             active->second.currentGoalType=="profession_skill_up") {
             Player* bot=sRandomPlayerbotMgr.GetPlayerBot(guid);
             const uint32 pendingRecipe=bot && bot->IsInWorld()?PendingRecipeSpell(bot):0;
+            const uint32 currentRecipe=GoalRecipe(guid,active->second.currentGoalId);
+            const auto* currentSpell=sServerFacade.LookupSpellInfo(currentRecipe);
+            // Receipt must not hand the job back to the planner before the
+            // paid ingredients can be used. Existing goal expiry still bounds it.
+            if(bot && bot->IsInWorld() && bot->HasSpell(currentRecipe) && CraftSkill(bot,currentSpell) &&
+                SafeCraftReagents(bot,currentSpell,true)) continue;
             if(serviceTrips.count(guid) || (pendingRecipe && active->second.currentGoalId==
                 "profession:"+std::to_string(guid)+":"+std::to_string(pendingRecipe))) continue;
         }

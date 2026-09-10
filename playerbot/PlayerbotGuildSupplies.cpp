@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "PlayerbotGuildSupplies.h"
+#include "LivingServiceExecution.h"
 #include "GuildSupplyPolicy.h"
 #include "GuildGovernancePolicy.h"
 #include "PlayerbotGuildGovernance.h"
@@ -60,7 +61,7 @@ const char* SafetyBlocker(Player* p) {
     if(p->IsBeingTeleported()) return "map_transfer_in_progress";
     if(p->IsTaxiFlying()||p->GetTransport()) return "aboard_transport";
     if(p->InBattleGround()||p->GetMap()->IsDungeon()) return "in_dungeon_or_battleground";
-    if(p->IsNonMeleeSpellCasted(false)||p->GetTradeData()) return "finishing_cast_or_trade";
+    if(LivingServiceExecution::Busy(p)) return "finishing_cast_or_trade";
     if(sGuildEventExecutor.Reserved(p->GetGUIDLow())) return "committed_to_guild_event";
     if(HumanPartyBlocks(p)) return "human_party_or_reconnect_grace";
     const auto owner=sPlayerbotRendezvousManager.GetPartyActivityOwner(p->GetGUIDLow());
@@ -273,6 +274,7 @@ uint32 PlayerbotGuildSupplies::InTransit(uint32 guild,const std::string& goal,st
 }
 bool PlayerbotGuildSupplies::AllowsMovement(uint32 guid,const std::string& action) const {
     if(!OwnsMovement(guid)) return true;
+    if(LivingServiceExecution::DisruptiveMaintenance(action)) return false;
     // The executor installs its own point movement. Do not suppress combat,
     // healing, rolls or validated nearby loot; only alternate route owners.
     return action.find("travel")==std::string::npos&&action.find("rpg")==std::string::npos&&
@@ -371,6 +373,7 @@ void PlayerbotGuildSupplies::Update() {
             continue;
         }
         if(now<d.retry) continue;
+        if(!LivingServiceExecution::Prepare(p)) continue;
         d.active+=d.last?std::min(now-d.last,32u):0;d.last=now;
         auto goal=s.goals.find(d.goal);
         if(goal==s.goals.end()||goal->second.guild!=d.guild) {s.Finish(d,"cancelled","goal_cancelled_items_preserved",now);continue;}

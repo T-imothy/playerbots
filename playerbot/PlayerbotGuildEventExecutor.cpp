@@ -158,7 +158,13 @@ struct PlayerbotGuildEventExecutor::State {
         TravelTarget* target=context->GetValue<TravelTarget*>("travel target")->Get();
         const auto installedRoute=installed.find(coordinator->GetGUIDLow());
         if(installedRoute!=installed.end()&&target->GetDestination()==installedRoute->second.destination&&
-            target->GetPosition()==installedRoute->second.point&&target->IsActive()&&target->IsDestinationActive()) return;
+            target->GetPosition()==installedRoute->second.point&&target->IsActive()&&target->IsDestinationActive()) {
+            // This accepted commitment owns the route, but still uses normal
+            // guarded movement. Do not wait for the optional-action lottery.
+            coordinator->GetPlayerbotAI()->DoSpecificAction("travel",Event("guild event objective","",coordinator),true);
+            coordinator->GetPlayerbotAI()->DoSpecificAction("move to travel target",Event("guild event objective","",coordinator),true);
+            return;
+        }
         if(jobs.size()>=2||now<routeRetry[e.id]) return;
         for(const auto& job:jobs) if(job.event==e.id) return;
         routeRetry[e.id]=now+30;
@@ -233,7 +239,7 @@ bool PlayerbotGuildEventExecutor::AllowsMovement(uint32 guid,const std::string& 
     auto it=state_->reservations.find(guid);if(it==state_->reservations.end()) return true;
     const auto& r=it->second;if(!r.moving) return true;
     if(action=="follow") return r.active&&guid!=r.coordinator;
-    if(action=="move to travel target") {
+    if(action=="move to travel target" || action=="travel") {
         auto route=state_->installed.find(guid);Player* bot=Online(guid);
         if(!r.active||guid!=r.coordinator||route==state_->installed.end()||!bot||!bot->GetPlayerbotAI()) return false;
         auto* target=bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
@@ -533,6 +539,7 @@ void PlayerbotGuildEventExecutor::Update() {
                 }
                 TravelTarget* target=context->GetValue<TravelTarget*>("travel target")->Get();
                 target->SetTarget(route.destination,route.point);target->SetForced(false);target->SetConditions({});
+                target->SetRelevance(199); // Bypass population load shedding, not movement safety.
                 target->SetStatus(TravelStatus::TRAVEL_STATUS_READY);
                 context->GetValue<GuidPosition>("rpg target")->Reset();
                 context->GetValue<bool>("travel target active")->Reset();
