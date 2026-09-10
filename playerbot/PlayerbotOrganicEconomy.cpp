@@ -291,13 +291,69 @@ bool PlayerbotOrganicEconomy::Submit(const Policy& currentPolicy)
         plans << "]}";
     }
     events << "]}"; plans << "]}";
+
+    // Mirror the real character-owned auction table for Admin observability.
+    // Keep this separate from the bot profile batch so population growth cannot
+    // truncate listings or their authoritative reconciliation marker.
+    std::ostringstream auctionEvents, activeAuctionIds;
+    auctionEvents << "{\"events\":[";
+    activeAuctionIds << '[';
+    bool firstAuction = true, auctionSnapshotTruncated = false;
+    uint32 emittedAuctions = 0;
+    auto auctions = CharacterDatabase.PQuery(
+        "SELECT a.id,a.houseid,a.itemowner,c.name,a.item_template,a.item_count,"
+        "a.startbid,a.buyoutprice,a.time FROM auction a LEFT JOIN characters c "
+        "ON c.guid=a.itemowner WHERE a.itemowner<>0 ORDER BY a.id LIMIT 2001");
+    if (auctions)
+    {
+        do
+        {
+            if (emittedAuctions >= 2000)
+            {
+                auctionSnapshotTruncated = true;
+                break;
+            }
+            Field* fields = auctions->Fetch();
+            const uint32 auctionId = fields[0].GetUInt32();
+            const uint32 sellerGuid = fields[2].GetUInt32();
+            const uint32 itemEntry = fields[4].GetUInt32();
+            ItemPrototype const* item = sObjectMgr.GetItemPrototype(itemEntry);
+            if (!auctionId || !sellerGuid || !item)
+                continue;
+            if (!firstAuction) { auctionEvents << ','; activeAuctionIds << ','; }
+            firstAuction = false;
+            ++emittedAuctions;
+            activeAuctionIds << auctionId;
+            auctionEvents << "{\"event_id\":\"auction-" << auctionId << '-' << now
+                << "\",\"type\":\"auction_snapshot\",\"auction_id\":" << auctionId
+                << ",\"auction_house_id\":" << fields[1].GetUInt32()
+                << ",\"seller_guid\":" << sellerGuid
+                << ",\"seller_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(fields[3].GetString())
+                << "\",\"seller_type\":\"" << (profiles.count(sellerGuid) ? "bot" : "human")
+                << "\",\"item_entry\":" << itemEntry
+                << ",\"item_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(item->Name1)
+                << "\",\"quantity\":" << fields[5].GetUInt32()
+                << ",\"bid_copper\":" << fields[6].GetUInt32()
+                << ",\"buyout_copper\":" << fields[7].GetUInt32()
+                << ",\"state\":\"active\",\"expires_at\":" << fields[8].GetUInt64() << '}';
+        } while (auctions->NextRow());
+    }
+    activeAuctionIds << ']';
+    if (!firstAuction) auctionEvents << ',';
+    auctionEvents << "{\"event_id\":\"auction-snapshot-complete-" << now
+        << "\",\"type\":\"auction_snapshot_complete\",\"truncated\":"
+        << (auctionSnapshotTruncated ? "true" : "false") << ",\"active_auction_ids\":"
+        << activeAuctionIds.str() << "}]}";
+
     if (!reportedBots)
         return false;
-    std::string eventBody = events.str(), planBody = plans.str();
-    pendingPlans = std::async(std::launch::async, [eventBody, planBody]()
+    std::string eventBody = events.str(), auctionBody = auctionEvents.str(), planBody = plans.str();
+    pendingPlans = std::async(std::launch::async, [eventBody, auctionBody, planBody]()
     {
         std::vector<std::string> debug;
         PlayerbotLLMInterface::Generate(eventBody, 9, sPlayerbotAIConfig.llmMaxSimultaniousGenerations,
+            debug, true, "/v2/economy-events");
+        PlayerbotLLMInterface::Generate(auctionBody, 9, sPlayerbotAIConfig.llmMaxSimultaniousGenerations,
             debug, true, "/v2/economy-events");
         return PlayerbotLLMInterface::Generate(planBody, 9, sPlayerbotAIConfig.llmMaxSimultaniousGenerations,
             debug, true, "/v2/economy-plans");
