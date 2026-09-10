@@ -168,6 +168,10 @@ bool PetitionOfferAction::Execute(Event& event)
 bool PetitionOfferNearbyAction::Execute(Event& event)
 {
     uint32 found = 0;
+    std::list<Item*> petitions = AI_VALUE2(std::list<Item*>, "inventory items", chat->formatQItem(5863));
+    if (petitions.empty())
+        return false;
+    uint32 petitionGuid = petitions.front()->GetObjectGuid().GetCounter();
 
     std::list<ObjectGuid> nearGuids = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest friendly players")->Get();
     for (auto& i : nearGuids)
@@ -195,6 +199,15 @@ bool PetitionOfferNearbyAction::Execute(Event& event)
         }
 
         if (sServerFacade.GetDistance2d(bot, player) > sPlayerbotAIConfig.sightDistance)
+            continue;
+
+        // The offer action already rejects an account which signed this
+        // charter, but the invitation line used to be spoken before that
+        // check. Suppress both the dialogue and packet for prior signers.
+        auto existingSignature = CharacterDatabase.PQuery(
+            "SELECT playerguid FROM petition_sign WHERE player_account = '%u' AND petitionguid = '%u'",
+            player->GetSession()->GetAccountId(), petitionGuid);
+        if (existingSignature)
             continue;
 
         if (sPlayerbotAIConfig.inviteChat && sServerFacade.GetDistance2d(bot, player) < sPlayerbotAIConfig.spellDistance && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))

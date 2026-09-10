@@ -18,6 +18,12 @@
 namespace
 {
     constexpr float kRunSpeedYardsPerSecond = 7.0f;
+    constexpr uint32 kErrandVendor = 1 << 0;
+    constexpr uint32 kErrandRepair = 1 << 1;
+    constexpr uint32 kErrandBank = 1 << 2;
+    constexpr uint32 kErrandMail = 1 << 3;
+    constexpr uint32 kErrandAuction = 1 << 4;
+    constexpr uint32 kErrandProfession = 1 << 5;
 
     bool IsRealObserver(Player* player)
     {
@@ -73,19 +79,19 @@ namespace
         return vendor && supportingService && serviceKinds >= 2 ? sServerFacade.GetAreaId(human) : 0;
     }
 
-    std::vector<std::string> PersonalErrands(Player* bot)
+    uint32 PersonalErrandMask(Player* bot)
     {
-        std::vector<std::string> errands;
         if (!bot || !bot->GetPlayerbotAI())
-            return errands;
+            return 0;
         PlayerbotAI* ai = bot->GetPlayerbotAI();
         LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
+        uint32 errands = 0;
         if (pressure.vendorStacks)
-            errands.push_back("sell some junk");
+            errands |= kErrandVendor;
         if (ai->GetAiObjectContext()->GetValue<uint8>("durability inventory")->Get() < 85)
-            errands.push_back("repair my gear");
+            errands |= kErrandRepair;
         if (pressure.StorableStacks() && (pressure.bagUsage >= 70 || pressure.StorableStacks() >= 3))
-            errands.push_back("put some materials in the bank");
+            errands |= kErrandBank;
 
         time_t now = time(nullptr);
         for (PlayerMails::iterator mail = bot->GetMailBegin(); mail != bot->GetMailEnd(); ++mail)
@@ -93,17 +99,52 @@ namespace
             if ((*mail)->state != MAIL_STATE_DELETED && now >= (*mail)->deliver_time &&
                 ((*mail)->has_items || (*mail)->money))
             {
-                errands.push_back("pick up my mail");
+                errands |= kErrandMail;
                 break;
             }
         }
 
         std::string goal = sPlayerbotOrganicEconomy.CurrentGoalType(bot->GetGUIDLow());
         if (pressure.auctionStacks || goal == "list_surplus")
-            errands.push_back("check the auction house");
+            errands |= kErrandAuction;
         if (goal == "profession_skill_up")
-            errands.push_back("work on my profession");
+            errands |= kErrandProfession;
         return errands;
+    }
+
+    std::vector<std::string> PersonalErrands(uint32 errands)
+    {
+        std::vector<std::string> names;
+        if (errands & kErrandVendor)
+            names.push_back("sell some junk");
+        if (errands & kErrandRepair)
+            names.push_back("repair my gear");
+        if (errands & kErrandBank)
+            names.push_back("put some materials in the bank");
+        if (errands & kErrandMail)
+            names.push_back("pick up my mail");
+        if (errands & kErrandAuction)
+            names.push_back("check the auction house");
+        if (errands & kErrandProfession)
+            names.push_back("work on my profession");
+        return names;
+    }
+
+    std::string ErrandTelemetryNames(uint32 errands)
+    {
+        std::string names;
+        auto append = [&names](const char* name)
+        {
+            if (!names.empty()) names += ',';
+            names += name;
+        };
+        if (errands & kErrandVendor) append("vendor");
+        if (errands & kErrandRepair) append("repair");
+        if (errands & kErrandBank) append("bank");
+        if (errands & kErrandMail) append("mail");
+        if (errands & kErrandAuction) append("auction");
+        if (errands & kErrandProfession) append("profession");
+        return names.empty() ? "none" : names;
     }
 
     std::string ErrandAnnouncement(std::vector<std::string> const& errands)
@@ -254,8 +295,20 @@ bool PlayerbotRendezvousManager::BeginPartyFreeTime(Player* bot, Player* player,
     session.freeTimePlayerAreaId = sServerFacade.GetAreaId(player);
     bool automaticSettlement = reason == "automatic_settlement_errands";
     session.freeTimeUntil = now + (automaticSettlement ? std::chrono::minutes(5) : std::chrono::minutes(30));
+    session.automaticErrandMask = automaticSettlement ? PersonalErrandMask(bot) : 0;
+    session.automaticErrandLastX = bot->GetPositionX();
+    session.automaticErrandLastY = bot->GetPositionY();
+    session.automaticErrandHardDeadline = automaticSettlement ?
+        now + std::chrono::minutes(15) : std::chrono::steady_clock::time_point();
+    session.nextAutomaticErrandCheck = automaticSettlement ?
+        now + std::chrono::seconds(45) : std::chrono::steady_clock::time_point();
+    session.nextAutomaticErrandProgressLog = automaticSettlement ?
+        now + std::chrono::minutes(1) : std::chrono::steady_clock::time_point();
     session.stateSince = now;
     LogPartyEvent(session, "free_time_started");
+    if (automaticSettlement)
+        LogAutomaticErrandEvent(session, bot, "started", session.automaticErrandMask,
+            session.automaticErrandMask);
     return true;
 }
 
@@ -862,7 +915,7 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                     (!session.automaticErrandCooldownUntil.time_since_epoch().count() ||
                      now >= session.automaticErrandCooldownUntil))
                 {
-                    std::vector<std::string> errands = PersonalErrands(bot);
+                    std::vector<std::string> errands = PersonalErrands(PersonalErrandMask(bot));
                     session.automaticErrandCooldownUntil = now + std::chrono::minutes(errands.empty() ? 2 : 10);
                     if (!errands.empty())
                     {
@@ -976,20 +1029,69 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                     sServerFacade.GetAreaId(human) != session.freeTimePlayerAreaId)
                     humanMovedOn = true;
                 bool errandsFinished = false;
+                bool automaticHardTimeout = false;
+                bool automaticIdleTimeout = false;
                 if (automaticSettlement &&
                     std::chrono::duration_cast<std::chrono::seconds>(now - session.stateSince).count() >= 45 &&
                     (!session.nextAutomaticErrandCheck.time_since_epoch().count() ||
                      now >= session.nextAutomaticErrandCheck))
                 {
                     session.nextAutomaticErrandCheck = now + std::chrono::seconds(10);
-                    errandsFinished = PersonalErrands(bot).empty();
+                    uint32 previousErrands = session.automaticErrandMask;
+                    uint32 remainingErrands = PersonalErrandMask(bot);
+                    float dx = bot->GetPositionX() - session.automaticErrandLastX;
+                    float dy = bot->GetPositionY() - session.automaticErrandLastY;
+                    bool traveled = dx * dx + dy * dy >= 25.0f;
+
+                    if (remainingErrands != previousErrands)
+                    {
+                        session.automaticErrandMask = remainingErrands;
+                        session.freeTimeUntil = std::min(session.automaticErrandHardDeadline,
+                            now + std::chrono::minutes(5));
+                        LogAutomaticErrandEvent(session, bot, "tasks_changed", previousErrands,
+                            remainingErrands);
+                    }
+                    if (traveled)
+                    {
+                        session.automaticErrandLastX = bot->GetPositionX();
+                        session.automaticErrandLastY = bot->GetPositionY();
+                        session.freeTimeUntil = std::min(session.automaticErrandHardDeadline,
+                            now + std::chrono::minutes(5));
+                        if (!session.nextAutomaticErrandProgressLog.time_since_epoch().count() ||
+                            now >= session.nextAutomaticErrandProgressLog)
+                        {
+                            session.nextAutomaticErrandProgressLog = now + std::chrono::minutes(1);
+                            LogAutomaticErrandEvent(session, bot, "travel_progress", remainingErrands,
+                                remainingErrands);
+                        }
+                    }
+                    errandsFinished = remainingErrands == 0;
+                    automaticHardTimeout = !errandsFinished && now >= session.automaticErrandHardDeadline;
+                    automaticIdleTimeout = !errandsFinished && !automaticHardTimeout &&
+                        now >= session.freeTimeUntil;
+                    bool firstStopReport = !session.freeTimeRecallRequested;
+                    if (errandsFinished && firstStopReport)
+                        LogAutomaticErrandEvent(session, bot, "completed", previousErrands, 0);
+                    else if (automaticHardTimeout && firstStopReport)
+                        LogAutomaticErrandEvent(session, bot, "hard_timeout", previousErrands,
+                            remainingErrands);
+                    else if (automaticIdleTimeout && firstStopReport)
+                        LogAutomaticErrandEvent(session, bot, "idle_timeout", previousErrands,
+                            remainingErrands);
                 }
-                if (human->IsInCombat() || humanMovedOn || errandsFinished || now >= session.freeTimeUntil)
+                bool freeTimeExpired = automaticSettlement ?
+                    (automaticHardTimeout || automaticIdleTimeout) : now >= session.freeTimeUntil;
+                if (human->IsInCombat() || humanMovedOn || errandsFinished || freeTimeExpired)
                     session.freeTimeRecallRequested = true;
                 if (session.freeTimeRecallRequested && !bot->IsInCombat())
-                    ResumePartyAssist(bot, human, humanMovedOn ?
-                        "free_time_party_moved_on" : errandsFinished ?
-                        "automatic_settlement_errands_complete" : "free_time_complete");
+                {
+                    std::string returnReason = humanMovedOn ? "free_time_party_moved_on" :
+                        errandsFinished ? "automatic_settlement_errands_complete" :
+                        automaticHardTimeout ? "automatic_settlement_errands_hard_timeout" :
+                        automaticIdleTimeout ? "automatic_settlement_errands_idle_timeout" :
+                        "free_time_complete";
+                    ResumePartyAssist(bot, human, returnReason);
+                }
             }
             else if (session.state == "pending")
             {
@@ -1092,6 +1194,16 @@ void PlayerbotRendezvousManager::LogPartyEvent(const PartySession& session, cons
     sLog.outString("Living WoW party rendezvous event=%s bot=%u player=%u group=%u state=%s relocated=%u prior_activity=%s reason=%s",
         event, session.botGuid, session.playerGuid, session.groupId, session.state.c_str(), session.relocated ? 1 : 0,
         session.previousActivity.c_str(), session.reason.c_str());
+}
+
+void PlayerbotRendezvousManager::LogAutomaticErrandEvent(const PartySession& session, Player* bot,
+    const char* event, uint32 previousErrands, uint32 remainingErrands) const
+{
+    uint32 completedErrands = previousErrands & ~remainingErrands;
+    sLog.outString("Living WoW party errands event=%s bot=%u player=%u group=%u completed=%s remaining=%s map=%u x=%.1f y=%.1f",
+        event, session.botGuid, session.playerGuid, session.groupId,
+        ErrandTelemetryNames(completedErrands).c_str(), ErrandTelemetryNames(remainingErrands).c_str(),
+        bot ? bot->GetMapId() : 0, bot ? bot->GetPositionX() : 0.0f, bot ? bot->GetPositionY() : 0.0f);
 }
 
 bool PlayerbotRendezvousManager::IsActive(uint32 botGuid, uint32 playerGuid) const

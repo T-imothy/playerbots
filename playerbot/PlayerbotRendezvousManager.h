@@ -65,9 +65,12 @@ private:
         uint32 freeTimePlayerZoneId = 0;
         uint32 freeTimePlayerAreaId = 0;
         uint32 settlementKey = 0;
+        uint32 automaticErrandMask = 0;
         float hearthStartX = 0.0f;
         float hearthStartY = 0.0f;
         float hearthStartZ = 0.0f;
+        float automaticErrandLastX = 0.0f;
+        float automaticErrandLastY = 0.0f;
         std::chrono::steady_clock::time_point stateSince;
         std::chrono::steady_clock::time_point nextApproachAttempt;
         std::chrono::steady_clock::time_point humanAbsentSince;
@@ -78,8 +81,10 @@ private:
         std::chrono::steady_clock::time_point freeTimeUntil;
         std::chrono::steady_clock::time_point automaticErrandReadyAt;
         std::chrono::steady_clock::time_point automaticErrandCooldownUntil;
+        std::chrono::steady_clock::time_point automaticErrandHardDeadline;
         std::chrono::steady_clock::time_point nextSettlementCheck;
         std::chrono::steady_clock::time_point nextAutomaticErrandCheck;
+        std::chrono::steady_clock::time_point nextAutomaticErrandProgressLog;
         std::chrono::steady_clock::time_point hearthStarted;
     };
 
@@ -117,6 +122,8 @@ private:
     bool StartPartyApproach(PartySession& session, Player* bot, Player* player);
     bool ReturnPartyToActivity(PartySession& session, Player* bot);
     void LogPartyEvent(const PartySession& session, const char* event) const;
+    void LogAutomaticErrandEvent(const PartySession& session, Player* bot, const char* event,
+        uint32 previousErrands, uint32 remainingErrands) const;
     void LogEvent(const Session& session, const char* event) const;
 
     std::map<uint32, Session> sessions;
