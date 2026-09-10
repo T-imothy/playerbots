@@ -93,6 +93,16 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
 bool ChooseTravelTargetAction::isUseful()
 {
+    TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
+    if (travelTarget->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE)
+    {
+        // Finalizing an asynchronous destination search only installs its
+        // validated result; it does not move the bot. Do not strand a ready
+        // future merely because an unrelated transient activity currently
+        // disallows travel. Movement retains its ordinary activity guards.
+        return !bot->InBattleGround() && AI_VALUE(bool, "can move around");
+    }
+
     if (!ai->AllowActivity(TRAVEL_ACTIVITY))
         return false;
 
