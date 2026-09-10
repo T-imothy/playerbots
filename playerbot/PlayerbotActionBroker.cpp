@@ -188,7 +188,7 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
             return false;
     }
 
-    if (!conjure && !buying && item->GetCount() != proposal.quantity)
+    if (!conjure && !crafting && !buying && proposal.delivery == "mail" && item->GetCount() != proposal.quantity)
     {
         item = SplitBrokerItem(bot, item, proposal.quantity);
         if (!item)
@@ -291,10 +291,41 @@ bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
     if (offered && offered->GetGUIDLow() == transaction->itemGuid && offered->GetCount() == transaction->quantity)
         return true;
     Item* item = FindBrokerItem(bot, transaction->itemEntry, transaction->itemGuid);
-    if (!item || item->GetCount() != transaction->quantity || !item->CanBeTraded())
+    if (!item || item->GetCount() < transaction->quantity || !item->CanBeTraded())
     {
-        CancelTrade(bot, trader, "reserved item changed");
+        FindItemByIdVisitor visitor(transaction->itemEntry);
+        bot->GetPlayerbotAI()->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+        for (Item* candidate : visitor.GetResult())
+        {
+            auto reservation = reservedItems.find(candidate->GetGUIDLow());
+            if (candidate->GetCount() >= transaction->quantity && candidate->CanBeTraded() &&
+                (reservation == reservedItems.end() || reservation->second == transaction->transactionId))
+            {
+                reservedItems.erase(transaction->itemGuid);
+                item = candidate;
+                transaction->itemGuid = candidate->GetGUIDLow();
+                reservedItems[transaction->itemGuid] = transaction->transactionId;
+                break;
+            }
+        }
+    }
+    if (!item || item->GetCount() < transaction->quantity || !item->CanBeTraded())
+    {
+        CancelTrade(bot, trader, "reserved item is no longer available");
         return false;
+    }
+    if (item->GetCount() != transaction->quantity)
+    {
+        Item* split = SplitBrokerItem(bot, item, transaction->quantity);
+        if (!split)
+        {
+            CancelTrade(bot, trader, "could not prepare the promised quantity");
+            return false;
+        }
+        reservedItems.erase(transaction->itemGuid);
+        item = split;
+        transaction->itemGuid = split->GetGUIDLow();
+        reservedItems[transaction->itemGuid] = transaction->transactionId;
     }
     WorldPacket packet(CMSG_SET_TRADE_ITEM, 3);
     packet << (uint8)0 << (uint8)item->GetBagSlot() << (uint8)item->GetSlot();
@@ -412,14 +443,44 @@ void PlayerbotActionBroker::Update()
         Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, transaction.playerGuid));
         bool buying = transaction.type == "buy_item";
         Item* item = bot && transaction.itemGuid ? FindBrokerItem(bot, transaction.itemEntry, transaction.itemGuid) : nullptr;
+        if (bot && !buying && transaction.state != "preparing" &&
+            (!item || item->GetCount() < transaction.quantity || !item->CanBeTraded()))
+        {
+            FindItemByIdVisitor visitor(transaction.itemEntry);
+            bot->GetPlayerbotAI()->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+            for (Item* candidate : visitor.GetResult())
+            {
+                auto reservation = reservedItems.find(candidate->GetGUIDLow());
+                if (candidate->GetCount() >= transaction.quantity && candidate->CanBeTraded() &&
+                    (reservation == reservedItems.end() || reservation->second == transaction.transactionId))
+                {
+                    reservedItems.erase(transaction.itemGuid);
+                    item = candidate;
+                    transaction.itemGuid = candidate->GetGUIDLow();
+                    reservedItems[transaction.itemGuid] = transaction.transactionId;
+                    break;
+                }
+            }
+        }
         bool incompatible = transaction.delivery != "mail" && bot && player &&
             (bot->GetMapId() != player->GetMapId() || bot->GetZoneId() != player->GetZoneId());
         if (!bot || !player || !bot->IsAlive() || !player->IsAlive() || incompatible ||
             (buying && CountBrokerPlayerItem(player, transaction.itemEntry) < transaction.quantity) ||
-            (!buying && transaction.state != "preparing" && (!item || item->GetCount() != transaction.quantity || !item->CanBeTraded())))
+            (!buying && transaction.state != "preparing" && (!item || item->GetCount() < transaction.quantity || !item->CanBeTraded())))
         {
             transaction.state = "cancelled";
-            transaction.failureReason = "participant or reserved item became unavailable";
+            if (!bot || !player || !bot->IsAlive() || !player->IsAlive())
+                transaction.failureReason = "participant became unavailable";
+            else if (incompatible)
+                transaction.failureReason = "participants are no longer in the same zone";
+            else if (!buying && !item)
+                transaction.failureReason = "reserved item is no longer in inventory";
+            else if (!buying && item->GetCount() < transaction.quantity)
+                transaction.failureReason = "reserved item quantity changed";
+            else if (!buying && !item->CanBeTraded())
+                transaction.failureReason = "reserved item is no longer tradeable";
+            else
+                transaction.failureReason = "requested trade resources became unavailable";
             reservedItems.erase(transaction.itemGuid);
             if (buying) reservedMoney[transaction.botGuid] -= std::min(reservedMoney[transaction.botGuid], transaction.priceCopper);
             Report(transaction);
