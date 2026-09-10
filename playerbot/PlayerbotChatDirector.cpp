@@ -1080,6 +1080,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
     std::ostringstream json;
     json << "{\"event_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.eventId) << "\",";
     json << "\"event_type\":\"" << (event.ambient ? "ambient" : "message") << "\",";
+    json << "\"bridge_capabilities\":{\"reply_channel\":true},";
     json << "\"channel\":{\"type\":\"" << event.channelType << "\",\"name\":\""
          << PlayerbotLLMInterface::SanitizeForJson(event.channelName) << "\",\"zone\":" << event.zone << "},";
     json << "\"faction\":\"" << (event.team == ALLIANCE ? "alliance" : "horde") << "\",";
@@ -1186,7 +1187,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
 std::vector<ChatDirectorReply> PlayerbotChatDirector::ParseReplies(const std::string& response) const
 {
     std::vector<ChatDirectorReply> replies;
-    std::regex pattern(R"re("bot_guid"\s*:\s*([0-9]+)\s*,\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"\s*,\s*"delay_ms"\s*:\s*([0-9]+)(?:\s*,\s*"requires_action_id"\s*:\s*"((?:\\.|[^"\\])*)")?)re");
+    std::regex pattern(R"re("bot_guid"\s*:\s*([0-9]+)\s*,\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"\s*,\s*"delay_ms"\s*:\s*([0-9]+)(?:\s*,\s*"requires_action_id"\s*:\s*"((?:\\.|[^"\\])*)")?(?:\s*,\s*"reply_channel"\s*:\s*"((?:\\.|[^"\\])*)")?)re");
     for (std::sregex_iterator it(response.begin(), response.end(), pattern), end; it != end; ++it)
     {
         ChatDirectorReply reply;
@@ -1194,6 +1195,7 @@ std::vector<ChatDirectorReply> PlayerbotChatDirector::ParseReplies(const std::st
         reply.text = JsonUnescape((*it)[2].str());
         reply.delayMs = std::max<uint32>(1200, std::min<uint32>(8000, (uint32)std::stoul((*it)[3].str())));
         if ((*it)[4].matched) reply.requiresActionId = JsonUnescape((*it)[4].str());
+        if ((*it)[5].matched) reply.replyChannel = JsonUnescape((*it)[5].str());
         if (!reply.text.empty()) replies.push_back(std::move(reply));
     }
     return replies;
@@ -1225,7 +1227,8 @@ void PlayerbotChatDirector::Dispatch(const ScheduledReply& scheduledReply)
     if (!bot || !bot->GetPlayerbotAI() || !bot->IsInWorld())
         return;
     PlayerbotAI* ai = bot->GetPlayerbotAI();
-    const std::string& channel = scheduledReply.event.channelType;
+    const std::string& channel = scheduledReply.reply.replyChannel.empty() ?
+        scheduledReply.event.channelType : scheduledReply.reply.replyChannel;
     const std::string& text = scheduledReply.reply.text;
     if (channel == "whisper") ai->Whisper(text, scheduledReply.event.speakerName, true);
     else if (channel == "party") ai->SayToParty(text, true);

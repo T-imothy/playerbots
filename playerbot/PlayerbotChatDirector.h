@@ -113,6 +113,7 @@ struct ChatDirectorReply
     std::string text;
     uint32 delayMs = 2000;
     std::string requiresActionId;
+    std::string replyChannel;
 };
 
 class PlayerbotChatDirector
