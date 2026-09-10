@@ -283,7 +283,7 @@ void PlayerbotGuildGovernance::Snapshot(Player* actor,Guild* guild,Policy& p,con
             const std::string goalState=f[7].GetString()=="legacy_needs_review"?"needs_review":f[5].GetString();
             std::ostringstream out;out<<"GOAL\t"<<op<<'\t'<<f[0].GetString()<<'\t'<<f[1].GetUInt32()<<'\t'
                 <<Wire(money?"Gold (copper units)":item?item->Name1:"Unknown item",32)<<'\t'<<f[2].GetUInt32()<<'\t'<<available<<'\t'
-                <<f[4].GetUInt32()<<'\t'<<Wire(goalState,20)<<'\t'<<f[6].GetUInt32();
+                <<f[4].GetUInt32()<<'\t'<<Wire(goalState,20)<<'\t'<<f[6].GetUInt32()<<'\t'<<(money?"money":"item");
             Send(actor,out.str());
             Send(actor,"GOALKIND\t"+op+"\t"+f[0].GetString()+"\t"+(money?"money":"item")+"\t"+Wire(f[10].GetString(),64));
             Send(actor,"GOALMETA\t"+op+"\t"+f[0].GetString()+"\t"+Wire(f[7].GetString(),32)+"\t"+std::to_string(uint32(time(nullptr))));
@@ -489,7 +489,6 @@ bool PlayerbotGuildGovernance::Handle(Player* actor,const std::string& message) 
             else if(existing&&existing->Fetch()[2].GetString()!="active") reason="fundraiser_is_closed";
             else if(existing&&(existing->Fetch()[3].GetString()!=f[7]||target>existing->Fetch()[4].GetUInt32())&&CharacterDatabase.PQuery("SELECT delivery_id FROM guild_society_supply_delivery WHERE guild_id=%u AND goal_id='%s' LIMIT 1",id,f[4].c_str())) reason="committed_fundraiser_cannot_change_purpose_or_increase";
             else if(CharacterDatabase.PQuery("SELECT goal_id FROM guild_society_supply_goal WHERE guild_id=%u AND request_kind='money' AND state='active' AND goal_id<>'%s' LIMIT 1",id,f[4].c_str())) reason="one_active_fundraiser_per_guild";
-            else if(!existing&&CharacterDatabase.PQuery("SELECT goal_id FROM guild_society_supply_goal WHERE guild_id=%u AND request_kind='money' AND created_at>%u LIMIT 1",id,now-604800)) reason="fundraiser_seven_day_cooldown";
             else if(existing) sql="UPDATE guild_society_supply_goal SET required_quantity="+std::to_string(target)+",priority="+std::to_string(priority)+",purpose='"+Esc(f[7])+"',updated_at="+std::to_string(now)+" WHERE goal_id='"+f[4]+"' AND guild_id="+std::to_string(id)+" AND request_kind='money' AND state='active'";
             else sql="INSERT INTO guild_society_supply_goal (goal_id,guild_id,goal_type,item_entry,required_quantity,state,priority,requested_by,provenance,request_kind,purpose,created_at,updated_at) VALUES ('"+
                 f[4]+"',"+std::to_string(id)+",'money_request',0,"+std::to_string(target)+",'active',"+std::to_string(priority)+","+std::to_string(guid)+",'human_request','money','"+Esc(f[7])+"',"+std::to_string(now)+","+std::to_string(now)+")";
