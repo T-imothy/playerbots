@@ -2043,7 +2043,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
                  << "\",\"actor_guid\":" << (capability.actorGuid ? capability.actorGuid : candidate.guid)
                  << ",\"target_guid\":" << event.speakerGuid << ",\"party_session_id\":\"" << partySessionId
                  << "\",\"state_revision\":" << stateRevision << ",\"expires_seconds\":90"
-                 << "\",\"item_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(capability.itemName)
+                 << ",\"item_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(capability.itemName)
                  << "\",\"item_kind\":\"" << capability.itemKind
                  << "\",\"item_usage\":\"" << capability.itemUsage
                  << "\",\"demand_reason\":\"" << capability.demandReason
