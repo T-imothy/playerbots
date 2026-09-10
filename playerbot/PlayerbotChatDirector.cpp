@@ -1354,7 +1354,7 @@ std::vector<ChatDirectorReply> PlayerbotChatDirector::ParseReplies(const std::st
 std::vector<ChatDirectorActionProposal> PlayerbotChatDirector::ParseActionProposals(const std::string& response) const
 {
     std::vector<ChatDirectorActionProposal> proposals;
-    std::regex pattern(R"re("proposal_id"\s*:\s*"([^"\\]+)"\s*,\s*"bot_guid"\s*:\s*([0-9]+)\s*,\s*"target_guid"\s*:\s*([0-9]+)\s*,\s*"type"\s*:\s*"([^"\\]+)"\s*,\s*"capability_ref"\s*:\s*"([^"\\]+)"\s*,\s*"quantity"\s*:\s*([0-9]+)\s*,\s*(?:"price_copper"\s*:\s*([0-9]+)\s*,\s*)?"delivery"\s*:\s*"([^"\\]+)"\s*,\s*"intent"\s*:\s*"((?:\\.|[^"\\])*)")re");
+    std::regex pattern(R"re("proposal_id"\s*:\s*"([^"\\]+)"\s*,\s*"bot_guid"\s*:\s*([0-9]+)\s*,\s*"target_guid"\s*:\s*([0-9]+)\s*,\s*"type"\s*:\s*"([^"\\]+)"\s*,\s*"capability_ref"\s*:\s*"([^"\\]+)"\s*,\s*"quantity"\s*:\s*([0-9]+)\s*,\s*(?:"price_copper"\s*:\s*([0-9]+)\s*,\s*)?"delivery"\s*:\s*"([^"\\]+)"\s*,\s*"intent"\s*:\s*"((?:\\.|[^"\\])*)"(?:\s*,\s*"price_copper"\s*:\s*([0-9]+))?)re");
     for (std::sregex_iterator it(response.begin(), response.end(), pattern), end; it != end; ++it)
     {
         ChatDirectorActionProposal proposal;
@@ -1365,6 +1365,7 @@ std::vector<ChatDirectorActionProposal> PlayerbotChatDirector::ParseActionPropos
         proposal.capabilityRef = (*it)[5].str();
         proposal.quantity = (uint32)std::stoul((*it)[6].str());
         if ((*it)[7].matched) proposal.priceCopper = (uint32)std::stoul((*it)[7].str());
+        else if ((*it)[10].matched) proposal.priceCopper = (uint32)std::stoul((*it)[10].str());
         proposal.delivery = (*it)[8].str();
         proposal.intent = JsonUnescape((*it)[9].str());
         proposals.push_back(std::move(proposal));
