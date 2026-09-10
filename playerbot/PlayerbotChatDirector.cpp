@@ -14,6 +14,7 @@
 #include "RandomPlayerbotMgr.h"
 #include "TravelMgr.h"
 #include "ServerFacade.h"
+#include "GameEvents/GameEventMgr.h"
 #include "strategy/ItemVisitors.h"
 #include "strategy/values/BudgetValues.h"
 #include "strategy/values/ItemUsageValue.h"
@@ -3039,6 +3040,95 @@ static void SendGuildAddon(Player* source, Player* target, const std::string& pa
     target->GetSession()->SendPacket(data);
 }
 
+static std::vector<std::string> SplitGuildAddon(const std::string& message)
+{
+    std::vector<std::string> fields;
+    size_t start = 0;
+    while (start <= message.size())
+    {
+        const size_t end = message.find('\t', start);
+        fields.push_back(message.substr(start, end == std::string::npos ? std::string::npos : end - start));
+        if (end == std::string::npos)
+            break;
+        start = end + 1;
+    }
+    return fields;
+}
+
+static std::string GuildAddonText(const std::string& value, size_t maximum)
+{
+    std::string result = EscapeGuildAddon(value);
+    if (result.size() > maximum)
+        result.resize(maximum);
+    return result;
+}
+
+static bool GuildAddonCoordinator(Player* bot)
+{
+    if (!bot || !bot->GetGuildId())
+        return false;
+    uint32 coordinator = 0;
+    for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
+    {
+        Player* candidate = sRandomPlayerbotMgr.GetPlayerBot(guid);
+        if (!candidate || !candidate->IsInWorld() || !candidate->GetSession() ||
+            candidate->GetGuildId() != bot->GetGuildId())
+            continue;
+        if (!coordinator || candidate->GetGUIDLow() < coordinator)
+            coordinator = candidate->GetGUIDLow();
+    }
+    return coordinator == bot->GetGUIDLow();
+}
+
+static bool CanManageGuildCalendar(Guild* guild, Player* player)
+{
+    return guild && player && (guild->GetLeaderGuid() == player->GetObjectGuid() ||
+        guild->HasRankRight(player->GetRank(), GR_RIGHT_MODIFY_GUILD_INFO));
+}
+
+static void SendSeasonalCalendar(Player* source, Player* receiver, uint32 rangeStart, uint32 rangeEnd)
+{
+    if (!source || !receiver || rangeEnd <= rangeStart || rangeEnd - rangeStart > 370 * DAY)
+        return;
+    const GameEventMgr::GameEventDataMap& events = sGameEventMgr.GetEventMap();
+    uint32 sent = 0;
+    for (uint32 eventId = 1; eventId < events.size() && sent < 64; ++eventId)
+    {
+        const GameEventData& item = events[eventId];
+        const bool seasonal = item.holiday_id != HOLIDAY_NONE ||
+            item.scheduleType == GAME_EVENT_SCHEDULE_YEARLY ||
+            (item.scheduleType >= GAME_EVENT_SCHEDULE_DMF_1 && item.scheduleType <= GAME_EVENT_SCHEDULE_DMF_BUILDING_STAGE_2_3) ||
+            item.scheduleType == GAME_EVENT_SCHEDULE_LUNAR_NEW_YEAR ||
+            item.scheduleType == GAME_EVENT_SCHEDULE_EASTER;
+        if (!seasonal || !item.isValid() || item.description.empty() || !item.occurence || !item.length)
+            continue;
+        const int64 period = int64(item.occurence) * MINUTE;
+        const int64 duration = int64(item.length) * MINUTE;
+        int64 occurrence = int64(item.start);
+        if (occurrence + duration < rangeStart)
+        {
+            const int64 difference = int64(rangeStart) - occurrence - duration;
+            occurrence += ((difference / period) + 1) * period;
+        }
+        while (occurrence < rangeEnd && occurrence <= int64(item.end) && sent < 64)
+        {
+            const int64 occurrenceEnd = std::min<int64>(occurrence + duration, int64(item.end));
+            if (occurrenceEnd >= rangeStart)
+            {
+                std::ostringstream payload;
+                payload << "LWOWG1\tSEA\tworld-" << eventId << '-' << occurrence << '\t'
+                    << occurrence << '\t' << occurrenceEnd << '\t'
+                    << GuildAddonText(item.description, 100);
+                SendGuildAddon(source, receiver, payload.str());
+                ++sent;
+            }
+            occurrence += period;
+        }
+    }
+}
+
+static bool SafeGuildWireId(const std::string& value, size_t maximum);
+
 void PlayerbotChatDirector::SendGuildAddonSnapshot(Player* source, Player* receiver)
 {
     if (!source || !receiver || !source->GetGuildId() || source->GetGuildId() != receiver->GetGuildId())
@@ -3048,15 +3138,95 @@ void PlayerbotChatDirector::SendGuildAddonSnapshot(Player* source, Player* recei
         return;
     const uint32 revision = uint32(time(nullptr));
     std::ostringstream snapshot;
-    snapshot << "LWOWG1\tSNAP\t" << revision << '\t' << EscapeGuildAddon(guild->GetName())
+    snapshot << "LWOWG1\tSNAP\t" << revision << '\t' << GuildAddonText(guild->GetName(), 48)
         << '\t' << GuildFocus(guild->GetId(), 0) << '\t' << GuildFocus(guild->GetId(), 1)
-        << '\t' << (guildPolicyMode == "active" ? "active guild society" : "guild society observation");
+        << '\t' << (guildPolicyMode == "active" ? "active guild society" : "guild society observation")
+        << '\t' << (CanManageGuildCalendar(guild, receiver) ? 1 : 0);
     SendGuildAddon(source, receiver, snapshot.str());
     std::string leaderName;
     sObjectMgr.GetPlayerNameByGUID(guild->GetLeaderGuid(), leaderName);
     std::ostringstream officer;
     officer << "LWOWG1\tOFF\t" << revision << '\t' << EscapeGuildAddon(leaderName) << "\tguild master";
     SendGuildAddon(source, receiver, officer.str());
+
+    auto officers = CharacterDatabase.PQuery(
+        "SELECT character_guid,duty FROM guild_society_officer WHERE guild_id=%u AND state='active' ORDER BY duty LIMIT 8",
+        guild->GetId());
+    if (officers)
+    {
+        do
+        {
+            Field* fields = officers->Fetch();
+            std::string name;
+            sObjectMgr.GetPlayerNameByGUID(ObjectGuid(HIGHGUID_PLAYER, fields[0].GetUInt32()), name);
+            if (name.empty() || name == leaderName)
+                continue;
+            std::ostringstream payload;
+            payload << "LWOWG1\tOFF\t" << revision << '\t' << GuildAddonText(name, 32)
+                << '\t' << GuildAddonText(fields[1].GetString(), 32);
+            SendGuildAddon(source, receiver, payload.str());
+        }
+        while (officers->NextRow());
+    }
+
+    const uint32 nowEpoch = uint32(time(nullptr));
+    auto scheduled = CharacterDatabase.PQuery(
+        "SELECT event_id,scheduled_at,state,event_type,title,minimum_members,maximum_members,tank_slots,healer_slots,damage_slots,"
+        "IFNULL(ends_at,0),organizer_guid,details FROM guild_society_event WHERE guild_id=%u "
+        "AND scheduled_at BETWEEN %u AND %u ORDER BY scheduled_at LIMIT 40",
+        guild->GetId(), nowEpoch > 30 * DAY ? nowEpoch - 30 * DAY : 0, nowEpoch + 370 * DAY);
+    if (scheduled)
+    {
+        do
+        {
+            Field* fields = scheduled->Fetch();
+            const std::string eventId = fields[0].GetString();
+            std::string organizer;
+            sObjectMgr.GetPlayerNameByGUID(ObjectGuid(HIGHGUID_PLAYER, fields[11].GetUInt32()), organizer);
+            const std::string details = fields[12].GetString();
+            std::ostringstream needs;
+            if (fields[7].GetUInt32() || fields[8].GetUInt32() || fields[9].GetUInt32())
+                needs << fields[7].GetUInt32() << " tank, " << fields[8].GetUInt32() << " healer, "
+                    << fields[9].GetUInt32() << " damage";
+            else if (fields[5].GetUInt32() > 1)
+                needs << fields[5].GetUInt32() << '-' << fields[6].GetUInt32() << " members";
+            std::ostringstream payload;
+            payload << "LWOWG1\tEVT\t" << revision << '\t' << GuildAddonText(eventId, 64) << '\t'
+                << fields[1].GetUInt32() << '\t' << GuildAddonText(fields[2].GetString(), 20) << '\t'
+                << GuildAddonText(fields[3].GetString(), 16) << '\t' << GuildAddonText(fields[4].GetString(), 40)
+                << '\t' << GuildAddonText(needs.str(), 24) << '\t' << fields[10].GetUInt32() << '\t'
+                << GuildAddonText(organizer, 20) << '\t';
+            SendGuildAddon(source, receiver, payload.str());
+            if (!details.empty())
+            {
+                std::ostringstream note;
+                note << "LWOWG1\tNOTE\t" << revision << '\t' << GuildAddonText(eventId, 64)
+                    << '\t' << GuildAddonText(details, 140);
+                SendGuildAddon(source, receiver, note.str());
+            }
+        }
+        while (scheduled->NextRow());
+    }
+
+    auto rsvps = CharacterDatabase.PQuery(
+        "SELECT r.event_id,c.name,r.response,r.role FROM guild_society_rsvp r "
+        "JOIN guild_society_event e ON e.event_id=r.event_id JOIN characters c ON c.guid=r.character_guid "
+        "WHERE e.guild_id=%u ORDER BY e.scheduled_at,r.response,c.name LIMIT 120", guild->GetId());
+    if (rsvps)
+    {
+        do
+        {
+            Field* fields = rsvps->Fetch();
+            std::ostringstream payload;
+            payload << "LWOWG1\tATT\t" << revision << '\t' << GuildAddonText(fields[0].GetString(), 64)
+                << '\t' << GuildAddonText(fields[1].GetString(), 32) << '\t'
+                << GuildAddonText(fields[2].GetString(), 16) << '\t' << GuildAddonText(fields[3].GetString(), 16);
+            SendGuildAddon(source, receiver, payload.str());
+        }
+        while (rsvps->NextRow());
+    }
+
+    SendSeasonalCalendar(source, receiver, nowEpoch > 7 * DAY ? nowEpoch - 7 * DAY : 0, nowEpoch + 370 * DAY);
 }
 
 bool PlayerbotChatDirector::HandleGuildAddonMessage(Player* receiverBot, Player* sender, const std::string& message)
@@ -3064,12 +3234,93 @@ bool PlayerbotChatDirector::HandleGuildAddonMessage(Player* receiverBot, Player*
     if (message.find("LWOWG1\t") != 0 || !receiverBot || !sender || !sender->isRealPlayer() ||
         !receiverBot->GetGuildId() || receiverBot->GetGuildId() != sender->GetGuildId())
         return false;
+    if (!GuildAddonCoordinator(receiverBot))
+        return true;
     guildAddonClients.insert(sender->GetGUIDLow());
     ReloadGuildPolicy(std::chrono::steady_clock::now());
+    Guild* guild = sGuildMgr.GetGuildById(sender->GetGuildId());
+    if (!guild)
+        return true;
+    const std::vector<std::string> fields = SplitGuildAddon(message);
+    const auto notifyCalendarClients = [&]()
+    {
+        for (uint32 guid : guildAddonClients)
+        {
+            Player* client = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, guid));
+            if (client && client->GetGuildId() == guild->GetId())
+                SendGuildAddon(receiverBot, client, "LWOWG1\tPUSH\tGuild calendar updated.");
+        }
+    };
     if (message.find("LWOWG1\tHELLO") == 0 || message.find("LWOWG1\tGET") == 0)
         SendGuildAddonSnapshot(receiverBot, sender);
-    else if (message.find("LWOWG1\tRSVP") == 0)
-        SendGuildAddon(receiverBot, sender, "LWOWG1\tERR\t0\tNo authoritative guild event is open for RSVP yet.");
+    else if (fields.size() >= 5 && fields[1] == "RSVP")
+    {
+        const std::string eventId = fields[3];
+        const std::string response = fields[4];
+        if (!SafeGuildWireId(eventId, 64) ||
+            (response != "accepted" && response != "tentative" && response != "declined"))
+        {
+            SendGuildAddon(receiverBot, sender, "LWOWG1\tERR\t0\tThat RSVP is not valid.");
+            return true;
+        }
+        auto event = CharacterDatabase.PQuery(
+            "SELECT event_id FROM guild_society_event WHERE event_id='%s' AND guild_id=%u "
+            "AND state IN ('draft','announced','forming') LIMIT 1", eventId.c_str(), guild->GetId());
+        if (!event)
+        {
+            SendGuildAddon(receiverBot, sender, "LWOWG1\tERR\t0\tThat guild event is no longer accepting RSVPs.");
+            return true;
+        }
+        const uint32 nowEpoch = uint32(time(nullptr));
+        CharacterDatabase.PExecute(
+            "INSERT INTO guild_society_rsvp (event_id,character_guid,response,role,human,updated_at) "
+            "VALUES ('%s',%u,'%s','',1,%u) ON DUPLICATE KEY UPDATE response=VALUES(response),human=1,updated_at=VALUES(updated_at)",
+            eventId.c_str(), sender->GetGUIDLow(), response.c_str(), nowEpoch);
+        SendGuildAddon(receiverBot, sender, "LWOWG1\tACK\t0\tYour RSVP was saved.");
+        notifyCalendarClients();
+    }
+    else if (fields.size() >= 8 && fields[1] == "CREATE")
+    {
+        if (guildPolicyMode != "active" || !CanManageGuildCalendar(guild, sender))
+        {
+            SendGuildAddon(receiverBot, sender, "LWOWG1\tERR\t0\tOnly the guild master or an authorized officer can add guild events.");
+            return true;
+        }
+        std::string title = fields[3], eventType = fields[4], details = fields[7];
+        const uint32 starts = uint32(std::strtoul(fields[5].c_str(), nullptr, 10));
+        const uint32 ends = uint32(std::strtoul(fields[6].c_str(), nullptr, 10));
+        const uint32 nowEpoch = uint32(time(nullptr));
+        const bool allowedType = eventType == "social" || eventType == "quest" || eventType == "dungeon" ||
+            eventType == "supply" || eventType == "leveling";
+        if (title.empty() || title.size() > 80 || details.size() > 80 || !allowedType ||
+            starts + 3600 < nowEpoch || starts > nowEpoch + 370 * DAY || ends < starts + 30 * MINUTE || ends > starts + 7 * DAY)
+        {
+            SendGuildAddon(receiverBot, sender, "LWOWG1\tERR\t0\tThat guild event has an invalid name, type, date, or duration.");
+            return true;
+        }
+        title = EscapeGuildAddon(title); details = EscapeGuildAddon(details);
+        CharacterDatabase.escape_string(title); CharacterDatabase.escape_string(details);
+        std::ostringstream eventId;
+        eventId << "calendar-" << guild->GetId() << '-' << sender->GetGUIDLow() << '-' << starts;
+        const uint32 minimum = eventType == "dungeon" ? 5 : 1;
+        const uint32 maximum = eventType == "dungeon" || eventType == "quest" || eventType == "leveling" ? 5 : 40;
+        CharacterDatabase.PExecute(
+            "INSERT INTO guild_society_event (event_id,guild_id,event_type,state,title,details,target_id,organizer_guid,scheduled_at,ends_at,"
+            "minimum_members,maximum_members,tank_slots,healer_slots,damage_slots,failure_reason,created_at,updated_at) "
+            "VALUES ('%s',%u,'%s','announced','%s','%s',0,%u,%u,%u,%u,%u,%u,%u,%u,'',%u,%u) "
+            "ON DUPLICATE KEY UPDATE title=VALUES(title),details=VALUES(details),event_type=VALUES(event_type),ends_at=VALUES(ends_at),updated_at=VALUES(updated_at)",
+            eventId.str().c_str(), guild->GetId(), eventType.c_str(), title.c_str(), details.c_str(), sender->GetGUIDLow(),
+            starts, ends, minimum, maximum, eventType == "dungeon" ? 1 : 0, eventType == "dungeon" ? 1 : 0,
+            eventType == "dungeon" ? 3 : 0, nowEpoch, nowEpoch);
+        SendGuildAddon(receiverBot, sender, "LWOWG1\tACK\t0\tGuild event added to the shared calendar.");
+        notifyCalendarClients();
+    }
+    else if (fields.size() >= 5 && fields[1] == "CALENDAR")
+    {
+        const uint32 starts = uint32(std::strtoul(fields[3].c_str(), nullptr, 10));
+        const uint32 ends = uint32(std::strtoul(fields[4].c_str(), nullptr, 10));
+        SendSeasonalCalendar(receiverBot, sender, starts, ends);
+    }
     return true;
 }
 
