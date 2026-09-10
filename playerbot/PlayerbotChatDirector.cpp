@@ -154,8 +154,9 @@ static bool IsProtectedEconomicUsage(ai::ItemUsage usage)
 static std::set<std::string> InventorySearchTerms(const std::string& text)
 {
     static const std::set<std::string> ignored = {
-        "and", "any", "anyone", "can", "could", "does", "for", "from", "give", "got", "have",
-        "looking", "need", "please", "sell", "some", "someone", "the", "trade", "want", "with", "you", "your"
+        "and", "any", "anyone", "buy", "can", "could", "does", "for", "from", "give", "got", "have",
+        "looking", "need", "please", "purchase", "sell", "selling", "some", "someone", "the", "trade",
+        "want", "with", "wtb", "wts", "you", "your"
     };
     std::set<std::string> terms;
     std::string lowered = boost::algorithm::to_lower_copy(text);
@@ -336,7 +337,8 @@ static uint32 CountTradeablePlayerItem(Player* player, uint32 entry)
 static bool IsPlayerSaleRequest(const std::string& message)
 {
     std::string lowered = boost::algorithm::to_lower_copy(message);
-    return lowered.find("want to buy") != std::string::npos ||
+    return std::regex_search(lowered, std::regex(R"(\bwts\b)")) ||
+        lowered.find("want to buy") != std::string::npos ||
         lowered.find("wants to buy") != std::string::npos ||
         lowered.find("anyone buy") != std::string::npos ||
         lowered.find("somebody buy") != std::string::npos ||
