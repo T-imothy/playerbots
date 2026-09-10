@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotPartyCombatCoordinator.h"
+#include "playerbot/PlayerbotPartyCatchup.h"
 #include "playerbot/PlayerbotBuildProfile.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/LootValues.h"
@@ -1019,6 +1020,13 @@ void PlayerbotPartyCombatCoordinator::SendSnapshot(Group* group, GroupState& sta
                             << "\t" << (member->IsAlive() ? "ready" : "dead")
                             << "\t" << build.activeReason;
                         SendAddon(source, receiver, buildRow.str());
+                        PartyCatchupStatus catchup = GetPartyCatchupStatus(member);
+                        std::ostringstream xpRow;
+                        xpRow << "LWOWP1\tX\t" << state.revision << "\t" << Escape(member->GetName())
+                            << "\t" << uint32((catchup.multiplier - 1.0) * 100.0 + 0.5)
+                            << "\t" << Escape(catchup.leader) << "\t" << catchup.leaderLevel
+                            << "\t" << catchup.reason;
+                        SendAddon(source, receiver, xpRow.str());
                     }
                 }
             if (state.threatClients.count(receiver->GetObjectGuid()))

@@ -418,6 +418,9 @@ public:
     bool chatDirectorQuestInteraction;
     uint32 chatDirectorRendezvousTargetSeconds, chatDirectorRendezvousMaximumSeconds;
     uint32 chatDirectorRendezvousTriggerSeconds, chatDirectorRendezvousCooldownSeconds;
+    bool partyCatchupEnabled;
+    uint32 partyCatchupTargetSeconds;
+    float partyCatchupMaximumMultiplier, partyCatchupRadiusYards;
     uint32 chatDirectorRendezvousDepartureSeconds, chatDirectorPartyDisconnectGraceSeconds;
     uint32 chatDirectorPartyReturnWaitSeconds;
     uint32 chatDirectorPartyPostArrivalErrandGraceSeconds, chatDirectorPartyLocalServiceRadiusYards;

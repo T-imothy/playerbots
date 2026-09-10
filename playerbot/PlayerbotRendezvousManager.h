@@ -142,6 +142,8 @@ private:
         uint32 approachAttempts = 0;
         uint32 deadRecoveryAttempts = 0;
         float lastHumanDistance = 0.0f;
+        float followLastX = 0.0f, followLastY = 0.0f;
+        bool followPositionKnown = false;
         uint32 hearthStartMapId = 0;
         uint32 freeTimePlayerZoneId = 0;
         uint32 freeTimePlayerAreaId = 0;

@@ -675,6 +675,10 @@ bool PlayerbotAIConfig::Initialize()
     // Deprecated wire fields retained for older Admin/gateway contracts only.
     // Old persisted settings must not reintroduce a relocation cooldown.
     chatDirectorRendezvousCooldownSeconds = 0;
+    partyCatchupEnabled = config.GetBoolDefault("AiPlayerbot.PartyCatchup.Enabled", true);
+    partyCatchupTargetSeconds = std::max(600, std::min(14400, config.GetIntDefault("AiPlayerbot.PartyCatchup.TargetSeconds", 3600)));
+    partyCatchupMaximumMultiplier = std::max(1.0f, std::min(5.0f, config.GetFloatDefault("AiPlayerbot.PartyCatchup.MaximumMultiplier", 5.0f)));
+    partyCatchupRadiusYards = std::max(20.0f, std::min(100.0f, config.GetFloatDefault("AiPlayerbot.PartyCatchup.RadiusYards", 100.0f)));
     chatDirectorRendezvousDepartureSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousDepartureSeconds", 90);
     chatDirectorPartyDisconnectGraceSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorPartyDisconnectGraceSeconds", 300);
     chatDirectorPartyActivityOwnership = config.GetBoolDefault("AiPlayerbot.ChatDirectorPartyActivityOwnership", true);

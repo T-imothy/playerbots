@@ -1,5 +1,8 @@
 #include "botpch.h"
 #include "PlayerbotRendezvousManager.h"
+#include "PlayerbotPartyCatchup.h"
+#include "strategy/actions/FollowActions.h"
+#include "strategy/values/Formations.h"
 
 #include "Entities/Transports.h"
 #include "Mails/Mail.h"
@@ -2900,6 +2903,7 @@ bool PlayerbotRendezvousManager::ReturnPartyToActivity(PartySession& session, Pl
     };
     auto restoreAutonomousState = [bot]()
     {
+        ClearPartyCatchup(bot);
         PlayerbotAI* ai = bot->GetPlayerbotAI();
         if (!ai) return;
         AiObjectContext* context = ai->GetAiObjectContext();
@@ -3857,7 +3861,9 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                     now - session.stateSince).count() >= 1000)
                 {
                     bot->GetPlayerbotAI()->SetMaster(human);
-                    bot->GetMotionMaster()->MoveFollow(human, 2.0f, 0.0f, true, false);
+                    FollowAction follow(bot->GetPlayerbotAI());
+                    Event followEvent("living party arrival");
+                    follow.Execute(followEvent);
                     session.state = "active";
                     session.reason = "party_follow_restored";
                     session.stateSince = now;
@@ -3887,10 +3893,24 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                 bool sameMap = bot->GetMapId() == human->GetMapId() &&
                     bot->GetInstanceId() == human->GetInstanceId();
                 float distance = sameMap ? bot->GetDistance(human) : 100000.0f;
-                if (sameMap && distance <= 12.0f)
+                // Use the same formation as normal follow, not a second destination.
+                float followError = distance;
+                Formation* formation = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<Formation*>("formation")->Get();
+                if (sameMap && formation)
+                {
+                    WorldLocation target = formation->GetLocation();
+                    if (!Formation::IsNullLocation(target) && target.mapid == bot->GetMapId())
+                        followError = bot->GetDistance(target.coord_x, target.coord_y, target.coord_z);
+                }
+                float movedX = bot->GetPositionX() - session.followLastX;
+                float movedY = bot->GetPositionY() - session.followLastY;
+                bool moved = session.followPositionKnown && movedX * movedX + movedY * movedY >= 2.25f;
+                session.followLastX = bot->GetPositionX(); session.followLastY = bot->GetPositionY();
+                session.followPositionKnown = true;
+                if (sameMap && followError <= 12.0f)
                 {
                     session.staleCombatSince = std::chrono::steady_clock::time_point();
-                    session.lastHumanDistance = distance;
+                    session.lastHumanDistance = followError;
                     session.lastFollowProgress = now;
                     session.nextFollowRepair = now + std::chrono::seconds(6);
                 }
@@ -3899,24 +3919,29 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                     RecoverStalePartyCombat(session, bot, human);
 
                     bool followBlocked = bot->IsInCombat() || bot->IsBeingTeleported() ||
-                        bot->IsTaxiFlying() || bot->GetTransport();
+                        bot->IsTaxiFlying() || bot->GetTransport() ||
+                        bot->IsNonMeleeSpellCasted(false) || !bot->GetPlayerbotAI()->CanMove();
                     if (!followBlocked)
                     {
                         if (session.lastFollowProgress.time_since_epoch().count() == 0 ||
-                            distance + 1.5f < session.lastHumanDistance)
+                            followError + 1.5f < session.lastHumanDistance ||
+                            (moved && bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE &&
+                             sServerFacade.GetChaseTarget(bot) == human))
                         {
-                            session.lastHumanDistance = distance;
+                            session.lastHumanDistance = followError;
                             session.lastFollowProgress = now;
                         }
                         long stalled = std::chrono::duration_cast<std::chrono::seconds>(
                             now - session.lastFollowProgress).count();
-                        if (sameMap && distance > 20.0f && stalled >= 6 &&
+                        if (sameMap && followError > 20.0f && stalled >= 6 &&
                             (session.nextFollowRepair.time_since_epoch().count() == 0 || now >= session.nextFollowRepair))
                         {
-                            bot->GetMotionMaster()->MoveFollow(human, 2.0f, 0.0f, true, false);
+                            FollowAction follow(bot->GetPlayerbotAI());
+                            Event followEvent("living party follow repair");
+                            bool issued = follow.Execute(followEvent);
                             session.nextFollowRepair = now + std::chrono::seconds(6);
                             session.reason = "active_follow_reissued";
-                            LogPartyEvent(session, "active_follow_repaired");
+                            if (issued) LogPartyEvent(session, "active_follow_repaired");
                         }
                         if ((!sameMap || distance > 70.0f) && stalled >= 18)
                         {
