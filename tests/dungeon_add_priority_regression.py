@@ -7,12 +7,13 @@ from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
 source=(root/'playerbot/strategy/actions/DungeonAddTargetAction.cpp').read_text()
 multiplier=(root/'playerbot/strategy/generic/DungeonMultipliers.cpp').read_text()
-methods='\n'.join([block(source,'Unit* DungeonAddTargetAction::GetTarget('),
+methods='\n'.join([block((root/'playerbot/strategy/values/InvalidTargetValue.cpp').read_text(),'bool InvalidTargetValue::Calculate('), block(source,'Unit* DungeonAddTargetAction::GetTarget('),
     block((root/'playerbot/strategy/actions/RaidTotemTargetAction.cpp').read_text(),'Unit* DungeonAddTargetAction::GetRaidTotemTarget('),
     block(source,'bool DungeonAddTargetAction::isUseful('),
     block(multiplier,'float PreserveDungeonAddTargetMultiplier::GetValue(')])
 code=r'''
 #include <cassert>
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <list>
@@ -38,25 +39,26 @@ struct Player;
 struct GroupReference{Player*player=nullptr;GroupReference*following=nullptr;Player*getSource(){return player;}GroupReference*next(){return following;}};
 struct Group{GroupReference*first=nullptr;GroupReference*GetFirstMember(){return first;}};
 struct Map {bool regular=true;bool IsRegularDifficulty(){return regular;}};
-struct Player:Unit {Player(){player=true;}bool teleport=false;Group*group=nullptr;
+struct Player:Unit {Player(){player=true;}bool teleport=false;Group*group=nullptr;ObjectGuid selection=0;ObjectGuid GetSelectionGuid(){return selection;}
  Map nativeMap;Map*GetMap(){return &nativeMap;}
  bool IsBeingTeleported(){return teleport;}Group*GetGroup(){return group;}unsigned GetMapId(){return map;}
  bool IsInMap(Unit*u){return u&&world&&u->world&&map==u->map&&instance==u->instance&&phase==u->phase;}};
-struct PlayerbotAI {Player*bot;bool real=false,healer=false,tank=false;
+struct PlayerbotAI {Player*bot;bool real=false,healer=false,tank=false,dungeon=true;bool HasStrategy(std::string,int){return dungeon;}
  std::list<ObjectGuid> possible;std::map<ObjectGuid,Unit*>units;ObjectGuid command=0;Unit*marked=nullptr;Unit*current=nullptr;Unit*objective=nullptr;
  bool IsRealPlayer(){return real;}bool IsHeal(Player*){return healer;}bool IsTank(Player*){return tank;}
  Unit* GetUnit(ObjectGuid id){auto i=units.find(id);return i==units.end()?nullptr:i->second;}
  template<class T>T Value(std::string key){
   if constexpr(std::is_same_v<T,ObjectGuid>){assert(key=="attack target");return command;}
-  else if constexpr(std::is_same_v<T,Unit*>){assert(key=="rti target"||key=="current target");return key=="rti target"?marked:current;}
-  else {assert(key=="possible targets");return possible;}}
+  else if constexpr(std::is_same_v<T,Unit*>){assert(key=="rti target"||key=="current target"||key=="duel target");return key=="duel target"?nullptr:key=="rti target"?marked:current;}
+  else {assert(key=="possible targets"||key=="possible attack targets");return key=="possible targets"?possible:std::list<ObjectGuid>{};}}
 };
 struct Config{float sightDistance=60;}sPlayerbotAIConfig;
 struct PossibleTargetsValue {
- static bool IsValid(Unit*u,Player*,bool ignoreLos){assert(!ignoreLos);return u->attackable&&u->freeAttack&&!u->friendly;}
+ static bool IsValid(Unit*u,Player*,bool ignoreLos){return u&&u->world&&u->alive&&u->attackable&&u->freeAttack&&!u->friendly;}
 };
 struct ServerFacade{bool IsFriendlyTo(Unit*u,Player*){return u->friendly;}}sServerFacade;
 struct PossibleAttackTargetsValue {
+ static bool IsValid(Unit*u,Player*){return u->victim!=nullptr;}
  static bool IsPossibleTarget(Unit*u,Player*p,float range,bool ignoreCC){assert(ignoreCC==(p->map==533||p->map==574||p->map==604||p->map==631));return !u->immune&&!u->assignedCC&&p->GetDistance(u)<=range;}
  static bool HasBreakableCC(Unit*u,Player*){return u->breakCC;}
  static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}
@@ -66,6 +68,9 @@ struct InnerDemonAction{static Unit* GetDemon(PlayerbotAI*){return nullptr;}};
 struct DungeonAddTargetAction {PlayerbotAI*ai;Player*bot;DungeonAddTargetAction(PlayerbotAI*a):ai(a),bot(a->bot){}
  Unit*GetTarget();bool isUseful();Unit*GetThekalTarget(){return nullptr;}Unit*GetGluthTarget(){return nullptr;}Unit*GetSummonObjectiveTarget(){return ai->objective;}Unit*GetRaidTotemTarget();Unit*GetTwinEmperorTarget(){return nullptr;}Unit*GetIcecrownAddTarget(){return nullptr;}};
 struct PreserveDungeonAddTargetMultiplier{PlayerbotAI*ai;float GetValue(Action*);};
+struct BotState{enum{BOT_STATE_COMBAT};};
+struct MeleeCcCheck{MeleeCcCheck(PlayerbotAI*){}bool Protected(Unit*u){return u->assignedCC;}};
+struct InvalidTargetValue{PlayerbotAI*ai;Player*bot;std::string qualifier="current target";bool Calculate();};
 #define AI_VALUE(type,key) ai->Value<type>(key)
 __METHODS__
 int main(){
@@ -81,6 +86,47 @@ int main(){
   bot.teleport=true;assert(!action.GetTarget());bot.teleport=false;
   bot.combat=false;assert(!action.GetTarget());bot.combat=true;
   ai.objective=nullptr;assert(!action.GetTarget());
+ }
+
+ // Passive ZF wards are selected and remain valid across the next AI tick.
+ {
+  Group group,other;Player bot,tank;bot.map=tank.map=209;bot.group=tank.group=&group;
+  Unit doctor,ward,second;doctor.guid=1;doctor.map=209;doctor.entry=5650;doctor.victim=&tank;
+  ward.guid=2;ward.map=209;ward.entry=8179;ward.spawner=1;ward.combat=false;ward.x=5;
+  second=ward;second.guid=3;second.x=10;
+  PlayerbotAI ai{&bot};ai.units={{1,&doctor},{2,&ward},{3,&second}};ai.possible={1,2,3};
+  DungeonAddTargetAction action(&ai);PreserveDungeonAddTargetMultiplier preserve{&ai};
+  Action assist{"dps assist"},heal{"heal"},tankAssist{"tank assist"};
+  InvalidTargetValue invalid{&ai,&bot};
+  assert(action.GetTarget()==&ward&&action.isUseful());
+  ai.current=&ward;bot.selection=ward.guid;
+  assert(!invalid.Calculate()&&!action.isUseful());
+  assert(preserve.GetValue(&assist)==0&&preserve.GetValue(&heal)==1&&preserve.GetValue(&tankAssist)==1);
+  ai.current=&second;bot.selection=second.guid;assert(action.GetTarget()==&second&&!invalid.Calculate());
+  ai.current=&ward;bot.selection=ward.guid;ai.possible={1,2};
+  auto rejected=[&](){assert(!action.GetTarget()&&invalid.Calculate()&&preserve.GetValue(&assist)==1);};
+  ai.healer=true;rejected();ai.healer=false;ai.tank=true;rejected();ai.tank=false;
+  doctor.spawner=0;doctor.victim=&bot;assert(action.GetTarget()==&ward);doctor.victim=&tank;
+  doctor.victim=nullptr;rejected();doctor.victim=&tank;
+  doctor.entry=8127;rejected();doctor.entry=5650;
+  doctor.combat=false;rejected();doctor.combat=true;
+  tank.group=&other;rejected();tank.group=&group;
+  ward.spawner=99;rejected();ward.spawner=1;
+  ward.map=1;rejected();ward.map=209;ward.instance=2;rejected();ward.instance=1;
+  ward.x=61;rejected();ward.x=5;
+  for(bool Unit::*field:{&Unit::world,&Unit::alive,&Unit::attackable,&Unit::freeAttack}){
+   ward.*field=false;rejected();ward.*field=true;
+  }
+  for(bool Unit::*field:{&Unit::friendly,&Unit::charmed,&Unit::assignedCC,&Unit::immune}){
+   ward.*field=true;rejected();ward.*field=false;
+  }
+  ai.command=1;rejected();ai.command=0;ai.marked=&doctor;rejected();ai.marked=nullptr;
+  ai.dungeon=false;assert(invalid.Calculate());ai.dungeon=true;
+  bot.selection=doctor.guid;assert(invalid.Calculate());bot.selection=ward.guid;
+  bot.combat=false;rejected();bot.combat=true;
+  bot.teleport=true;rejected();bot.teleport=false;
+  ward.alive=false;assert(preserve.GetValue(&assist)==1);ward.alive=true;
+  assert(action.GetTarget()==&ward&&!invalid.Calculate());
  }
  struct TotemCase{unsigned map,owner,entry;};
  for(TotemCase row:{TotemCase{548,21965,22091},{548,21214,22091},{568,23577,24224}}){

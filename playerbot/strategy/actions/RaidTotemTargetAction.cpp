@@ -8,12 +8,12 @@ using namespace ai;
 
 Unit* DungeonAddTargetAction::GetRaidTotemTarget()
 {
-#ifdef MANGOSBOT_ZERO
-    return nullptr;
-#else
     uint32 entry = 0;
-    if (bot->GetMapId() == 548) entry = 22091;
+    if (bot->GetMapId() == 209) entry = 8179; // Greater Healing Ward (spell 11899).
+#ifndef MANGOSBOT_ZERO
+    else if (bot->GetMapId() == 548) entry = 22091;
     else if (bot->GetMapId() == 568) entry = 24224;
+#endif
     else return nullptr;
     if (!bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() || !bot->GetGroup() ||
         bot->HasCharmer() || bot->IsBeingTeleported()) return nullptr;
@@ -32,15 +32,15 @@ Unit* DungeonAddTargetAction::GetRaidTotemTarget()
         // Spitfire after Tidalvess dies, so either real owner can identify it.
         Unit* owner = ai->GetUnit(totem->GetSpawnerGuid());
         if (!live(owner) || !owner->IsInCombat() || owner->GetDistance(totem) > 100 ||
+            (entry == 8179 && owner->GetEntry() != 5650) ||
             (entry == 22091 && owner->GetEntry() != 21965 && owner->GetEntry() != 21214) ||
             (entry == 24224 && owner->GetEntry() != 23577)) continue;
         Unit* victim = owner->GetVictim();
-        if (!live(victim) || victim == bot || !victim->IsPlayer() ||
+        if (!live(victim) || (entry != 8179 && victim == bot) || !victim->IsPlayer() ||
             static_cast<Player*>(victim)->IsBeingTeleported() ||
             static_cast<Player*>(victim)->GetGroup() != bot->GetGroup()) continue;
         if (!selected || totem == current || (selected != current && bot->GetDistance(totem) < bot->GetDistance(selected)))
             selected = totem;
     }
     return selected;
-#endif
 }
