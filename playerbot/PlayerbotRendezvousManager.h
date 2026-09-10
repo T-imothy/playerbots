@@ -42,6 +42,7 @@ private:
         std::string state;
         std::string reason;
         bool relocated = false;
+        bool approachIssued = false;
         std::chrono::steady_clock::time_point stateSince;
     };
 

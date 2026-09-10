@@ -377,6 +377,7 @@ bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Playe
 
     session.state = "approaching";
     session.stateSince = now;
+    session.approachIssued = false;
     return true;
 }
 
@@ -468,7 +469,23 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
             else if (session.state == "pending")
             {
                 session.playerGuid = human->GetGUIDLow();
-                if (!StartPartyApproach(session, bot, human) &&
+                // A party can receive several accepted invitations in the same
+                // few world ticks. Serialize hidden relocations and their
+                // movement-generator handoff so one arrival is fully stable
+                // before the next bot starts. This also produces believable
+                // staggered arrivals instead of a pile of bots at one point.
+                bool arrivalInProgress = false;
+                for (const auto& other : partySessions)
+                {
+                    const PartySession& otherSession = other.second;
+                    if (otherSession.botGuid != session.botGuid && otherSession.groupId == session.groupId &&
+                        otherSession.playerGuid == session.playerGuid && otherSession.state == "approaching")
+                    {
+                        arrivalInProgress = true;
+                        break;
+                    }
+                }
+                if (!arrivalInProgress && !StartPartyApproach(session, bot, human) &&
                     std::chrono::duration_cast<std::chrono::seconds>(now - session.stateSince).count() >= 30)
                 {
                     // If a safe hidden catch-up is not available, ordinary
@@ -488,8 +505,14 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                         session.stateSince = now;
                         LogPartyEvent(session, "arrived");
                     }
-                    else if (!bot->IsInCombat() && !bot->IsBeingTeleported())
+                    else if (!session.approachIssued && !bot->IsInCombat() && !bot->IsBeingTeleported())
+                    {
+                        // Do not replace the follow movement generator every
+                        // world update. Playerbots' normal party strategies can
+                        // resume it if another authoritative action interrupts.
                         bot->GetMotionMaster()->MoveFollow(human, 2.0f, 0.0f, true, false);
+                        session.approachIssued = true;
+                    }
                 }
             }
         }
