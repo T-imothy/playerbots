@@ -1592,17 +1592,30 @@ bool RequestQuestTurninTargetAction::Execute(Event& event)
                 if (!destination || destination->GetQuestId() != questId ||
                     std::find(questTakerEntries.begin(), questTakerEntries.end(), destination->GetEntry()) == questTakerEntries.end())
                     continue;
-                auto pointRange = destination->GetClosestPartition(center, partitions);
-                if (!pointRange.first)
-                    continue;
-                for (WorldPosition* position : pointRange.second)
+                // This destination is already the exact authoritative taker
+                // for a completed, rewardable quest. Use its real spawn points
+                // directly instead of the generic area-level spatial filter,
+                // which can reject low-level gameobject turn-ins such as
+                // Bitter Rivals. Movement still performs normal path checks.
+                for (WorldPosition* position : destination->GetPoints())
                 {
-                    if (!position || !TravelMgr::IsLocationLevelValid(*position, travelInfo))
+                    if (!position)
                         continue;
                     float distance = position->distance(center);
                     if (distance <= 0.0f || distance > range)
                         continue;
-                    list[pointRange.first].push_back(TravelPoint(destination, position, distance));
+                    uint32 partition = 0;
+                    for (uint32 boundary : partitions)
+                    {
+                        if (distance <= boundary)
+                        {
+                            partition = boundary;
+                            break;
+                        }
+                    }
+                    if (!partition)
+                        continue;
+                    list[partition].push_back(TravelPoint(destination, position, distance));
                 }
             }
             return list;
