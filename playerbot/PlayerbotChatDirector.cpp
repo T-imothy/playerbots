@@ -3615,7 +3615,15 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
                     sPlayerbotRendezvousManager.Request(
                         member, organizer, "guild-event:" + eventId, false);
                 }
-                if (GuildEventAssembledSize(organizer) >= minimumMembers)
+                // Do not release the organizer as soon as the minimum viable
+                // count arrives. ApplyGuildPlans has already committed every
+                // available member in this group to the event; if the route
+                // starts while only the first member is close, the remaining
+                // rendezvous sessions have to chase a moving organizer and
+                // the party can remain permanently split. Offline members are
+                // excluded by GuildEventGroupSize, so require every currently
+                // participating member to be physically assembled.
+                if (GuildEventAssembledSize(organizer) >= groupSize)
                     nextState = "active";
                 else if (state == "forming")
                     nextState = "traveling";
