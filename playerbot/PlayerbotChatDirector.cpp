@@ -674,12 +674,12 @@ static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandid
     }
 
     if (state.humanMembers.empty() && speaker->GetGroup() != group && !bot->GetMap()->IsDungeon() &&
-        !bot->InBattleGround() && !bot->IsTaxiFlying())
+        !bot->InBattleGround())
     {
         std::ostringstream ref;
         ref << "group:leave-ai-for-player:" << state.groupId << ':' << speaker->GetGUIDLow();
         AddSocialCapability(candidate, ref.str(), "leave_ai_party_for_player", state.groupId,
-            bot->GetGUIDLow(), 0, "Leave this AI-only party for the requesting player. If combat is active, wait until it ends, then confirm only after the bot is actually ungrouped.");
+            bot->GetGUIDLow(), 0, "Leave this AI-only party for the requesting player. Wait for combat, flights, boats, zeppelins or map transfers to end safely. Confirm only after actually leaving; explain any delay or timeout.");
     }
 
     if (speaker->GetGroup() == group)

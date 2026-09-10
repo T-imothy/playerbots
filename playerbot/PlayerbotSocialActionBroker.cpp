@@ -1,5 +1,6 @@
 #include "botpch.h"
 #include "PlayerbotSocialActionBroker.h"
+#include "PartyReleaseReadiness.h"
 
 #include "PlayerbotActionBroker.h"
 #include "PlayerbotAI.h"
@@ -148,7 +149,7 @@ static bool LeaveAiOnlyParty(Player* bot, uint32 expectedGroupId)
     Group* group = bot ? bot->GetGroup() : nullptr;
     if (!bot || !group || group->GetId() != expectedGroupId || GroupHasRealHuman(group) ||
         bot->IsInCombat() || bot->GetMap()->IsDungeon() || bot->InBattleGround() ||
-        bot->IsTaxiFlying() || bot->GetTransport())
+        bot->IsTaxiFlying() || bot->GetTransport() || bot->IsBeingTeleported())
         return false;
 
     WorldPacket packet;
@@ -794,13 +795,25 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
         action.groupId = groupId;
         Group* group = bot->GetGroup();
         if (group && group->GetId() == groupId && !GroupHasRealHuman(group) &&
-            !bot->GetMap()->IsDungeon() && !bot->InBattleGround() && !bot->IsTaxiFlying() && !bot->GetTransport())
+            !bot->GetMap()->IsDungeon() && !bot->InBattleGround())
         {
-            if (bot->IsInCombat())
+            const auto blocker = living_party_release::Classify(bot->IsInCombat(),
+                bot->GetTransport() != nullptr, bot->IsTaxiFlying(), bot->IsBeingTeleported());
+            for (const auto& pair : actions)
+                if (pair.second.botGuid == bot->GetGUIDLow() && pair.second.state == "waiting_to_leave_ai_party")
+                {
+                    SendSocialWhisper(bot, player, pair.second.playerGuid == player->GetGUIDLow() ?
+                        living_party_release::Waiting(blocker) : "I'm already arranging to join another party.");
+                    action.state = "rejected";
+                    action.failureReason = "release_already_pending";
+                    Report(action);
+                    return false; // Do not extend or duplicate the original request.
+                }
+            if (blocker != living_party_release::Blocker::ready)
             {
                 action.state = "waiting_to_leave_ai_party";
-                SendSocialWhisper(bot, player,
-                    "I'm in a fight right now. I'll leave this group when it's safe, then let you know.");
+                action.failureReason = living_party_release::Code(blocker);
+                SendSocialWhisper(bot, player, living_party_release::Waiting(blocker));
                 actions[action.actionId] = action;
                 Report(actions[action.actionId]);
                 return true;
@@ -1263,6 +1276,8 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
     action.state = completed ? "completed" : "rejected";
     if (!completed && action.failureReason.empty())
         action.failureReason = "authoritative group or quest state no longer permits the action";
+    if (!completed && proposal.type == "leave_ai_party_for_player")
+        SendSocialWhisper(bot, player, "I couldn't safely change parties because my group or travel state changed. Please ask me again when I'm clear.");
     actions[action.actionId] = action;
     Report(actions[action.actionId]);
     return completed;
@@ -1435,17 +1450,30 @@ void PlayerbotSocialActionBroker::Update()
             Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
             Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
             Group* group = bot ? bot->GetGroup() : nullptr;
+            const auto blocker = bot ? living_party_release::Classify(bot->IsInCombat(),
+                bot->GetTransport() != nullptr, bot->IsTaxiFlying(), bot->IsBeingTeleported()) :
+                living_party_release::Blocker::ready;
             if (!bot || !player || !ValidateCommon(bot, player, false) || !group || group->GetId() != action.groupId ||
                 GroupHasRealHuman(group))
             {
                 action.state = "rejected";
                 action.failureReason = group && GroupHasRealHuman(group) ? "a human joined the party" :
                     "party or character state changed before release";
+                if (bot && player && bot->IsInWorld() && player->IsInWorld())
+                    SendSocialWhisper(bot, player, "My party situation changed, so I cancelled the request to leave. Please check with me again.");
                 Report(action);
             }
-            else if (!bot->IsInCombat() && LeaveAiOnlyParty(bot, action.groupId))
+            else if (now >= action.expires)
+            {
+                action.state = "expired";
+                action.failureReason = std::string("release_timeout:") + living_party_release::Code(blocker);
+                SendSocialWhisper(bot, player, living_party_release::Expired(blocker));
+                Report(action);
+            }
+            else if (blocker == living_party_release::Blocker::ready && LeaveAiOnlyParty(bot, action.groupId))
             {
                 action.state = "completed";
+                action.failureReason.clear();
                 action.completedAt = now;
                 ReserveForPlayer(bot->GetGUIDLow(), player->GetGUIDLow());
                 SendSocialWhisper(bot, player, bot->IsAlive() ?
@@ -1453,10 +1481,16 @@ void PlayerbotSocialActionBroker::Update()
                     "I'm free now, but I'm dead and recovering. You can invite me.");
                 Report(action);
             }
-            else if (now >= action.expires)
+            else if (blocker == living_party_release::Blocker::ready)
             {
-                action.state = "expired";
-                action.failureReason = "could not safely leave the AI-only party before the offer expired";
+                action.state = "rejected";
+                action.failureReason = "release_safety_changed";
+                SendSocialWhisper(bot, player, "I can't safely leave this party here. I'm still grouped; please ask me again outside the instance.");
+                Report(action);
+            }
+            else if (action.failureReason != living_party_release::Code(blocker))
+            {
+                action.failureReason = living_party_release::Code(blocker);
                 Report(action);
             }
         }
