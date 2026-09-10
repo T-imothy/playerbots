@@ -3641,7 +3641,8 @@ void RandomPlayerbotMgr::OnPlayerLogin(Player* player)
                 {
                     ai->SetMaster(player);
                     ai->ResetStrategies();
-                    ai->TellPlayer(ai->GetMaster(), BOT_TEXT("hello"));
+                    if (!sPlayerbotAIConfig.chatDirectorV2)
+                        ai->TellPlayer(ai->GetMaster(), BOT_TEXT("hello"));
                 }
                 break;
             }

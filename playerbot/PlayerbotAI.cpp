@@ -2194,11 +2194,11 @@ void PlayerbotAI::DoNextAction(bool min)
                 ChangeStrategy("+" + defaultMovementStrategy, BotState::BOT_STATE_NON_COMBAT);
             }
 
-            if (GetMaster() == GetGroupMaster())
+            if (!sPlayerbotAIConfig.chatDirectorV2 && GetMaster() == GetGroupMaster())
             {
                 TellPlayer(master, BOT_TEXT("hello_follow"));
             }
-            else
+            else if (!sPlayerbotAIConfig.chatDirectorV2)
             {
                 TellPlayer(master, BOT_TEXT("hello"));
             }

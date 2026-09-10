@@ -489,7 +489,8 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
     // set delay on login
     ai->SetActionDuration(urand(2000, 4000));
 
-    ai->TellPlayer(ai->GetMaster(), BOT_TEXT("hello"));
+    if (!sPlayerbotAIConfig.chatDirectorV2)
+        ai->TellPlayer(ai->GetMaster(), BOT_TEXT("hello"));
 
     JoinChatChannels(bot);
 

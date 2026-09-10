@@ -162,7 +162,8 @@ bool QuestAction::ProcessQuests(WorldObject* questGiver)
     if (sServerFacade.GetDistance2d(bot, questGiver) > INTERACTION_DISTANCE && !sPlayerbotAIConfig.syncQuestWithPlayer)
     {
         Player* master = ai->GetMaster();
-        if (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+        if (!sPlayerbotAIConfig.chatDirectorV2 &&
+            (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT)))
             ai->TellPlayerNoFacing(master, BOT_TEXT("quest_error_talk"));
 
         return false;

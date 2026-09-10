@@ -452,11 +452,14 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
     }
 
     std::vector<std::string> payloads;
-    for (size_t start = 0; start < samples.size(); start += 100)
+    // Keep telemetry requests comfortably below the gateway's 64 KiB v2 body
+    // limit. Current-action diagnostics can be several hundred bytes per bot.
+    static constexpr size_t healthBatchSize = 25;
+    for (size_t start = 0; start < samples.size(); start += healthBatchSize)
     {
         std::ostringstream body;
         body << "{\"samples\":[";
-        for (size_t i = start; i < samples.size() && i < start + 100; ++i)
+        for (size_t i = start; i < samples.size() && i < start + healthBatchSize; ++i)
         {
             if (i != start) body << ',';
             body << samples[i];
