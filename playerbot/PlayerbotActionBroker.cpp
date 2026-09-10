@@ -223,6 +223,7 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
         bot->GetPlayerbotAI()->DoSpecificAction("conjure water", Event("chat action conjure", "", player), true);
     else if (proposal.delivery == "direct")
     {
+        bot->GetPlayerbotAI()->StopMoving();
         WorldPacket packet(CMSG_INITIATE_TRADE);
         packet << player->GetObjectGuid();
         bot->GetSession()->HandleInitiateTradeOpcode(packet);
@@ -241,6 +242,7 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
         if (bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
         {
             active.state = "offered";
+            bot->GetPlayerbotAI()->StopMoving();
             WorldPacket packet(CMSG_INITIATE_TRADE);
             packet << player->GetObjectGuid();
             bot->GetSession()->HandleInitiateTradeOpcode(packet);
@@ -270,6 +272,7 @@ bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
     Transaction* transaction = bot && trader ? Find(bot->GetGUIDLow(), trader->GetGUIDLow()) : nullptr;
     if (!transaction || !bot->GetTradeData() || bot->GetTrader() != trader)
         return false;
+    TradeData* trade = bot->GetTradeData();
     if (transaction->type == "buy_item")
     {
         if (bot->GetMoney() < transaction->priceCopper)
@@ -277,10 +280,8 @@ bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
             CancelTrade(bot, trader, "reserved funds became unavailable");
             return false;
         }
-        WorldPacket gold(CMSG_SET_TRADE_GOLD, 4);
-        gold << transaction->priceCopper;
-        bot->GetSession()->HandleSetTradeGoldOpcode(gold);
-        if (!bot->GetTradeData() || bot->GetTradeData()->GetMoney() != transaction->priceCopper)
+        trade->SetMoney(transaction->priceCopper);
+        if (trade->GetMoney() != transaction->priceCopper)
             return false;
         transaction->state = "trading";
         transaction->failureReason.clear();
@@ -327,12 +328,17 @@ bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
         transaction->itemGuid = split->GetGUIDLow();
         reservedItems[transaction->itemGuid] = transaction->transactionId;
     }
-    WorldPacket packet(CMSG_SET_TRADE_ITEM, 3);
-    packet << (uint8)0 << (uint8)item->GetBagSlot() << (uint8)item->GetSlot();
-    bot->GetSession()->HandleSetTradeItemOpcode(packet);
-    offered = bot->GetTradeData() ? bot->GetTradeData()->GetItem((TradeSlots)0) : nullptr;
+    trade->SetItem((TradeSlots)0, item);
+    offered = trade->GetItem((TradeSlots)0);
     if (!offered || offered->GetGUIDLow() != transaction->itemGuid || offered->GetCount() != transaction->quantity)
+    {
+        if (transaction->failureReason != "server could not populate the promised trade item")
+        {
+            transaction->failureReason = "server could not populate the promised trade item";
+            Report(*transaction);
+        }
         return false;
+    }
 
     transaction->state = "trading";
     transaction->failureReason.clear();
@@ -562,6 +568,7 @@ void PlayerbotActionBroker::Update()
         if (transaction.state == "meeting" && bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
         {
             transaction.state = "offered";
+            bot->GetPlayerbotAI()->StopMoving();
             WorldPacket packet(CMSG_INITIATE_TRADE);
             packet << player->GetObjectGuid();
             bot->GetSession()->HandleInitiateTradeOpcode(packet);
@@ -571,6 +578,8 @@ void PlayerbotActionBroker::Update()
         }
         if (transaction.state == "offered" && bot->GetTradeData() && bot->GetTrader() == player)
             PopulateTrade(bot, player);
+        if ((transaction.state == "offered" || transaction.state == "trading") && bot->GetTrader() == player)
+            bot->GetPlayerbotAI()->StopMoving();
         if ((transaction.state == "mail_travel" || transaction.state == "meeting" || transaction.state == "offered" || transaction.state == "trading") && now >= transaction.expires)
         {
             transaction.state = "expired";
