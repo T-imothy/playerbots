@@ -1620,6 +1620,11 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             state.x = bot->GetPositionX();
             state.y = bot->GetPositionY();
             state.lastMoved = now;
+            if (state.nearbyRerouteResult == "requested")
+            {
+                state.nearbyRerouteResult = "movement_confirmed";
+                state.objectiveRouteFailures = 0;
+            }
         }
         std::string action = bot->GetPlayerbotAI()->HandleRemoteCommand("action");
         std::string lowered = boost::algorithm::to_lower_copy(action);
@@ -1695,6 +1700,9 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         if (levelChanged || xpChanged || questProgressChanged || travelAdvanced)
         {
             state.lastMeaningfulProgress = now;
+            state.objectiveRouteFailures = 0;
+            if (state.nearbyRerouteResult != "movement_confirmed")
+                state.nearbyRerouteResult.clear();
             // Unrelated XP, levels, or another quest changing must not discard
             // an exact turn-in task that is still authoritatively pending.
             // That race repeatedly pulled canaries away before they reached
@@ -1706,6 +1714,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 state.recoveryStep = 0;
                 state.questItemFollowup = false;
                 state.recoveryQuestId = 0;
+                state.recoveryStartedAt = std::chrono::steady_clock::time_point();
                 state.recoveryInteractionAttempts = 0;
                 state.lastRecoveryInteraction = std::chrono::steady_clock::time_point();
                 state.recoveryResult.clear();
@@ -1783,10 +1792,22 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             (!globalRecovery || recoveryCanary || recoverySweepMember);
         TravelTarget* inFlightRecoveryTarget = observedTravelTarget;
         TravelStatus inFlightRecoveryStatus = observedTravelStatus;
+        long recoveryAgeSeconds = state.recoveryStartedAt.time_since_epoch().count() == 0 ? 0 :
+            std::chrono::duration_cast<std::chrono::seconds>(now - state.recoveryStartedAt).count();
+        long travelAdvanceAgeSeconds = state.lastTravelAdvance.time_since_epoch().count() == 0 ?
+            recoveryAgeSeconds : std::chrono::duration_cast<std::chrono::seconds>(
+                now - state.lastTravelAdvance).count();
+        bool recoveryPrepareTimedOut = state.recoveryStep > 0 &&
+            inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_PREPARE &&
+            recoveryAgeSeconds >= 2 * (long)sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
+        bool recoveryMovementTimedOut = state.recoveryStep > 0 && observedTravelActive && !excluded &&
+            stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds &&
+            travelAdvanceAgeSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
         bool recoveryRouteTerminal = state.recoveryStep > 0 &&
             (inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_NONE ||
              inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_COOLDOWN ||
-             inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_EXPIRED);
+             inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_EXPIRED ||
+             recoveryPrepareTimedOut || recoveryMovementTimedOut);
         if (recoveryRouteTerminal)
         {
             uint32 terminalStep = state.recoveryStep;
@@ -1796,6 +1817,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 state.questItemFollowup = true;
             std::string terminalResult = terminalStep == 3 ? "quest_turnin_route_terminal" :
                 (terminalStep == 5 ? "vendor_route_terminal" : "objective_route_terminal");
+            state.recoveryTerminalReason = recoveryPrepareTimedOut ? "prepare_timeout" :
+                (recoveryMovementTimedOut ? "movement_timeout" : "status_terminal");
             // A terminal target remains the authoritative travel value until it
             // is explicitly replaced. Merely releasing recoveryStep left the
             // normal travel strategy evaluating the same cooldown/expired
@@ -1818,6 +1841,36 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     terminalResult += "_deferred";
                 }
             }
+            if (terminalStep == 2)
+            {
+                ++state.objectiveRouteFailures;
+                if (state.objectiveRouteFailures >= 2)
+                {
+                    bool nearbyHuman = false;
+                    const std::list<ObjectGuid>& nearbyPlayers = bot->GetPlayerbotAI()->GetAiObjectContext()->
+                        GetValue<std::list<ObjectGuid> >("nearest non bot players")->Get();
+                    for (ObjectGuid const& nearbyGuid : nearbyPlayers)
+                    {
+                        Player* nearby = sObjectAccessor.FindPlayer(nearbyGuid);
+                        if (nearby && nearby->GetMapId() == bot->GetMapId() &&
+                            bot->GetDistance(nearby) <= 60.0f)
+                        {
+                            nearbyHuman = true;
+                            break;
+                        }
+                    }
+                    if (bot->GetGroup())
+                        state.nearbyRerouteResult = "skipped_grouped";
+                    else if (nearbyHuman)
+                        state.nearbyRerouteResult = "skipped_human_nearby";
+                    else
+                    {
+                        bool nudged = bot->GetPlayerbotAI()->DoSpecificAction(
+                            "move random", Event("living progression nearby reroute"), true);
+                        state.nearbyRerouteResult = nudged ? "requested" : "rejected";
+                    }
+                }
+            }
             state.recoveryResult = terminalResult +
                 (terminalCleared ? "_cleared" : "_clear_rejected");
             if (routeQuestId == (int)terminalQuestId && !routeOutcome.empty())
@@ -1828,6 +1881,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             // next bounded sweep choose a fresh, reason-specific action.
             state.recoveryStep = 0;
             state.recoveryQuestId = 0;
+            state.recoveryStartedAt = std::chrono::steady_clock::time_point();
             state.recoveryInteractionAttempts = 0;
             state.lastRecoveryInteraction = std::chrono::steady_clock::time_point();
             state.travelTargetPosition.clear();
@@ -1931,6 +1985,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 state.lastRecovery = now;
                 state.recoveryAttempts.push_back(now);
                 state.recoveryResult = recovery;
+                if (state.recoveryStep > 0)
+                    state.recoveryStartedAt = now;
                 if (recovered)
                 {
                     state.lastMoved = now;
@@ -2174,6 +2230,14 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recovery_target_quest_title\":\"" << PlayerbotLLMInterface::SanitizeForJson(diagnosticQuestTitle)
              << "\",\"deferred_turnin_count\":" << deferredTurninCount
              << ",\"recovery_target_status\":" << (uint32)recoveryStatus
+             << ",\"recovery_route_age_seconds\":" << recoveryAgeSeconds
+             << ",\"recovery_route_timed_out\":" <<
+                ((recoveryPrepareTimedOut || recoveryMovementTimedOut) ? "true" : "false")
+             << ",\"recovery_terminal_reason\":\"" <<
+                PlayerbotLLMInterface::SanitizeForJson(state.recoveryTerminalReason) << "\""
+             << ",\"objective_route_failures\":" << state.objectiveRouteFailures
+             << ",\"nearby_reroute_result\":\"" <<
+                PlayerbotLLMInterface::SanitizeForJson(state.nearbyRerouteResult) << "\""
              << ",\"turnin_route_quest_id\":" << futureTurninQuestId
              << ",\"turnin_route_outcome\":\"" << PlayerbotLLMInterface::SanitizeForJson(futureTurninOutcome)
              << "\",\"turnin_route_range_count\":" << futureTurninRanges

@@ -69,6 +69,26 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     ai->TellDebug(ai->GetMaster(), "Got " + std::to_string(destinationList.size()) + " new destination ranges for " + futureTravelPurposeName, "debug travel");
 
     TravelTarget newTarget = TravelTarget(ai);
+    bool validatedTurninSelection = false;
+
+    if (turninRouteDiagnostic)
+    {
+        uint32 questId = (uint32)AI_VALUE2(int, "manual int", "future travel quest id");
+        Quest const* quest = questId ? sObjectMgr.GetQuestTemplate(questId) : nullptr;
+        if (!quest || bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE ||
+            !bot->CanRewardQuest(quest, false))
+        {
+            SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "stale_quest");
+            return false;
+        }
+        // The async request already narrowed the list to this quest's exact
+        // authoritative taker entries and spawn points. Revalidate the quest
+        // on the world thread, then bypass the generic destination IsActive
+        // heuristic, which incorrectly rejects some completed quests even
+        // though CanRewardQuest confirms they are ready to turn in.
+        newTarget.SetForced(true);
+        validatedTurninSelection = true;
+    }
 
     if (futureTravelPurpose == "pvp")
         newTarget.SetForced(true);
@@ -108,6 +128,9 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
         return false;
     }
+
+    if (validatedTurninSelection)
+        newTarget.SetForced(false);
 
     setNewTarget(requester, &newTarget, travelTarget);
     if (turninRouteDiagnostic)

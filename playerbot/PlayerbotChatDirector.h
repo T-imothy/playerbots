@@ -236,6 +236,10 @@ private:
         std::map<uint32, std::chrono::steady_clock::time_point> turninDeferredUntil;
         uint32 recoveryQuestId = 0;
         uint32 recoveryStep = 0;
+        std::chrono::steady_clock::time_point recoveryStartedAt;
+        uint32 objectiveRouteFailures = 0;
+        std::string recoveryTerminalReason;
+        std::string nearbyRerouteResult;
         bool questItemFollowup = false;
         uint32 recoveryInteractionAttempts = 0;
         std::chrono::steady_clock::time_point lastRecoveryInteraction;
