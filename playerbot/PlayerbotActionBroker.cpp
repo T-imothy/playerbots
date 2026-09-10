@@ -2,6 +2,7 @@
 #include "PlayerbotActionBroker.h"
 
 #include "PlayerbotChatDirector.h"
+#include "PlayerbotChatJson.h"
 #include "PlayerbotLLMInterface.h"
 #include "PlayerbotRendezvousManager.h"
 #include "RandomPlayerbotMgr.h"
@@ -122,6 +123,54 @@ const PlayerbotActionBroker::Transaction* PlayerbotActionBroker::Find(uint32 bot
     return nullptr;
 }
 
+void PlayerbotActionBroker::UpsertEconomicQuote(const LivingWowChatJson::EconomicQuote& value, bool update)
+{
+    auto found = economicQuotes.find(value.quoteId);
+    if (update && found == economicQuotes.end()) return;
+    EconomicQuoteState quote = found == economicQuotes.end() ? EconomicQuoteState() : found->second;
+    if (found != economicQuotes.end() && (quote.botGuid != value.botGuid || quote.playerGuid != value.targetGuid ||
+        quote.itemEntry != value.itemId || quote.quantity != value.quantity || quote.direction != value.direction ||
+        quote.capabilityRef != value.capabilityRef)) return;
+    if (found != economicQuotes.end())
+    {
+        bool monotonic = quote.direction == "bot_to_player" ?
+            value.currentPriceCopper <= quote.currentPrice && value.currentPriceCopper >= quote.limitPrice :
+            value.currentPriceCopper >= quote.currentPrice && value.currentPriceCopper <= quote.limitPrice;
+        if (!monotonic || value.roundsUsed < quote.rounds || value.roundsUsed > quote.maximumRounds) return;
+    }
+    quote.quoteId = value.quoteId; quote.state = value.state; quote.botGuid = value.botGuid;
+    quote.playerGuid = value.targetGuid; quote.direction = value.direction; quote.itemEntry = value.itemId;
+    quote.quantity = value.quantity; quote.capabilityRef = value.capabilityRef;
+    quote.openingPrice = value.openingPriceCopper; quote.currentPrice = value.currentPriceCopper;
+    quote.limitPrice = value.limitPriceCopper; quote.rounds = value.roundsUsed;
+    quote.maximumRounds = value.maximumRounds; quote.delivery = value.delivery;
+    quote.freeGiftDisposition = value.freeGiftDisposition;
+    quote.expires = std::chrono::steady_clock::now() + std::chrono::seconds(std::max<uint32>(30, std::min<uint32>(1800, value.expiresInSeconds)));
+    economicQuotes[quote.quoteId] = quote;
+}
+
+void PlayerbotActionBroker::AppendEconomicQuotesJson(uint32 playerGuid,
+    const std::map<uint32, ChatDirectorCandidate>& candidates, std::ostringstream& json) const
+{
+    bool first = true;
+    const auto now = std::chrono::steady_clock::now();
+    for (const auto& pair : economicQuotes)
+    {
+        const EconomicQuoteState& quote = pair.second;
+        if (quote.playerGuid != playerGuid || now >= quote.expires || candidates.find(quote.botGuid) == candidates.end() ||
+            (quote.state != "offered" && quote.state != "countered")) continue;
+        if (!first) json << ','; first = false;
+        json << "{\"quote_id\":\"" << quote.quoteId << "\",\"state\":\"" << quote.state
+             << "\",\"bot_guid\":" << quote.botGuid << ",\"target_guid\":" << quote.playerGuid
+             << ",\"direction\":\"" << quote.direction << "\",\"item_id\":" << quote.itemEntry
+             << ",\"quantity\":" << quote.quantity << ",\"capability_ref\":\"" << quote.capabilityRef
+             << "\",\"opening_price_copper\":" << quote.openingPrice << ",\"current_price_copper\":" << quote.currentPrice
+             << ",\"limit_price_copper\":" << quote.limitPrice << ",\"rounds_used\":" << quote.rounds
+             << ",\"maximum_rounds\":" << quote.maximumRounds << ",\"delivery\":\"" << quote.delivery
+             << "\",\"free_gift_disposition\":\"" << quote.freeGiftDisposition << "\"}";
+    }
+}
+
 PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event)
 {
     auto reject = [](const std::string& code, const std::string& message)
@@ -129,7 +178,8 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
         return PlayerbotActionResult(false, code, message);
     };
     if ((proposal.delivery != "direct" && proposal.delivery != "meeting" && proposal.delivery != "mail") ||
-        (proposal.type != "give_item" && proposal.type != "sell_item" && proposal.type != "buy_item" && proposal.type != "conjure_water"))
+        (proposal.type != "give_item" && proposal.type != "sell_item" && proposal.type != "buy_item" &&
+         proposal.type != "accept_player_gift" && proposal.type != "conjure_water" && proposal.type != "craft_commission"))
         return reject("unsupported_proposal", "I can't handle that kind of transaction.");
     if (proposal.botGuid == 0 || proposal.targetGuid != event.speakerGuid || proposal.quantity == 0)
         return reject("malformed_proposal", "That trade request was incomplete.");
@@ -140,6 +190,23 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
     auto candidate = event.candidates.find(proposal.botGuid);
     if (candidate == event.candidates.end())
         return reject("bot_not_candidate", "I'm not available for that trade now.");
+    EconomicQuoteState* quote = nullptr;
+    if (!proposal.quoteId.empty())
+    {
+        auto found = economicQuotes.find(proposal.quoteId);
+        if (found == economicQuotes.end() || std::chrono::steady_clock::now() >= found->second.expires)
+            return reject("quote_missing_or_expired", "That price quote has expired.");
+        quote = &found->second;
+        bool gift = proposal.type == "accept_player_gift" && quote->direction == "player_to_bot" && proposal.priceCopper == 0;
+        bool matchingType = gift || (proposal.type == "buy_item" && quote->direction == "player_to_bot") ||
+            (proposal.type == "sell_item" && quote->direction == "bot_to_player");
+        if (!matchingType || quote->botGuid != proposal.botGuid || quote->playerGuid != proposal.targetGuid ||
+            quote->capabilityRef != proposal.capabilityRef || quote->quantity != proposal.quantity ||
+            (!gift && quote->currentPrice != proposal.priceCopper))
+            return reject("quote_mismatch", "That agreement no longer matches the active quote.");
+        if (gift && quote->freeGiftDisposition != "accept")
+            return reject("gift_disposition_changed", "I can't accept that as a free gift.");
+    }
     bool negotiatedProposal = proposal.priceCopper != 0 && proposal.proposalId.compare(0, 11, "negotiated-") == 0 &&
         (proposal.type == "sell_item" || proposal.type == "buy_item");
 
@@ -151,7 +218,7 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
             break;
         }
     }
-    if (!offeredCapability && !negotiatedProposal)
+    if (!offeredCapability && !negotiatedProposal && !quote)
         return reject("missing_or_stale_capability", "That offer is no longer available.");
     if (offeredCapability && (proposal.quantity < offeredCapability->minQuantity ||
         proposal.quantity > offeredCapability->maxQuantity))

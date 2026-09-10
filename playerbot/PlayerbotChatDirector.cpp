@@ -1283,6 +1283,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
 
     std::ostringstream json;
     json << "{\"event_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.eventId) << "\",";
+    json << "\"contract_version\":3,\"message_raw\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.message) << "\",";
     json << "\"event_type\":\"" << (event.ambient ? "ambient" : "message") << "\",";
     json << "\"bridge_capabilities\":{\"reply_channel\":true,\"negotiated_price\":true,\"economic_capabilities\":1},";
     json << "\"channel\":{\"type\":\"" << event.channelType << "\",\"name\":\""
@@ -1402,6 +1403,8 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
         }
         json << "]}";
     }
+    json << "],\"active_economic_quotes\":[";
+    sPlayerbotActionBroker.AppendEconomicQuotesJson(event.speakerGuid, event.candidates, json);
     json << "]}";
     return json.str();
 }
@@ -1448,6 +1451,7 @@ std::vector<ChatDirectorActionProposal> PlayerbotChatDirector::ParseActionPropos
         proposal.priceCopper = parsed.priceCopper;
         proposal.delivery = parsed.delivery;
         proposal.intent = parsed.intent;
+        proposal.quoteId = parsed.quoteId;
         proposals.push_back(std::move(proposal));
     }
     return proposals;
@@ -1523,6 +1527,11 @@ void PlayerbotChatDirector::Update()
         }
         std::string response = it->response.get();
         std::vector<ChatDirectorReply> replies = ParseReplies(response);
+        LivingWowChatJson::Envelope envelope;
+        std::string envelopeError;
+        LivingWowChatJson::ParseEnvelope(response, envelope, envelopeError);
+        for (const auto& quote : envelope.economicOffers) sPlayerbotActionBroker.UpsertEconomicQuote(quote, false);
+        for (const auto& quote : envelope.economicQuoteUpdates) sPlayerbotActionBroker.UpsertEconomicQuote(quote, true);
         std::vector<ChatDirectorActionProposal> proposals = ParseActionProposals(response);
         std::map<std::string, bool> created;
         for (const ChatDirectorActionProposal& proposal : proposals)

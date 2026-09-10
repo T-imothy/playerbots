@@ -3,12 +3,15 @@
 
 #include <chrono>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
 class Player;
 
 struct ChatDirectorEvent;
+struct ChatDirectorCandidate;
+namespace LivingWowChatJson { struct EconomicQuote; }
 
 struct ChatDirectorActionProposal
 {
@@ -21,6 +24,7 @@ struct ChatDirectorActionProposal
     uint32 priceCopper = 0;
     std::string delivery;
     std::string intent;
+    std::string quoteId;
 };
 
 struct PlayerbotActionResult
@@ -46,8 +50,19 @@ public:
     void Update();
     void ReportRejected(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event,
         const std::string& reason) const;
+    void UpsertEconomicQuote(const LivingWowChatJson::EconomicQuote& quote, bool update);
+    void AppendEconomicQuotesJson(uint32 playerGuid, const std::map<uint32, ChatDirectorCandidate>& candidates,
+        std::ostringstream& json) const;
 
 private:
+    struct EconomicQuoteState
+    {
+        std::string quoteId, state, direction, capabilityRef, delivery, freeGiftDisposition;
+        uint32 botGuid = 0, playerGuid = 0, itemEntry = 0, quantity = 0;
+        uint32 openingPrice = 0, currentPrice = 0, limitPrice = 0, rounds = 0, maximumRounds = 0;
+        std::chrono::steady_clock::time_point expires;
+    };
+
     struct Transaction
     {
         std::string transactionId;
@@ -76,6 +91,7 @@ private:
     std::map<uint32, std::string> reservedItems;
     std::map<uint32, uint32> reservedMoney;
     std::map<uint32, std::vector<std::chrono::steady_clock::time_point>> giftHistory;
+    std::map<std::string, EconomicQuoteState> economicQuotes;
 };
 
 #define sPlayerbotActionBroker PlayerbotActionBroker::instance()
