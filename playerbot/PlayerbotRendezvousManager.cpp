@@ -551,7 +551,15 @@ PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
     session.started = session.stateSince = now;
 
     float distance = sameMap ? bot->GetDistance(player) : 100000.0f;
-    uint32 triggerSeconds = std::max<uint32>(10, std::min<uint32>(300,
+    // Guild events have a bounded assembly window. Reusing the ordinary
+    // transaction threshold here allowed a member to begin a five-minute run
+    // at the same instant the five-minute event timeout started. Use a short
+    // ordinary approach for these one-way, server-organized rendezvous calls,
+    // then let the existing visibility and safety checks decide whether a
+    // catch-up relocation is allowed. Player trades and party errands retain
+    // the configured threshold and return-trip behavior.
+    const bool guildEvent = actionId.find("guild-event:") == 0;
+    uint32 triggerSeconds = guildEvent ? 10 : std::max<uint32>(10, std::min<uint32>(300,
         sPlayerbotAIConfig.chatDirectorRendezvousTriggerSeconds));
     bool needsCatchup = distance > kRunSpeedYardsPerSecond * triggerSeconds;
     if (needsCatchup)
