@@ -33,6 +33,7 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
         type == "pass_leadership" || type == "leave_group" ||
         type == "leave_ai_party_for_player" ||
         type == "solicit_petition_signatures" ||
+        type == "transfer_guild_leadership" ||
         type == "share_quest" || type == "accept_party_quest_plan" || type == "meet_player" ||
         type == "vendor_bags" || type == "gather_node" || type == "decline_gather_node" ||
         type == "open_chest" || type == "decline_chest" ||
@@ -692,6 +693,35 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
         }
         else
             action.failureReason = "the charter, party, or signature state changed before solicitation";
+    }
+    else if (proposal.type == "transfer_guild_leadership" &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(guild:transfer-leader:([0-9]+):([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow())
+    {
+        uint32 guildId = (uint32)std::stoul(match[3].str());
+        Guild* guild = sGuildMgr.GetGuildById(guildId);
+        if (!guild || bot->GetGuildId() != guildId)
+            action.failureReason = "the named guild is no longer available to this character";
+        else if (guild->GetLeaderGuid() != bot->GetObjectGuid())
+            action.failureReason = "this character is no longer the guild leader";
+        else if (player->GetGuildId() != guildId)
+            action.failureReason = "the requested new leader is not currently a member of this guild";
+        else if (player == bot)
+            action.failureReason = "the requested character already leads this guild";
+        else
+        {
+            completed = bot->GetPlayerbotAI()->DoSpecificAction("guild leader",
+                Event("living guild leadership transfer", player->GetObjectGuid(), player), true);
+            Guild* current = sGuildMgr.GetGuildById(guildId);
+            completed = completed && current && current->GetLeaderGuid() == player->GetObjectGuid();
+            if (completed)
+                sLog.outString("Living WoW guild leadership transferred guild=%u from=%u to=%u requester=%u",
+                    guildId, bot->GetGUIDLow(), player->GetGUIDLow(), player->GetGUIDLow());
+            else
+                action.failureReason = "normal guild rank rules did not permit that leadership transfer";
+        }
     }
     else if (proposal.type == "vendor_bags" &&
         std::regex_match(proposal.capabilityRef, match, std::regex(R"(vendor:([0-9]+):([0-9]+))")) &&

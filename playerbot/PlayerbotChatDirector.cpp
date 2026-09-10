@@ -4,6 +4,7 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotActionBroker.h"
 #include "PlayerbotSocialActionBroker.h"
+#include "PlayerbotNaturalLanguageCapabilityRegistry.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotOrganicEconomy.h"
 #include "PlayerbotInventoryPressure.h"
@@ -254,10 +255,35 @@ static void PopulatePartyPetitionMembers(Player* bot, Group* group, uint32 petit
     }
 }
 
+static void PopulateGuildState(Player* bot, Player* speaker, ChatDirectorCandidate& candidate)
+{
+    if (!bot || !speaker || !bot->GetGuildId())
+        return;
+    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
+    if (!guild)
+        return;
+    candidate.guildId = guild->GetId();
+    candidate.guildName = guild->GetName();
+    candidate.guildLeaderGuid = guild->GetLeaderGuid().GetCounter();
+    candidate.guildRank = bot->GetRank();
+    candidate.guildMemberCount = guild->GetMemberSize();
+    candidate.isGuildLeader = guild->GetLeaderGuid() == bot->GetObjectGuid();
+
+    if (!candidate.isGuildLeader || speaker == bot || speaker->GetGuildId() != candidate.guildId)
+        return;
+    std::ostringstream ref;
+    ref << "guild:transfer-leader:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow()
+        << ':' << candidate.guildId;
+    AddSocialCapability(candidate, ref.str(), "transfer_guild_leadership", 0,
+        bot->GetGUIDLow(), 0, "Transfer leadership of this exact guild to the requesting guild member. "
+        "This consequential action always requires a second scoped confirmation.");
+}
+
 static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandidate& candidate)
 {
     if (!sPlayerbotAIConfig.chatDirectorSocialActions || !bot || !speaker)
         return;
+    PopulateGuildState(bot, speaker, candidate);
     Group* group = bot->GetGroup();
     if (bot->GetMapId() == speaker->GetMapId() && bot->GetZoneId() == speaker->GetZoneId() &&
         !bot->IsWithinDistInMap(speaker, INTERACTION_DISTANCE))
@@ -2140,14 +2166,18 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
     Player* conversationSpeaker = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, event.speakerGuid));
     uint32 partyId = conversationSpeaker && conversationSpeaker->GetGroup() ?
         conversationSpeaker->GetGroup()->GetId() : 0;
-    std::string partySessionId = partyId ? "party:" + std::to_string(partyId) : "";
+    uint32 speakerGuildId = conversationSpeaker ? conversationSpeaker->GetGuildId() : 0;
+    std::string partySessionId = partyId ? "party:" + std::to_string(partyId) :
+        speakerGuildId ? "guild:" + std::to_string(speakerGuildId) + ":player:" +
+            std::to_string(event.speakerGuid) : "player:" + std::to_string(event.speakerGuid);
 
     std::ostringstream json;
     json << "{\"event_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.eventId) << "\",";
     json << "\"contract_version\":4,\"message_raw\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.message) << "\",";
     json << "\"event_type\":\"" << (event.ambient ? "ambient" : "message") << "\",";
     json << "\"bridge_capabilities\":{\"reply_channel\":true,\"negotiated_price\":true,\"economic_capabilities\":1,"
-         << "\"capability_planner\":1,\"stable_party_session\":true,\"typed_action_outcomes\":true},";
+         << "\"capability_planner\":2,\"capability_catalog\":\"2.0.0\","
+         << "\"stable_party_session\":true,\"typed_action_outcomes\":true},";
     json << "\"party_session_id\":\"" << partySessionId << "\",";
     json << "\"channel\":{\"type\":\"" << event.channelType << "\",\"name\":\""
          << PlayerbotLLMInterface::SanitizeForJson(event.channelName) << "\",\"zone\":" << event.zone
@@ -2231,7 +2261,13 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
             if (signerIndex) json << ',';
             json << "\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.eligiblePetitionPartyMembers[signerIndex]) << "\"";
         }
-        json << "]},\"quests\":[";
+        json << "]},\"guild_state\":{\"guild_id\":" << candidate.guildId
+             << ",\"guild_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.guildName)
+             << "\",\"leader_guid\":" << candidate.guildLeaderGuid
+             << ",\"rank\":" << candidate.guildRank
+             << ",\"member_count\":" << candidate.guildMemberCount
+             << ",\"is_leader\":" << (candidate.isGuildLeader ? "true" : "false")
+             << "},\"quests\":[";
         for (size_t questIndex = 0; questIndex < candidate.quests.size(); ++questIndex)
         {
             if (questIndex) json << ',';
@@ -2250,7 +2286,8 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
         uint32 stateRevision = candidate.groupState.groupId ^ (candidate.groupState.leaderGuid << 1) ^
             (candidate.groupState.memberCount << 24) ^ (candidate.inCombat ? 0x40000000 : 0) ^
             (uint32)candidate.actionCapabilities.size() ^ (candidate.petitionSignatures << 8) ^
-            (uint32)candidate.eligiblePetitionPartyMembers.size();
+            (uint32)candidate.eligiblePetitionPartyMembers.size() ^ candidate.guildId ^
+            (candidate.guildLeaderGuid << 3) ^ (candidate.guildRank << 16);
         json << ",\"state_revision\":" << stateRevision << ",\"action_capabilities\":[";
         bool firstCapability = true;
         for (const ChatDirectorCapability& capability : candidate.actionCapabilities)
@@ -2264,13 +2301,15 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
             else if (capability.type == "meet_player" || capability.type == "travel_to_party" ||
                 capability.type == "return_to_activity" || capability.type == "resume_party_assist" ||
                 capability.type == "grant_party_free_time") family = "travel";
+            else if (capability.type == "transfer_guild_leadership" ||
+                capability.type == "solicit_petition_signatures") family = "socialGovernance";
             else if (capability.type.find("group") != std::string::npos || capability.type == "pass_leadership" ||
-                capability.type == "solicit_petition_signatures" ||
                 capability.type == "set_party_role" || capability.type == "clear_party_role" ||
                 capability.type == "set_puller" || capability.type == "hold_attacks" ||
                 capability.type == "resume_assist") family = "grouping";
             else if (capability.type.find("quest") != std::string::npos) family = "quests";
             std::string confirmation = (capability.type == "leave_group" ||
+                capability.type == "transfer_guild_leadership" ||
                 capability.type == "leave_ai_party_for_player") ? "explicit_confirmation" : "low_risk";
             json << "{\"capability_ref\":\"" << capability.capabilityRef << "\",\"ref\":\""
                  << capability.capabilityRef << "\",\"type\":\"" << capability.type
@@ -2543,8 +2582,17 @@ void PlayerbotChatDirector::Update()
         std::map<std::string, bool> created;
         for (const ChatDirectorActionProposal& proposal : proposals)
         {
-            bool social = sPlayerbotSocialActionBroker.Supports(proposal.type);
-            bool partyCombat = sPlayerbotPartyCombatCoordinator.SupportsProposal(proposal.type);
+            const LivingCapabilityRegistration* registration =
+                sPlayerbotNaturalLanguageCapabilityRegistry.Resolve(proposal.type);
+            if (!registration)
+            {
+                created[proposal.proposalId] = false;
+                continue;
+            }
+            bool social = registration->executor == LivingCapabilityExecutor::social &&
+                sPlayerbotSocialActionBroker.Supports(proposal.type);
+            bool partyCombat = registration->executor == LivingCapabilityExecutor::partyCombat &&
+                sPlayerbotPartyCombatCoordinator.SupportsProposal(proposal.type);
             PlayerbotActionResult actionResult;
             bool made = false;
             if (partyCombat)
@@ -2556,7 +2604,7 @@ void PlayerbotChatDirector::Update()
             }
             else if (social)
                 made = sPlayerbotSocialActionBroker.Create(proposal, it->event);
-            else
+            else if (registration->executor == LivingCapabilityExecutor::economy)
             {
                 actionResult = sPlayerbotActionBroker.Create(proposal, it->event);
                 made = actionResult.created;
