@@ -113,7 +113,13 @@ struct ChatDirectorCandidate
     std::vector<ChatDirectorQuest> quests;
     bool grouped = false;
     bool inCombat = false;
+    bool alive = true;
+    bool ghost = false;
     bool available = true;
+    std::string partyAssistState;
+    std::string partyAssistReason;
+    uint32 deadRecoveryAttempts = 0;
+    uint32 deadRecoverySeconds = 0;
     std::vector<ChatDirectorCapability> actionCapabilities;
 };
 

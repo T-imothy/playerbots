@@ -510,6 +510,12 @@ static bool CraftCommissionsEnabled()
 
 static void PopulateGrounding(Player* bot, Player* speaker, const std::string& message, ChatDirectorCandidate& candidate)
 {
+    candidate.alive = bot->IsAlive();
+    candidate.ghost = bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST);
+    candidate.partyAssistState = sPlayerbotRendezvousManager.PartyState(bot->GetGUIDLow());
+    candidate.partyAssistReason = sPlayerbotRendezvousManager.PartyReason(bot->GetGUIDLow());
+    candidate.deadRecoveryAttempts = sPlayerbotRendezvousManager.PartyDeadRecoveryAttempts(bot->GetGUIDLow());
+    candidate.deadRecoverySeconds = sPlayerbotRendezvousManager.PartyDeadRecoverySeconds(bot->GetGUIDLow());
     candidate.subzone = sServerFacade.GetAreaId(bot);
     if (AreaTableEntry const* zone = GetAreaEntryByAreaID(bot->GetZoneId()))
         candidate.zoneName = zone->area_name[0];
@@ -2070,6 +2076,12 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
         }
         json << "]"
              << ",\"inCombat\":" << (candidate.inCombat ? "true" : "false")
+             << ",\"alive\":" << (candidate.alive ? "true" : "false")
+             << ",\"ghost\":" << (candidate.ghost ? "true" : "false")
+             << ",\"party_assist_state\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.partyAssistState)
+             << "\",\"party_assist_reason\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.partyAssistReason)
+             << "\",\"dead_recovery_attempts\":" << candidate.deadRecoveryAttempts
+             << ",\"dead_recovery_seconds\":" << candidate.deadRecoverySeconds
              << ",\"available\":" << (candidate.available ? "true" : "false");
         uint32 stateRevision = candidate.groupState.groupId ^ (candidate.groupState.leaderGuid << 1) ^
             (candidate.groupState.memberCount << 24) ^ (candidate.inCombat ? 0x40000000 : 0) ^

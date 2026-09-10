@@ -28,6 +28,10 @@ public:
     // remains in the party and can be recalled through ResumePartyAssist.
     bool BeginPartyFreeTime(Player* bot, Player* player, const std::string& reason);
     bool IsPartyFreeTime(uint32 botGuid) const;
+    std::string PartyState(uint32 botGuid) const;
+    std::string PartyReason(uint32 botGuid) const;
+    uint32 PartyDeadRecoveryAttempts(uint32 botGuid) const;
+    uint32 PartyDeadRecoverySeconds(uint32 botGuid) const;
     void BeginDeparture(uint32 botGuid, uint32 playerGuid, const std::string& reason);
     void Cancel(uint32 botGuid, uint32 playerGuid, const std::string& reason);
     void Update();

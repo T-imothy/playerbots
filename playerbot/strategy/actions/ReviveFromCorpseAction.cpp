@@ -302,6 +302,28 @@ bool SpiritHealerAction::Execute(Event& event)
     const uint32 maximumRecoverySeconds = livingPartyRecovery ? 60 : uint32(10 * MINUTE);
     shouldTeleportToGY = deadTime > maximumRecoverySeconds;
 
+    // If the ordinary corpse route and the normal graveyard relocation have
+    // both failed for a human-led party, finish the same spirit-healer
+    // recovery deterministically after two minutes. This preserves the normal
+    // resurrection health and durability penalty, consumes the real corpse,
+    // and prevents a ghost from remaining in a party forever while repeated
+    // movement actions merely report that they were accepted.
+    if (livingPartyRecovery && deadTime > 120)
+    {
+        sLog.outString("Living WoW party dead recovery forced bot=%u dead_seconds=%lld",
+            bot->GetGUIDLow(), (long long)deadTime);
+        bot->GetMotionMaster()->Clear();
+        bot->ResurrectPlayer(0.5f, !ai->HasCheat(BotCheatMask::repair));
+        bot->DurabilityLossAll(0.25f, true);
+        bot->SpawnCorpseBones();
+        bot->TeleportTo(grave.getMapId(), grave.getX(), grave.getY(), grave.getZ(), 0);
+        bot->SaveToDB();
+        context->GetValue<Unit*>("current target")->Set(nullptr);
+        bot->SetSelectionGuid(ObjectGuid());
+        sPlayerbotAIConfig.logEvent(ai, "LivingPartyForcedSpiritHealerRecovery");
+        return true;
+    }
+
     // Check if we can teleport to the graveyard when nobody is looking
     if (!shouldTeleportToGY && !ai->AllowActivity(DETAILED_MOVE_ACTIVITY) && !ai->HasPlayerNearby(WorldPosition(grave)))
     {

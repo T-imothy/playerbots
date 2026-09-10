@@ -162,6 +162,33 @@ bool PlayerbotRendezvousManager::IsPartyFreeTime(uint32 botGuid) const
     return found != partySessions.end() && found->second.state == "free_time";
 }
 
+std::string PlayerbotRendezvousManager::PartyState(uint32 botGuid) const
+{
+    auto found = partySessions.find(botGuid);
+    return found == partySessions.end() ? "none" : found->second.state;
+}
+
+std::string PlayerbotRendezvousManager::PartyReason(uint32 botGuid) const
+{
+    auto found = partySessions.find(botGuid);
+    return found == partySessions.end() ? "" : found->second.reason;
+}
+
+uint32 PlayerbotRendezvousManager::PartyDeadRecoveryAttempts(uint32 botGuid) const
+{
+    auto found = partySessions.find(botGuid);
+    return found == partySessions.end() ? 0 : found->second.deadRecoveryAttempts;
+}
+
+uint32 PlayerbotRendezvousManager::PartyDeadRecoverySeconds(uint32 botGuid) const
+{
+    auto found = partySessions.find(botGuid);
+    if (found == partySessions.end() || found->second.deadRecoveryStarted.time_since_epoch().count() == 0)
+        return 0;
+    return (uint32)std::max<long long>(0, std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - found->second.deadRecoveryStarted).count());
+}
+
 PlayerbotRendezvousManager::Session* PlayerbotRendezvousManager::Find(uint32 botGuid, uint32 playerGuid)
 {
     auto found = sessions.find(botGuid);
