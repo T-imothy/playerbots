@@ -1632,6 +1632,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         if (!fullSample && !recoveryCanary && !recoverySweepMember && !activeGlobalRecovery) continue;
         if (state.lastMeaningfulProgress.time_since_epoch().count() == 0)
             state.lastMeaningfulProgress = now;
+        if (state.lastGameplayProgress.time_since_epoch().count() == 0)
+            state.lastGameplayProgress = now;
         bool levelChanged = state.lastLevel != 0 && state.lastLevel != bot->GetLevel();
         uint32 currentXp = bot->GetUInt32Value(PLAYER_XP);
         bool xpChanged = state.lastXp != 0 && state.lastXp != currentXp;
@@ -1654,14 +1656,12 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             if (state.nearbyRerouteResult == "requested")
             {
                 state.nearbyRerouteResult = "movement_confirmed";
-                state.objectiveRouteFailures = 0;
             }
             else if (state.nearbyRerouteResult == "alternate_grind_requested" ||
                 state.nearbyRerouteResult == "alternate_grind_target_selected" ||
                 state.nearbyRerouteResult == "alternate_grind_point_refreshed")
             {
                 state.nearbyRerouteResult = "alternate_grind_movement_confirmed";
-                state.objectiveRouteFailures = 0;
                 state.recoveryRouteRefreshes = 0;
             }
         }
@@ -1706,7 +1706,6 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 if (state.recoveryStep == 7)
                 {
                     state.nearbyRerouteResult = "alternate_grind_advancing";
-                    state.objectiveRouteFailures = 0;
                 }
             }
         }
@@ -1734,19 +1733,42 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         }
         MovementFlags movementFlags = bot->m_movementInfo.GetMovementFlags();
         bool playerStay = lowered.find("stay") != std::string::npos || lowered.find("wait") != std::string::npos;
+        Group* healthGroup = bot->GetGroup();
+        bool groupHasRealPlayer = false;
+        if (healthGroup)
+        {
+            for (GroupReference* member = healthGroup->GetFirstMember(); member; member = member->next())
+            {
+                Player* player = member->getSource();
+                if (player && player->isRealPlayer())
+                {
+                    groupHasRealPlayer = true;
+                    break;
+                }
+            }
+        }
+        const bool botOnlyGroupFollower = healthGroup && !groupHasRealPlayer &&
+            healthGroup->GetLeaderGuid() != bot->GetObjectGuid();
+        const bool humanDirectedGroup = groupHasRealPlayer ||
+            bot->GetPlayerbotAI()->HasRealPlayerMaster();
         bool airborne = movementFlags & (MOVEFLAG_FALLING | MOVEFLAG_FALLINGFAR | MOVEFLAG_FLYING |
             MOVEFLAG_LEVITATING | MOVEFLAG_HOVER | MOVEFLAG_SWIMMING);
         bool excluded = !bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() || bot->IsInWater() ||
-            bot->IsNonMeleeSpellCasted(false) || bot->GetTransport() || playerStay || airborne;
+            bot->IsNonMeleeSpellCasted(false) || bot->GetTransport() || playerStay || airborne ||
+            humanDirectedGroup || botOnlyGroupFollower;
         bool expectsMovement = lowered.find("move") != std::string::npos || lowered.find("travel") != std::string::npos ||
             lowered.find("quest") != std::string::npos || lowered.find("rpg") != std::string::npos;
         // Position changes alone are not meaningful progression. Bots that
         // shuffle a few yards while repeatedly producing no action must remain
         // eligible for recovery.
-        if (levelChanged || xpChanged || questProgressChanged || travelAdvanced)
+        const bool gameplayProgressChanged = levelChanged || xpChanged || questProgressChanged;
+        if (gameplayProgressChanged)
         {
             state.lastMeaningfulProgress = now;
+            state.lastGameplayProgress = now;
             state.objectiveRouteFailures = 0;
+            state.recoveryFailureStreak = 0;
+            state.recoveryBackoffUntil = std::chrono::steady_clock::time_point();
             if (state.nearbyRerouteResult != "movement_confirmed" &&
                 state.nearbyRerouteResult != "alternate_grind_movement_confirmed" &&
                 state.nearbyRerouteResult != "alternate_grind_advancing")
@@ -1768,8 +1790,18 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 state.recoveryResult.clear();
             }
         }
+        else if (travelAdvanced)
+        {
+            // Route advancement is useful telemetry and keeps movement from
+            // timing out, but it is not proof that a recovery produced gameplay
+            // progress. Keep the recovery goal active until XP, quest progress,
+            // or an authoritative terminal outcome is observed.
+            state.lastMeaningfulProgress = now;
+        }
         long stillSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMoved).count();
         long progressSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMeaningfulProgress).count();
+        long gameplayProgressSeconds = std::chrono::duration_cast<std::chrono::seconds>(
+            now - state.lastGameplayProgress).count();
         uint32 stalledQuestId = 0;
         std::vector<uint32> stalledQuestIds;
         long oldestCompleteSeconds = 0;
@@ -1816,8 +1848,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // separate lets recovery select a fresh objective instead of repeatedly
         // clearing a target that does not exist.
         bool actionStarved = questSnapshot.completed.empty() && expectsMovement && noActions &&
-            !observedTravelActive &&
-            progressSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
+            !observedTravelActive && !botOnlyGroupFollower && !humanDirectedGroup &&
+            gameplayProgressSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
         // A completed quest has its own authoritative age. Unrelated kill XP,
         // another quest objective, or ordinary combat must not restart that
         // clock forever. Safety exclusions below still prevent recovery during
@@ -1832,7 +1864,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         if (!bot->IsAlive()) classification = "dead";
         else if (bot->IsInCombat()) classification = "combat";
         else if (bot->IsTaxiFlying() || bot->GetTransport()) classification = "transport";
-        else if (playerStay) classification = "group_wait";
+        else if (playerStay || humanDirectedGroup || botOnlyGroupFollower) classification = "group_wait";
         else if (inventoryStalled) classification = "inventory_blocked";
         else if (questStalled) classification = "completed_quest_awaiting_turn_in";
         else if (movementStalled) classification = "movement_stalled";
@@ -1860,11 +1892,14 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         bool recoveryMovementTimedOut = state.recoveryStep > 0 && observedTravelActive && !excluded &&
             stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds &&
             travelAdvanceAgeSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
+        bool recoveryGameplayTimedOut = state.recoveryStep == 7 && !excluded &&
+            recoveryAgeSeconds >= (long)sPlayerbotAIConfig.chatDirectorRecoveryNoProgressSeconds &&
+            state.lastGameplayProgress < state.recoveryStartedAt;
         bool recoveryRouteTerminal = state.recoveryStep > 0 &&
             (inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_NONE ||
              inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_COOLDOWN ||
              inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_EXPIRED ||
-             recoveryPrepareTimedOut || recoveryMovementTimedOut);
+             recoveryPrepareTimedOut || recoveryMovementTimedOut || recoveryGameplayTimedOut);
         if (recoveryRouteTerminal)
         {
             bool alternateGoalRequested = false;
@@ -1876,8 +1911,9 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             std::string terminalResult = terminalStep == 3 ? "quest_turnin_route_terminal" :
                 (terminalStep == 5 ? "vendor_route_terminal" :
                     (terminalStep == 7 ? "alternate_grind_route_terminal" : "objective_route_terminal"));
-            state.recoveryTerminalReason = recoveryPrepareTimedOut ? "prepare_timeout" :
-                (recoveryMovementTimedOut ? "movement_timeout" : "status_terminal");
+            state.recoveryTerminalReason = recoveryGameplayTimedOut ? "gameplay_timeout" :
+                (recoveryPrepareTimedOut ? "prepare_timeout" :
+                    (recoveryMovementTimedOut ? "movement_timeout" : "status_terminal"));
             // A terminal target remains the authoritative travel value until it
             // is explicitly replaced. Merely releasing recoveryStep left the
             // normal travel strategy evaluating the same cooldown/expired
@@ -1903,7 +1939,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             if (terminalStep == 2)
             {
                 ++state.objectiveRouteFailures;
-                if (state.objectiveRouteFailures >= 2)
+                if (state.objectiveRouteFailures >= 1)
                 {
                     bool nearbyHuman = false;
                     const std::list<ObjectGuid>& nearbyPlayers = bot->GetPlayerbotAI()->GetAiObjectContext()->
@@ -1918,8 +1954,10 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                             break;
                         }
                     }
-                    if (bot->GetGroup())
-                        state.nearbyRerouteResult = "skipped_grouped";
+                    if (groupHasRealPlayer)
+                        state.nearbyRerouteResult = "skipped_human_group";
+                    else if (botOnlyGroupFollower)
+                        state.nearbyRerouteResult = "skipped_ai_group_follower";
                     else if (sPlayerbotAIConfig.chatDirectorRecoveryAlternateGoals &&
                         sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 7)
                     {
@@ -1944,6 +1982,15 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 state.recoveryResult += "_alternate_grind_requested";
             if (routeQuestId == (int)terminalQuestId && !routeOutcome.empty())
                 state.recoveryResult += "_" + routeOutcome;
+            const bool recoveryProducedGameplay =
+                state.lastGameplayProgress >= state.recoveryStartedAt;
+            if (terminalStep == 7 && !recoveryProducedGameplay)
+            {
+                ++state.recoveryFailureStreak;
+                state.recoveryBackoffUntil = now + std::chrono::seconds(
+                    sPlayerbotAIConfig.chatDirectorRecoveryFailureBackoffSeconds);
+                state.recoveryResult += "_backoff";
+            }
             // Terminal targets cannot be advanced. Keeping their recovery step
             // nonzero made hundreds of bots bypass the global sampling buckets
             // every ten seconds forever. Release the hot-loop state and let the
@@ -1975,7 +2022,10 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             bool cooldownReady = state.lastRecovery.time_since_epoch().count() == 0 ||
                 std::chrono::duration_cast<std::chrono::seconds>(now - state.lastRecovery).count() >=
                     sPlayerbotAIConfig.chatDirectorRecoveryCooldownSeconds;
-            if (cooldownReady && state.recoveryAttempts.size() < sPlayerbotAIConfig.chatDirectorMaxRecoveriesPerHour)
+            bool failureBackoffReady = state.recoveryBackoffUntil.time_since_epoch().count() == 0 ||
+                now >= state.recoveryBackoffUntil;
+            if (cooldownReady && failureBackoffReady &&
+                state.recoveryAttempts.size() < sPlayerbotAIConfig.chatDirectorMaxRecoveriesPerHour)
             {
                 bool recovered = false;
                 std::string recovery;
@@ -2314,6 +2364,9 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             GetValue<int>("manual int", "future travel range count")->Get();
         int futureTurninPoints = bot->GetPlayerbotAI()->GetAiObjectContext()->
             GetValue<int>("manual int", "future travel point count")->Get();
+        long recoveryBackoffSeconds = state.recoveryBackoffUntil.time_since_epoch().count() == 0 ||
+            now >= state.recoveryBackoffUntil ? 0 : std::chrono::duration_cast<std::chrono::seconds>(
+                state.recoveryBackoffUntil - now).count();
         std::ostringstream json;
         json << "{\"bot_guid\":" << guid << ",\"bot_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(bot->GetName())
              << "\",\"level\":" << (uint32)bot->GetLevel() << ",\"level_changed\":" << (levelChanged ? "true" : "false")
@@ -2340,6 +2393,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"mmap_z\":null,\"height_offset\":" << offset << ",\"height_fault\":" << (heightFault ? "true" : "false")
              << ",\"movement_flags\":" << movementFlags
              << ",\"last_movement_seconds\":" << stillSeconds << ",\"last_progress_seconds\":" << progressSeconds
+             << ",\"last_gameplay_progress_seconds\":" << gameplayProgressSeconds
              << ",\"oldest_completed_quest_seconds\":" << oldestCompleteSeconds
              << ",\"recovery_mode\":" << sPlayerbotAIConfig.chatDirectorBotRecoveryMode
              << ",\"recovery_canary\":" << (recoveryCanary ? "true" : "false")
@@ -2354,10 +2408,12 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recovery_target_status\":" << (uint32)recoveryStatus
              << ",\"recovery_route_age_seconds\":" << recoveryAgeSeconds
              << ",\"recovery_route_timed_out\":" <<
-                ((recoveryPrepareTimedOut || recoveryMovementTimedOut) ? "true" : "false")
+                ((recoveryPrepareTimedOut || recoveryMovementTimedOut || recoveryGameplayTimedOut) ? "true" : "false")
              << ",\"recovery_terminal_reason\":\"" <<
                 PlayerbotLLMInterface::SanitizeForJson(state.recoveryTerminalReason) << "\""
              << ",\"objective_route_failures\":" << state.objectiveRouteFailures
+             << ",\"recovery_failure_streak\":" << state.recoveryFailureStreak
+             << ",\"recovery_backoff_seconds\":" << recoveryBackoffSeconds
              << ",\"nearby_reroute_result\":\"" <<
                 PlayerbotLLMInterface::SanitizeForJson(state.nearbyRerouteResult) << "\""
              << ",\"turnin_route_quest_id\":" << futureTurninQuestId
@@ -2392,6 +2448,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             "\",\"sample_seconds\":" << sPlayerbotAIConfig.chatDirectorHealthSampleSeconds <<
             ",\"maximum_recovery_step\":" << sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep <<
             ",\"alternate_goals\":" << (sPlayerbotAIConfig.chatDirectorRecoveryAlternateGoals ? "true" : "false") <<
+            ",\"no_progress_seconds\":" << sPlayerbotAIConfig.chatDirectorRecoveryNoProgressSeconds <<
+            ",\"failure_backoff_seconds\":" << sPlayerbotAIConfig.chatDirectorRecoveryFailureBackoffSeconds <<
             "},\"samples\":[";
         for (size_t i = start; i < samples.size() && i < start + healthBatchSize; ++i)
         {
@@ -3626,6 +3684,15 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
                     continue;
                 eligible.push_back(bot);
             }
+            // Prefer characters that are already free. Reclaiming an AI-only
+            // group is valid, but it should be the fallback rather than the
+            // first source of every event roster.
+            std::stable_sort(eligible.begin(), eligible.end(), [](Player* left, Player* right)
+            {
+                if ((left->GetGroup() == nullptr) != (right->GetGroup() == nullptr))
+                    return left->GetGroup() == nullptr;
+                return left->GetGUIDLow() < right->GetGUIDLow();
+            });
             std::vector<Player*> roster;
             auto addUnique = [&roster](Player* bot)
             {
@@ -3685,20 +3752,47 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
             {
                 // Guild events may reclaim bots only from AI-only groups; the
                 // safety predicate above has already excluded every group with
-                // a real player. Release the full selected roster first so an
-                // organizer that was a nonleader cannot issue doomed invites.
-                bool released = true;
+                // a real player. Free bots deliberately refuse a self-authored
+                // leave request, so use another validated roster member as the
+                // requester and retain only characters confirmed ungrouped.
+                std::vector<Player*> releasedRoster;
+                for (size_t index = 0; index < roster.size(); ++index)
+                {
+                    Player* member = roster[index];
+                    if (!member->GetGroup()) continue;
+                    Player* requester = roster[(index + 1) % roster.size()];
+                    member->GetPlayerbotAI()->DoSpecificAction(
+                        "leave", Event("guild society event", "", requester), true);
+                }
                 for (Player* member : roster)
                 {
-                    if (!member->GetGroup()) continue;
-                    if (!member->GetPlayerbotAI()->DoSpecificAction(
-                            "leave", Event("guild society event", "", member), true) && member->GetGroup())
-                        released = false;
+                    if (!member->GetGroup())
+                        releasedRoster.push_back(member);
                 }
+                roster.swap(releasedRoster);
+                if (effectiveDecisionType == "schedule_dungeon")
+                {
+                    uint32 releasedTanks = 0, releasedHealers = 0;
+                    for (Player* member : roster)
+                    {
+                        if (PlayerbotAI::IsTank(member, false)) ++releasedTanks;
+                        if (PlayerbotAI::IsHeal(member, false)) ++releasedHealers;
+                    }
+                    if ((roster.size() < 5 || !releasedTanks || !releasedHealers) &&
+                        roster.size() >= 2)
+                    {
+                        effectiveDecisionType = "schedule_leveling_group";
+                        minimum = 2;
+                        rolesReady = true;
+                    }
+                }
+            }
+            if (roster.size() >= minimum && rolesReady)
+            {
                 Player* organizer = roster.front();
                 organizerGuid = organizer->GetGUIDLow();
-                accepted = released && !organizer->GetGroup() ? 1 : 0;
-                for (size_t index = 1; released && index < roster.size(); ++index)
+                accepted = organizer->GetGroup() ? 0 : 1;
+                for (size_t index = 1; index < roster.size(); ++index)
                 {
                     Player* member = roster[index];
                     if (member->GetGroup() == organizer->GetGroup() && organizer->GetGroup())
@@ -3706,8 +3800,9 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
                         ++accepted;
                         continue;
                     }
-                    if (member->GetPlayerbotAI()->DoSpecificAction(
-                            "join", Event("create group", "", organizer), true))
+                    member->GetPlayerbotAI()->DoSpecificAction(
+                        "join", Event("create group", "", organizer), true);
+                    if (organizer->GetGroup() && member->GetGroup() == organizer->GetGroup())
                         ++accepted;
                 }
                 if (accepted >= minimum)
@@ -3716,8 +3811,27 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
                     rejection.clear();
                     eventState = "forming";
                 }
+                else if (accepted >= 2)
+                {
+                    // A partially formed dungeon roster is still a legitimate
+                    // guild leveling group. Keep the real group and report the
+                    // activity it can actually perform instead of declaring a
+                    // failed dungeon while leaving a stray party behind.
+                    effectiveDecisionType = "schedule_leveling_group";
+                    minimum = 2;
+                    state = "completed";
+                    rejection.clear();
+                    eventState = "forming";
+                }
                 else
                     rejection = "group_formation_failed";
+                if (eventState == "forming")
+                {
+                    const char* activityAction = effectiveDecisionType == "schedule_leveling_group" ?
+                        "request progression grind travel target" : "request progression quest travel target";
+                    organizer->GetPlayerbotAI()->DoSpecificAction(
+                        activityAction, Event("can move around"), true);
+                }
             }
             eventType = effectiveDecisionType == "schedule_dungeon" ? "dungeon" :
                 effectiveDecisionType == "schedule_quest_group" ? "quest" : "leveling";

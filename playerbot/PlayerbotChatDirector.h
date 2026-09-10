@@ -221,6 +221,7 @@ private:
         float y = 0.0f;
         std::chrono::steady_clock::time_point lastMoved;
         std::chrono::steady_clock::time_point lastMeaningfulProgress;
+        std::chrono::steady_clock::time_point lastGameplayProgress;
         std::chrono::steady_clock::time_point lastTravelAdvance;
         std::string travelTargetPosition;
         float lastTravelDistance = -1.0f;
@@ -228,6 +229,7 @@ private:
         std::map<uint32, std::chrono::steady_clock::time_point> completedQuestSince;
         std::chrono::steady_clock::time_point heightFaultSince;
         std::chrono::steady_clock::time_point lastRecovery;
+        std::chrono::steady_clock::time_point recoveryBackoffUntil;
         std::vector<std::chrono::steady_clock::time_point> recoveryAttempts;
         std::string recoveryResult;
         uint8 lastLevel = 0;
@@ -241,6 +243,7 @@ private:
         std::chrono::steady_clock::time_point recoveryStartedAt;
         uint32 objectiveRouteFailures = 0;
         uint32 recoveryRouteRefreshes = 0;
+        uint32 recoveryFailureStreak = 0;
         std::string recoveryTerminalReason;
         std::string nearbyRerouteResult;
         bool questItemFollowup = false;
