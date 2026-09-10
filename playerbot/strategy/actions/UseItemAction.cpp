@@ -1393,7 +1393,7 @@ bool OpenRandomItemAction::Execute(Event& event)
 
 bool UseRandomQuestItemAction::isUseful()
 {
-    return !ai->HasActivePlayerMaster() && !bot->InBattleGround() && !bot->IsTaxiFlying();
+    return !bot->InBattleGround() && !bot->IsTaxiFlying() && !bot->IsInCombat();
 }
 
 bool UseRandomQuestItemAction::Execute(Event& event)
@@ -1407,6 +1407,56 @@ bool UseRandomQuestItemAction::Execute(Event& event)
         return false;
 
     Item* item = nullptr;
+
+    // Source items are not the objective item itself. Many classic quests ask
+    // the player to use a looted source item near a spell focus (forge, fire,
+    // corpse, etc.) to create or credit the real objective. Restrict automatic
+    // use to source IDs on an active incomplete quest so this can never become
+    // a general "click everything in the bags" action.
+    for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE && !item; ++slot)
+    {
+        uint32 questId = bot->GetQuestSlotQuestId(slot);
+        if (!questId || bot->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE)
+            continue;
+        Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+        if (!quest)
+            continue;
+        for (uint8 source = 0; source < QUEST_SOURCE_ITEM_IDS_COUNT && !item; ++source)
+        {
+            uint32 sourceId = quest->ReqSourceId[source];
+            if (!sourceId || !quest->ReqSourceCount[source] || !bot->GetItemCount(sourceId, false))
+                continue;
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(sourceId);
+            if (!proto)
+                continue;
+            bool hasOnUseSpell = false;
+            for (uint8 spell = 0; spell < MAX_ITEM_PROTO_SPELLS; ++spell)
+                if (proto->Spells[spell].SpellId && proto->Spells[spell].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE)
+                {
+                    hasOnUseSpell = true;
+                    break;
+                }
+            if (!hasOnUseSpell)
+                continue;
+            for (Item* questItem : questItems)
+                if (questItem && questItem->GetEntry() == sourceId)
+                {
+                    item = questItem;
+                    break;
+                }
+        }
+    }
+
+    if (item)
+    {
+        bool success = UseItem(requester, item->GetEntry(), (Unit*)nullptr);
+        if (success)
+            SetDuration(sPlayerbotAIConfig.globalCoolDown);
+        else
+            SetDuration(5000);
+        return success;
+    }
+
     for (uint8 i = 0; i< 5;i++)
     {
         auto itr = questItems.begin();

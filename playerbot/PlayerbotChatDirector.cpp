@@ -94,6 +94,35 @@ static void PopulateQuestLog(Player* bot, ChatDirectorCandidate& candidate)
                 detail.required = quest->ReqCreatureOrGOCount[objective];
                 structured.objectives.push_back(detail);
             }
+
+            for (uint8 source = 0; source < QUEST_SOURCE_ITEM_IDS_COUNT; ++source)
+            {
+                if (!quest->ReqSourceId[source] || !quest->ReqSourceCount[source])
+                    continue;
+                ItemPrototype const* item = sObjectMgr.GetItemPrototype(quest->ReqSourceId[source]);
+                ChatDirectorQuest::SourceItem detail;
+                detail.itemId = quest->ReqSourceId[source];
+                detail.name = item ? item->Name1 : std::string("quest source item");
+                detail.current = bot->GetItemCount(detail.itemId, false);
+                detail.required = quest->ReqSourceCount[source];
+                if (item)
+                {
+                    for (uint8 spell = 0; spell < MAX_ITEM_PROTO_SPELLS; ++spell)
+                    {
+                        if (!item->Spells[spell].SpellId || item->Spells[spell].SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
+                            continue;
+                        detail.useSpellId = item->Spells[spell].SpellId;
+                        SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(detail.useSpellId);
+                        detail.usableNow = spellInfo && !bot->IsInCombat() &&
+                            bot->GetPlayerbotAI()->CanCastSpell(detail.useSpellId, bot, 0, false);
+                        if (!detail.usableNow)
+                            detail.blocker = bot->IsInCombat() ? "in_combat" :
+                                (spellInfo && spellInfo->RequiresSpellFocus ? "required_location_or_object_not_nearby" : "cast_requirements_not_met");
+                        break;
+                    }
+                }
+                structured.sourceItems.push_back(std::move(detail));
+            }
         }
         candidate.quests.push_back(std::move(structured));
     }
@@ -613,6 +642,13 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             uint32 desiredQuantity = currentQuantity;
             std::string demandReason;
             uint32 demandScore = BuyerDemandScore(usage, proto, currentQuantity, desiredQuantity, demandReason);
+            if (proto->Class == ITEM_CLASS_CONTAINER && proto->SubClass == ITEM_SUBCLASS_CONTAINER &&
+                proto->ContainerSlots > ai::ItemUsageValue::GetSmallestBagSize(bot))
+            {
+                demandScore = 100;
+                demandReason = "bag_space_upgrade";
+                desiredQuantity = currentQuantity + 1;
+            }
             uint32 missingQuantity = desiredQuantity > currentQuantity ? desiredQuantity - currentQuantity : 0;
             uint32 affordableQuantity = std::min<uint32>(available, std::max<uint32>(1, freeMoney / unitPrice));
             affordableQuantity = std::min<uint32>(affordableQuantity, std::min<uint32>(5, missingQuantity));
@@ -648,6 +684,12 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             capability.marketSamples = (uint32)sRandomPlayerbotMgr.GetAhPrices(proto->ItemId).size();
             capability.minimumUnitPriceCopper = minimumUnitPrice;
             capability.maximumUnitPriceCopper = maximumUnitPrice;
+            if (demandReason == "bag_space_upgrade")
+            {
+                uint8 used = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
+                capability.description = "Immediate bag-space upgrade; current inventory usage is " +
+                    std::to_string((uint32)used) + " percent. If no free receive slot exists, vendor safely before trading.";
+            }
             if (direct) capability.deliveries.push_back("direct");
             capability.deliveries.push_back("meeting");
             candidate.actionCapabilities.push_back(std::move(capability));
@@ -1338,6 +1380,17 @@ static void AppendQuestJson(std::ostringstream& json, const ChatDirectorQuest& q
              << ",\"required\":" << objective.required << ",\"complete\":"
              << (objective.current >= objective.required ? "true" : "false") << "}";
     }
+    json << "],\"source_items\":[";
+    for (size_t sourceIndex = 0; sourceIndex < quest.sourceItems.size(); ++sourceIndex)
+    {
+        if (sourceIndex) json << ',';
+        const ChatDirectorQuest::SourceItem& source = quest.sourceItems[sourceIndex];
+        json << "{\"item_id\":" << source.itemId << ",\"name\":\""
+             << PlayerbotLLMInterface::SanitizeForJson(source.name) << "\",\"current\":" << source.current
+             << ",\"required\":" << source.required << ",\"use_spell_id\":" << source.useSpellId
+             << ",\"usable_now\":" << (source.usableNow ? "true" : "false") << ",\"blocker\":\""
+             << PlayerbotLLMInterface::SanitizeForJson(source.blocker) << "\"}";
+    }
     json << "]}";
 }
 
@@ -1354,6 +1407,9 @@ static uint32 QuestMessageRelevance(const std::string& message, const ChatDirect
             if (!objective.name.empty() && objective.current < objective.required &&
                 boost::algorithm::icontains(message, objective.name))
                 relevance = std::max<uint32>(relevance, 1);
+        for (const ChatDirectorQuest::SourceItem& source : quest.sourceItems)
+            if (!source.name.empty() && boost::algorithm::icontains(message, source.name))
+                relevance = std::max<uint32>(relevance, 2);
     }
     return relevance;
 }

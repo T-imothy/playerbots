@@ -58,11 +58,23 @@ struct ChatDirectorQuest
         uint32 required = 0;
     };
 
+    struct SourceItem
+    {
+        uint32 itemId = 0;
+        std::string name;
+        uint32 current = 0;
+        uint32 required = 0;
+        uint32 useSpellId = 0;
+        bool usableNow = false;
+        std::string blocker;
+    };
+
     uint32 questId = 0;
     std::string title;
     std::string status;
     bool shareable = false;
     std::vector<Objective> objectives;
+    std::vector<SourceItem> sourceItems;
 };
 
 struct ChatDirectorGroupState
