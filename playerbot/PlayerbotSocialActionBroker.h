@@ -27,6 +27,7 @@ public:
     uint32 ReservedForPlayer(uint32 botGuid);
     bool CanReleasePendingInvite(Player* bot) const;
     void CompleteGroupReservation(uint32 botGuid, uint32 playerGuid);
+    void ReserveForPlayer(uint32 botGuid, uint32 playerGuid);
     // Used while grounding chat capabilities so a leader can queue broader
     // personal free time behind an already-authorized maintenance trip.
     bool HasActiveVendorTrip(uint32 botGuid) const;
@@ -101,7 +102,6 @@ private:
     bool ContinueAtBank(Action& action, Player* bot);
     void QueuePartyReturn(Action& action, Player* bot, Player* player,
         const std::string& reason, bool success);
-    void ReserveForPlayer(uint32 botGuid, uint32 playerGuid);
     void Report(const Action& action) const;
     std::map<std::string, Action> actions;
     std::map<uint32, std::pair<uint32, std::chrono::steady_clock::time_point>> preferredQuests;

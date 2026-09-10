@@ -1,6 +1,8 @@
 #include "botpch.h"
 #include "PlayerbotSocialActionBroker.h"
 #include "PartyReleaseReadiness.h"
+#include "PlayerbotPartyInvitationMgr.h"
+#include "strategy/actions/MovementActions.h"
 
 #include "PlayerbotActionBroker.h"
 #include "PlayerbotAI.h"
@@ -32,7 +34,7 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
     return sPlayerbotAIConfig.chatDirectorSocialActions && (type == "create_group_and_invite" || type == "invite_to_existing_group" ||
         type == "request_leader_invite" || type == "accept_group_invite" ||
         type == "pass_leadership" || type == "leave_group" ||
-        type == "leave_ai_party_for_player" ||
+        type == "leave_ai_party_for_player" || type == "approve_party_departure" || type == "decline_party_departure" ||
         type == "solicit_petition_signatures" || type == "volunteer_for_guild_charter" ||
         type == "transfer_guild_leadership" ||
         type == "invite_to_guild" || type == "promote_guild_member" ||
@@ -70,6 +72,8 @@ static const char* GatheringSkillName(uint32 skillId)
 static bool GroupHasRealHuman(Group* group)
 {
     if (!group) return false;
+    for (const auto& slot : group->GetMemberSlots())
+        if (!sRandomPlayerbotMgr.IsRandomBot(slot.guid.GetCounter())) return true;
     for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
     {
         Player* member = reference->getSource();
@@ -147,7 +151,7 @@ bool PlayerbotSocialActionBroker::CanReleasePendingInvite(Player* bot) const
 static bool LeaveAiOnlyParty(Player* bot, uint32 expectedGroupId)
 {
     Group* group = bot ? bot->GetGroup() : nullptr;
-    if (!bot || !group || group->GetId() != expectedGroupId || GroupHasRealHuman(group) ||
+    if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported() || !group || group->GetId() != expectedGroupId || GroupHasRealHuman(group) ||
         bot->IsInCombat() || bot->GetMap()->IsDungeon() || bot->InBattleGround() ||
         bot->IsTaxiFlying() || bot->GetTransport() || bot->IsBeingTeleported())
         return false;
@@ -158,7 +162,7 @@ static bool LeaveAiOnlyParty(Player* bot, uint32 expectedGroupId)
     if (bot->GetGroup())
         return false;
     bot->GetPlayerbotAI()->SetMaster(nullptr);
-    bot->GetPlayerbotAI()->ResetStrategies();
+    bot->GetPlayerbotAI()->RequestStrategyReset(true);
     bot->GetPlayerbotAI()->Reset();
     return true;
 }
@@ -693,7 +697,14 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
 
     std::smatch match;
     bool completed = false;
-    if (proposal.type == "create_group_and_invite" &&
+    if (proposal.type == "approve_party_departure" || proposal.type == "decline_party_departure")
+    {
+        completed = (event.channelType == "party" || event.channelType == "whisper") &&
+            sPlayerbotPartyInvitationMgr.Vote(bot, player, proposal.capabilityRef,
+            proposal.type == "approve_party_departure");
+        if (!completed) action.failureReason = "departure_request_stale_or_voter_not_authorized";
+    }
+    else if (proposal.type == "create_group_and_invite" &&
         std::regex_match(proposal.capabilityRef, match, std::regex(R"(group:create:([0-9]+):([0-9]+))")))
     {
         completed = !bot->GetGroup() && !player->GetGroup() && InviteSocialPlayer(bot, player);
@@ -1303,6 +1314,7 @@ uint32 PlayerbotSocialActionBroker::PreferredQuest(uint32 botGuid) const
 
 void PlayerbotSocialActionBroker::Update()
 {
+    bool dockExitAttempted = sPlayerbotPartyInvitationMgr.Update();
     const auto now = std::chrono::steady_clock::now();
     for (auto cooldown = sharedObjectCooldowns.begin(); cooldown != sharedObjectCooldowns.end(); )
         if (cooldown->second <= now)
@@ -1468,6 +1480,14 @@ void PlayerbotSocialActionBroker::Update()
             Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
             Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
             Group* group = bot ? bot->GetGroup() : nullptr;
+            if (bot && player && group && group->GetId() == action.groupId && !GroupHasRealHuman(group) &&
+                bot->IsInWorld() && !bot->IsBeingTeleported() && bot->GetTransport() && !dockExitAttempted &&
+                now < action.expires && now >= action.lastActionAttempt + std::chrono::seconds(2))
+            {
+                action.lastActionAttempt = now;
+                dockExitAttempted = true;
+                if (ai::MovementAction::ExitTransportAtDock(bot->GetPlayerbotAI())) continue;
+            }
             const auto blocker = bot ? living_party_release::Classify(bot->IsInCombat(),
                 bot->GetTransport() != nullptr, bot->IsTaxiFlying(), bot->IsBeingTeleported()) :
                 living_party_release::Blocker::ready;

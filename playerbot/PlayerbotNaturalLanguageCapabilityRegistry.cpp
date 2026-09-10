@@ -36,6 +36,9 @@ PlayerbotNaturalLanguageCapabilityRegistry::PlayerbotNaturalLanguageCapabilityRe
             "routine", "contextual_party_authority", "low_risk", LivingCapabilityExecutor::social);
 
     const char* socialConsequential[] = {"pass_leadership", "leave_group", "leave_ai_party_for_player"};
+    for (const char* key : {"approve_party_departure", "decline_party_departure"})
+        Register(key, "grouping", "routine", "eligible_departure_voter", "low_risk",
+            LivingCapabilityExecutor::social);
     for (const char* key : socialConsequential)
         Register(key, "grouping", "consequential", "party_leader", "explicit_confirmation",
             LivingCapabilityExecutor::social);

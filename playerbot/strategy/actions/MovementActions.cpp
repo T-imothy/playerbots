@@ -448,6 +448,57 @@ bool MovementAction::MoveOffTransport(PlayerbotAI* ai, WorldPosition exitPos, bo
     return true;
 }
 
+bool MovementAction::ExitTransportAtDock(PlayerbotAI* ai)
+{
+    Player* bot = ai ? ai->GetBot() : nullptr;
+    if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported() || bot->IsInCombat() ||
+        !bot->IsAlive() || bot->IsTaxiFlying()) return false;
+    Transport* transport = dynamic_cast<Transport*>(bot->GetTransport());
+    if (!transport || !transport->GetPeriod()) return false;
+    const uint32 progress = transport->GetPathProgress() % transport->GetPeriod();
+    bool stopped = false;
+    for (const auto& frame : transport->GetKeyFrames())
+        if (frame.IsStopFrame() && progress >= frame.ArriveTime &&
+            progress < frame.DepartureTime && frame.DepartureTime - progress >= 1500)
+            stopped = true;
+    if (!stopped) return false;
+
+    // Copy only explicit shore links from the loaded transport graph. Never
+    // invent an exit from terrain height or detach a passenger in flight.
+    std::vector<WorldPosition> shores;
+    {
+        std::shared_lock<std::shared_timed_mutex> lock(sTravelNodeMap.m_nMapMtx, std::try_to_lock);
+        if (!lock.owns_lock()) return false;
+        for (TravelNode* node : sTravelNodeMap.getNodes(WorldPosition(transport), 10.0f))
+        {
+            bool matchingTransport = false;
+            for (const auto& link : *node->getLinks())
+                if (link.second->getPathType() == TravelNodePathType::transport &&
+                    link.second->getPathObject() == transport->GetEntry()) matchingTransport = true;
+            if (!matchingTransport) continue;
+            for (const auto& link : *node->getLinks())
+                if (link.second->getPathType() == TravelNodePathType::transport &&
+                    !link.second->getPathObject() && link.first->getPosition()->isValid() &&
+                    link.first->getPosition()->getMapId() == bot->GetMapId() &&
+                    link.first->getPosition()->distance(WorldPosition(transport)) < 60.0f)
+                    shores.push_back(*link.first->getPosition());
+        }
+    }
+    for (WorldPosition shore : shores)
+    {
+        if (!shore.ClosestCorrectPoint(2.0f, 1.0f, bot->GetInstanceId())) continue;
+        const uint32 entry = transport->GetEntry();
+        // Existing configured dock transfer, or a validated walking exit.
+        if (MoveOffTransport(ai, shore, sPlayerbotAIConfig.transportTeleportType > 0))
+        {
+            ai->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get().lastTransportEntry = 0;
+            sLog.outString("Living WoW party transport bot=%u entry=%u result=docked_exit", bot->GetGUIDLow(), entry);
+            return true;
+        }
+    }
+    return false;
+}
+
 bool MovementAction::UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition dockPosition, WorldPosition exitPosition, bool doTeleport)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
@@ -458,6 +509,10 @@ bool MovementAction::UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition d
 
     if (transport)
     {
+        if (entry && transport->GetEntry() != entry) return false;
+        // The boarding caller supplies no exit. Boarding is already complete;
+        // trying to disembark at an empty destination loses lastTransportEntry.
+        if (!exitPosition.isValid()) return entry && transport->GetEntry() == entry;
         GameObjectInfo const* data = sGOStorage.LookupEntry<GameObjectInfo>(transport->GetEntry());
         std::string transportName = transport->GetName();
         if (transportName.empty())

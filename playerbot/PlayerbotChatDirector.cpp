@@ -4,6 +4,7 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotActionBroker.h"
 #include "PlayerbotSocialActionBroker.h"
+#include "PlayerbotPartyInvitationMgr.h"
 #include "PlayerbotNaturalLanguageCapabilityRegistry.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotOrganicEconomy.h"
@@ -563,6 +564,7 @@ static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandid
     // whether the owner remembers that the charter exists.
     uint32 ownedPetitionGuid = PopulateOwnedPetitionState(bot, candidate);
     Group* group = bot->GetGroup();
+    sPlayerbotPartyInvitationMgr.AddCapabilities(bot, speaker, candidate);
     if (bot->GetMapId() == speaker->GetMapId() &&
         sServerFacade.GetDistance2d(bot, speaker) <= sPlayerbotAIConfig.farDistance)
     {
