@@ -281,6 +281,18 @@ namespace LivingActivity
             " AND t.revision=" + Number(task.revision) + " AND o.state IN ('intent','reconciling')");
         return plan;
     }
+    std::string PersistedTaskProjection() {
+        // MariaDB recognizes JSON_VALID-constrained TEXT as a JSON value when
+        // nesting it in JSON_OBJECT. Explicit text conversion preserves the
+        // checkpoint's exact bytes and numeric types through the row envelope.
+        return "JSON_OBJECT('id',task_id,'actor',actor_guid,'source',source,'source_key',source_key,"
+            "'root',root_task_id,'parent',parent_task_id,'kind',kind,'mode',mode,'phase',phase,'priority',priority,"
+            "'accepted',accepted,'revision',revision,'generation',owner_generation,'session',session_id,"
+            "'session_revision',session_revision,'policy_revision',policy_revision,'map',map_id,'instance',instance_id,"
+            "'checkpoint_version',checkpoint_version,'step',step,'checkpoint',CONCAT('',checkpoint),'blocker',blocker,"
+            "'active_ms',active_elapsed_ms,'progress_at',last_progress_at_ms,'due_at',due_at_ms,'retry_at',retry_at_ms,"
+            "'created_at',created_at_ms,'updated_at',updated_at_ms)";
+    }
     bool ReceiptMatches(const WritePlan& plan, const std::string& task, uint64_t revision) {
         return task == plan.task && revision == plan.revision && revision > 0;
     }

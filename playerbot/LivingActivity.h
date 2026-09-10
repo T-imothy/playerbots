@@ -136,6 +136,7 @@ namespace LivingActivity
     WritePlan OperationOutcomeWrite(const Task& verifyingTask, uint64_t expectedRevision,
         const OperationResult& result, const std::string& receipt, const std::string& afterJson);
     std::string SqlValue(const std::string& value);
+    std::string PersistedTaskProjection();
     bool ReceiptMatches(const WritePlan& plan, const std::string& task, uint64_t revision);
 }
 #endif

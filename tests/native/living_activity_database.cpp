@@ -7,6 +7,8 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <sstream>
+#include <boost/property_tree/json_parser.hpp>
 
 using namespace LivingActivity;
 static const std::string Id = "637bd562-36d2-5b01-bc01-e2d831c49f38";
@@ -74,6 +76,14 @@ int main() {
     auto changed = task; changed.checkpoint.data = "{}";
     assert(!db.Write(TaskWrite(changed, 0, Receipt, "legacy_observed"))); // Same ID, different request.
     assert(db.Scalar("SELECT checkpoint FROM living_activity_task") == task.checkpoint.data);
+    // Regression from the copied-realm restart: JSON_VALID TEXT nests as an
+    // object in MariaDB unless the actual runtime projection converts to text.
+    const auto payload = db.Scalar("SELECT " + PersistedTaskProjection() + " FROM living_activity_task");
+    boost::property_tree::ptree envelope; std::istringstream input(payload);
+    boost::property_tree::read_json(input, envelope);
+    assert(envelope.get<std::string>("checkpoint") == task.checkpoint.data);
+    assert(envelope.get<uint64_t>("revision") == task.revision);
+    assert(envelope.get<uint32_t>("actor") == task.actor);
     auto recovered = AfterRestart(task, 600000);
     auto update = TaskWrite(recovered, task.revision, Receipt2, "restart_revalidation");
     assert(!db.Write(update, true));

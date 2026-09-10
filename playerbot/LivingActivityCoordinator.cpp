@@ -221,13 +221,7 @@ struct LivingActivityCoordinator::State {
         }, sql.c_str())) { ioPending = false; nextWork = NowMs() + 60000; }
     }
     void Load() {
-        const std::string projection = "JSON_OBJECT('id',task_id,'actor',actor_guid,'source',source,'source_key',source_key,"
-            "'root',root_task_id,'parent',parent_task_id,'kind',kind,'mode',mode,'phase',phase,'priority',priority,"
-            "'accepted',accepted,'revision',revision,'generation',owner_generation,'session',session_id,"
-            "'session_revision',session_revision,'policy_revision',policy_revision,'map',map_id,'instance',instance_id,"
-            "'checkpoint_version',checkpoint_version,'step',step,'checkpoint',checkpoint,'blocker',blocker,"
-            "'active_ms',active_elapsed_ms,'progress_at',last_progress_at_ms,'due_at',due_at_ms,'retry_at',retry_at_ms,"
-            "'created_at',created_at_ms,'updated_at',updated_at_ms)";
+        const std::string projection = PersistedTaskProjection();
         const std::string sql = "SELECT * FROM (SELECT task_id," + projection + " payload FROM living_activity_task "
             "WHERE phase NOT IN ('completed','cancelled','failed') AND task_id>" + SqlValue(loadCursor) +
             " ORDER BY task_id LIMIT " + std::to_string(loadBatch) + ") records UNION ALL SELECT '','{}'";
