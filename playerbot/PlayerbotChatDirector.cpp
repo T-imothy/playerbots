@@ -3631,12 +3631,17 @@ static void RepairGuildEventRoster(Player* organizer, uint32 guildId,
 {
     if (!organizer || !SafeGuildEventParticipant(organizer, guildId))
         return;
+    sRandomPlayerbotMgr.SetValue(organizer->GetGUIDLow(), "create group", 0);
     for (Player* member : roster)
     {
-        if (!member || member == organizer || member->GetGroup() == organizer->GetGroup())
+        // Two null group pointers mean both characters are ungrouped, not that
+        // the persisted roster has already been rebuilt after a restart.
+        if (!member || member == organizer ||
+            (organizer->GetGroup() && member->GetGroup() == organizer->GetGroup()))
             continue;
         if (!SafeGuildEventParticipant(member, guildId))
             continue;
+        sRandomPlayerbotMgr.SetValue(member->GetGUIDLow(), "create group", 0);
         if (member->GetGroup())
             member->GetPlayerbotAI()->DoSpecificAction(
                 "leave", Event("guild society roster repair", "", organizer), true);
