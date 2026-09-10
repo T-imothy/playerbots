@@ -468,6 +468,7 @@ static void PopulateGuildState(Player* bot, Player* speaker, ChatDirectorCandida
     candidate.guildId = guild->GetId();
     candidate.guildName = guild->GetName();
     candidate.guildLeaderGuid = guild->GetLeaderGuid().GetCounter();
+    sObjectMgr.GetPlayerNameByGUID(guild->GetLeaderGuid(), candidate.guildLeaderName);
     candidate.guildRank = bot->GetRank();
     candidate.guildMemberCount = guild->GetMemberSize();
     candidate.isGuildLeader = guild->GetLeaderGuid() == bot->GetObjectGuid();
@@ -3232,6 +3233,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
              << "},\"guild_state\":{\"guild_id\":" << candidate.guildId
              << ",\"guild_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.guildName)
              << "\",\"leader_guid\":" << candidate.guildLeaderGuid
+             << ",\"leader_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.guildLeaderName) << "\""
              << ",\"rank\":" << candidate.guildRank
              << ",\"member_count\":" << candidate.guildMemberCount
              << ",\"is_leader\":" << (candidate.isGuildLeader ? "true" : "false")
@@ -3275,6 +3277,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
                 capability.type == "grant_party_free_time" || capability.type == "wait_here" ||
                 capability.type == "use_hearthstone") family = "travel";
             else if (capability.type == "transfer_guild_leadership" ||
+                capability.type.find("guild") != std::string::npos ||
                 capability.type == "solicit_petition_signatures" ||
                 capability.type == "perform_emote") family = "socialGovernance";
             else if (capability.type.find("group") != std::string::npos || capability.type == "pass_leadership" ||
@@ -3287,6 +3290,9 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
             else if (capability.type.find("quest") != std::string::npos) family = "quests";
             std::string confirmation = (capability.type == "leave_group" ||
                 capability.type == "transfer_guild_leadership" ||
+                capability.type == "invite_to_guild" || capability.type == "leave_guild" ||
+                capability.type == "promote_guild_member" || capability.type == "demote_guild_member" ||
+                capability.type == "remove_guild_member" ||
                 capability.type == "leave_ai_party_for_player") ? "explicit_confirmation" : "low_risk";
             json << "{\"capability_ref\":\"" << capability.capabilityRef << "\",\"ref\":\""
                  << capability.capabilityRef << "\",\"type\":\"" << capability.type
@@ -3318,7 +3324,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
                  << ",\"maximum_unit_price_copper\":" << capability.maximumUnitPriceCopper
                  << ",\"gift_eligible\":" << (capability.giftEligible ? "true" : "false")
                  << ",\"quest_id\":" << capability.questId << ",\"group_id\":" << capability.groupId
-                 << ",\"actor_guid\":" << capability.actorGuid << ",\"description\":\""
+                 << ",\"description\":\""
                  << PlayerbotLLMInterface::SanitizeForJson(capability.description) << "\""
                  << ",\"deliveries\":[";
             for (size_t deliveryIndex = 0; deliveryIndex < capability.deliveries.size(); ++deliveryIndex)

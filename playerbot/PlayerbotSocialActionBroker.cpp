@@ -1335,6 +1335,24 @@ void PlayerbotSocialActionBroker::Update()
     if (!nextVendorScan.time_since_epoch().count() || now >= nextVendorScan)
     {
         nextVendorScan = now + std::chrono::seconds(5);
+        // A human's follow-up invitation can otherwise wait behind ordinary
+        // AI actions. Poll only explicit, short-lived release reservations.
+        // Copy because native acceptance removes its reservation.
+        const auto reservations = groupReservations;
+        for (const auto& entry : reservations)
+        {
+            const uint32 playerGuid = ReservedForPlayer(entry.first);
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(entry.first);
+            Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, playerGuid));
+            Group* invite = bot ? bot->GetGroupInvite() : nullptr;
+            if (!playerGuid || !ValidateCommon(bot, player, false) || !invite || bot->GetGroup() ||
+                !player->isRealPlayer() || !invite->IsLeader(player->GetObjectGuid()) ||
+                bot->IsInCombat() || bot->GetTransport() || bot->IsTaxiFlying() ||
+                bot->IsBeingTeleported() || bot->GetMap()->IsDungeon())
+                continue;
+            ai::Event invitation("reserved human invitation", "", player);
+            bot->GetPlayerbotAI()->DoSpecificAction("accept invitation", invitation, true);
+        }
         for (const auto& entry : sRandomPlayerbotMgr.GetPlayers())
         {
             Player* bot = entry.second;

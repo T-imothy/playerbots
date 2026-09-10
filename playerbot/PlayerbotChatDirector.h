@@ -137,6 +137,7 @@ struct ChatDirectorCandidate
     uint32 volunteerPetitionRequired = 0;
     uint32 guildId = 0;
     std::string guildName;
+    std::string guildLeaderName;
     uint32 guildLeaderGuid = 0;
     uint32 guildRank = 0;
     uint32 guildMemberCount = 0;

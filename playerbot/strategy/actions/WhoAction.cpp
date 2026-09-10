@@ -52,6 +52,11 @@ bool WhoAction::Execute(Event& event)
         }
     }
 
+    // Unknown natural-language "who ..." questions belong to Chat v2.
+    // Do not turn an unmatched skill/trade query into an unrelated master reply.
+    if (sPlayerbotAIConfig.chatDirectorV2 && !text.empty() && out.str().empty())
+        return false;
+
     if (ai->GetMaster())
     {
         if (!out.str().empty()) out << ", ";

@@ -21,6 +21,20 @@ bool GuildAcceptAction::Execute(Event& event)
     if (!inviter)
         return false;
 
+    // Joining a guild deletes the native petition and its signatures. Owning
+    // a real charter is a standing founding commitment, not disposable junk.
+    if (bot->GetItemByEntry(5863))
+    {
+        auto petition = CharacterDatabase.PQuery(
+            "SELECT petitionguid FROM petition WHERE ownerguid = '%u' AND type = 9", bot->GetGUIDLow());
+        if (petition)
+        {
+            WorldPacket decline;
+            bot->GetSession()->HandleGuildDeclineOpcode(decline);
+            return true;
+        }
+    }
+
     std::map<std::string, std::string> placeholders;
     placeholders["%name"] = inviter->GetName();
 
