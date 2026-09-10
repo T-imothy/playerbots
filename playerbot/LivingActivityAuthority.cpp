@@ -161,9 +161,17 @@ namespace LivingActivity {
     AuthorityCode ExecutionAuthority::Authorize(const Effects& effects, const WorldContext& current, uint64_t now,
         const Task* task, const ActionContext* action, const NativePermit* permit) const {
         const auto found = actors.find(current.actor);
-        if (!ContextValid(current) || found == actors.end() || !(found->second.current == current))
-            return AuthorityCode::StaleContext;
-        const auto& a = found->second;
+        if (found == actors.end()) return AuthorityCode::StaleContext;
+        return Check(found->second, effects, current, now, task, action, permit);
+    }
+    AuthoritySnapshot ExecutionAuthority::Read(uint32_t actor) const {
+        const auto found = actors.find(actor);
+        return found == actors.end() ? AuthoritySnapshot{} : found->second;
+    }
+    AuthorityCode ExecutionAuthority::Check(const AuthoritySnapshot& a, const Effects& effects,
+        const WorldContext& current, uint64_t now, const Task* task,
+        const ActionContext* action, const NativePermit* permit) {
+        if (!ContextValid(current) || !(a.current == current)) return AuthorityCode::StaleContext;
         if (!effects.classified) return AuthorityCode::UnknownAction;
         if (effects.mask & ~AllEffects) return AuthorityCode::EffectsDenied;
         if (effects.lane == Lane::Inspection)

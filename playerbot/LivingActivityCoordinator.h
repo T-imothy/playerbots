@@ -17,6 +17,8 @@ public:
     // the coordinator's task/lease maps and never authorizes a native effect.
     void ObserveAction(uint32_t guid, uint64_t actorEpoch, uint64_t mapEpoch,
         const LivingActivity::Effects& effects, const std::string& action);
+    enum class LeaseBoundary { Acquire, Renew, Release };
+    void ObserveLeaseBoundary(uint32_t guid, LeaseBoundary boundary);
 private:
     LivingActivityCoordinator();
     ~LivingActivityCoordinator();

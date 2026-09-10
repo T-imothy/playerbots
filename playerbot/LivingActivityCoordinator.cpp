@@ -19,6 +19,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <thread>
 
 using namespace LivingActivity;
 namespace {
@@ -86,10 +87,13 @@ struct LivingActivityCoordinator::State {
         uint64_t actorEpoch, mapEpoch;
         Effects effects;
         std::string action;
+        bool worldThread = false;
     };
     struct ActionCount { uint64_t count = 0; uint32_t exampleActor = 0; };
     BoundedMailbox<ActionObservation> actionInbox{2048};
     std::atomic<bool> observeEffects{false};
+    std::thread::id worldThread;
+    std::atomic<bool> worldThreadReady{false};
     std::map<std::string, ActionCount> actionCounts;
     uint64_t observedActions = 0, unknownActions = 0, actionCardinalityRejected = 0;
     Mode effective = Mode::Off;
@@ -324,6 +328,11 @@ LivingActivityCoordinator& LivingActivityCoordinator::instance() {
 LivingActivityCoordinator::LivingActivityCoordinator() : state(new State) {}
 LivingActivityCoordinator::~LivingActivityCoordinator() = default;
 void LivingActivityCoordinator::Update() {
+    if (!state->worldThreadReady.load(std::memory_order_acquire)) {
+        state->worldThread = std::this_thread::get_id();
+        state->worldThreadReady.store(true, std::memory_order_release);
+    }
+    MANGOS_ASSERT(state->worldThread == std::this_thread::get_id());
     const auto started = std::chrono::steady_clock::now();
     struct Measure {
         State& state; std::chrono::steady_clock::time_point start;
@@ -340,7 +349,8 @@ void LivingActivityCoordinator::Update() {
         ++state->observedActions;
         if (!observation.effects.classified) ++state->unknownActions;
         const std::string key = std::to_string(observation.effects.mask) + ':' +
-            std::to_string(static_cast<unsigned>(observation.effects.lane)) + ':' + observation.action;
+            std::to_string(static_cast<unsigned>(observation.effects.lane)) + ':' +
+            (observation.worldThread ? "world:" : "map:") + observation.action;
         const auto found = state->actionCounts.find(key);
         if (found == state->actionCounts.end() && state->actionCounts.size() >= 256) {
             ++state->actionCardinalityRejected; continue;
@@ -429,5 +439,14 @@ void LivingActivityCoordinator::ObserveAction(uint32_t guid, uint64_t actorEpoch
     if (bounded.empty() || bounded.size() > 64 || bounded.find_first_not_of(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-'") != std::string::npos)
         bounded = "dynamic_action_identifier";
-    state->actionInbox.TryPush({guid, actorEpoch, mapEpoch, effects, std::move(bounded)});
+    state->actionInbox.TryPush({guid, actorEpoch, mapEpoch, effects, std::move(bounded),
+        state->worldThreadReady.load(std::memory_order_acquire) && state->worldThread == std::this_thread::get_id()});
+}
+
+void LivingActivityCoordinator::ObserveLeaseBoundary(uint32_t guid, LeaseBoundary boundary) {
+    if (!state->observeEffects.load(std::memory_order_acquire) || !guid) return;
+    const char* action = boundary == LeaseBoundary::Acquire ? "legacy lease acquire" :
+        boundary == LeaseBoundary::Renew ? "legacy lease renew" : "legacy lease release";
+    state->actionInbox.TryPush({guid, 0, 0, {0, Lane::Inspection, true}, action,
+        state->worldThreadReady.load(std::memory_order_acquire) && state->worldThread == std::this_thread::get_id()});
 }

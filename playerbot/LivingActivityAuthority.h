@@ -17,6 +17,16 @@ namespace LivingActivity {
         ActivityLease lease, displaced;
         bool Granted() const;
     };
+    // Copied by the world owner. Workers never receive its mutable lease book.
+    struct AuthoritySnapshot {
+        WorldContext current;
+        uint32_t safety = 0, effects = 0;
+        Task root;
+        ActivityLease lease;
+        uint64_t expires = 0;
+        std::string operation;
+        bool invalidated = false;
+    };
 
     // A world-thread-owned lease book, NOT a second scheduler or task store.
     // The coordinator owns the durable queue. Producers supply already validated
@@ -32,20 +42,16 @@ namespace LivingActivity {
         AuthorityResult BeginAtomic(const ActivityLease& lease, const std::string& operation, uint64_t now);
         AuthorityResult FinishAtomic(const ActivityLease& lease, const std::string& operation);
         AuthorityResult Inspect(uint32_t actor, uint64_t now) const;
+        AuthoritySnapshot Read(uint32_t actor) const;
+        static AuthorityCode Check(const AuthoritySnapshot& snapshot, const Effects& effects,
+            const WorldContext& current, uint64_t now, const Task* task = nullptr,
+            const ActionContext* action = nullptr, const NativePermit* permit = nullptr);
         AuthorityCode Authorize(const Effects& effects, const WorldContext& current, uint64_t now,
             const Task* task = nullptr, const ActionContext* action = nullptr,
             const NativePermit* permit = nullptr) const;
         size_t Size() const { return actors.size(); }
     private:
-        struct Actor {
-            WorldContext current;
-            uint32_t safety = 0, effects = 0;
-            Task root;
-            ActivityLease lease;
-            uint64_t expires = 0;
-            std::string operation;
-            bool invalidated = false;
-        };
+        using Actor = AuthoritySnapshot;
         static bool ContextValid(const WorldContext& context);
         static bool Matches(const ActivityLease& left, const ActivityLease& right);
         static bool Executable(const Task& task);

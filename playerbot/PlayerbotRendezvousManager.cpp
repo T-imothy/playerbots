@@ -1,5 +1,6 @@
 #include "botpch.h"
 #include "PlayerbotRendezvousManager.h"
+#include "LivingActivityCoordinator.h"
 #include "PlayerbotGuildEventExecutor.h"
 #include "PlayerbotPartyCatchup.h"
 #include "LootObjectStack.h"
@@ -1111,6 +1112,7 @@ bool PlayerbotRendezvousManager::AllowsOwnedMovement(uint32 botGuid, const std::
 bool PlayerbotRendezvousManager::AcquirePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
     PartyActivityPhase phase, uint32 ttlSeconds, const std::string& reason)
 {
+    sLivingActivityCoordinator.ObserveLeaseBoundary(botGuid, LivingActivityCoordinator::LeaseBoundary::Acquire);
     if (!sPlayerbotAIConfig.chatDirectorPartyActivityOwnership) return true;
     auto now = std::chrono::steady_clock::now();
     auto found = externalLeases.find(botGuid);
@@ -1169,6 +1171,7 @@ bool PlayerbotRendezvousManager::AcquirePartyActivityLease(uint32 botGuid, Party
 bool PlayerbotRendezvousManager::UpdatePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
     PartyActivityPhase phase, uint32 ttlSeconds, const std::string& reason)
 {
+    sLivingActivityCoordinator.ObserveLeaseBoundary(botGuid, LivingActivityCoordinator::LeaseBoundary::Renew);
     auto found = externalLeases.find(botGuid);
     if (!sPlayerbotAIConfig.chatDirectorPartyActivityOwnership) return true;
     if (found == externalLeases.end() || found->second.owner != owner ||
@@ -1184,6 +1187,7 @@ bool PlayerbotRendezvousManager::UpdatePartyActivityLease(uint32 botGuid, PartyA
 void PlayerbotRendezvousManager::ReleasePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
     PartyActivityPhase terminalPhase, const std::string& reason)
 {
+    sLivingActivityCoordinator.ObserveLeaseBoundary(botGuid, LivingActivityCoordinator::LeaseBoundary::Release);
     auto found = externalLeases.find(botGuid);
     if (found == externalLeases.end() || found->second.owner != owner) return;
     auto party = partySessions.find(botGuid);
