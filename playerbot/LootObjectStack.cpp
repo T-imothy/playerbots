@@ -1,4 +1,5 @@
 #include "LootObjectStack.h"
+#include <chrono>
 #include "playerbot.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -241,6 +242,9 @@ bool LootObject::IsLootPossible(Player* bot)
     }
 
     AiObjectContext* context = ai->GetAiObjectContext();
+    LootObjectStack* available = AI_VALUE(LootObjectStack*, "available loot");
+    if (available->IsApproachBlocked(guid))
+        return false;
 
     if (!AI_VALUE2_LAZY(bool, "should loot object", std::to_string(guid.GetRawValue())))
         return false;
@@ -312,6 +316,30 @@ bool LootObject::IsLootPossible(Player* bot)
         return false;
 
     return true;
+}
+
+namespace
+{
+int64_t LootApproachNow()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+}
+
+bool LootObjectStack::IsApproachBlocked(ObjectGuid guid)
+{
+    return approachMemory.IsBlocked(guid.GetRawValue(), LootApproachNow());
+}
+
+bool LootObjectStack::ObserveApproach(ObjectGuid guid, float distance)
+{
+    return approachMemory.Observe(guid.GetRawValue(), distance, LootApproachNow());
+}
+
+void LootObjectStack::CompleteApproach(ObjectGuid guid)
+{
+    approachMemory.Complete(guid.GetRawValue());
 }
 
 bool LootObjectStack::Add(ObjectGuid guid)

@@ -2484,6 +2484,23 @@ bool MoveToLootAction::Execute(Event& event)
     }
 
     WorldObject *wo = loot.GetWorldObject(bot);
+    if (!wo)
+        return false;
+
+    LootObjectStack* available = AI_VALUE(LootObjectStack*, "available loot");
+    float distance = bot->GetDistance(wo);
+    if (distance <= INTERACTION_DISTANCE)
+        available->CompleteApproach(loot.guid);
+    else if (!available->ObserveApproach(loot.guid, distance))
+    {
+        available->Remove(loot.guid);
+        context->GetValue<LootObject>("loot target")->Set(LootObject());
+        ai->StopMoving();
+        sLog.outString("Living WoW loot recovery bot=%u entry=%u guid=%u reason=approach_timeout distance=%.1f retry_seconds=120",
+            bot->GetGUIDLow(), loot.guid.GetEntry(), loot.guid.GetCounter(), distance);
+        return false;
+    }
+
 
     if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("debug loot", BotState::BOT_STATE_NON_COMBAT))
     {

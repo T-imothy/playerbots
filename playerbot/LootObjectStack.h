@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot.h"
+#include "LootApproachMemory.h"
 
 namespace ai
 {
@@ -52,6 +53,9 @@ namespace ai
 
     public:
         bool Add(ObjectGuid guid);
+        bool IsApproachBlocked(ObjectGuid guid);
+        bool ObserveApproach(ObjectGuid guid, float distance);
+        void CompleteApproach(ObjectGuid guid);
         void Remove(ObjectGuid guid);
         void Clear();
         bool CanLoot(float maxDistance);
@@ -63,6 +67,7 @@ namespace ai
     private:
         Player* bot;
         LootTargetList availableLoot;
+        LootApproachMemory approachMemory;
     };
 
 };
