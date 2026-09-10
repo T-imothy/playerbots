@@ -332,6 +332,10 @@ void LivingActivityCoordinator::Update() {
     } measure{*state, started};
     const uint64_t now = NowMs();
     state->Policy(now);
+    if (now >= state->nextLog && state->desired != "off") {
+        state->nextLog = now + 60000;
+        sLog.outString("Living activity shadow: %s", StatusJson().c_str());
+    }
     if (state->effective == Mode::Off || state->ioPending) return;
     if (!state->incoming.empty()) {
         if (now < state->nextWork) return;
@@ -347,10 +351,6 @@ void LivingActivityCoordinator::Update() {
     else if (!state->loaded) state->Load();
     else if (state->cache.size() < state->maxCache) state->Import();
     else state->blocker = "task_cache_backpressure";
-    if (now >= state->nextLog) {
-        state->nextLog = now + 60000;
-        sLog.outString("Living activity shadow: %s", StatusJson().c_str());
-    }
 }
 std::string LivingActivityCoordinator::StatusJson() const {
     boost::property_tree::ptree p;
@@ -373,9 +373,12 @@ std::string LivingActivityCoordinator::ActorJson(uint32_t guid) const {
     if (selected != state->preferred.end()) {
         const Task& task = state->cache.at(selected->second);
         p.put("shadow_task_id", task.id); p.put("task_revision", task.revision);
+        p.put("root_task_id", task.root); p.put("task_type", Name(task.kind));
+        p.put("owner_generation", task.ownerGeneration);
         p.put("phase", Name(task.phase)); p.put("step", task.checkpoint.step);
         p.put("blocker", task.checkpoint.blocker); p.put("active_elapsed_ms", task.checkpoint.activeElapsedMs);
         p.put("source", task.source); p.put("last_progress_at_ms", task.checkpoint.lastProgressAtMs);
+        p.put("updated_at_ms", task.updatedAtMs); p.put("due_at_ms", task.dueAtMs); p.put("retry_at_ms", task.retryAtMs);
     }
     return Json(p);
 }
