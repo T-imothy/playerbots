@@ -1849,6 +1849,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              recoveryPrepareTimedOut || recoveryMovementTimedOut);
         if (recoveryRouteTerminal)
         {
+            bool alternateGoalRequested = false;
             uint32 terminalStep = state.recoveryStep;
             uint32 terminalQuestId = state.recoveryQuestId;
             state.lastRecoveryQuestId = terminalQuestId ? terminalQuestId : state.lastRecoveryQuestId;
@@ -1900,6 +1901,16 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     }
                     if (bot->GetGroup())
                         state.nearbyRerouteResult = "skipped_grouped";
+                    else if (sPlayerbotAIConfig.chatDirectorRecoveryAlternateGoals &&
+                        sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 7)
+                    {
+                        std::string action = "request travel target::" +
+                            std::to_string((uint32)TravelDestinationPurpose::Grind);
+                        alternateGoalRequested = bot->GetPlayerbotAI()->DoSpecificAction(
+                            action, Event("can move around"), true);
+                        state.nearbyRerouteResult = alternateGoalRequested ?
+                            "alternate_grind_requested" : "alternate_grind_rejected";
+                    }
                     else if (nearbyHuman)
                         state.nearbyRerouteResult = "skipped_human_nearby";
                     else
@@ -1912,15 +1923,18 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             }
             state.recoveryResult = terminalResult +
                 (terminalCleared ? "_cleared" : "_clear_rejected");
+            if (alternateGoalRequested)
+                state.recoveryResult += "_alternate_grind_requested";
             if (routeQuestId == (int)terminalQuestId && !routeOutcome.empty())
                 state.recoveryResult += "_" + routeOutcome;
             // Terminal targets cannot be advanced. Keeping their recovery step
             // nonzero made hundreds of bots bypass the global sampling buckets
             // every ten seconds forever. Release the hot-loop state and let the
             // next bounded sweep choose a fresh, reason-specific action.
-            state.recoveryStep = 0;
+            state.recoveryStep = alternateGoalRequested ? 7 : 0;
             state.recoveryQuestId = 0;
-            state.recoveryStartedAt = std::chrono::steady_clock::time_point();
+            state.recoveryStartedAt = alternateGoalRequested ? now :
+                std::chrono::steady_clock::time_point();
             state.recoveryInteractionAttempts = 0;
             state.lastRecoveryInteraction = std::chrono::steady_clock::time_point();
             state.travelTargetPosition.clear();
@@ -2312,7 +2326,9 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         body << "{\"effective_policy\":{\"mode\":\"" <<
             (sPlayerbotAIConfig.chatDirectorBotRecoveryMode == 0 ? "off" : (sPlayerbotAIConfig.chatDirectorBotRecoveryMode == 1 ? "observe" : "recover")) <<
             "\",\"sample_seconds\":" << sPlayerbotAIConfig.chatDirectorHealthSampleSeconds <<
-            ",\"maximum_recovery_step\":" << sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep << "},\"samples\":[";
+            ",\"maximum_recovery_step\":" << sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep <<
+            ",\"alternate_goals\":" << (sPlayerbotAIConfig.chatDirectorRecoveryAlternateGoals ? "true" : "false") <<
+            "},\"samples\":[";
         for (size_t i = start; i < samples.size() && i < start + healthBatchSize; ++i)
         {
             if (i != start) body << ',';

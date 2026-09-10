@@ -407,6 +407,7 @@ public:
     bool chatDirectorRendezvousCatchup;
     uint32 chatDirectorBotRecoveryMode, chatDirectorHealthSampleSeconds, chatDirectorMovementStuckSeconds, chatDirectorQuestStuckSeconds;
     uint32 chatDirectorRecoveryCooldownSeconds, chatDirectorMaxRecoveriesPerHour, chatDirectorRecoveryMaximumStep;
+    bool chatDirectorRecoveryAlternateGoals;
     std::list<uint32> chatDirectorRecoveryCanaryBotGuids, chatDirectorDeepTraceBotGuids;
     uint32 chatDirectorDeepTraceSampleSeconds;
     bool chatDirectorQuestInteraction;

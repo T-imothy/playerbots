@@ -689,6 +689,7 @@ bool PlayerbotAIConfig::Initialize()
     chatDirectorRecoveryCooldownSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRecoveryCooldownSeconds", 600);
     chatDirectorMaxRecoveriesPerHour = config.GetIntDefault("AiPlayerbot.ChatDirectorMaxRecoveriesPerHour", 2);
     chatDirectorRecoveryMaximumStep = config.GetIntDefault("AiPlayerbot.ChatDirectorRecoveryMaximumStep", 6);
+    chatDirectorRecoveryAlternateGoals = config.GetBoolDefault("AiPlayerbot.ChatDirectorRecoveryAlternateGoals", false);
     LoadList<std::list<uint32>>(config.GetStringDefault("AiPlayerbot.ChatDirectorRecoveryCanaryBotGuids", ""), chatDirectorRecoveryCanaryBotGuids);
     LoadList<std::list<uint32>>(config.GetStringDefault("AiPlayerbot.ChatDirectorDeepTraceBotGuids", ""), chatDirectorDeepTraceBotGuids);
     chatDirectorDeepTraceSampleSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorDeepTraceSampleSeconds", 10);

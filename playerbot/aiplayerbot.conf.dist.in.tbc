@@ -1073,6 +1073,9 @@ AiPlayerbot.PerfMonEnabled = 0
 # AiPlayerbot.ChatDirectorRecoveryCooldownSeconds = 600
 # AiPlayerbot.ChatDirectorMaxRecoveriesPerHour = 2
 # AiPlayerbot.ChatDirectorRecoveryMaximumStep = 6
+# After repeated unusable quest routes, allow a normal grind destination as a
+# bounded alternate goal. No XP, quest credit, item, or teleport is granted.
+# AiPlayerbot.ChatDirectorRecoveryAlternateGoals = 0
 # AiPlayerbot.ChatDirectorQuestInteraction = 1
 # The default json to send to the endpoint.
 # AiPlayerbot.LLMApiJson = {"max_length": 100, "prompt": "[<pre prompt>]<context> <prompt> <post prompt>"}
