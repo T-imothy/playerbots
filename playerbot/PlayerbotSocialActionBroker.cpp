@@ -8,6 +8,8 @@
 #include "PlayerbotLLMInterface.h"
 #include "PlayerbotRendezvousManager.h"
 #include "RandomPlayerbotMgr.h"
+#include "TravelMgr.h"
+#include "strategy/values/TravelValues.h"
 
 #include <regex>
 #include <sstream>
@@ -54,10 +56,21 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     if (bagUsage <= 80)
         return false;
 
-    bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living vendor bags", "", player), true);
-    if (!bot->GetPlayerbotAI()->DoSpecificAction("request travel target::512",
+    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    AiObjectContext* context = ai->GetAiObjectContext();
+    TravelTarget* currentTarget = context->GetValue<TravelTarget*>("travel target")->Get();
+    // The stock reset action is useful only when no travel target is active,
+    // which makes it unable to interrupt a follower's current quest target.
+    // This scoped broker owns the replacement and clears it directly.
+    sTravelMgr.SetNullTravelTarget(currentTarget);
+    context->ClearValues("no active travel destinations");
+    if (!ai->DoSpecificAction("request travel target::512",
         Event("living vendor bags", "", player), true))
+    {
+        sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=request_rejected bag=%u",
+            bot->GetGUIDLow(), bot->GetName(), (uint32)bagUsage);
         return false;
+    }
 
     Action action;
     action.actionId = actionId;
@@ -75,6 +88,8 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     actions[action.actionId] = action;
     vendorCooldowns[action.botGuid] = std::chrono::steady_clock::now() + std::chrono::minutes(10);
     Report(actions[action.actionId]);
+    sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=requested bag=%u player=%u",
+        bot->GetGUIDLow(), bot->GetName(), (uint32)bagUsage, player->GetGUIDLow());
     if (announce)
         bot->GetPlayerbotAI()->SayToParty("My bags are full. I need to make a quick vendor run; I'll catch back up.", true);
     return true;
@@ -317,9 +332,28 @@ void PlayerbotSocialActionBroker::Update()
                 // The destination request resolves asynchronously. Re-running
                 // choose is cheap and becomes effective as soon as it is ready.
                 bot->GetPlayerbotAI()->DoSpecificAction("choose travel target", Event("living vendor bags", "", player), true);
+                TravelTarget* target = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
+                if (target && (target->GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL ||
+                    target->GetStatus() == TravelStatus::TRAVEL_STATUS_READY))
+                {
+                    // Human-led bots do not normally load TravelStrategy. A
+                    // scoped travel-once strategy makes this one validated
+                    // vendor target executable and removes itself on arrival.
+                    bot->GetPlayerbotAI()->ChangeStrategy("nc +travel once", BotState::BOT_STATE_NON_COMBAT);
+                }
+
+                if (target && (target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK ||
+                    target->Distance(bot) <= INTERACTION_DISTANCE))
+                {
+                    bool sold = bot->GetPlayerbotAI()->DoSpecificAction("sell",
+                        Event("rpg action", "vendor", player), true);
+                    sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=%s distance=%.1f",
+                        bot->GetGUIDLow(), bot->GetName(), sold ? "sold" : "sell_failed", target->Distance(bot));
+                }
                 uint8 usage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
                 if (usage < action.initialBagUsage)
                 {
+                    bot->GetPlayerbotAI()->ChangeStrategy("nc -travel once", BotState::BOT_STATE_NON_COMBAT);
                     PlayerbotRendezvousManager::RequestResult result = sPlayerbotRendezvousManager.Request(
                         bot, player, action.actionId, false);
                     if (result == PlayerbotRendezvousManager::RequestResult::accepted ||

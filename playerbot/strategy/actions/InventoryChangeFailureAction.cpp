@@ -89,6 +89,17 @@ bool InventoryChangeFailureAction::Execute(Event& event)
     if (err == EQUIP_ERR_OK)
         return false;
 
+    // These packet-level errors are emitted by autonomous inventory work as
+    // well as direct player commands. In a human-led party they produced a
+    // misleading operational chat line even when the bot still had usable bag
+    // slots. The scoped vendor broker announces a real full-bag trip from the
+    // authoritative aggregate bag-space value, so suppress only these legacy
+    // duplicates here.
+    if (ai->HasActivePlayerMaster() &&
+        (err == EQUIP_ERR_BAG_FULL || err == EQUIP_ERR_INVENTORY_FULL ||
+         err == EQUIP_ERR_BAG_FULL4 || err == EQUIP_ERR_BAG_FULL6))
+        return true;
+
     std::string msg = messages[(InventoryResult)err];
     if (!msg.empty())
     {

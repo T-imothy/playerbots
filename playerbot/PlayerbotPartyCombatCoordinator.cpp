@@ -269,6 +269,25 @@ PlayerbotPartyCombatCoordinator::GroupState* PlayerbotPartyCombatCoordinator::En
 void PlayerbotPartyCombatCoordinator::Update(Player* bot)
 {
     ReloadPolicy(); GroupState* state = EnsureState(bot); if (!state) return;
+    // Human-led bots intentionally do not load Playerbots' broad maintenance
+    // strategy. Run the narrowly grounded quest-source action explicitly from
+    // the mixed-party coordinator instead of relying on a trigger that does
+    // not exist in this engine configuration.
+    uint32 now = WorldTimer::getMSTime();
+    uint32& lastAttempt = lastQuestMaintenance[bot->GetGUIDLow()];
+    if (bot->IsAlive() && !bot->IsInCombat() &&
+        (!lastAttempt || WorldTimer::getMSTimeDiff(lastAttempt, now) >= 1000))
+    {
+        lastAttempt = now;
+        PlayerbotAI* ai = bot->GetPlayerbotAI();
+        if (ai && ai->CanDoSpecificAction("use random quest item", true, true))
+        {
+            bool used = ai->DoSpecificAction("use random quest item",
+                Event("living mixed party quest maintenance", "", ai->GetMaster()), true);
+            sLog.outString("Living WoW party maintenance bot=%u name=%s action=quest_source_item result=%s",
+                bot->GetGUIDLow(), bot->GetName(), used ? "executed" : "failed");
+        }
+    }
     if (policy.addonTelemetry && WorldTimer::getMSTimeDiff(state->lastTelemetry, WorldTimer::getMSTime()) >= policy.telemetryMilliseconds)
     { state->lastTelemetry = WorldTimer::getMSTime(); SendSnapshot(bot->GetGroup(), *state); }
 }
