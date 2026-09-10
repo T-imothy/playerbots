@@ -199,7 +199,8 @@ bool PlayerbotOrganicEconomy::SafeForEconomy(Player* bot) const
         return false;
     PlayerbotAI* ai = bot->GetPlayerbotAI();
     bool partyFreeTime = sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow());
-    if (!ai || (ai->GetMaster() && !partyFreeTime))
+    if (!ai || sPlayerbotRendezvousManager.BlocksAutonomousPartyWork(bot->GetGUIDLow()) ||
+        (ai->GetMaster() && !partyFreeTime))
         return false;
     Group* group = bot->GetGroup();
     if (group)

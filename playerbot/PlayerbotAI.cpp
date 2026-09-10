@@ -2107,28 +2107,9 @@ void PlayerbotAI::DoNextAction(bool min)
         return;
     }
 
-    // Guild-event formation is a world-owned movement barrier. Normal
-    // non-combat travel, LFG, RPG, and wandering actions otherwise replace
-    // the rendezvous manager's MoveFollow generator; live events then bounce
-    // between assembly_held and assembly_rejoin until their timeout. Preserve
-    // participant follow movement and hold the organizer in place while still
-    // allowing the combat engine to defend either character if attacked.
-    if (currentEngine == engines[(uint8)BotState::BOT_STATE_NON_COMBAT])
-    {
-        const uint32 botGuid = bot->GetGUIDLow();
-        if (sPlayerbotRendezvousManager.IsGuildEventAssemblyOrganizer(botGuid))
-        {
-            if (sServerFacade.isMoving(bot))
-                StopMoving();
-            SetAIInternalUpdateDelay(sPlayerbotAIConfig.globalCoolDown);
-            return;
-        }
-        if (sPlayerbotRendezvousManager.IsGuildEventAssemblyParticipant(botGuid))
-        {
-            SetAIInternalUpdateDelay(sPlayerbotAIConfig.globalCoolDown);
-            return;
-        }
-    }
+    // Party/guild rendezvous no longer suppresses the whole non-combat engine.
+    // MovementAction applies the narrow world-owned route gate, leaving loot,
+    // rolls, healing, and local interactions available while assembling.
 
     bool partyFreeTime = sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow());
     if (partyFreeTime && master && master != bot)

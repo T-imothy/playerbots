@@ -1218,3 +1218,30 @@ AiPlayerbot.ChatDirectorRendezvousDepartureSeconds = 90
 # Keep a human-created mixed party intact while its human is temporarily
 # disconnected. An intentional group leave still starts departure immediately.
 AiPlayerbot.ChatDirectorPartyDisconnectGraceSeconds = 300
+# One world-authoritative owner controls movement-changing party work. These
+# four flags are independently reversible during rollout.
+AiPlayerbot.ChatDirectorPartyActivityOwnership = 1
+AiPlayerbot.ChatDirectorPartyVerifiedErrands = 1
+AiPlayerbot.ChatDirectorPartyFallbackTravel = 1
+AiPlayerbot.ChatDirectorPartyCentralSuppression = 1
+# A newly created or reconstructed human party gets one relocation-cooldown
+# bypass; later catch-ups obey the normal rendezvous cooldown.
+AiPlayerbot.ChatDirectorPartyFreshPartyCooldownBypass = 1
+
+# Maximum time a bot waits at a rendezvous for the committed operation to
+# finish before beginning its safe return workflow.
+AiPlayerbot.ChatDirectorPartyReturnWaitSeconds = 120
+
+# Only allow catch-up relocation after a typed task has been selected and
+# committed to the activity lease.
+AiPlayerbot.ChatDirectorPartyCommittedActionsOnly = 1
+AiPlayerbot.ChatDirectorPartyPostArrivalErrandGraceSeconds = 30
+AiPlayerbot.ChatDirectorPartyLocalServiceRadiusYards = 600
+AiPlayerbot.ChatDirectorPartyCriticalBagUsagePercent = 90
+AiPlayerbot.ChatDirectorPartyTaskActiveDeadlineSeconds = 45
+AiPlayerbot.ChatDirectorPartyBundleActiveDeadlineSeconds = 120
+AiPlayerbot.ChatDirectorPartyBundleWallDeadlineSeconds = 180
+AiPlayerbot.ChatDirectorPartyTaskRouteAttempts = 2
+AiPlayerbot.ChatDirectorPartyTaskOperationAttempts = 2
+AiPlayerbot.ChatDirectorPartyErrandCooldownSeconds = 600
+AiPlayerbot.ChatDirectorPartyErrandSummaries = 1

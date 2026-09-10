@@ -148,7 +148,9 @@ bool PlayerbotSocialActionBroker::HasActiveVendorTrip(uint32 botGuid) const
 {
     for (const auto& pair : actions)
         if (pair.second.botGuid == botGuid && pair.second.type == "vendor_bags" &&
-            (pair.second.state == "vendor_travel" || pair.second.state == "returning"))
+            (pair.second.state == "vendor_travel" || pair.second.state == "vendor_relocating" ||
+             pair.second.state == "return_pending" ||
+             pair.second.state == "returning"))
             return true;
     return false;
 }
@@ -161,6 +163,10 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
         return false;
     uint8 bagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
     if (bagUsage < 80)
+        return false;
+    if (!sPlayerbotRendezvousManager.AcquirePartyActivityLease(bot->GetGUIDLow(),
+        PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+        PlayerbotRendezvousManager::PartyActivityPhase::traveling, 300, "vendor_bags"))
         return false;
 
     LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
@@ -177,6 +183,11 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
         if (announce)
             bot->GetPlayerbotAI()->SayToParty(
                 "My bags are packed, but everything left is protected for quests, crafting, banking, or the auction house. I'll sort it out after the group.", true);
+        sPlayerbotRendezvousManager.ResumePartyAssist(bot, player,
+            "vendor_trip_not_started");
+        sPlayerbotRendezvousManager.ReleasePartyActivityLease(bot->GetGUIDLow(),
+            PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+            PlayerbotRendezvousManager::PartyActivityPhase::deferred, reason);
         return false;
     }
 
@@ -193,6 +204,12 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
         sPlayerbotInventoryPressure.Defer(bot, pressure, "no_same_map_maintenance_destination");
         sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=target_rejected kind=%s bag=%u",
             bot->GetGUIDLow(), bot->GetName(), maintenanceType.c_str(), (uint32)bagUsage);
+        sPlayerbotRendezvousManager.ResumePartyAssist(bot, player,
+            "vendor_trip_target_unavailable");
+        sPlayerbotRendezvousManager.ReleasePartyActivityLease(bot->GetGUIDLow(),
+            PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+            PlayerbotRendezvousManager::PartyActivityPhase::failed,
+            "no_same_map_maintenance_destination");
         return false;
     }
 
@@ -257,6 +274,12 @@ bool PlayerbotSocialActionBroker::CanUseSharedObject(Player* bot, Player* player
     if (!bot || !player || !guid.IsGameObject() || !bot->GetPlayerbotAI() || !bot->GetGroup() ||
         bot->GetGroup() != player->GetGroup() || !player->isRealPlayer())
         return true;
+
+    PlayerbotRendezvousManager::PartyActivityOwner movementOwner =
+        sPlayerbotRendezvousManager.GetPartyActivityOwner(bot->GetGUIDLow());
+    if (movementOwner != PlayerbotRendezvousManager::PartyActivityOwner::none &&
+        movementOwner != PlayerbotRendezvousManager::PartyActivityOwner::party_follow)
+        return false;
 
     LootObject loot(bot, guid);
     GameObject* node = bot->GetPlayerbotAI()->GetGameObject(guid);
@@ -430,7 +453,17 @@ void PlayerbotSocialActionBroker::QueuePartyReturn(Action& action, Player* bot, 
     const std::string& reason, bool success)
 {
     if (!bot || !bot->GetPlayerbotAI())
+    {
+        action.state = "failed";
+        action.failureReason = "vendor character became unavailable before party return";
+        action.completedAt = std::chrono::steady_clock::now();
+        sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
+            PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+            PlayerbotRendezvousManager::PartyActivityPhase::failed,
+            "party_return_bot_unavailable");
+        Report(action);
         return;
+    }
     bot->GetPlayerbotAI()->ChangeStrategy("nc -travel once", BotState::BOT_STATE_NON_COMBAT);
     TravelTarget* completedTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
         GetValue<TravelTarget*>("travel target")->Get();
@@ -440,17 +473,43 @@ void PlayerbotSocialActionBroker::QueuePartyReturn(Action& action, Player* bot, 
     // The ordinary rendezvous manager intentionally rejects instances. A
     // vendor trip that began inside a dungeon is narrower: the bot is still in
     // the same party, and the validated maintenance action owns its return.
-    // Teleport to the live party member so normal instance binding chooses the
-    // correct copy, then let the returning state restore follow on arrival.
+    // Relocate to a hidden, path-valid staging point on the party's instance,
+    // then let the returning state run the last few seconds naturally.
+    bool dungeonParty = player && player->GetMap() && player->GetMap()->IsDungeon();
     bool dungeonReturn = false;
-    if (player && player->GetMap() && player->GetMap()->IsDungeon() &&
-        !bot->IsInCombat() && !bot->IsBeingTeleported())
+    float returnX = 0.0f, returnY = 0.0f, returnZ = 0.0f;
+    if (dungeonParty &&
+        !bot->IsInCombat() && !bot->IsBeingTeleported() &&
+        sPlayerbotRendezvousManager.FindSafeStagingPoint(bot, player,
+            returnX, returnY, returnZ) &&
+        sPlayerbotRendezvousManager.CanRelocateUnobserved(bot, player->GetMap(),
+            returnX, returnY, returnZ) &&
+        sPlayerbotRendezvousManager.ClaimRelocationSlot())
     {
-        dungeonReturn = bot->TeleportTo(player->GetMapId(), player->GetPositionX(),
-            player->GetPositionY(), player->GetPositionZ(), player->GetOrientation());
+        dungeonReturn = bot->TeleportTo(player->GetMapId(), returnX,
+            returnY, returnZ, player->GetOrientation());
+    }
+    if (dungeonParty && !dungeonReturn)
+    {
+        bool firstWait = action.state != "return_pending";
+        action.maintenanceSucceeded = success;
+        action.state = "return_pending";
+        if (firstWait)
+        {
+            action.expires = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+            sPlayerbotRendezvousManager.UpdatePartyActivityLease(bot->GetGUIDLow(),
+                PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+                PlayerbotRendezvousManager::PartyActivityPhase::returning, 90,
+                "dungeon_return_waiting_for_relocation_slot");
+            Report(action);
+        }
+        return;
     }
     if (dungeonReturn || (player && sPlayerbotRendezvousManager.ResumePartyAssist(bot, player, reason)))
     {
+        sPlayerbotRendezvousManager.UpdatePartyActivityLease(bot->GetGUIDLow(),
+            PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+            PlayerbotRendezvousManager::PartyActivityPhase::returning, 90, reason);
         action.state = "returning";
         action.expires = std::chrono::steady_clock::now() + std::chrono::seconds(90);
     }
@@ -463,6 +522,11 @@ void PlayerbotSocialActionBroker::QueuePartyReturn(Action& action, Player* bot, 
         action.completedAt = std::chrono::steady_clock::now();
         if (action.failureReason.empty())
             action.failureReason = "party return could not be queued";
+        sPlayerbotRendezvousManager.ReleasePartyActivityLease(bot->GetGUIDLow(),
+            PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+            success ? PlayerbotRendezvousManager::PartyActivityPhase::completed :
+                PlayerbotRendezvousManager::PartyActivityPhase::failed,
+            reason);
     }
     Report(action);
 }
@@ -1162,7 +1226,8 @@ void PlayerbotSocialActionBroker::Update()
         {
             Player* bot = entry.second;
             if (!bot || !bot->IsInWorld() || !bot->GetPlayerbotAI() || !bot->GetGroup() ||
-                !bot->IsAlive() || bot->IsInCombat() || HasActiveVendorTrip(bot->GetGUIDLow()))
+                !bot->IsAlive() || bot->IsInCombat() || HasActiveVendorTrip(bot->GetGUIDLow()) ||
+                sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow()))
                 continue;
             uint8 bagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
             if (bagUsage < 90)
@@ -1333,6 +1398,41 @@ void PlayerbotSocialActionBroker::Update()
                 Report(action);
             }
         }
+        else if (action.state == "vendor_relocating")
+        {
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
+            Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
+            long transitSeconds = std::chrono::duration_cast<std::chrono::seconds>(
+                now - action.stateSince).count();
+            if (bot && player && bot->IsInWorld() && !bot->IsBeingTeleported() &&
+                bot->GetGroup() == player->GetGroup())
+            {
+                action.state = "vendor_travel";
+                action.stateSince = now;
+                bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("nearest npcs");
+                Report(action);
+            }
+            else if (!bot || !player || transitSeconds >= 45)
+            {
+                if (bot && bot->GetPlayerbotAI())
+                {
+                    bot->GetPlayerbotAI()->ChangeStrategy("nc -travel once",
+                        BotState::BOT_STATE_NON_COMBAT);
+                    TravelTarget* staleTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
+                        GetValue<TravelTarget*>("travel target")->Get();
+                    sTravelMgr.SetNullTravelTarget(staleTarget);
+                    bot->GetPlayerbotAI()->RequestStrategyReset(true);
+                }
+                action.state = "failed";
+                action.failureReason = "vendor relocation worldport did not complete";
+                action.completedAt = now;
+                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
+                    PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+                    PlayerbotRendezvousManager::PartyActivityPhase::failed,
+                    "vendor_relocation_ack_timeout");
+                Report(action);
+            }
+        }
         else if (action.state == "vendor_travel")
         {
             Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
@@ -1341,10 +1441,30 @@ void PlayerbotSocialActionBroker::Update()
             {
                 action.state = "failed";
                 action.failureReason = "party or character state changed during vendor trip";
-                Report(action);
-                if (bot && bot->GetPlayerbotAI() && action.restoreFollow)
-                    bot->GetPlayerbotAI()->ChangeStrategy("nc +follow", BotState::BOT_STATE_NON_COMBAT);
+                if (bot && bot->GetPlayerbotAI())
+                {
+                    PlayerbotAI* ai = bot->GetPlayerbotAI();
+                    ai->ChangeStrategy("nc -travel once", BotState::BOT_STATE_NON_COMBAT);
+                    TravelTarget* staleTarget = ai->GetAiObjectContext()->
+                        GetValue<TravelTarget*>("travel target")->Get();
+                    sTravelMgr.SetNullTravelTarget(staleTarget);
+                    ai->GetAiObjectContext()->ClearValues("no active travel destinations");
+                    ai->StopMoving();
+                    bool sameParty = player && bot->GetGroup() &&
+                        bot->GetGroup() == player->GetGroup();
+                    bool resumed = sameParty &&
+                        sPlayerbotRendezvousManager.ResumePartyAssist(bot, player,
+                            "vendor_trip_participant_unavailable");
+                    if (!resumed)
+                        ai->RequestStrategyReset(true);
+                }
                 action.restoreFollow = false;
+                action.completedAt = now;
+                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
+                    PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+                    PlayerbotRendezvousManager::PartyActivityPhase::failed,
+                    "vendor_trip_participant_unavailable");
+                Report(action);
             }
             else
             {
@@ -1368,18 +1488,34 @@ void PlayerbotSocialActionBroker::Update()
                         bool relocated = false;
                         if (sameMap)
                         {
-                            bot->NearTeleportTo(destination->getX(), destination->getY(),
-                                destination->getZ(), destination->getO());
-                            relocated = true;
+                            if (sPlayerbotRendezvousManager.CanRelocateUnobserved(bot,
+                                bot->GetMap(), destination->getX(), destination->getY(),
+                                destination->getZ()) &&
+                                sPlayerbotRendezvousManager.ClaimRelocationSlot())
+                            {
+                                bot->NearTeleportTo(destination->getX(), destination->getY(),
+                                    destination->getZ(), destination->getO());
+                                relocated = true;
+                            }
                         }
                         else if (bot->GetMap() && bot->GetMap()->IsDungeon())
                         {
-                            relocated = bot->TeleportTo(destination->getMapId(), destination->getX(),
-                                destination->getY(), destination->getZ(), destination->getO());
+                            Map* destinationMap = sMapMgr.FindMap(destination->getMapId(), 0);
+                            if (sPlayerbotRendezvousManager.CanRelocateUnobserved(bot,
+                                destinationMap, destination->getX(), destination->getY(),
+                                destination->getZ()) &&
+                                sPlayerbotRendezvousManager.ClaimRelocationSlot())
+                                relocated = bot->TeleportTo(destination->getMapId(), destination->getX(),
+                                    destination->getY(), destination->getZ(), destination->getO());
                         }
                         action.outboundRelocated = relocated;
                         if (relocated)
                         {
+                            if (!sameMap)
+                            {
+                                action.state = "vendor_relocating";
+                                action.stateSince = now;
+                            }
                             bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("nearest npcs");
                             sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=relocated map=%u area=%s",
                                 bot->GetGUIDLow(), bot->GetName(), destination->getMapId(),
@@ -1387,6 +1523,9 @@ void PlayerbotSocialActionBroker::Update()
                         }
                     }
                 }
+
+                if (action.state == "vendor_relocating")
+                    continue;
 
                 if (!bot->IsBeingTeleported() && target && (target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK ||
                     target->Distance(bot) <= INTERACTION_DISTANCE))
@@ -1474,6 +1613,37 @@ void PlayerbotSocialActionBroker::Update()
                 }
             }
         }
+        else if (action.state == "return_pending")
+        {
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
+            Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
+            bool invalid = !bot || !player || !bot->IsInWorld() || !player->IsInWorld() ||
+                !bot->GetGroup() || bot->GetGroup() != player->GetGroup();
+            if (invalid || now >= action.expires)
+            {
+                if (bot && bot->GetPlayerbotAI())
+                {
+                    bot->GetPlayerbotAI()->ChangeStrategy("nc -travel once",
+                        BotState::BOT_STATE_NON_COMBAT);
+                    TravelTarget* staleTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
+                        GetValue<TravelTarget*>("travel target")->Get();
+                    sTravelMgr.SetNullTravelTarget(staleTarget);
+                    bot->GetPlayerbotAI()->RequestStrategyReset(true);
+                }
+                action.state = "failed";
+                action.failureReason = invalid ? "party changed while return relocation was pending" :
+                    "party return relocation timed out";
+                action.completedAt = now;
+                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
+                    PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+                    PlayerbotRendezvousManager::PartyActivityPhase::failed,
+                    invalid ? "party_return_participant_unavailable" : "party_return_timeout");
+                Report(action);
+            }
+            else
+                QueuePartyReturn(action, bot, player, "vendor_return_retry",
+                    action.maintenanceSucceeded);
+        }
         else if (action.state == "returning")
         {
             Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
@@ -1485,6 +1655,10 @@ void PlayerbotSocialActionBroker::Update()
                 action.restoreFollow = false;
                 action.state = "completed";
                 action.completedAt = now;
+                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
+                    PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+                    PlayerbotRendezvousManager::PartyActivityPhase::completed,
+                    "party_return_completed");
                 Report(action);
             }
             else if (now >= action.expires)
@@ -1495,7 +1669,18 @@ void PlayerbotSocialActionBroker::Update()
                 action.state = "failed";
                 action.failureReason = "party return timed out";
                 action.completedAt = now;
+                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
+                    PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+                    PlayerbotRendezvousManager::PartyActivityPhase::failed,
+                    "party_return_timeout");
                 Report(action);
+            }
+            else if (bot && player && bot->IsInWorld() && player->IsInWorld() &&
+                !bot->IsBeingTeleported() && !bot->IsInCombat() &&
+                bot->GetMapId() == player->GetMapId() &&
+                bot->GetInstanceId() == player->GetInstanceId())
+            {
+                bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
             }
         }
         else if (action.state == "meeting")
@@ -1538,8 +1723,8 @@ void PlayerbotSocialActionBroker::Report(const Action& action) const
 {
     Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
     Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
-    uint32 currentGroupId = player && player->GetGroup() ? player->GetGroup()->GetId() : action.groupId;
-    std::string partySessionId = currentGroupId ? "party:" + std::to_string(currentGroupId) : "";
+    std::string partySessionId = bot ? sPlayerbotRendezvousManager.GetPartySessionId(bot) :
+        (player ? sPlayerbotRendezvousManager.GetPartySessionId(player) : "");
     std::ostringstream body;
     body << "{\"transaction_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(action.actionId)
          << "\",\"event_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(action.eventId)

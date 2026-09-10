@@ -405,6 +405,10 @@ public:
     bool llmGlobalContext, chatDirectorV2, chatDirectorSocialActions, chatDirectorProactiveGrouping;
     bool chatDirectorSuppressLegacyOperationalChat;
     bool chatDirectorRendezvousCatchup;
+    bool chatDirectorPartyActivityOwnership, chatDirectorPartyVerifiedErrands;
+    bool chatDirectorPartyFallbackTravel, chatDirectorPartyCentralSuppression;
+    bool chatDirectorPartyFreshCooldownBypass, chatDirectorPartyErrandSummaries;
+    bool chatDirectorPartyCommittedActionsOnly;
     uint32 chatDirectorBotRecoveryMode, chatDirectorHealthSampleSeconds, chatDirectorMovementStuckSeconds, chatDirectorQuestStuckSeconds;
     uint32 chatDirectorRecoveryCooldownSeconds, chatDirectorMaxRecoveriesPerHour, chatDirectorRecoveryMaximumStep;
     uint32 chatDirectorRecoveryNoProgressSeconds, chatDirectorRecoveryFailureBackoffSeconds;
@@ -415,6 +419,12 @@ public:
     uint32 chatDirectorRendezvousTargetSeconds, chatDirectorRendezvousMaximumSeconds;
     uint32 chatDirectorRendezvousTriggerSeconds, chatDirectorRendezvousCooldownSeconds;
     uint32 chatDirectorRendezvousDepartureSeconds, chatDirectorPartyDisconnectGraceSeconds;
+    uint32 chatDirectorPartyReturnWaitSeconds;
+    uint32 chatDirectorPartyPostArrivalErrandGraceSeconds, chatDirectorPartyLocalServiceRadiusYards;
+    uint32 chatDirectorPartyCriticalBagUsagePercent, chatDirectorPartyTaskActiveDeadlineSeconds;
+    uint32 chatDirectorPartyBundleActiveDeadlineSeconds, chatDirectorPartyBundleWallDeadlineSeconds;
+    uint32 chatDirectorPartyTaskRouteAttempts, chatDirectorPartyTaskOperationAttempts;
+    uint32 chatDirectorPartyErrandCooldownSeconds;
     uint32 chatDirectorSocialOfferSeconds, chatDirectorProactivePlayerCooldownSeconds;
     uint32 chatDirectorProactivePairCooldownSeconds, chatDirectorSharedActivitySeconds;
     uint32 chatDirectorSharedActivityWindowSeconds, chatDirectorSharedActivityDistance, chatDirectorMaximumLevelDifference;

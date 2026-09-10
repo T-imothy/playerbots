@@ -6,6 +6,7 @@
 #include "playerbot/FleeManager.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/PlayerbotRendezvousManager.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/Stances.h"
@@ -36,7 +37,11 @@ void MovementAction::CreateWp(Player* wpOwner, float x, float y, float z, float 
 
 bool MovementAction::isPossible()
 {
-    return ai->CanMove();
+    if (!ai->CanMove()) return false;
+    if (ai->GetState() == BotState::BOT_STATE_NON_COMBAT &&
+        !sPlayerbotRendezvousManager.AllowsOwnedMovement(bot->GetGUIDLow(), getName()))
+        return false;
+    return true;
 }
 
 bool MovementAction::isUseful()

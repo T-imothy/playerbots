@@ -48,6 +48,7 @@ private:
         bool outboundRelocated = false;
         bool restoreFollow = false;
         bool repairAttempted = false;
+        bool maintenanceSucceeded = false;
         std::string state;
         std::string failureReason;
         std::chrono::steady_clock::time_point expires;

@@ -16,6 +16,7 @@ public:
     static PlayerbotOrganicEconomy& instance();
     void Update();
     std::string CurrentGoalType(uint32 characterGuid) const;
+    bool IsAuctionPostingEnabled() const { return policy.mode == "active" && policy.posting; }
 
 private:
     struct Policy

@@ -879,6 +879,8 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
     candidate.ghost = bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST);
     candidate.partyAssistState = sPlayerbotRendezvousManager.PartyState(bot->GetGUIDLow());
     candidate.partyAssistReason = sPlayerbotRendezvousManager.PartyReason(bot->GetGUIDLow());
+    candidate.partyActivityStateJson =
+        sPlayerbotRendezvousManager.GetPartyActivityStateJson(bot->GetGUIDLow());
     candidate.deadRecoveryAttempts = sPlayerbotRendezvousManager.PartyDeadRecoveryAttempts(bot->GetGUIDLow());
     candidate.deadRecoverySeconds = sPlayerbotRendezvousManager.PartyDeadRecoverySeconds(bot->GetGUIDLow());
     candidate.subzone = sServerFacade.GetAreaId(bot);
@@ -1756,7 +1758,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             MOVEFLAG_LEVITATING | MOVEFLAG_HOVER | MOVEFLAG_SWIMMING);
         bool excluded = !bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() || bot->IsInWater() ||
             bot->IsNonMeleeSpellCasted(false) || bot->GetTransport() || playerStay || airborne ||
-            humanDirectedGroup || botOnlyGroupFollower;
+            humanDirectedGroup || botOnlyGroupFollower ||
+            sPlayerbotRendezvousManager.BlocksAutonomousPartyWork(bot->GetGUIDLow());
         bool expectsMovement = lowered.find("move") != std::string::npos || lowered.find("travel") != std::string::npos ||
             lowered.find("quest") != std::string::npos || lowered.find("rpg") != std::string::npos;
         // Position changes alone are not meaningful progression. Bots that
@@ -2548,6 +2551,114 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
     }
 }
 
+void PlayerbotChatDirector::MaybeReportPartyActivity(std::chrono::steady_clock::time_point now)
+{
+    if (nextPartyActivitySample.time_since_epoch().count() && now < nextPartyActivitySample)
+        return;
+    if (pendingPartyActivityTelemetry.valid())
+    {
+        if (pendingPartyActivityTelemetry.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+            return;
+        bool recorded = false;
+        try
+        {
+            recorded = pendingPartyActivityTelemetry.get() == "recorded";
+        }
+        catch (...)
+        {
+            recorded = false;
+        }
+        if (!recorded && !pendingPartyActivityTransitions.empty())
+        {
+            sPlayerbotRendezvousManager.RequeuePartyActivityTelemetry(
+                pendingPartyActivityTransitions);
+            sLog.outError("Living WoW party activity telemetry delivery failed; requeued %u transitions",
+                (uint32)pendingPartyActivityTransitions.size());
+        }
+        pendingPartyActivityTransitions.clear();
+    }
+    nextPartyActivitySample = now + std::chrono::seconds(5);
+    bool includeSnapshots = !nextPartyActivitySnapshot.time_since_epoch().count() ||
+        now >= nextPartyActivitySnapshot;
+    if (includeSnapshots)
+        nextPartyActivitySnapshot = now + std::chrono::seconds(60);
+    size_t transitionCount = 0;
+    std::vector<std::string> events =
+        sPlayerbotRendezvousManager.DrainPartyActivityTelemetry(includeSnapshots, &transitionCount);
+    if (events.empty() && !includeSnapshots)
+        return;
+    std::ostringstream policy;
+    policy << "{\"policyVersion\":1,\"partyActivityContractVersion\":1"
+           << ",\"enabled\":" << (sPlayerbotAIConfig.chatDirectorRendezvousCatchup ? "true" : "false")
+           << ",\"activityOwnership\":" << (sPlayerbotAIConfig.chatDirectorPartyActivityOwnership ? "true" : "false")
+           << ",\"verifiedErrands\":" << (sPlayerbotAIConfig.chatDirectorPartyVerifiedErrands ? "true" : "false")
+           << ",\"fallbackTravel\":" << (sPlayerbotAIConfig.chatDirectorPartyFallbackTravel ? "true" : "false")
+           << ",\"centralSuppression\":" << (sPlayerbotAIConfig.chatDirectorPartyCentralSuppression ? "true" : "false")
+           << ",\"freshPartyCooldownBypass\":" << (sPlayerbotAIConfig.chatDirectorPartyFreshCooldownBypass ? "true" : "false")
+           << ",\"errandSummaries\":" << (sPlayerbotAIConfig.chatDirectorPartyErrandSummaries ? "true" : "false")
+           << ",\"committedActionsOnly\":" << (sPlayerbotAIConfig.chatDirectorPartyCommittedActionsOnly ? "true" : "false")
+           << ",\"targetArrivalSeconds\":" << sPlayerbotAIConfig.chatDirectorRendezvousTargetSeconds
+           << ",\"maximumArrivalSeconds\":" << sPlayerbotAIConfig.chatDirectorRendezvousMaximumSeconds
+           << ",\"triggerEtaSeconds\":" << sPlayerbotAIConfig.chatDirectorRendezvousTriggerSeconds
+           << ",\"perBotCooldownSeconds\":" << sPlayerbotAIConfig.chatDirectorRendezvousCooldownSeconds
+           << ",\"departureMaximumSeconds\":" << sPlayerbotAIConfig.chatDirectorRendezvousDepartureSeconds
+           << ",\"returnWaitSeconds\":" << sPlayerbotAIConfig.chatDirectorPartyReturnWaitSeconds
+           << ",\"postArrivalErrandGraceSeconds\":" << sPlayerbotAIConfig.chatDirectorPartyPostArrivalErrandGraceSeconds
+           << ",\"localServiceRadiusYards\":" << sPlayerbotAIConfig.chatDirectorPartyLocalServiceRadiusYards
+           << ",\"criticalBagUsagePercent\":" << sPlayerbotAIConfig.chatDirectorPartyCriticalBagUsagePercent
+           << ",\"taskActiveDeadlineSeconds\":" << sPlayerbotAIConfig.chatDirectorPartyTaskActiveDeadlineSeconds
+           << ",\"bundleActiveDeadlineSeconds\":" << sPlayerbotAIConfig.chatDirectorPartyBundleActiveDeadlineSeconds
+           << ",\"bundleWallDeadlineSeconds\":" << sPlayerbotAIConfig.chatDirectorPartyBundleWallDeadlineSeconds
+           << ",\"taskRouteAttempts\":" << sPlayerbotAIConfig.chatDirectorPartyTaskRouteAttempts
+           << ",\"taskOperationAttempts\":" << sPlayerbotAIConfig.chatDirectorPartyTaskOperationAttempts
+           << ",\"errandCooldownSeconds\":" << sPlayerbotAIConfig.chatDirectorPartyErrandCooldownSeconds << '}';
+
+    std::vector<std::string> payloads;
+    std::ostringstream batch;
+    batch << "{\"events\":[";
+    bool first = true;
+    for (const std::string& event : events)
+    {
+        if (!first && batch.str().size() + event.size() + policy.str().size() + 32 > 60000)
+        {
+            batch << "],\"effective_policy\":" << policy.str() << '}';
+            payloads.push_back(batch.str());
+            batch.str(""); batch.clear(); batch << "{\"events\":[";
+            first = true;
+        }
+        if (!first) batch << ',';
+        batch << event;
+        first = false;
+    }
+    batch << "],\"effective_policy\":" << policy.str() << '}';
+    payloads.push_back(batch.str());
+    pendingPartyActivityTransitions.assign(events.begin(),
+        events.begin() + std::min(transitionCount, events.size()));
+    try
+    {
+        pendingPartyActivityTelemetry = std::async(std::launch::async, [payloads]()
+        {
+            std::vector<std::string> debug;
+            for (const std::string& payload : payloads)
+            {
+                std::string result = PlayerbotLLMInterface::Generate(payload, 3, 2,
+                    debug, true, "/v2/party-activity/events");
+                if (result.find("\"status\": \"recorded\"") == std::string::npos &&
+                    result.find("\"status\":\"recorded\"") == std::string::npos)
+                    return std::string("failed");
+            }
+            return std::string("recorded");
+        });
+    }
+    catch (...)
+    {
+        sPlayerbotRendezvousManager.RequeuePartyActivityTelemetry(
+            pendingPartyActivityTransitions);
+        pendingPartyActivityTransitions.clear();
+        sLog.outError("Living WoW party activity telemetry worker could not start");
+    }
+}
+
 void PlayerbotChatDirector::MaybeReportProgressionTrace(std::chrono::steady_clock::time_point now)
 {
     if (sPlayerbotAIConfig.chatDirectorDeepTraceBotGuids.empty()) return;
@@ -2943,7 +3054,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
     uint32 partyId = conversationSpeaker && conversationSpeaker->GetGroup() ?
         conversationSpeaker->GetGroup()->GetId() : 0;
     uint32 speakerGuildId = conversationSpeaker ? conversationSpeaker->GetGuildId() : 0;
-    std::string partySessionId = partyId ? "party:" + std::to_string(partyId) :
+    std::string partySessionId = partyId ? sPlayerbotRendezvousManager.GetPartySessionId(conversationSpeaker) :
         speakerGuildId ? "guild:" + std::to_string(speakerGuildId) + ":player:" +
             std::to_string(event.speakerGuid) : "player:" + std::to_string(event.speakerGuid);
 
@@ -3064,6 +3175,8 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
              << "\",\"party_assist_reason\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.partyAssistReason)
              << "\",\"dead_recovery_attempts\":" << candidate.deadRecoveryAttempts
              << ",\"dead_recovery_seconds\":" << candidate.deadRecoverySeconds
+             << ",\"party_activity_state\":" <<
+                (candidate.partyActivityStateJson.empty() ? "null" : candidate.partyActivityStateJson)
              << ",\"available\":" << (candidate.available ? "true" : "false");
         uint32 stateRevision = candidate.groupState.groupId ^ (candidate.groupState.leaderGuid << 1) ^
             (candidate.groupState.memberCount << 24) ^ (candidate.inCombat ? 0x40000000 : 0) ^
@@ -4558,6 +4671,7 @@ void PlayerbotChatDirector::Update()
     MaybeAdvertiseGuilds(now);
     MaybeCreateProactiveGroupEvent(now);
     MaybeReportBotHealth(now);
+    MaybeReportPartyActivity(now);
     MaybeReportProgressionTrace(now);
     MaybeReportGuildSocieties(now);
     sPlayerbotOrganicEconomy.Update();

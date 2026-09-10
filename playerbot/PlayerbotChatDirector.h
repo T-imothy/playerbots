@@ -118,6 +118,7 @@ struct ChatDirectorCandidate
     bool available = true;
     std::string partyAssistState;
     std::string partyAssistReason;
+    std::string partyActivityStateJson;
     uint32 deadRecoveryAttempts = 0;
     uint32 deadRecoverySeconds = 0;
     bool hasPetition = false;
@@ -208,6 +209,7 @@ private:
     void MaybeCreateProactiveGroupEvent(std::chrono::steady_clock::time_point now);
     void MaybeReportBotHealth(std::chrono::steady_clock::time_point now);
     void MaybeReportProgressionTrace(std::chrono::steady_clock::time_point now);
+    void MaybeReportPartyActivity(std::chrono::steady_clock::time_point now);
     void MaybeReportOrganicEconomy(std::chrono::steady_clock::time_point now);
     void MaybeReportGuildSocieties(std::chrono::steady_clock::time_point now);
     void ApplyGuildPlans(const std::string& response, std::chrono::steady_clock::time_point now);
@@ -270,6 +272,10 @@ private:
     std::set<uint32> guildAddonClients;
     std::chrono::steady_clock::time_point nextHealthSample;
     std::chrono::steady_clock::time_point nextProgressionTraceSample;
+    std::chrono::steady_clock::time_point nextPartyActivitySample;
+    std::chrono::steady_clock::time_point nextPartyActivitySnapshot;
+    std::future<std::string> pendingPartyActivityTelemetry;
+    std::vector<std::string> pendingPartyActivityTransitions;
     std::map<uint32, BotHealthState> botHealth;
     std::map<std::string, std::chrono::steady_clock::time_point> questPlanCooldowns;
     struct SharedActivityState

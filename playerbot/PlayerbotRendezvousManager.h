@@ -2,8 +2,10 @@
 #define _PLAYERBOT_RENDEZVOUS_MANAGER_H
 
 #include <chrono>
+#include <deque>
 #include <map>
 #include <string>
+#include <vector>
 
 class Player;
 class Map;
@@ -12,13 +14,23 @@ class PlayerbotRendezvousManager
 {
 public:
     enum class RequestResult { accepted, ordinary_travel, unavailable, unsafe };
+    enum class PartyActivityOwner
+    {
+        none, party_follow, combat, death_recovery, transport, rendezvous,
+        party_errand, guild_event, player_command
+    };
+    enum class PartyActivityPhase
+    {
+        idle, preparing, departing, traveling, performing, returning,
+        verifying, deferred, blocked, completed, failed
+    };
 
     static PlayerbotRendezvousManager& instance();
     RequestResult Request(Player* bot, Player* player, const std::string& actionId, bool returnAfter);
     // Registers a temporary human-created party assist without moving the bot
     // inside the invitation handler. The world update performs any relocation
     // after the group opcode and Playerbots strategy reset have completed.
-    bool RegisterPartyAssist(Player* bot, Player* inviter);
+    bool RegisterPartyAssist(Player* bot, Player* inviter, bool recovered = false);
     // Re-arm an existing mixed-party assist after a scoped trip (for example,
     // vending) so the bot returns through the same catch-up relocation used
     // after an invitation instead of selecting ordinary long-distance travel.
@@ -43,13 +55,77 @@ public:
     // preserve manager-issued follow movement while holding the organizer.
     bool IsGuildEventAssemblyParticipant(uint32 botGuid) const;
     bool IsGuildEventAssemblyOrganizer(uint32 botGuid) const;
+    PartyActivityOwner GetPartyActivityOwner(uint32 botGuid) const;
+    PartyActivityPhase GetPartyActivityPhase(uint32 botGuid) const;
+    static const char* PartyActivityOwnerName(PartyActivityOwner owner);
+    static const char* PartyActivityPhaseName(PartyActivityPhase phase);
+    // Stable for one authoritative roster lifecycle and shared by Chat v2,
+    // pending offers, and party-activity telemetry.
+    std::string GetPartySessionId(Player* participant) const;
+    uint64 GetPartySessionRevision(Player* participant) const;
+    std::string GetPartyActivityStateJson(uint32 botGuid) const;
+    bool OwnsPartyMovement(uint32 botGuid) const;
+    bool BlocksAutonomousPartyWork(uint32 botGuid) const;
+    bool AllowsOwnedMovement(uint32 botGuid, const std::string& actionName);
+    // One shared world-thread budget for every Living WoW relocation path.
+    // Callers retain pending state until the next manager update if consumed.
+    bool ClaimRelocationSlot();
+    bool CanRelocateUnobserved(Player* bot, Map* destinationMap,
+        float destinationX, float destinationY, float destinationZ) const;
+    bool FindSafeStagingPoint(Player* bot, Player* player,
+        float& x, float& y, float& z) const;
+    bool AcquirePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
+        PartyActivityPhase phase, uint32 ttlSeconds, const std::string& reason);
+    bool UpdatePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
+        PartyActivityPhase phase, uint32 ttlSeconds, const std::string& reason);
+    void ReleasePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
+        PartyActivityPhase terminalPhase, const std::string& reason);
+    std::vector<std::string> DrainPartyActivityTelemetry(bool includeSnapshots,
+        size_t* transitionCount = nullptr);
+    void RequeuePartyActivityTelemetry(const std::vector<std::string>& transitions);
+    // Patch 177 supplies the bounded operational-chat aggregation behind this
+    // API and drains it through the same party-activity transport.
+    void RecordSuppressedActivity(Player* bot, const std::string& origin,
+        const std::string& suppressionClass, const std::string& actionClass,
+        uint32 count = 1);
 
 private:
+    struct ErrandObservation
+    {
+        uint8 bagUsage = 0;
+        uint8 durability = 100;
+        uint32 vendorStacks = 0;
+        uint32 bankStacks = 0;
+        uint32 auctionStacks = 0;
+        uint32 mailPayloads = 0;
+        uint32 auctionCount = 0;
+        uint32 professionSkill = 0;
+        uint32 inventorySignature = 0;
+    };
+
+    // One durable typed record per task in a party errand bundle. Legacy bit
+    // masks below are retained only as an O(1) scheduler index; state exposed
+    // to Chat v2 and telemetry comes from these records.
+    struct PartySettlementErrand
+    {
+        uint32 type = 0;
+        std::string taskId;
+        PartyActivityPhase phase = PartyActivityPhase::preparing;
+        uint32 routeAttempts = 0;
+        uint32 operationAttempts = 0;
+        std::string outcomeCode;
+        ErrandObservation before;
+        ErrandObservation after;
+    };
+
     struct PartySession
     {
         uint32 botGuid = 0;
         uint32 playerGuid = 0;
         uint32 groupId = 0;
+        uint32 partyRosterSignature = 0;
+        std::string partySessionId;
+        uint64 partySessionRevision = 0;
         uint32 originMapId = 0;
         uint32 originInstanceId = 0;
         float originX = 0.0f;
@@ -61,6 +137,7 @@ private:
         std::string reason;
         bool relocated = false;
         bool forceRelocation = false;
+        bool freshCooldownBypassAvailable = false;
         bool approachIssued = false;
         bool freeTimeRecallRequested = false;
         uint32 approachAttempts = 0;
@@ -72,6 +149,23 @@ private:
         uint32 settlementKey = 0;
         uint32 automaticErrandMask = 0;
         uint32 automaticErrandScopeMask = 0;
+        uint32 completedErrandMask = 0;
+        uint32 deferredErrandMask = 0;
+        uint32 currentErrand = 0;
+        uint32 currentErrandCapability = 0;
+        uint32 currentErrandOutput = 0;
+        uint32 currentErrandOutputCountBefore = 0;
+        bool currentErrandLocal = false;
+        std::string currentErrandId;
+        std::map<uint32, PartySettlementErrand> errands;
+        uint32 errandRouteAttempts = 0;
+        uint32 errandOperationAttempts = 0;
+        bool errandOperationAccepted = false;
+        bool errandFallbackUsed = false;
+        bool errandRelocationPending = false;
+        bool errandSummarySent = false;
+        float errandLastDistance = -1.0f;
+        ErrandObservation errandBefore;
         float hearthStartX = 0.0f;
         float hearthStartY = 0.0f;
         float hearthStartZ = 0.0f;
@@ -87,11 +181,18 @@ private:
         std::chrono::steady_clock::time_point nextDeadRecoveryAttempt;
         std::chrono::steady_clock::time_point freeTimeUntil;
         std::chrono::steady_clock::time_point automaticErrandReadyAt;
-        std::chrono::steady_clock::time_point automaticErrandCooldownUntil;
+        std::chrono::steady_clock::time_point postArrivalErrandGraceUntil;
+        std::map<uint32, std::chrono::steady_clock::time_point> automaticErrandCooldowns;
         std::chrono::steady_clock::time_point automaticErrandHardDeadline;
+        std::chrono::steady_clock::time_point automaticErrandActiveDeadline;
+        std::chrono::steady_clock::time_point currentErrandDeadline;
+        std::chrono::steady_clock::time_point currentErrandNoProgressDeadline;
+        std::chrono::steady_clock::time_point errandBlockedSince;
+        std::chrono::steady_clock::time_point nextErrandStep;
         std::chrono::steady_clock::time_point nextSettlementCheck;
         std::chrono::steady_clock::time_point nextAutomaticErrandCheck;
         std::chrono::steady_clock::time_point nextAutomaticErrandProgressLog;
+        std::chrono::steady_clock::time_point errandSummaryReadyAt;
         std::chrono::steady_clock::time_point hearthStarted;
     };
 
@@ -111,8 +212,27 @@ private:
         bool returnAfter = true;
         bool relocated = false;
         bool combatPaused = false;
+        uint32 pendingMapId = 0;
+        float pendingX = 0.0f;
+        float pendingY = 0.0f;
+        float pendingZ = 0.0f;
+        float pendingO = 0.0f;
         std::chrono::steady_clock::time_point started;
         std::chrono::steady_clock::time_point stateSince;
+    };
+
+    struct ExternalLease
+    {
+        PartyActivityOwner owner = PartyActivityOwner::none;
+        PartyActivityPhase phase = PartyActivityPhase::idle;
+        std::string reason;
+        std::chrono::steady_clock::time_point expires;
+    };
+
+    struct GroupLifecycle
+    {
+        uint32 signature = 0;
+        uint64 generation = 0;
     };
 
     Session* Find(uint32 botGuid, uint32 playerGuid);
@@ -125,18 +245,61 @@ private:
     void UpdatePartyAssists();
     Player* FindPartyHuman(Player* bot) const;
     bool PartyHasHuman(Player* bot) const;
+    bool PartyInstanceBoundarySafe(Player* bot, Player* player) const;
     bool PartySafeToRelease(Player* bot) const;
     bool StartPartyApproach(PartySession& session, Player* bot, Player* player);
+    void BeginPartyHandoff(PartySession& session, Player* bot, Player* player,
+        const std::string& reason);
+    void ClearMovementState(Player* bot, Player* master, bool restoreFollow);
     bool ReturnPartyToActivity(PartySession& session, Player* bot);
+    ErrandObservation ObserveErrandState(Player* bot) const;
+    bool StartNextVerifiedErrand(PartySession& session, Player* bot);
+    void UpdateVerifiedErrand(PartySession& session, Player* bot, Player* player,
+        std::chrono::steady_clock::time_point now);
+    bool ExecuteVerifiedErrand(PartySession& session, Player* bot);
+    bool VerifyErrand(const PartySession& session, const ErrandObservation& after) const;
+    void FinishCurrentErrand(PartySession& session, Player* bot, bool completed,
+        const std::string& reason);
+    void QueueActivityTelemetry(uint32 botGuid, uint32 playerGuid, uint32 groupId,
+        PartyActivityOwner owner, PartyActivityPhase phase, const std::string& event,
+        const std::string& reason, uint32 task = 0,
+        const ErrandObservation* before = nullptr, const ErrandObservation* after = nullptr);
+    std::string BuildActivityTelemetry(uint32 botGuid, uint32 playerGuid, uint32 groupId,
+        PartyActivityOwner owner, PartyActivityPhase phase, const std::string& event,
+        const std::string& reason, uint32 task = 0,
+        const ErrandObservation* before = nullptr, const ErrandObservation* after = nullptr,
+        uint32 aggregateCount = 0);
     void LogPartyEvent(const PartySession& session, const char* event) const;
     void LogAutomaticErrandEvent(const PartySession& session, Player* bot, const char* event,
         uint32 previousErrands, uint32 remainingErrands) const;
-    void LogEvent(const Session& session, const char* event) const;
+    void LogEvent(const Session& session, const char* event);
+    uint32 GetPartyRosterSignature(Player* participant) const;
+    void PersistPartySession(const PartySession& session);
+    bool RestorePersistedPartySession(Player* bot, Player* inviter, PartySession& session);
+    void ClearPersistedPartySession(uint32 botGuid);
+    void PrunePersistedPartySessions();
 
     std::map<uint32, Session> sessions;
     std::map<uint32, PartySession> partySessions;
+    std::map<uint32, ExternalLease> externalLeases;
+    std::deque<std::string> activityTelemetry;
+    uint32 activityTelemetryDropped = 0;
+    uint32 activityTelemetryRetried = 0;
+    uint32 activityTelemetryReporter = 0;
+    std::map<std::string, std::chrono::steady_clock::time_point> movementConflictCooldowns;
+    mutable uint64 activitySequence = 0;
+    uint64 errandSequence = 0;
+    bool relocationAvailableThisUpdate = true;
+    mutable uint64 partyProcessEpoch = 0;
+    mutable uint64 partyGenerationSequence = 0;
+    mutable std::map<uint32, GroupLifecycle> groupLifecycles;
+    // A fresh invite that crossed an instance boundary is intentionally
+    // rejected. Periodic restart discovery must not reinterpret that same
+    // live roster as a persisted session and bypass the restriction.
+    std::map<uint32, uint64> freshRestrictedPartyRevisions;
     std::map<uint32, std::chrono::steady_clock::time_point> lastRelocation;
     std::chrono::steady_clock::time_point nextPartyDiscovery;
+    bool partyPersistencePruned = false;
 };
 
 #define sPlayerbotRendezvousManager PlayerbotRendezvousManager::instance()

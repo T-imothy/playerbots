@@ -578,26 +578,47 @@ std::string PlayerbotLLMInterface::Generate(const std::string& prompt, int timeO
     if (debug)
         debugLines.push_back("Send the request: " + requestStr);
 
-    int write_result;
-    if (parsedUrl.https && ssl) {
-        write_result = SSL_write(ssl, requestStr.c_str(), requestStr.size());
-        if (write_result <= 0) {
-            int ssl_error = SSL_get_error(ssl, write_result);
-            std::string error_msg = "Failed to send SSL request. SSL Error: " + std::to_string(ssl_error) + " - " + GetSSLError();
-            if (debug)
-                debugLines.push_back(error_msg);
-            sLog.outError("BotLLM: %s", error_msg.c_str());
+    // send()/SSL_write() may legally accept only part of a request. Treating
+    // any positive result as success truncated larger telemetry batches and
+    // made the caller discard transitions that the gateway never received.
+    size_t bytesSent = 0;
+    bool writeFailed = false;
+    while (bytesSent < requestStr.size()) {
+        size_t remaining = requestStr.size() - bytesSent;
+        int chunk = remaining > 0x7fffffffU ? 0x7fffffff : static_cast<int>(remaining);
+        int writeResult = 0;
+        if (parsedUrl.https && ssl) {
+            writeResult = SSL_write(ssl, requestStr.data() + bytesSent, chunk);
+            if (writeResult <= 0) {
+                int sslError = SSL_get_error(ssl, writeResult);
+                if (sslError == SSL_ERROR_WANT_READ || sslError == SSL_ERROR_WANT_WRITE)
+                    continue;
+                std::string errorMessage = "Failed to send SSL request. SSL Error: " +
+                    std::to_string(sslError) + " - " + GetSSLError();
+                if (debug)
+                    debugLines.push_back(errorMessage);
+                sLog.outError("BotLLM: %s", errorMessage.c_str());
+                writeFailed = true;
+                break;
+            }
+        } else {
+            writeResult = send(sock, requestStr.data() + bytesSent, chunk, 0);
+            if (writeResult <= 0) {
+#ifndef _WIN32
+                if (writeResult < 0 && errno == EINTR)
+                    continue;
+#endif
+                if (debug)
+                    debugLines.push_back("Failed to send complete request");
+                sLog.outError("BotLLM: Failed to send complete request");
+                writeFailed = true;
+                break;
+            }
         }
-    } else {
-        write_result = send(sock, requestStr.c_str(), requestStr.size(), 0);
-        if (write_result < 0) {
-            if (debug)
-                debugLines.push_back("Failed to send request");
-            sLog.outError("BotLLM: Failed to send request");
-        }
+        bytesSent += static_cast<size_t>(writeResult);
     }
 
-    if ((parsedUrl.https && write_result <= 0) || (!parsedUrl.https && write_result < 0)) {
+    if (writeFailed || bytesSent != requestStr.size()) {
         if (parsedUrl.https && ssl) {
             SSL_free(ssl);
             SSL_CTX_free(ctx);
