@@ -19,6 +19,10 @@ public:
     // inside the invitation handler. The world update performs any relocation
     // after the group opcode and Playerbots strategy reset have completed.
     bool RegisterPartyAssist(Player* bot, Player* inviter);
+    // Re-arm an existing mixed-party assist after a scoped trip (for example,
+    // vending) so the bot returns through the same catch-up relocation used
+    // after an invitation instead of selecting ordinary long-distance travel.
+    bool ResumePartyAssist(Player* bot, Player* player, const std::string& reason);
     void BeginDeparture(uint32 botGuid, uint32 playerGuid, const std::string& reason);
     void Cancel(uint32 botGuid, uint32 playerGuid, const std::string& reason);
     void Update();
@@ -42,6 +46,7 @@ private:
         std::string state;
         std::string reason;
         bool relocated = false;
+        bool forceRelocation = false;
         bool approachIssued = false;
         uint32 approachAttempts = 0;
         std::chrono::steady_clock::time_point stateSince;

@@ -4,6 +4,7 @@
 
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/PlayerbotSocialActionBroker.h"
 #include "playerbot/ServerFacade.h"
 
 #include "Grids/GridNotifiers.h"
@@ -230,6 +231,12 @@ bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
         return false;
 
     if (!loot.IsLootPossible(bot))
+        return false;
+
+    // In a mixed party, reserve a node for a human with the same profession
+    // until that player grants this bot permission for the exact world object.
+    if (ai->HasActivePlayerMaster() && requester &&
+        !sPlayerbotSocialActionBroker.CanGatherNode(bot, requester, guid))
         return false;
 
     float gatheringDistanceToUse = sPlayerbotAIConfig.gatheringDistance;

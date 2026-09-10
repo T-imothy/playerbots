@@ -801,6 +801,7 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
                 " percent full and contains items safe to sell to a normal vendor.";
             candidate.actionCapabilities.push_back(std::move(capability));
         }
+        sPlayerbotSocialActionBroker.AddGatheringCapabilities(bot, speaker, candidate);
     }
 
 }

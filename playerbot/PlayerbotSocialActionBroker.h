@@ -3,10 +3,13 @@
 
 #include <chrono>
 #include <map>
+#include <set>
 #include <string>
 
 class Player;
+class ObjectGuid;
 struct ChatDirectorActionProposal;
+struct ChatDirectorCandidate;
 struct ChatDirectorEvent;
 
 class PlayerbotSocialActionBroker
@@ -15,6 +18,8 @@ public:
     static PlayerbotSocialActionBroker& instance();
     bool Supports(const std::string& type) const;
     bool Create(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event);
+    bool CanGatherNode(Player* bot, Player* player, ObjectGuid guid);
+    void AddGatheringCapabilities(Player* bot, Player* player, ChatDirectorCandidate& candidate);
     uint32 PreferredQuest(uint32 botGuid) const;
     void Update();
 
@@ -31,13 +36,29 @@ private:
         uint32 groupId = 0;
         uint32 questId = 0;
         uint8 initialBagUsage = 0;
+        uint8 sellAttempts = 0;
         bool outboundRelocated = false;
         bool restoreFollow = false;
         std::string state;
         std::string failureReason;
         std::chrono::steady_clock::time_point expires;
         std::chrono::steady_clock::time_point stateSince;
+        std::chrono::steady_clock::time_point lastSellAttempt;
         std::chrono::steady_clock::time_point completedAt;
+    };
+
+    struct GatheringOffer
+    {
+        uint32 botGuid = 0;
+        uint32 playerGuid = 0;
+        uint32 groupId = 0;
+        uint64 objectGuid = 0;
+        uint32 objectEntry = 0;
+        uint32 skillId = 0;
+        uint32 requiredSkill = 0;
+        std::string nodeName;
+        std::string state;
+        std::chrono::steady_clock::time_point expires;
     };
 
     bool ValidateCommon(Player* bot, Player* player) const;
@@ -48,6 +69,8 @@ private:
     std::map<std::string, Action> actions;
     std::map<uint32, std::pair<uint32, std::chrono::steady_clock::time_point>> preferredQuests;
     std::map<uint32, std::chrono::steady_clock::time_point> vendorCooldowns;
+    std::set<uint32> vendorPressureNotified;
+    std::map<uint32, GatheringOffer> gatheringOffers;
     std::chrono::steady_clock::time_point nextVendorScan;
 };
 

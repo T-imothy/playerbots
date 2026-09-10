@@ -57,6 +57,36 @@ bool PlayerbotRendezvousManager::RegisterPartyAssist(Player* bot, Player* invite
     return true;
 }
 
+bool PlayerbotRendezvousManager::ResumePartyAssist(Player* bot, Player* player, const std::string& reason)
+{
+    if (!bot || !player || !bot->GetGroup() || bot->GetGroup() != player->GetGroup() ||
+        !bot->IsInWorld() || !player->IsInWorld() || !bot->IsAlive() || !player->IsAlive() ||
+        bot->IsInCombat() || bot->IsTaxiFlying() || bot->GetTransport() ||
+        bot->InBattleGround() || bot->GetMap()->IsDungeon() || player->GetMap()->IsDungeon())
+        return false;
+
+    auto found = partySessions.find(bot->GetGUIDLow());
+    if (found == partySessions.end())
+    {
+        if (!RegisterPartyAssist(bot, player))
+            return false;
+        found = partySessions.find(bot->GetGUIDLow());
+    }
+    PartySession& session = found->second;
+    if (session.groupId != bot->GetGroup()->GetId())
+        return false;
+
+    session.playerGuid = player->GetGUIDLow();
+    session.state = "pending";
+    session.reason = reason;
+    session.forceRelocation = true;
+    session.approachIssued = false;
+    session.nextApproachAttempt = std::chrono::steady_clock::time_point();
+    session.stateSince = std::chrono::steady_clock::now();
+    LogPartyEvent(session, "party_return_queued");
+    return true;
+}
+
 PlayerbotRendezvousManager::Session* PlayerbotRendezvousManager::Find(uint32 botGuid, uint32 playerGuid)
 {
     auto found = sessions.find(botGuid);
@@ -406,7 +436,7 @@ bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Playe
             return false;
         }
         auto cooldown = lastRelocation.find(bot->GetGUIDLow());
-        if (cooldown != lastRelocation.end() &&
+        if (!session.forceRelocation && cooldown != lastRelocation.end() &&
             std::chrono::duration_cast<std::chrono::seconds>(now - cooldown->second).count() <
                 std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorRendezvousCooldownSeconds))
         {
@@ -441,6 +471,7 @@ bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Playe
             return false;
         }
         session.relocated = true;
+        session.forceRelocation = false;
         lastRelocation[bot->GetGUIDLow()] = now;
         LogPartyEvent(session, "relocated_for_arrival");
     }
