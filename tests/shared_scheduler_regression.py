@@ -45,7 +45,7 @@ veto=find.index('// A blocked reaction')
 assert veto < find.index('// Process prerequisites')
 assert 'continue;' in block(find[veto:],'if (reactionRelevance <= 0.0f)')
 reach=block(source('actions/ReachTargetActions.h'),'class ReachTargetAction')
-wait=block(reach,'if (!isFriend && MoveStyleValue::WaitForEnemy(ai)')
+wait=block(reach,'if (CanWaitForEnemy() && !isFriend && MoveStyleValue::WaitForEnemy(ai)')
 assert 'SetDuration(sPlayerbotAIConfig.reactDelay)' in wait
 assert wait.index('SetDuration') < wait.index('return true;')
 assert 'IsExplicitPlayerCommand(action, event)' in block(engine,'bool Engine::IsFailureBackedOff')

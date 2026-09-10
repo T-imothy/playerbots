@@ -111,7 +111,7 @@ bool SelectNewTargetAction::Execute(Event& event)
     const ObjectGuid previousSelection = bot->GetSelectionGuid();
     Unit* victim = bot->GetVictim();
     Pet* activePet = bot->GetPet();
-    const bool clearedSelection = previousSelection || victim ||
+    const bool clearedCombatTarget = victim ||
         (activePet && activePet->GetVictim()) || AI_VALUE(Unit*, "current target");
     Unit* target = AI_VALUE(Unit*, "current target");
     if (target && sServerFacade.UnitIsDead(target))
@@ -200,7 +200,8 @@ bool SelectNewTargetAction::Execute(Event& event)
             selectedReplacement = ai->DoSpecificAction("dps assist", event, true);
     }
 
-    // Count actual cleanup as success, but an already-empty selection must
-    // not consume every tick ahead of healing and other combat actions.
-    return selectedReplacement || clearedSelection;
+    // Only combat-target cleanup consumes a decision turn. A heal can leave
+    // an ally selected with no current enemy; clearing that UI selection alone
+    // must let the engine continue to healing in this same turn.
+    return selectedReplacement || clearedCombatTarget;
 }

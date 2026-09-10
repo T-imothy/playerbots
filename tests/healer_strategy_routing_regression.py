@@ -13,14 +13,18 @@ def preprocess(text,mode):
             if active:out.append(line)
             continue
         kind,expr=m.groups();expr=expr.split('//')[0].strip()
+        negate=expr.startswith('!defined(')
+        if negate:expr=expr[1:]
+        expr=re.sub(r'^defined\((\w+)\)$',r'\1',expr)
         if kind in ('ifdef','ifndef','if'):
             assert expr in ('MANGOSBOT_ZERO','MANGOSBOT_ONE','MANGOSBOT_TWO','GenerateBotHelp'),expr
             condition=expr==mode
+            if negate:condition=not condition
             if kind=='ifndef':condition=not condition
             stack.append([active,condition]);active=active and condition
         elif kind=='elif':
             assert expr in ('MANGOSBOT_ZERO','MANGOSBOT_ONE','MANGOSBOT_TWO','GenerateBotHelp'),expr
-            parent,taken=stack[-1];condition=not taken and expr==mode
+            parent,taken=stack[-1];condition=not taken and ((expr!=mode) if negate else (expr==mode))
             stack[-1][1]|=condition;active=parent and condition
         elif kind=='else':
             parent,taken=stack[-1];active=parent and not taken;stack[-1][1]=True

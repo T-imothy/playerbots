@@ -49,8 +49,8 @@ assert 'PossibleTargetsValue::IsValid' in block(attack,'bool AttackAction::IsTar
 recover=block(read('actions/ChooseTargetActions.cpp'),'bool SelectNewTargetAction::Execute')
 assert 'BOT_STATE_NON_COMBAT' not in recover
 assert recover.index('HasStrategy("tank assist"') < recover.index('HasStrategy("dps assist"')
-assert recover.rstrip().endswith('return selectedReplacement || clearedSelection;\n}')
-assert 'const bool clearedSelection' in recover
+assert recover.rstrip().endswith('return selectedReplacement || clearedCombatTarget;\n}')
+assert 'const bool clearedCombatTarget' in recover
 assert 'selectedReplacement = ai->DoSpecificAction' in recover
 assert 'ai->InterruptSpell();' not in recover
 assert 'type <= CURRENT_CHANNELED_SPELL' in recover and 'IsPositiveSpell(spell->m_spellInfo)' in recover
