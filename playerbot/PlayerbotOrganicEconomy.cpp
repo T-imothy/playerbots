@@ -16,6 +16,7 @@
 #include "strategy/values/ItemUsageValue.h"
 #include "strategy/values/TravelValues.h"
 #include "strategy/actions/BankAction.h"
+#include "strategy/actions/AhAction.h"
 
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -103,7 +104,7 @@ namespace
         return 0;
     }
 
-    bool SafeCraftReagents(Player* bot, const SpellEntry* spell, bool includeBank = false)
+    bool SafeCraftReagents(Player* bot, const SpellEntry* spell, bool includeBank = false, bool requireCounts = true)
     {
         ai::FindAllItemVisitor visitor;
         bot->GetPlayerbotAI()->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
@@ -121,7 +122,7 @@ namespace
             for (Item* item : visitor.GetResult())
                 if (item->GetEntry() == reagent.first &&
                     sPlayerbotActionBroker.IsItemReserved(item->GetGUIDLow())) return false;
-            if (bot->GetItemCount(reagent.first, includeBank) < reagent.second) return false;
+            if (requireCounts && bot->GetItemCount(reagent.first, includeBank) < reagent.second) return false;
         }
         return !needed.empty(); // No conjuring or reagent cheats.
     }
@@ -150,6 +151,32 @@ namespace
             const auto* spell = sServerFacade.LookupSpellInfo(known.first);
             if (CraftSkill(bot, spell) && !SafeCraftReagents(bot, spell) &&
                 SafeCraftReagents(bot, spell, true)) return known.first;
+        }
+        return 0;
+    }
+
+    uint32 MarketCraftSpell(Player* bot)
+    {
+        // Use real cached listings, not hypothetical market stock. At most two
+        // missing reagent types per job; larger gathering chains are separate.
+        for (const auto& known : bot->GetSpellMap())
+        {
+            if (known.second.state == PLAYERSPELL_REMOVED || known.second.disabled) continue;
+            const auto* spell = sServerFacade.LookupSpellInfo(known.first);
+            if (!CraftSkill(bot, spell) || !SafeCraftReagents(bot, spell, true, false)) continue;
+            std::map<uint32,uint32> needed;
+            for (uint32 i=0;i<MAX_SPELL_REAGENTS;++i)
+                if (spell->Reagent[i]>0 && spell->ReagentCount[i]) needed[spell->Reagent[i]]+=spell->ReagentCount[i];
+            uint32 missing=0;bool obtainable=true;
+            for (const auto& reagent:needed)
+            {
+                const uint32 owned=bot->GetItemCount(reagent.first,true);
+                if (owned>=reagent.second) continue;
+                if (++missing>2 || (!ai::AhBidAction::HasPendingMaterial(bot,reagent.first) &&
+                    !ai::AhBidAction::HasMaterialOffer(bot,reagent.first,reagent.second-owned)))
+                { obtainable=false;break; }
+            }
+            if (obtainable && missing) return known.first;
         }
         return 0;
     }
@@ -376,6 +403,7 @@ bool PlayerbotOrganicEconomy::Submit(const Policy& currentPolicy)
         std::vector<uint32> outputs = KnownCraftOutputs(bot);
         uint32 readyRecipe = profile.career && currentPolicy.careers ? ReadyCraftSpell(bot) : 0;
         if (!readyRecipe && profile.career && currentPolicy.careers) readyRecipe = BankCraftSpell(bot);
+        if (!readyRecipe && profile.career && currentPolicy.careers && currentPolicy.buying) readyRecipe = MarketCraftSpell(bot);
         bool surplus = HasAuctionSurplus(bot);
         if (!firstEvent) events << ',';
         firstEvent = false;
@@ -598,7 +626,7 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
         { failureReason = "recipe_unavailable_or_no_skill_gain"; return false; }
         if (!SafeCraftReagents(bot, spell))
         {
-            if (!SafeCraftReagents(bot, spell, true))
+            if (!SafeCraftReagents(bot, spell, true, false))
             { failureReason = "missing_or_reserved_recipe_materials"; return false; }
             std::map<uint32, uint32> needed;
             for (uint32 i = 0; i < MAX_SPELL_REAGENTS; ++i)
@@ -609,12 +637,36 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
             for (const auto& reagent : needed)
             {
                 if (bot->GetItemCount(reagent.first, false) >= reagent.second) continue;
+                if (bot->GetItemCount(reagent.first, true) < reagent.second)
+                {
+                    ai::AhBidAction market(ai);
+                    if (ai::AhBidAction::HasPendingMaterial(bot, reagent.first))
+                    {
+                        market.CollectRecipeMaterial(reagent.first, failureReason);
+                        if (failureReason == "recipe_mailbox_out_of_range")
+                        {
+                            std::ostringstream route; route << "request travel target::" << (uint32)TravelDestinationPurpose::Mail;
+                            ai->DoSpecificAction(route.str(), Event("can move around", "", bot), true);
+                        }
+                        return false;
+                    }
+                    if (!currentPolicy.buying) { failureReason = "recipe_purchasing_disabled"; return false; }
+                    market.BuyRecipeMaterial(reagent.first, reagent.second, failureReason);
+                    if (failureReason == "recipe_auctioneer_out_of_range" &&
+                        ai::AhBidAction::HasMaterialOffer(bot, reagent.first, reagent.second - bot->GetItemCount(reagent.first,true)))
+                    {
+                        std::ostringstream route; route << "request travel target::" << (uint32)TravelDestinationPurpose::AH;
+                        if (ai->DoSpecificAction(route.str(), Event("can move around", "", bot), true))
+                            failureReason = "traveling_to_recipe_auction";
+                    }
+                    return false; // A paid order is not inventory or a completed craft.
+                }
                 bank.WithdrawForRecipe(reagent.first, reagent.second, failureReason);
                 if (failureReason == "recipe_banker_out_of_range")
                 {
                     std::ostringstream route;
                     route << "request travel target::" << (uint32)TravelDestinationPurpose::Bank;
-                    if (ai->DoSpecificAction(route.str(), Event("organic economy recipe", "", bot), true))
+                    if (ai->DoSpecificAction(route.str(), Event("can move around", "", bot), true))
                         failureReason = "traveling_to_owned_recipe_materials";
                     else failureReason = "recipe_bank_route_pending";
                     return false;

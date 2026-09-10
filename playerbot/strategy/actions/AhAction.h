@@ -31,6 +31,10 @@ namespace ai
     {
     public:
         AhBidAction(PlayerbotAI* ai) : AhAction(ai, "ah bid") {}
+        static bool HasMaterialOffer(Player* bot, uint32 entry, uint32 maximumCount);
+        static bool HasPendingMaterial(Player* bot, uint32 entry);
+        bool CollectRecipeMaterial(uint32 entry, std::string& blocker);
+        bool BuyRecipeMaterial(uint32 entry, uint32 requiredCount, std::string& blocker);
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "ah bid"; } //Must equal iternal name
@@ -47,6 +51,6 @@ namespace ai
 #endif 
     private:
         virtual bool ExecuteCommand(Player* requester, std::string text, Unit* auctioneer);
-        bool BidItem(Player* requester, AuctionEntry* auction, uint32 price, Unit* auctioneer, bool isBuyout, std::string reason = "");
+        bool BidItem(Player* requester, AuctionEntry* auction, uint32 price, Unit* auctioneer, bool isBuyout, std::string reason = "", bool quiet = false);
     };
 }

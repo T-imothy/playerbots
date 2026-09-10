@@ -2,6 +2,8 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotServiceTracking.h"
 #include "BuyAction.h"
+#include "AhAction.h"
+#include "playerbot/PlayerbotOrganicEconomy.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/strategy/values/BudgetValues.h"
@@ -272,6 +274,13 @@ bool BuyAction::Execute(Event& event)
 
 bool BuyAction::BuyItem(Player* requester, VendorItemData const* tItems, ObjectGuid vendorguid, const ItemPrototype* proto, UsageBoughtList& bought, ItemUsage usage)
 {
+    if (usage != ItemUsage::ITEM_USAGE_NONE)
+    {
+        const uint32 required = sPlayerbotOrganicEconomy.RecipeMaterialQuantity(bot->GetGUIDLow(), proto->ItemId);
+        const uint32 owned = bot->GetItemCount(proto->ItemId, true);
+        if (required && (owned >= required || AhBidAction::HasPendingMaterial(bot, proto->ItemId) ||
+            proto->BuyCount > required - owned)) return false;
+    }
     uint32 oldCount = bot->GetItemCount(proto->ItemId, false);
 
     if (!tItems)

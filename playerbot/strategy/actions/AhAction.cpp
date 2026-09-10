@@ -5,6 +5,12 @@
 #include "playerbot/PlayerbotServiceTracking.h"
 #include "AhAction.h"
 #include "playerbot/PlayerbotActionBroker.h"
+#include "playerbot/PlayerbotGuildSupplies.h"
+#include "playerbot/PlayerbotOrganicEconomy.h"
+#include "Mails/Mail.h"
+#include <mutex>
+#include <tuple>
+#include <limits>
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/RandomItemMgr.h"
 #include "playerbot/strategy/values/BudgetValues.h"
@@ -104,10 +110,170 @@ namespace
         std::unique_ptr<QueryResult> result = CharacterDatabase.PQuery(
             "SELECT COUNT(*),COALESCE(SUM(unit_price_copper*quantity),0) FROM organic_economy_auction_history "
             "WHERE buyer_guid='%u' AND outcome IN ('bid','sold') AND occurred_at>DATE_SUB(NOW(),INTERVAL %u SECOND)", guid, seconds);
-        if (!result) { if (spent) *spent = 0; return 0; }
+        if (!result) { if (spent) *spent = std::numeric_limits<uint32>::max(); return std::numeric_limits<uint32>::max(); }
         if (spent) *spent = (*result)[1].GetUInt32();
         return (*result)[0].GetUInt32();
     }
+
+    struct MaterialOffer { uint32 id, entry, count, price, owner; };
+    struct MaterialMarket {
+        uint32 refreshed = 0;
+        std::map<uint32, std::vector<MaterialOffer>> items;
+    };
+    const std::vector<MaterialOffer>& MaterialOffers(AuctionHouseObject* house, uint32 entry)
+    {
+        // Access only under the existing AH mutex. Shared once-per-minute
+        // indexing avoids a full auction scan for every recipe and every bot.
+        static std::map<AuctionHouseObject*, MaterialMarket> markets;
+        static const std::vector<MaterialOffer> empty;
+        auto& market = markets[house];
+        const uint32 now = uint32(time(nullptr));
+        if (!market.refreshed || now >= market.refreshed + 60)
+        {
+            market.refreshed = now; market.items.clear();
+            uint32 examined = 0;
+            for (const auto& pair : house->GetAuctions())
+            {
+                if (++examined > 50000) break; // Bounded even on a misconfigured economy.
+                const auto* a = pair.second;
+                if (!a || !a->owner || !a->buyout || !a->itemCount || a->expireTime <= time(nullptr)) continue;
+                auto& offers = market.items[a->itemTemplate];
+                offers.push_back({a->Id, a->itemTemplate, a->itemCount, a->buyout, a->owner});
+                std::sort(offers.begin(), offers.end(), [](const MaterialOffer& a, const MaterialOffer& b) {
+                    return std::tie(a.count,a.price,a.id) < std::tie(b.count,b.price,b.id);
+                });
+                if (offers.size() > 16) offers.resize(16);
+            }
+        }
+        auto found = market.items.find(entry);
+        return found == market.items.end() ? empty : found->second;
+    }
+    bool MaterialSeller(Player* bot, uint32 seller)
+    {
+        const uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(ObjectGuid(HIGHGUID_PLAYER,seller));
+        return seller && seller != bot->GetGUIDLow() && account && account != bot->GetSession()->GetAccountId();
+    }
+}
+
+bool AhBidAction::HasPendingMaterial(Player* bot, uint32 entry)
+{
+    for (auto it = bot->GetMailBegin(); it != bot->GetMailEnd(); ++it)
+    {
+        const Mail* mail = *it;
+        if (!mail || mail->state == MAIL_STATE_DELETED || mail->expire_time <= time(nullptr) || mail->COD) continue;
+        for (const auto& item : mail->items)
+            if (item.item_template == entry) return true;
+    }
+    return false; // Undelivered attachments count as pending, never as bag stock.
+}
+
+bool AhBidAction::HasMaterialOffer(Player* bot, uint32 entry, uint32 maximumCount)
+{
+    if (!bot || !maximumCount || !bot->GetSession() || !bot->GetPlayerbotAI()) return false;
+    const auto policy = GetOrganicAuctionPolicy();
+    if (policy.mode != "active" || !policy.buying || !policy.maxPurchasesPerHour) return false;
+    std::unique_lock<std::mutex> lock(sRandomPlayerbotMgr.m_ahActionMutex, std::try_to_lock);
+    if (!lock.owns_lock()) return false;
+    const auto* houseEntry = sAuctionMgr.GetAuctionHouseEntry(bot);
+    if (!houseEntry) return false;
+    auto* house = sAuctionMgr.GetAuctionsMap(houseEntry);
+    if (!house) return false;
+    for (const auto& offer : MaterialOffers(house, entry))
+        if (offer.count <= maximumCount && offer.price <= uint64(bot->GetMoney()) * policy.maxDailySpendPercent / 100 &&
+            MaterialSeller(bot, offer.owner)) return true;
+    return false;
+}
+
+bool AhBidAction::CollectRecipeMaterial(uint32 entry, std::string& blocker)
+{
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() ||
+        bot->GetTransport() || bot->IsBeingTeleported() || bot->GetMap()->IsDungeon())
+    { blocker = "recipe_mail_collection_unsafe"; return false; }
+    blocker = "recipe_materials_in_mail";
+    for (auto it = bot->GetMailBegin(); it != bot->GetMailEnd(); ++it)
+    {
+        const Mail* mail = *it;
+        if (!mail || mail->state == MAIL_STATE_DELETED || mail->expire_time <= time(nullptr) || mail->COD) continue;
+        for (const auto& attachment : mail->items)
+        {
+            if (attachment.item_template != entry) continue;
+            if (mail->deliver_time > time(nullptr)) { blocker = "recipe_mail_delivery_pending"; return false; }
+            GameObject* mailbox = nullptr;
+            for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los"))
+            {
+                auto* go = ai->GetGameObject(guid);
+                if (go && go->GetGoType() == GAMEOBJECT_TYPE_MAILBOX && bot->IsWithinDistInMap(go, INTERACTION_DISTANCE))
+                { mailbox = go; break; }
+            }
+            if (!mailbox) { blocker = "recipe_mailbox_out_of_range"; return false; }
+            Item* item = bot->GetMItem(attachment.item_guid);
+            if (!item) { blocker = "recipe_mail_attachment_unavailable"; return false; }
+            const uint32 guid = attachment.item_guid, count = item->GetCount(), before = bot->GetItemCount(entry, false);
+            WorldPacket packet; packet << mailbox->GetObjectGuid() << mail->messageID;
+#ifndef MANGOSBOT_ZERO
+            packet << guid;
+#endif
+            bot->GetSession()->HandleMailTakeItem(packet);
+            const bool received = !bot->GetMItem(guid) && bot->GetItemCount(entry, false) == before + count;
+            PlayerbotServiceTracking::Result(bot, "profession_mail", mailbox->GetEntry(), entry,
+                "received_items", 0, received ? count : 0);
+            blocker = received ? "recipe_materials_received" : "recipe_mail_collection_rejected";
+            return received;
+        }
+    }
+    return false;
+}
+
+bool AhBidAction::BuyRecipeMaterial(uint32 entry, uint32 requiredCount, std::string& blocker)
+{
+    blocker = "recipe_purchase_unsafe";
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() ||
+        bot->GetTransport() || bot->IsBeingTeleported() || bot->GetMap()->IsDungeon()) return false;
+    const auto policy = GetOrganicAuctionPolicy();
+    if (policy.mode != "active" || !policy.buying) { blocker = "recipe_purchasing_disabled"; return false; }
+    const uint32 owned = bot->GetItemCount(entry, true);
+    if (owned >= requiredCount) { blocker = "recipe_materials_already_owned"; return false; }
+    if (HasPendingMaterial(bot, entry)) { blocker = "recipe_materials_in_mail"; return false; }
+    if (sGuildSupplies.ReservedEntry(bot->GetGUIDLow(), entry) || ItemUsageValue::IsNeededForQuest(bot, entry, true))
+    { blocker = "recipe_material_reserved"; return false; }
+    Unit* auctioneer = nullptr;
+    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+        if ((auctioneer = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_AUCTIONEER))) break;
+    if (!auctioneer) { blocker = "recipe_auctioneer_out_of_range"; return false; }
+    std::unique_lock<std::mutex> lock(sRandomPlayerbotMgr.m_ahActionMutex, std::try_to_lock);
+    if (!lock.owns_lock()) { blocker = "recipe_auction_busy"; return false; }
+    const auto* houseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->GetObjectGuid());
+    auto* house = houseEntry ? sAuctionMgr.GetAuctionsMap(houseEntry) : nullptr;
+    if (!house) { blocker = "recipe_auction_unavailable"; return false; }
+    uint32 spent = 0;
+    if (RecentPurchases(bot->GetGUIDLow(), HOUR) >= policy.maxPurchasesPerHour)
+    { blocker = "recipe_purchase_hourly_limit"; return false; }
+    RecentPurchases(bot->GetGUIDLow(), DAY, &spent);
+    const uint32 budget = AI_VALUE2(uint32, "free money for", uint32(NeedMoneyFor::tradeskill));
+    AuctionEntry* selected = nullptr;
+    blocker = "recipe_no_affordable_exact_listing";
+    for (const auto& offer : MaterialOffers(house, entry))
+    {
+        auto* auction = house->GetAuction(offer.id); // Never trust the cached listing at mutation time.
+        if (!auction || auction->itemTemplate != entry || !auction->itemCount || !auction->buyout ||
+            auction->expireTime <= time(nullptr) || auction->itemCount > requiredCount - owned ||
+            auction->bidder == bot->GetGUIDLow() || !MaterialSeller(bot, auction->owner)) continue;
+        const uint32 price = auction->buyout;
+        if (price > budget || price > bot->GetMoney() ||
+            uint64(spent) + price > (uint64(bot->GetMoney()) + spent) * policy.maxDailySpendPercent / 100) continue;
+        std::unique_ptr<QueryResult> pairHistory = CharacterDatabase.PQuery(
+            "SELECT COUNT(*) FROM organic_economy_auction_history WHERE seller_guid='%u' AND buyer_guid='%u' "
+            "AND outcome='sold' AND occurred_at>DATE_SUB(NOW(),INTERVAL 7 DAY)", auction->owner, bot->GetGUIDLow());
+        if (!pairHistory || (*pairHistory)[0].GetUInt32() >= 3) continue;
+        if (!selected || uint64(price) * selected->itemCount < uint64(selected->buyout) * auction->itemCount)
+            selected = auction;
+    }
+    if (!selected) return false;
+    // Buyout is paid by the native handler and delivered through native mail.
+    // No generic random bid and no synthetic item receipt.
+    const bool bought = BidItem(nullptr, selected, selected->buyout, auctioneer, true, "recipe_material", true);
+    blocker = bought ? "recipe_purchase_awaiting_mail" : "recipe_buyout_rejected";
+    return bought;
 }
 
 bool AhAction::Execute(Event& event)
@@ -363,6 +529,9 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
 
             if (auction->owner == bot->GetGUIDLow() || auction->bidder == bot->GetGUIDLow())
                 continue;
+            // The exact recipe executor owns this demand, including mail waits.
+            // Generic useful-item buying must not issue a competing order.
+            if (sPlayerbotOrganicEconomy.RecipeMaterialQuantity(bot->GetGUIDLow(), auction->itemTemplate)) continue;
             uint32 sellerAccount = CharacterAccount(auction->owner);
             if (!sellerAccount || sellerAccount == bot->GetSession()->GetAccountId())
                 continue;
@@ -561,7 +730,7 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
     return BidItem(requester, auction, cost, auctioneer, cost == auction->buyout);
 }
 
-bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price, Unit* auctioneer, bool isBuyout, std::string reason)
+bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price, Unit* auctioneer, bool isBuyout, std::string reason, bool quiet)
 {
     AuctionHouseEntry const* auctionHouseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->GetObjectGuid());
     if (!auctionHouseEntry)
@@ -604,7 +773,7 @@ bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price
             "(auction_id,auction_house_id,seller_guid,buyer_guid,item_guid,item_entry,quantity,unit_price_copper,outcome) "
             "VALUES ('%u','%u','%u','%u','%u','%u','%u','%u','%s')", auctionId, auctionHouseEntry->houseId,
             sellerGuid, bot->GetGUIDLow(), itemGuid, auctionItemEntry, count,
-            price / std::max<uint32>(1, count), isBuyout ? "sold" : "bid");
+            price / std::max<uint32>(1, count) + (price % std::max<uint32>(1, count) != 0), isBuyout ? "sold" : "bid");
         sPlayerbotAIConfig.logEvent(ai, "AhBidAction", proto->Name1, std::to_string(proto->ItemId));
         std::ostringstream out;
         if (isBuyout)
@@ -617,7 +786,7 @@ bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price
         }
         if (!reason.empty())
             out << " " << reason;
-        ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        if (!quiet) ai->TellPlayerNoFacing(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         return true;
     }
     return false;
