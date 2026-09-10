@@ -369,7 +369,18 @@ void PlayerbotPartyCombatCoordinator::RefreshCombat(Group* group, GroupState& st
         if (Player* p = sObjectAccessor.FindPlayer(i->guid))
         {
             if (p->IsInCombat()) combat = true;
-            if (Unit* victim = p->GetVictim()) state.approvedTargets.insert(victim->GetObjectGuid());
+            // CMSG_ATTACKSWING assigns a victim as soon as a human right-clicks
+            // a creature, before the first swing lands and before combat or
+            // threat exists.  Selection/auto-attack stance is not a pull
+            // instruction.  Approve the victim only after combat has actually
+            // begun; attackers below remain an unconditional defence signal.
+            if (Unit* victim = p->GetVictim())
+            {
+                const bool engaged = p->IsInCombat() || victim->IsInCombat() ||
+                    !p->getAttackers().empty() || !victim->getAttackers().empty() ||
+                    victim->getThreatManager().getThreat(p) > 0.0f;
+                if (engaged) state.approvedTargets.insert(victim->GetObjectGuid());
+            }
             Unit::AttackerSet const& attackers = p->getAttackers();
             for (Unit::AttackerSet::const_iterator a = attackers.begin(); a != attackers.end(); ++a)
                 if (*a) state.approvedTargets.insert((*a)->GetObjectGuid());
@@ -436,10 +447,17 @@ void PlayerbotPartyCombatCoordinator::Update(Player* bot)
             (bot->GetMapId() == maintenanceMaster->GetMapId() &&
                 bot->GetInstanceId() == maintenanceMaster->GetInstanceId() &&
                 bot->IsWithinDistInMap(maintenanceMaster, 15.0f)));
+    const bool pendingLoot = maintenanceAi &&
+        (maintenanceAi->GetAiObjectContext()->GetValue<bool>("has available loot")->Get() ||
+            !maintenanceAi->GetAiObjectContext()->GetValue<LootObject>("loot target")->Get().IsEmpty());
     uint32 now = WorldTimer::getMSTime();
     uint32& lastAttempt = lastQuestMaintenance[bot->GetGUIDLow()];
-    if (maintenancePositionStable && bot->IsAlive() && !bot->IsInCombat() &&
-        (!lastAttempt || WorldTimer::getMSTimeDiff(lastAttempt, now) >= 3000))
+    // Loot/follow/combat work must win over opportunistic quest-source item
+    // use.  A ten-second floor also prevents an unchanged usable item from
+    // monopolising the non-combat engine when its spell reports success but
+    // the quest objective cannot advance.
+    if (maintenancePositionStable && !pendingLoot && bot->IsAlive() && !bot->IsInCombat() &&
+        (!lastAttempt || WorldTimer::getMSTimeDiff(lastAttempt, now) >= 10000))
     {
         lastAttempt = now;
         PlayerbotAI* ai = bot->GetPlayerbotAI();
@@ -485,7 +503,8 @@ bool PlayerbotPartyCombatCoordinator::CanInitiate(Player* bot, Unit* target) con
     for (std::vector<LivingPartyTacticalRule>::const_iterator rule = state->rules.begin(); rule != state->rules.end(); ++rule)
         if (rule->selectorType == "target" && rule->selectorId == target->GetGUIDLow() && rule->treatment == "do_not_attack") return false;
     if (IsApprovedTarget(*state, target)) return true;
-    if (!state->puller.IsEmpty() && state->puller == bot->GetObjectGuid()) return true;
+    if (!state->puller.IsEmpty() && state->puller == bot->GetObjectGuid() &&
+        (!state->humanLeader || state->pullerExplicit)) return true;
     return false;
 }
 
@@ -722,7 +741,10 @@ std::string PlayerbotPartyCombatCoordinator::ExecuteProposal(Player* bot, Player
     else if (type == "set_puller")
     {
         size_t pfx = capabilityRef.rfind(':'); uint32 guid = pfx == std::string::npos ? 0 : std::strtoul(capabilityRef.c_str() + pfx + 1, NULL, 10);
-        Player* p = FindMember(bot->GetGroup(), ObjectGuid(HIGHGUID_PLAYER, guid)); if (!p) return "member_not_found"; state->puller = p->GetObjectGuid();
+        Player* p = FindMember(bot->GetGroup(), ObjectGuid(HIGHGUID_PLAYER, guid));
+        if (!p) return "member_not_found";
+        state->puller = p->GetObjectGuid();
+        state->pullerExplicit = true;
     }
     else if (type == "clear_tactical_rule") state->rules.clear();
     else if (type == "set_tactical_rule")

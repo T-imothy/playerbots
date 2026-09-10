@@ -139,6 +139,7 @@ namespace ai
             std::vector<LivingPartyTacticalRule> rules;
             bool hold = false;
             bool humanLeader = false;
+            bool pullerExplicit = false;
             uint32 phaseSince = 0;
             uint32 tankControlSince = 0;
             uint32 lastTelemetry = 0;
