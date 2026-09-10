@@ -10,8 +10,11 @@
 #include "PlayerbotOrganicEconomy.h"
 #include "RandomPlayerbotMgr.h"
 #include "ServerFacade.h"
+#include "TravelMgr.h"
+#include "strategy/values/TravelValues.h"
 
 #include <cmath>
+#include <limits>
 #include <sstream>
 #include <vector>
 
@@ -110,6 +113,102 @@ namespace
         if (goal == "profession_skill_up")
             errands |= kErrandProfession;
         return errands;
+    }
+
+    TravelDestinationPurpose ErrandPurpose(uint32 errand)
+    {
+        if (errand == kErrandVendor)
+            return TravelDestinationPurpose::Vendor;
+        if (errand == kErrandRepair)
+            return TravelDestinationPurpose::Repair;
+        if (errand == kErrandBank)
+            return TravelDestinationPurpose::Bank;
+        if (errand == kErrandMail)
+            return TravelDestinationPurpose::Mail;
+        if (errand == kErrandAuction)
+            return TravelDestinationPurpose::AH;
+        return TravelDestinationPurpose::Trainer;
+    }
+
+    bool FindSettlementErrandDestination(Player* bot, uint32 errand,
+        TravelDestination*& selectedDestination, WorldPosition*& selectedPosition)
+    {
+        selectedDestination = nullptr;
+        selectedPosition = nullptr;
+        if (!bot || !bot->GetPlayerbotAI())
+            return false;
+        PlayerTravelInfo info(bot);
+        DestinationList destinations = sTravelMgr.GetDestinations(
+            info, (uint32)ErrandPurpose(errand), {}, true, 600.0f, false);
+        WorldPosition center(bot);
+        float bestDistance = std::numeric_limits<float>::max();
+        for (TravelDestination* destination : destinations)
+        {
+            if (!destination)
+                continue;
+            std::list<uint8> chances = {100};
+            WorldPosition* position = destination->GetNextPoint(center, chances, true);
+            if (!position || position->getMapId() != bot->GetMapId())
+                continue;
+            float distance = center.distance(*position);
+            if (distance > 600.0f || distance >= bestDistance)
+                continue;
+            bestDistance = distance;
+            selectedDestination = destination;
+            selectedPosition = position;
+        }
+        return selectedDestination && selectedPosition;
+    }
+
+    uint32 GroundedSettlementErrandMask(Player* bot)
+    {
+        uint32 requested = PersonalErrandMask(bot);
+        uint32 grounded = 0;
+        const uint32 errands[] = {kErrandVendor, kErrandRepair, kErrandBank,
+            kErrandMail, kErrandAuction, kErrandProfession};
+        for (uint32 errand : errands)
+        {
+            if (!(requested & errand))
+                continue;
+            TravelDestination* destination = nullptr;
+            WorldPosition* position = nullptr;
+            if (FindSettlementErrandDestination(bot, errand, destination, position))
+                grounded |= errand;
+        }
+        return grounded;
+    }
+
+    std::string ErrandTelemetryNames(uint32 errands);
+
+    bool SetAutomaticErrandTarget(Player* bot, uint32 errands)
+    {
+        if (!bot || !bot->GetPlayerbotAI() || !errands)
+            return false;
+        const uint32 priorities[] = {kErrandVendor, kErrandRepair, kErrandBank,
+            kErrandMail, kErrandAuction, kErrandProfession};
+        for (uint32 errand : priorities)
+        {
+            if (!(errands & errand))
+                continue;
+            TravelDestination* destination = nullptr;
+            WorldPosition* position = nullptr;
+            if (!FindSettlementErrandDestination(bot, errand, destination, position))
+                continue;
+            PlayerbotAI* ai = bot->GetPlayerbotAI();
+            TravelTarget* target = ai->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
+            sTravelMgr.SetNullTravelTarget(target);
+            target->SetTarget(destination, position);
+            target->SetForced(true);
+            target->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
+            ai->GetAiObjectContext()->ClearValues("no active travel destinations");
+            ai->ChangeStrategy("nc +travel once", BotState::BOT_STATE_NON_COMBAT);
+            ai->StopMoving();
+            sLog.outString("Living WoW party errands event=target_selected bot=%u task=%s map=%u area=%s distance=%.1f",
+                bot->GetGUIDLow(), ErrandTelemetryNames(errand).c_str(), position->getMapId(),
+                position->getAreaName().c_str(), WorldPosition(bot).distance(*position));
+            return true;
+        }
+        return false;
     }
 
     std::vector<std::string> PersonalErrands(uint32 errands)
@@ -295,7 +394,8 @@ bool PlayerbotRendezvousManager::BeginPartyFreeTime(Player* bot, Player* player,
     session.freeTimePlayerAreaId = sServerFacade.GetAreaId(player);
     bool automaticSettlement = reason == "automatic_settlement_errands";
     session.freeTimeUntil = now + (automaticSettlement ? std::chrono::minutes(5) : std::chrono::minutes(30));
-    session.automaticErrandMask = automaticSettlement ? PersonalErrandMask(bot) : 0;
+    session.automaticErrandScopeMask = automaticSettlement ? GroundedSettlementErrandMask(bot) : 0;
+    session.automaticErrandMask = session.automaticErrandScopeMask;
     session.automaticErrandLastX = bot->GetPositionX();
     session.automaticErrandLastY = bot->GetPositionY();
     session.automaticErrandHardDeadline = automaticSettlement ?
@@ -307,8 +407,11 @@ bool PlayerbotRendezvousManager::BeginPartyFreeTime(Player* bot, Player* player,
     session.stateSince = now;
     LogPartyEvent(session, "free_time_started");
     if (automaticSettlement)
+    {
+        SetAutomaticErrandTarget(bot, session.automaticErrandMask);
         LogAutomaticErrandEvent(session, bot, "started", session.automaticErrandMask,
             session.automaticErrandMask);
+    }
     return true;
 }
 
@@ -915,7 +1018,8 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                     (!session.automaticErrandCooldownUntil.time_since_epoch().count() ||
                      now >= session.automaticErrandCooldownUntil))
                 {
-                    std::vector<std::string> errands = PersonalErrands(PersonalErrandMask(bot));
+                    uint32 errandMask = GroundedSettlementErrandMask(bot);
+                    std::vector<std::string> errands = PersonalErrands(errandMask);
                     session.automaticErrandCooldownUntil = now + std::chrono::minutes(errands.empty() ? 2 : 10);
                     if (!errands.empty())
                     {
@@ -1038,7 +1142,10 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                 {
                     session.nextAutomaticErrandCheck = now + std::chrono::seconds(10);
                     uint32 previousErrands = session.automaticErrandMask;
-                    uint32 remainingErrands = PersonalErrandMask(bot);
+                    // Keep the announced task list stable. A new goal or item
+                    // acquired during free time belongs to the next visit and
+                    // must not silently expand the promise already made.
+                    uint32 remainingErrands = PersonalErrandMask(bot) & session.automaticErrandScopeMask;
                     float dx = bot->GetPositionX() - session.automaticErrandLastX;
                     float dy = bot->GetPositionY() - session.automaticErrandLastY;
                     bool traveled = dx * dx + dy * dy >= 25.0f;
@@ -1050,6 +1157,8 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                             now + std::chrono::minutes(5));
                         LogAutomaticErrandEvent(session, bot, "tasks_changed", previousErrands,
                             remainingErrands);
+                        if (remainingErrands)
+                            SetAutomaticErrandTarget(bot, remainingErrands);
                     }
                     if (traveled)
                     {

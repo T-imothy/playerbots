@@ -66,6 +66,7 @@ private:
         uint32 freeTimePlayerAreaId = 0;
         uint32 settlementKey = 0;
         uint32 automaticErrandMask = 0;
+        uint32 automaticErrandScopeMask = 0;
         float hearthStartX = 0.0f;
         float hearthStartY = 0.0f;
         float hearthStartZ = 0.0f;
