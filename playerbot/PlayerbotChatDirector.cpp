@@ -1205,11 +1205,14 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 else if (questStalled && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 3)
                 {
                     bool reset = bot->GetPlayerbotAI()->DoSpecificAction("progression reset travel target", Event("living progression turnin recovery"), true);
-                    recovered = reset && bot->GetPlayerbotAI()->DoSpecificAction(
+                    // Reset returns false when there is no active target. That
+                    // is already a clean starting state, so still request the
+                    // exact authoritative quest taker.
+                    recovered = bot->GetPlayerbotAI()->DoSpecificAction(
                         "request quest turnin target::" + std::to_string(stalledQuestId),
                         Event("can move around"), true);
                     recovery = recovered ? "quest_turnin_route_requested" :
-                        (reset ? "quest_turnin_request_rejected" : "quest_turnin_reset_rejected");
+                        (reset ? "quest_turnin_request_rejected" : "quest_turnin_request_rejected_no_prior_target");
                     state.recoveryQuestId = stalledQuestId;
                     state.recoveryStep = 3;
                     state.recoveryInteractionAttempts = 0;
