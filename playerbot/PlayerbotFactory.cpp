@@ -3365,7 +3365,14 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
 
                     // do not use items that required level is too low compared to bot's level
                     uint32 reqLevel = sRandomItemMgr.GetMinLevelFromCache(newItemId);
-                    if (reqLevel && proto->Quality < ITEM_QUALITY_LEGENDARY && abs((int)bot->GetLevel() - (int)reqLevel) > (int)sPlayerbotAIConfig.randomGearMaxDiff)
+                    // Warriors and rogues need a usable ranged utility weapon even
+                    // when the scored cache has a gap between item levels.
+                    const bool rangedUtility = slot == EQUIPMENT_SLOT_RANGED &&
+                        (bot->getClass() == CLASS_WARRIOR || bot->getClass() == CLASS_ROGUE) &&
+                        proto->Class == ITEM_CLASS_WEAPON &&
+                        (proto->SubClass == ITEM_SUBCLASS_WEAPON_BOW || proto->SubClass == ITEM_SUBCLASS_WEAPON_GUN ||
+                         proto->SubClass == ITEM_SUBCLASS_WEAPON_CROSSBOW || proto->SubClass == ITEM_SUBCLASS_WEAPON_THROWN);
+                    if (!rangedUtility && reqLevel && proto->Quality < ITEM_QUALITY_LEGENDARY && abs((int)bot->GetLevel() - (int)reqLevel) > (int)sPlayerbotAIConfig.randomGearMaxDiff)
                         continue;
 
                     // filter tank weapons
@@ -4615,7 +4622,12 @@ void PlayerbotFactory::InitAmmo()
         return;
 
     uint32 entry = bot->GetUInt32Value(PLAYER_AMMO_ID);
-    uint32 count = bot->GetItemCount(entry) / 200;
+    // A gear reroll can switch between bows and guns. Stock of the previous
+    // ammo type must not keep an incompatible selection equipped.
+    ItemPrototype const* ammo = entry ? sObjectMgr.GetItemPrototype(entry) : nullptr;
+    if (!ammo || ammo->Class != ITEM_CLASS_PROJECTILE || ammo->SubClass != subClass || ammo->RequiredLevel > level)
+        entry = 0;
+    uint32 count = entry ? bot->GetItemCount(entry) / 200 : 0;
     uint32 maxCount = 5 + level / 10;
 
     if (ai->HasCheat(BotCheatMask::item))

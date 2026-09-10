@@ -3847,7 +3847,7 @@ bool PlayerbotAI::Whisper(std::string msg, std::string receiverName, bool likePl
     return true;
 }
 
-bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, PlayerbotSecurityLevel securityLevel, bool isPrivate, bool noRepeat, bool ignoreSilent)
+bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, PlayerbotSecurityLevel securityLevel, bool isPrivate, bool noRepeat, bool ignoreSilent, bool forceWhisper)
 {
     if(!player)
         return false;
@@ -3867,9 +3867,9 @@ bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, Playerbot
 
         std::vector<Player*> recievers;
 
-        ChatMsg type = CHAT_MSG_SYSTEM;
+        ChatMsg type = forceWhisper ? CHAT_MSG_WHISPER : CHAT_MSG_SYSTEM;
 
-        if (!isPrivate && bot->GetGroup())
+        if (!forceWhisper && !isPrivate && bot->GetGroup())
         {
             recievers = GetPlayersInGroup();
             if(!recievers.empty())
@@ -3951,7 +3951,9 @@ bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, Playerbot
 
                 whispers[text] = time(0);
 
-                if (currentChat.second >= time(0))
+                // Explicit command failures must stay visible even if an addon
+                // query changed the reply channel while the action was queued.
+                if (!forceWhisper && currentChat.second >= time(0))
                    type = currentChat.first;
 
                 if (type == CHAT_MSG_ADDON)

@@ -68,7 +68,8 @@ bool PullRequestAction::Execute(Event& event)
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     auto fail = [&](PullFailure reason) {
         if ((event.getSource() == "pull" || event.getSource() == "pull rti") && CanManageBotCommands(ai, requester))
-            ai->TellPlayerNoFacing(requester, std::string("Pull failed: ") + PullFailureReason(reason) + ".");
+            ai->TellPlayerNoFacing(requester, std::string("Pull failed: ") + PullFailureReason(reason) + ".",
+                PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, true, true, true);
         return false;
     };
     PullStrategy* strategy = PullStrategy::Get(ai);

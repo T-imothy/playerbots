@@ -39,7 +39,7 @@ struct PlayerbotAI{Player*bot;Player*master;Unit*target;PullStrategy*strategy=nu
  std::vector<std::string>messages;Player*GetBot(){return bot;}Player*GetMaster(){return master;}bool HasRealPlayerMaster(){return master&&master->real;}
  Security*GetSecurity(){return &security;}Context*GetAiObjectContext(){return &context;}
  bool CanCastSpell(std::string,Unit*,int,void*,bool,bool,bool,SpellCastResult*out){++castChecks;*out=result;return result==SPELL_CAST_OK;}
- void TellPlayerNoFacing(Player*,const std::string&s){messages.push_back(s);}void OnCombatStarted(){++combatStarts;}
+ void TellPlayerNoFacing(Player*,const std::string&s,PlayerbotSecurityLevel=PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL,bool priv=true,bool repeat=true,bool ignoreSilent=false,bool forceWhisper=false){if(s.find("Pull failed:")==0)assert(priv&&repeat&&ignoreSilent&&forceWhisper);messages.push_back(s);}void OnCombatStarted(){++combatStarts;}
  Unit*GetUnit(unsigned){return target;}bool IsTank(Player*,bool grouped){assert(grouped==bot->grouped);return tank;}
  bool IsHeal(Player*,bool grouped){assert(grouped==bot->grouped);return heal;}bool IsRanged(Player*,bool grouped){assert(grouped==bot->grouped);return ranged;}};
 struct PullStrategy{std::string action="shoot";bool possible=true;Unit*requested=nullptr;unsigned requests=0;ObjectGuid requester=0;void SetRequester(ObjectGuid guid){requester=guid;}
