@@ -24,8 +24,7 @@ static bool MoveToMeetingPlayer(Player* bot, Player* player)
 {
     if (!bot || !player || bot->IsInCombat() || bot->GetMapId() != player->GetMapId())
         return false;
-    bot->GetMotionMaster()->MovePoint(0, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(),
-        FORCED_MOVEMENT_RUN, true);
+    bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, true);
     return true;
 }
 
@@ -254,9 +253,7 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
         {
             if (MoveToMeetingPlayer(bot, player))
                 active.lastMeetingMove = std::chrono::steady_clock::now();
-            else
-                bot->Whisper("I can't head over right now. I'll hold the item for a few minutes.",
-                    LANG_UNIVERSAL, player->GetObjectGuid());
+            // The grounded director line already reports combat and location; retry after combat in Update().
         }
     }
     return true;
@@ -560,7 +557,7 @@ void PlayerbotActionBroker::Update()
         }
         if (transaction.state == "meeting" && !bot->IsWithinDistInMap(player, INTERACTION_DISTANCE) &&
             !bot->IsInCombat() && (transaction.lastMeetingMove.time_since_epoch().count() == 0 ||
-            std::chrono::duration_cast<std::chrono::seconds>(now - transaction.lastMeetingMove).count() >= 5))
+            std::chrono::duration_cast<std::chrono::seconds>(now - transaction.lastMeetingMove).count() >= 1))
         {
             if (MoveToMeetingPlayer(bot, player))
                 transaction.lastMeetingMove = now;

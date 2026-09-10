@@ -72,6 +72,7 @@ struct ChatDirectorCandidate
     uint32 subzone = 0;
     std::string zoneName;
     std::string subzoneName;
+    float distanceToSpeaker = -1.0f;
     std::string role;
     std::string currentActivity;
     std::string questLog;

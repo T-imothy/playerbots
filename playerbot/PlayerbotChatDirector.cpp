@@ -263,6 +263,10 @@ static uint32 InventoryRelevance(const std::string& message, const ChatDirectorC
     uint32 best = 0;
     for (const ChatDirectorCapability& capability : candidate.actionCapabilities)
     {
+        if (requested.find("food") != requested.end() && (capability.itemKind == "food" || capability.itemKind == "food_water"))
+            best = std::max<uint32>(best, 65);
+        if (requested.find("water") != requested.end() && capability.itemKind == "water")
+            best = std::max<uint32>(best, 65);
         std::set<std::string> item = InventorySearchTerms(capability.itemName);
         uint32 overlap = 0;
         for (const std::string& term : requested)
@@ -296,6 +300,8 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
         candidate.subzoneName = subzone->area_name[0];
     if (!speaker)
         return;
+    candidate.distanceToSpeaker = bot->GetMapId() == speaker->GetMapId() ?
+        bot->GetDistance(speaker) : -1.0f;
     bool sameZone = bot->GetMapId() == speaker->GetMapId() && bot->GetZoneId() == speaker->GetZoneId();
     bool direct = sameZone && bot->IsWithinDistInMap(speaker, INTERACTION_DISTANCE);
 
@@ -1053,6 +1059,15 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
         uint32 leftInventory = InventoryRelevance(event.message, left);
         uint32 rightInventory = InventoryRelevance(event.message, right);
         if (leftInventory != rightInventory) return leftInventory > rightInventory;
+        if (leftInventory || rightInventory)
+        {
+            if (left.inCombat != right.inCombat) return !left.inCombat;
+            bool leftDistance = left.distanceToSpeaker >= 0.0f;
+            bool rightDistance = right.distanceToSpeaker >= 0.0f;
+            if (leftDistance != rightDistance) return leftDistance;
+            if (leftDistance && rightDistance && left.distanceToSpeaker != right.distanceToSpeaker)
+                return left.distanceToSpeaker < right.distanceToSpeaker;
+        }
         size_t leftHash = std::hash<std::string>{}(event.message + std::to_string(left.guid));
         size_t rightHash = std::hash<std::string>{}(event.message + std::to_string(right.guid));
         return leftHash < rightHash;
@@ -1110,6 +1125,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
              << ",\"level\":" << (uint32)candidate.level << ",\"zone\":" << candidate.zone
              << ",\"subzone\":" << candidate.subzone << ",\"zone_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.zoneName)
              << "\",\"subzone_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.subzoneName) << "\""
+             << ",\"distance_yards\":" << candidate.distanceToSpeaker
              << ",\"role\":\"" << candidate.role << "\",\"grouped\":" << (candidate.grouped ? "true" : "false")
              << ",\"current_activity\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.currentActivity) << "\""
              << ",\"quest_log\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.questLog) << "\""
