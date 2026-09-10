@@ -4,6 +4,7 @@
 #include "MotionGenerators/MotionMaster.h"
 #include "MotionGenerators/MovementGenerator.h"
 #include "playerbot/FleeManager.h"
+#include "playerbot/PartyCombatPositioning.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotRendezvousManager.h"
@@ -1776,6 +1777,16 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (!ai->IsSafe(obj))
         return false;
 
+    if (PartyCombatPositioning::Enabled(ai) &&
+        (obj->GetTypeId() == TYPEID_UNIT || obj->GetTypeId() == TYPEID_PLAYER))
+    {
+        Unit* target = static_cast<Unit*>(obj);
+        UpdateMovementState();
+        SetDuration(500);
+        return PartyCombatPositioning::Move(ai, target, 0.0f,
+            std::max(1.0f, distance + bot->GetCombinedCombatReach(target, false)));
+    }
+
 #ifdef MANGOSBOT_TWO
     TransportInfo* transportInfo = bot->GetTransportInfo();
     if (transportInfo && transportInfo->IsOnVehicle())
@@ -2003,6 +2014,18 @@ bool MovementAction::Flee(Unit *target)
     {
         ai->TellError(GetMaster(), "I am stuck while fleeing");
         return false;
+    }
+
+    if (PartyCombatPositioning::Enabled(ai))
+    {
+        UpdateMovementState();
+        SetDuration(500);
+        float maximum = ai->GetRange("spell") + bot->GetCombinedCombatReach(target, false);
+        float minimum = 0.0f;
+        if (bot->getClass() == CLASS_HUNTER)
+            PartyCombatPositioning::SpellRanges(ai, target, "auto shot", minimum, maximum);
+        return PartyCombatPositioning::Move(ai, target, minimum > 0 ? minimum + 0.5f : 0.0f,
+            std::min(maximum, std::max(minimum + 2.0f, maximum * 0.6f)), true);
     }
 
     HostileReference* ref = sServerFacade.GetThreatManager(target).getCurrentVictim();

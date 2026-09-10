@@ -9,6 +9,7 @@
 #include "playerbot/strategy/values/MoveStyleValue.h"
 #include "GenericSpellActions.h"
 #include "playerbot/PlayerbotFactory.h"
+#include "playerbot/PartyCombatPositioning.h"
 
 namespace ai
 {
@@ -51,6 +52,17 @@ namespace ai
                 {
                     chaseDist = inLos ? range : (isFriend ? std::min(distanceToTarget * 0.9f, range) : range);
                     chaseDist = (chaseDist - sPlayerbotAIConfig.contactDistance);
+                }
+
+                if (PartyCombatPositioning::Enabled(ai))
+                {
+                    SetDuration(500);
+                    const float reach = bot->GetCombinedCombatReach(target, false);
+                    float minimum = 0.0f, maximum = std::max(1.0f, chaseDist + reach);
+                    if (!spellName.empty() && PartyCombatPositioning::SpellRanges(ai, target, spellName, minimum, maximum))
+                        maximum = std::max(1.0f, maximum - sPlayerbotAIConfig.contactDistance);
+                    return PartyCombatPositioning::Move(ai, target,
+                        minimum > 0.0f ? minimum + 0.5f : 0.0f, maximum);
                 }
 
                 if (MoveStyleValue::WaitForEnemy(ai) && !AI_VALUE(Unit*, "rti cc target") && target->m_movementInfo.HasMovementFlag(movementFlagsMask) &&
