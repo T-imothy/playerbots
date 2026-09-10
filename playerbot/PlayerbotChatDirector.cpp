@@ -307,6 +307,24 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
 
     ChatCapabilityItemVisitor visitor;
     bot->GetPlayerbotAI()->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+    const std::set<std::string> requestedTerms = InventorySearchTerms(message);
+    auto relevance = [&](Item* item)
+    {
+        if (!item || !item->GetProto())
+            return uint32(0);
+        std::set<std::string> itemTerms = InventorySearchTerms(item->GetProto()->Name1);
+        uint32 overlap = 0;
+        for (const std::string& term : requestedTerms)
+            if (itemTerms.find(term) != itemTerms.end()) ++overlap;
+        return overlap;
+    };
+    std::stable_sort(visitor.items.begin(), visitor.items.end(), [&](Item* left, Item* right)
+    {
+        uint32 leftRelevance = relevance(left);
+        uint32 rightRelevance = relevance(right);
+        return leftRelevance > rightRelevance;
+    });
+
     ai::ListItemsVisitor countVisitor;
     bot->GetPlayerbotAI()->InventoryIterateItems(&countVisitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
     uint32 reported = 0;
