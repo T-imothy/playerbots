@@ -86,6 +86,18 @@ static ItemUsage CraftStockUsage(float stacks, bool acquiring)
     return ItemUsage::ITEM_USAGE_BANK;
 }
 
+static uint32 QuestItemReserve(Player* player, uint32 itemId);
+
+static ItemUsage QuestStockUsage(uint32 count, uint32 required, uint32 maxStack, bool acquiring)
+{
+    if (!required) return ItemUsage::ITEM_USAGE_NONE;
+    if (count < required) return ItemUsage::ITEM_USAGE_QUEST;
+    if (acquiring) return ItemUsage::ITEM_USAGE_BANK;
+    // Keep enough that removing any one whole stack cannot break the quest.
+    if (uint64(count) < uint64(required) + maxStack) return ItemUsage::ITEM_USAGE_KEEP;
+    return ItemUsage::ITEM_USAGE_NONE;
+}
+
 ItemUsage ItemUsageValue::Calculate()
 {
     return CalculateUsage(false);
@@ -367,10 +379,9 @@ ItemUsage ItemUsageValue::CalculateUsage(bool acquiringBankItem)
     //QUEST
     if (!ai->GetMaster() || !sPlayerbotAIConfig.syncQuestWithPlayer || !IsNeededForQuest(ai->GetMaster(), itemId))
     {
-        if (IsNeededForQuest(bot, itemId))
-            return ItemUsage::ITEM_USAGE_QUEST;
-        else if (IsNeededForQuest(bot, itemId, true) && CurrentStacks(ai, proto) < 2) //Do not sell quest items unless selling a full stack will stil keep enough in inventory.
-            return ItemUsage::ITEM_USAGE_KEEP;
+        const ItemUsage questUsage = QuestStockUsage(bot->GetItemCount(itemId, false),
+            QuestItemReserve(bot, itemId), proto->GetMaxStackSize(), acquiringBankItem);
+        if (questUsage != ItemUsage::ITEM_USAGE_NONE) return questUsage;
     }
 
     // AMMO
@@ -917,10 +928,10 @@ uint32 ItemUsageValue::ItemCreatedFrom(uint32 wantItemId)
     return 0;
 }
 
-bool ItemUsageValue::IsNeededForQuest(Player* player, uint32 itemId, bool ignoreInventory)
+static uint32 QuestItemReserve(Player* player, uint32 itemId)
 {
-    if (!itemId)
-        return false;
+    if (!player || !itemId) return 0;
+    uint32 required = 0;
 
     for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
@@ -938,18 +949,21 @@ bool ItemUsageValue::IsNeededForQuest(Player* player, uint32 itemId, bool ignore
             if (!quest->ReqItemCount[i])
                 continue;
 
-            if (quest->ReqItemId[i] != itemId && ItemCreatedFrom(quest->ReqItemId[i]) != itemId)
+            if (quest->ReqItemId[i] != itemId && ItemUsageValue::ItemCreatedFrom(quest->ReqItemId[i]) != itemId)
                 continue;
 
-            if (!ignoreInventory && player->GetItemCount(itemId, false) >= quest->ReqItemCount[i])
-                continue;
-
-            return true;
+            required = std::max<uint32>(required, quest->ReqItemCount[i]);
         }
     }
 
-    return false;
+    return required;
 }
+bool ItemUsageValue::IsNeededForQuest(Player* player, uint32 itemId, bool ignoreInventory)
+{
+    const uint32 required = QuestItemReserve(player, itemId);
+    return required && (ignoreInventory || player->GetItemCount(itemId, false) < required);
+}
+
 
 bool ItemUsageValue::IsItemNeededForSkill(ItemPrototype const* proto)
 {
