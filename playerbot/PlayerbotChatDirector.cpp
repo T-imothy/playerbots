@@ -322,6 +322,60 @@ static uint32 CountTradeablePlayerItem(Player* player, uint32 entry)
     return count;
 }
 
+static bool IsPlayerSaleRequest(const std::string& message)
+{
+    std::string lowered = boost::algorithm::to_lower_copy(message);
+    return lowered.find("want to buy") != std::string::npos ||
+        lowered.find("wants to buy") != std::string::npos ||
+        lowered.find("anyone buy") != std::string::npos ||
+        lowered.find("somebody buy") != std::string::npos ||
+        lowered.find("someone buy") != std::string::npos ||
+        lowered.find("sell you") != std::string::npos ||
+        lowered.find("selling") != std::string::npos;
+}
+
+static std::set<uint32> FindPlayerSaleItems(Player* player, const std::string& message)
+{
+    std::set<uint32> entries;
+    for (uint32 itemId : ChatHelper::parseItems(message, true))
+        entries.insert(itemId);
+    if (!player || !IsPlayerSaleRequest(message))
+        return entries;
+
+    const std::set<std::string> requested = InventorySearchTerms(message);
+    auto consider = [&](Item* item)
+    {
+        if (!item || !item->CanBeTraded() || item->IsSoulBound() || item->IsInTrade())
+            return;
+        ItemPrototype const* proto = item->GetProto();
+        if (!proto || proto->Class == ITEM_CLASS_QUEST)
+            return;
+        std::set<std::string> itemTerms = InventorySearchTerms(proto->Name1);
+        uint32 overlap = 0;
+        for (const std::string& term : itemTerms)
+            if (requested.find(term) != requested.end()) ++overlap;
+        bool genericFood = requested.find("food") != requested.end() && ai::ItemUsageValue::IsHpFoodOrDrink(proto);
+        bool genericWater = requested.find("water") != requested.end() && ai::ItemUsageValue::IsManaFoodOrDrink(proto);
+        // One distinctive item-name word is enough for a broad offer ("a potion").
+        // For multiword requests require at least half the item words, so ordinary
+        // prose cannot expose unrelated bag contents to the model.
+        bool nameMatch = overlap != 0 && (requested.size() == 1 || overlap * 2 >= itemTerms.size());
+        if (nameMatch || genericFood || genericWater)
+            entries.insert(proto->ItemId);
+    };
+
+    for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
+        consider(player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot));
+    for (uint8 bagSlot = INVENTORY_SLOT_BAG_START; bagSlot < INVENTORY_SLOT_BAG_END; ++bagSlot)
+    {
+        Bag* bag = (Bag*)player->GetItemByPos(INVENTORY_SLOT_BAG_0, bagSlot);
+        if (!bag) continue;
+        for (uint32 slot = 0; slot < bag->GetBagSize(); ++slot)
+            consider(bag->GetItemByPos(slot));
+    }
+    return entries;
+}
+
 static void PopulateGrounding(Player* bot, Player* speaker, const std::string& message, ChatDirectorCandidate& candidate)
 {
     candidate.subzone = sServerFacade.GetAreaId(bot);
@@ -465,7 +519,7 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
 
     if (sameZone)
     {
-        for (uint32 itemId : ChatHelper::parseItems(message, true))
+        for (uint32 itemId : FindPlayerSaleItems(speaker, message))
         {
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
             uint32 available = std::min<uint32>(5, CountTradeablePlayerItem(speaker, itemId));
