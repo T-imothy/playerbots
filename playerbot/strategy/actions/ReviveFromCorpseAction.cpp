@@ -227,6 +227,7 @@ bool FindCorpseAction::isUseful()
 
 bool SpiritHealerAction::Execute(Event& event)
 {
+    const bool livingPartyRecovery = event.getSource() == "living party dead recovery";
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     Corpse* corpse = bot->GetCorpse();
     if (!corpse)
@@ -267,7 +268,7 @@ bool SpiritHealerAction::Execute(Event& event)
             }
         }
 
-        if (!foundSpiritHealer)
+        if (!foundSpiritHealer && !livingPartyRecovery)
         {
             sLog.outDetail("Bot #%d %s:%d <%s> can't find a spirit healer", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
             ai->TellPlayerNoFacing(requester, "Cannot find any spirit healer nearby");
@@ -283,7 +284,8 @@ bool SpiritHealerAction::Execute(Event& event)
         bot->SaveToDB();
         context->GetValue<Unit*>("current target")->Set(nullptr);
         bot->SetSelectionGuid(ObjectGuid());
-        ai->TellPlayer(requester, BOT_TEXT("hello"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        if (!livingPartyRecovery)
+            ai->TellPlayer(requester, BOT_TEXT("hello"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         sPlayerbotAIConfig.logEvent(ai, "ReviveFromSpiritHealerAction");
 
         return true;
@@ -293,9 +295,12 @@ bool SpiritHealerAction::Execute(Event& event)
 
     const int64 deadTime = time(nullptr) - corpse->GetGhostTime();
 
-    // Prevent taking too long to go to corpse (10 mins)
-    // no need to wait longer, because bot is probably stuck in navigating issues
-    shouldTeleportToGY = deadTime > uint32(10 * MINUTE);
+    // A human party should not wait ten minutes for a remote ghost whose
+    // ordinary corpse navigation has already failed. The rendezvous manager
+    // gives normal corpse recovery one minute before invoking this scoped
+    // fallback; all other Playerbots retain the original ten-minute policy.
+    const uint32 maximumRecoverySeconds = livingPartyRecovery ? 60 : uint32(10 * MINUTE);
+    shouldTeleportToGY = deadTime > maximumRecoverySeconds;
 
     // Check if we can teleport to the graveyard when nobody is looking
     if (!shouldTeleportToGY && !ai->AllowActivity(DETAILED_MOVE_ACTIVITY) && !ai->HasPlayerNearby(WorldPosition(grave)))

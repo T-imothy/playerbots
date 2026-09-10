@@ -49,6 +49,7 @@ private:
         bool forceRelocation = false;
         bool approachIssued = false;
         uint32 approachAttempts = 0;
+        uint32 deadRecoveryAttempts = 0;
         float lastHumanDistance = 0.0f;
         uint32 hearthStartMapId = 0;
         float hearthStartX = 0.0f;
@@ -59,6 +60,8 @@ private:
         std::chrono::steady_clock::time_point humanAbsentSince;
         std::chrono::steady_clock::time_point lastFollowProgress;
         std::chrono::steady_clock::time_point nextFollowRepair;
+        std::chrono::steady_clock::time_point deadRecoveryStarted;
+        std::chrono::steady_clock::time_point nextDeadRecoveryAttempt;
         std::chrono::steady_clock::time_point hearthStarted;
     };
 

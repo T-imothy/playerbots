@@ -565,7 +565,57 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                 LogPartyEvent(session, "human_reconnected");
             }
 
-            bool canSyncHearth = originalParty && human && !bot->IsInCombat() && !human->IsInCombat() &&
+            // The normal dead strategy can be starved by a persistent
+            // human-master follow goal. Preserve the party rendezvous while
+            // first asking the existing corpse actions to recover normally,
+            // then fall back to the normal spirit-healer path after a bounded
+            // wait. Never teleport or resurrect the corpse directly here.
+            if (originalParty && human && !bot->IsAlive())
+            {
+                if (session.deadRecoveryStarted.time_since_epoch().count() == 0)
+                {
+                    session.deadRecoveryStarted = now;
+                    session.nextDeadRecoveryAttempt = now;
+                    session.deadRecoveryAttempts = 0;
+                    session.reason = "waiting_for_corpse_recovery";
+                    LogPartyEvent(session, "dead_recovery_started");
+                }
+
+                if (now >= session.nextDeadRecoveryAttempt)
+                {
+                    long recoverySeconds = std::chrono::duration_cast<std::chrono::seconds>(
+                        now - session.deadRecoveryStarted).count();
+                    Corpse* corpse = bot->GetCorpse();
+                    const char* action = !corpse ? "auto release" :
+                        (recoverySeconds >= 60 ? "spirit healer" : "find corpse");
+                    bool accepted = bot->GetPlayerbotAI()->DoSpecificAction(
+                        action, Event("living party dead recovery", "", human), true);
+                    ++session.deadRecoveryAttempts;
+                    session.nextDeadRecoveryAttempt = now + std::chrono::seconds(10);
+                    session.reason = std::string(action) + (accepted ? "_accepted" : "_not_ready");
+                    LogPartyEvent(session, accepted ? "dead_recovery_step" : "dead_recovery_wait");
+                }
+
+                ++iterator;
+                continue;
+            }
+
+            if (session.deadRecoveryStarted.time_since_epoch().count() != 0)
+            {
+                session.deadRecoveryStarted = std::chrono::steady_clock::time_point();
+                session.nextDeadRecoveryAttempt = std::chrono::steady_clock::time_point();
+                session.deadRecoveryAttempts = 0;
+                session.state = "pending";
+                session.reason = "dead_recovery_completed";
+                session.forceRelocation = true;
+                session.approachIssued = false;
+                session.nextApproachAttempt = std::chrono::steady_clock::time_point();
+                session.stateSince = now;
+                LogPartyEvent(session, "dead_recovery_completed");
+            }
+
+            bool canSyncHearth = originalParty && human && bot->IsAlive() && human->IsAlive() &&
+                !bot->IsInCombat() && !human->IsInCombat() &&
                 !bot->IsTaxiFlying() && !bot->GetTransport() && !bot->IsBeingTeleported() &&
                 session.state != "departing" && session.state != "hearth_sync";
             if (canSyncHearth && IsCastingHearthstone(human))
