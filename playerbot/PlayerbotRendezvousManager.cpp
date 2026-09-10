@@ -404,11 +404,6 @@ bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Playe
             session.reason = "catchup_disabled";
             return false;
         }
-        if (!IsPointUnobserved(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
-        {
-            session.reason = "origin_observed";
-            return false;
-        }
         auto cooldown = lastRelocation.find(bot->GetGUIDLow());
         if (cooldown != lastRelocation.end() &&
             std::chrono::duration_cast<std::chrono::seconds>(now - cooldown->second).count() <
@@ -481,6 +476,7 @@ bool PlayerbotRendezvousManager::ReturnPartyToActivity(PartySession& session, Pl
 void PlayerbotRendezvousManager::UpdatePartyAssists()
 {
     const auto now = std::chrono::steady_clock::now();
+    bool relocationIssuedThisUpdate = false;
     for (auto iterator = partySessions.begin(); iterator != partySessions.end(); )
     {
         PartySession& session = iterator->second;
@@ -536,33 +532,23 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
             else if (session.state == "pending")
             {
                 session.playerGuid = human->GetGUIDLow();
-                // A party can receive several accepted invitations in the same
-                // few world ticks. Serialize hidden relocations and their
-                // movement-generator handoff so one arrival is fully stable
-                // before the next bot starts. This also produces believable
-                // staggered arrivals instead of a pile of bots at one point.
-                bool arrivalInProgress = false;
-                for (const auto& other : partySessions)
-                {
-                    const PartySession& otherSession = other.second;
-                    if (otherSession.botGuid != session.botGuid && otherSession.groupId == session.groupId &&
-                        otherSession.playerGuid == session.playerGuid && otherSession.state == "approaching")
-                    {
-                        arrivalInProgress = true;
-                        break;
-                    }
-                }
-                if (!arrivalInProgress &&
+                // Do not wait for one bot to finish its visible run before
+                // starting another. Only serialize the actual teleport calls
+                // by one world update so group and movement state are never
+                // mutated repeatedly inside the same update iteration.
+                if (!relocationIssuedThisUpdate &&
                     (session.nextApproachAttempt.time_since_epoch().count() == 0 || now >= session.nextApproachAttempt))
                 {
-                    // Combat, source visibility, and terrain can make a valid
-                    // hidden arrival temporarily unavailable. Do not silently
-                    // abandon a distant persisted party member after one
-                    // timeout. Retry at a bounded cadence while allowing other
-                    // members of the same party to complete first.
+                    // Combat, transit, and destination terrain can make an
+                    // arrival temporarily unavailable. Retry without requiring
+                    // the bot's remote departure point to be unobserved.
                     session.nextApproachAttempt = now + std::chrono::seconds(5);
                     ++session.approachAttempts;
-                    if (!StartPartyApproach(session, bot, human) &&
+                    bool wasRelocated = session.relocated;
+                    bool started = StartPartyApproach(session, bot, human);
+                    if (started && !wasRelocated && session.relocated)
+                        relocationIssuedThisUpdate = true;
+                    if (!started &&
                         (session.approachAttempts == 1 || session.approachAttempts % 6 == 0))
                     {
                         LogPartyEvent(session, "arrival_retry_wait");
