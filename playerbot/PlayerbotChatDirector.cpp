@@ -1097,6 +1097,43 @@ static ProgressionQuestSnapshot GetProgressionQuestSnapshot(Player* bot)
     return snapshot;
 }
 
+static bool HasActiveProgressionQuestUseItem(Player* bot)
+{
+    if (!bot)
+        return false;
+    for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+    {
+        uint32 questId = bot->GetQuestSlotQuestId(slot);
+        if (!questId || bot->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE)
+            continue;
+        Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+        if (!quest)
+            continue;
+
+        std::vector<uint32> itemIds;
+        if (quest->GetSrcItemId())
+            itemIds.push_back(quest->GetSrcItemId());
+        for (uint8 source = 0; source < QUEST_SOURCE_ITEM_IDS_COUNT; ++source)
+            if (quest->ReqSourceId[source] && quest->ReqSourceCount[source] &&
+                std::find(itemIds.begin(), itemIds.end(), quest->ReqSourceId[source]) == itemIds.end())
+                itemIds.push_back(quest->ReqSourceId[source]);
+
+        for (uint32 itemId : itemIds)
+        {
+            if (!bot->GetItemCount(itemId, false))
+                continue;
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+            if (!proto)
+                continue;
+            for (uint8 spell = 0; spell < MAX_ITEM_PROTO_SPELLS; ++spell)
+                if (proto->Spells[spell].SpellId &&
+                    proto->Spells[spell].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE)
+                    return true;
+        }
+    }
+    return false;
+}
+
 void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time_point now)
 {
     if (nextHealthSample.time_since_epoch().count() != 0 && now < nextHealthSample)
@@ -1191,6 +1228,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             if (!recoveryQuestStillPending)
             {
                 state.recoveryStep = 0;
+                state.questItemFollowup = false;
                 state.recoveryQuestId = 0;
                 state.recoveryInteractionAttempts = 0;
                 state.lastRecoveryInteraction = std::chrono::steady_clock::time_point();
@@ -1233,13 +1271,15 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         bool questStalled = stalledQuestId != 0;
         uint8 bagUsed = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
         bool inventoryBlocked = bagUsed >= 95;
-        bool suspected = !excluded && (movementStalled || questStalled);
+        bool inventoryStalled = inventoryBlocked && noActions &&
+            stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
+        bool suspected = !excluded && (movementStalled || questStalled || inventoryStalled);
         std::string classification = "active";
         if (!bot->IsAlive()) classification = "dead";
         else if (bot->IsInCombat()) classification = "combat";
         else if (bot->IsTaxiFlying() || bot->GetTransport()) classification = "transport";
         else if (playerStay) classification = "group_wait";
-        else if (inventoryBlocked && stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds) classification = "inventory_blocked";
+        else if (inventoryStalled) classification = "inventory_blocked";
         else if (questStalled) classification = "completed_quest_awaiting_turn_in";
         else if (movementStalled) classification = "movement_stalled";
         else if (!expectsMovement && stillSeconds >= 60) classification = "rpg_pause";
@@ -1256,6 +1296,26 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             GetValue<TravelTarget*>("travel target")->Get();
         TravelStatus inFlightRecoveryStatus = inFlightRecoveryTarget ?
             inFlightRecoveryTarget->GetStatus() : TravelStatus::TRAVEL_STATUS_NONE;
+        bool recoveryRouteTerminal = state.recoveryStep > 0 &&
+            (inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_NONE ||
+             inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_COOLDOWN ||
+             inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_EXPIRED);
+        if (recoveryRouteTerminal)
+        {
+            uint32 terminalStep = state.recoveryStep;
+            if ((terminalStep == 2 || terminalStep == 6) && HasActiveProgressionQuestUseItem(bot))
+                state.questItemFollowup = true;
+            state.recoveryResult = terminalStep == 3 ? "quest_turnin_route_terminal" :
+                (terminalStep == 5 ? "vendor_route_terminal" : "objective_route_terminal");
+            // Terminal targets cannot be advanced. Keeping their recovery step
+            // nonzero made hundreds of bots bypass the global sampling buckets
+            // every ten seconds forever. Release the hot-loop state and let the
+            // next bounded sweep choose a fresh, reason-specific action.
+            state.recoveryStep = 0;
+            state.recoveryQuestId = 0;
+            state.recoveryInteractionAttempts = 0;
+            state.lastRecoveryInteraction = std::chrono::steady_clock::time_point();
+        }
         bool turninRecoveryInFlight = state.recoveryStep == 3 && state.recoveryQuestId &&
             questSnapshot.completed.count(state.recoveryQuestId) && inFlightRecoveryTarget &&
             (inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_PREPARE ||
@@ -1309,27 +1369,45 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     state.recoveryInteractionAttempts = 0;
                     state.lastRecoveryInteraction = std::chrono::steady_clock::time_point();
                 }
-                else if (state.recoveryStep >= 2 && sPlayerbotAIConfig.chatDirectorQuestInteraction &&
-                    lowered.find("quest") != std::string::npos && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 6)
-                {
-                    recovered = bot->GetPlayerbotAI()->DoSpecificAction("use random quest item", Event("living progression quest item recovery"), true);
-                    recovery = recovered ? "quest_item_used" : "quest_item_not_usable";
-                    state.recoveryStep = 6;
-                }
                 else
                 {
+                    // A route can bring the bot to the correct quest area yet
+                    // still leave an authoritative source item unused. Detect
+                    // that from quest and inventory state, not from the action
+                    // debug string. This covers both quest-start SrcItemId
+                    // tools and ReqSourceId items acquired during the quest.
+                    bool questItemAttempted = (state.questItemFollowup || state.recoveryStep >= 2) &&
+                        sPlayerbotAIConfig.chatDirectorQuestInteraction &&
+                        sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 6 &&
+                        HasActiveProgressionQuestUseItem(bot);
+                    state.questItemFollowup = false;
+                    if (questItemAttempted)
+                    {
+                        recovered = bot->GetPlayerbotAI()->DoSpecificAction(
+                            "use random quest item", Event("living progression quest item recovery"), true);
+                        if (recovered)
+                        {
+                            recovery = "quest_item_used_or_approaching_target";
+                            state.recoveryStep = 6;
+                        }
+                    }
+
                     // ResetTargetAction returns false when there was no active
                     // target to clear. That is not a reason to skip choosing a
                     // new target: action-starved bots commonly have no target.
-                    bool reset = bot->GetPlayerbotAI()->DoSpecificAction(
-                        "progression reset travel target", Event("living progression objective recovery"), true);
-                    recovered = reset;
-                    if (recovered && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 2)
-                        recovered = bot->GetPlayerbotAI()->DoSpecificAction(
-                            "request progression quest travel target", Event("can move around"), true);
-                    recovery = recovered ? "objective_route_requested" :
-                        (reset ? "objective_request_rejected" : "objective_reset_rejected");
-                    state.recoveryStep = std::min<uint32>(2, sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep);
+                    if (!recovered)
+                    {
+                        bool reset = bot->GetPlayerbotAI()->DoSpecificAction(
+                            "progression reset travel target", Event("living progression objective recovery"), true);
+                        recovered = reset;
+                        if (recovered && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 2)
+                            recovered = bot->GetPlayerbotAI()->DoSpecificAction(
+                                "request progression quest travel target", Event("can move around"), true);
+                        recovery = recovered ? "objective_route_requested" :
+                            (questItemAttempted ? "quest_item_not_usable_and_objective_rejected" :
+                                (reset ? "objective_request_rejected" : "objective_reset_rejected"));
+                        state.recoveryStep = std::min<uint32>(2, sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep);
+                    }
                 }
                 state.lastRecovery = now;
                 state.recoveryAttempts.push_back(now);
@@ -1559,6 +1637,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recovery_result\":\"" << PlayerbotLLMInterface::SanitizeForJson(state.recoveryResult) << "\""
              << ",\"recoveries_last_hour\":" << state.recoveryAttempts.size()
              << ",\"recovery_step\":" << state.recoveryStep
+             << ",\"recovery_quest_item_followup\":" << (state.questItemFollowup ? "true" : "false")
              << ",\"recovery_target_quest_id\":" << state.recoveryQuestId
              << ",\"recovery_target_status\":" << (uint32)recoveryStatus
              << ",\"recovery_target_bounded\":" << (boundedRecoveryTarget ? "true" : "false")

@@ -1572,9 +1572,6 @@ bool RequestQuestTurninTargetAction::Execute(Event& event)
                 questTakerEntries.push_back(entryAndPositions.first);
         }
     }
-    if (questTakerEntries.empty())
-        return false;
-
     *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async,
         [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, questId,
         questTakerEntries, range]()
@@ -1598,7 +1595,8 @@ bool RequestQuestTurninTargetAction::Execute(Event& event)
             {
                 QuestTravelDestination* destination = dynamic_cast<QuestTravelDestination*>(candidate);
                 if (!destination || destination->GetQuestId() != questId ||
-                    std::find(questTakerEntries.begin(), questTakerEntries.end(), destination->GetEntry()) == questTakerEntries.end())
+                    (!questTakerEntries.empty() &&
+                     std::find(questTakerEntries.begin(), questTakerEntries.end(), destination->GetEntry()) == questTakerEntries.end()))
                     continue;
                 // This destination is already the exact authoritative taker
                 // for a completed, rewardable quest. Use its real spawn points

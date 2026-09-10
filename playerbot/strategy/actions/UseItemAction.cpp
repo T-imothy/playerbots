@@ -17,6 +17,46 @@ using namespace ai;
 
 constexpr std::string_view LOS_GOS_PARAM = "los gos";
 
+namespace
+{
+    std::vector<uint32> GetActiveQuestUseItems(Player* bot, Quest const* quest)
+    {
+        std::vector<uint32> itemIds;
+        if (!bot || !quest)
+            return itemIds;
+
+        auto addIfCarried = [&](uint32 itemId)
+        {
+            if (!itemId || !bot->GetItemCount(itemId, false) ||
+                std::find(itemIds.begin(), itemIds.end(), itemId) != itemIds.end())
+                return;
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+            if (!proto)
+                return;
+            for (uint8 spell = 0; spell < MAX_ITEM_PROTO_SPELLS; ++spell)
+            {
+                if (proto->Spells[spell].SpellId &&
+                    proto->Spells[spell].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE)
+                {
+                    itemIds.push_back(itemId);
+                    return;
+                }
+            }
+        };
+
+        // SrcItemId is the item handed to the player when the quest starts
+        // (Foreman's Blackjack, Inoculating Crystal, etc.). ReqSourceId is an
+        // item acquired during the quest and then consumed to make progress
+        // (Dwarven Digging's picks, for example). Both are authoritative
+        // quest-use items and both must participate in the same safe workflow.
+        addIfCarried(quest->GetSrcItemId());
+        for (uint8 source = 0; source < QUEST_SOURCE_ITEM_IDS_COUNT; ++source)
+            if (quest->ReqSourceCount[source])
+                addIfCarried(quest->ReqSourceId[source]);
+        return itemIds;
+    }
+}
+
 SpellCastResult BotUseItemSpell::ForceSpellStart(SpellCastTargets const* targets, Aura* triggeredByAura)
 {
     WorldObject* truecaster = GetTrueCaster();
@@ -1396,13 +1436,6 @@ bool UseRandomQuestItemAction::isUseful()
     if (bot->InBattleGround() || bot->IsTaxiFlying() || bot->IsInCombat())
         return false;
 
-    // Preserve legacy autonomous behavior for unmastered bots. In a mixed
-    // party, only become eligible when an active quest has a real source item
-    // whose required spell focus is currently nearby. This makes the action
-    // safe to schedule frequently without clicking arbitrary bag items.
-    if (!ai->HasActivePlayerMaster())
-        return true;
-
     for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
         uint32 questId = bot->GetQuestSlotQuestId(slot);
@@ -1411,11 +1444,8 @@ bool UseRandomQuestItemAction::isUseful()
         Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
         if (!quest)
             continue;
-        for (uint8 source = 0; source < QUEST_SOURCE_ITEM_IDS_COUNT; ++source)
+        for (uint32 sourceId : GetActiveQuestUseItems(bot, quest))
         {
-            uint32 sourceId = quest->ReqSourceId[source];
-            if (!sourceId || !quest->ReqSourceCount[source] || !bot->GetItemByEntry(sourceId))
-                continue;
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(sourceId);
             if (!proto)
                 continue;
@@ -1458,6 +1488,17 @@ bool UseRandomQuestItemAction::isUseful()
             }
         }
     }
+    // Starting a quest from a carried item is the only remaining legacy use
+    // that is safe without an already-active quest binding.
+    std::list<Item*> questItems = AI_VALUE2(std::list<Item*>, "inventory items", "quest");
+    for (Item* questItem : questItems)
+    {
+        ItemPrototype const* proto = questItem ? questItem->GetProto() : nullptr;
+        Quest const* startsQuest = proto && proto->StartQuest ?
+            sObjectMgr.GetQuestTemplate(proto->StartQuest) : nullptr;
+        if (startsQuest && bot->CanTakeQuest(startsQuest, false))
+            return true;
+    }
     return false;
 }
 
@@ -1483,11 +1524,8 @@ bool UseRandomQuestItemAction::Execute(Event& event)
         Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
         if (!quest)
             continue;
-        for (uint8 source = 0; source < QUEST_SOURCE_ITEM_IDS_COUNT && !item; ++source)
+        for (uint32 sourceId : GetActiveQuestUseItems(bot, quest))
         {
-            uint32 sourceId = quest->ReqSourceId[source];
-            if (!sourceId || !quest->ReqSourceCount[source] || !bot->GetItemCount(sourceId, false))
-                continue;
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(sourceId);
             if (!proto)
                 continue;
@@ -1587,6 +1625,13 @@ bool UseRandomQuestItemAction::Execute(Event& event)
             SetDuration(5000);
         return success;
     }
+
+    // Progression recovery is never permission to fall through to arbitrary
+    // inventory use. If its exact active-quest source item is not usable at
+    // the current authoritative target/focus, leave the item untouched and
+    // let travel recovery choose another step.
+    if (event.getSource() == "living progression quest item recovery")
+        return false;
 
     if (questItems.empty())
         return false;
