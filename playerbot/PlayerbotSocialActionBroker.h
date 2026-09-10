@@ -31,9 +31,12 @@ private:
         uint32 groupId = 0;
         uint32 questId = 0;
         uint8 initialBagUsage = 0;
+        bool outboundRelocated = false;
+        bool restoreFollow = false;
         std::string state;
         std::string failureReason;
         std::chrono::steady_clock::time_point expires;
+        std::chrono::steady_clock::time_point stateSince;
         std::chrono::steady_clock::time_point completedAt;
     };
 

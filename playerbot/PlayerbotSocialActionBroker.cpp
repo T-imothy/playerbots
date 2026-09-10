@@ -116,7 +116,15 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     action.groupId = bot->GetGroup()->GetId();
     action.initialBagUsage = bagUsage;
     action.state = "vendor_travel";
+    action.stateSince = std::chrono::steady_clock::now();
     action.expires = std::chrono::steady_clock::now() + std::chrono::minutes(5);
+    // The scoped trip owns non-combat movement until the bot has sold its
+    // inventory. Otherwise ordinary party follow continually pulls the bot
+    // back to the human while TravelStrategy tries to reach the vendor.
+    action.restoreFollow = ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT);
+    if (action.restoreFollow)
+        ai->ChangeStrategy("nc -follow", BotState::BOT_STATE_NON_COMBAT);
+    ai->StopMoving();
     actions[action.actionId] = action;
     vendorCooldowns[action.botGuid] = std::chrono::steady_clock::now() + std::chrono::minutes(10);
     Report(actions[action.actionId]);
@@ -416,6 +424,9 @@ void PlayerbotSocialActionBroker::Update()
                 action.state = "failed";
                 action.failureReason = "party or character state changed during vendor trip";
                 Report(action);
+                if (bot && bot->GetPlayerbotAI() && action.restoreFollow)
+                    bot->GetPlayerbotAI()->ChangeStrategy("nc +follow", BotState::BOT_STATE_NON_COMBAT);
+                action.restoreFollow = false;
             }
             else
             {
@@ -423,16 +434,40 @@ void PlayerbotSocialActionBroker::Update()
                 // choose is cheap and becomes effective as soon as it is ready.
                 bot->GetPlayerbotAI()->DoSpecificAction("choose travel target", Event("living vendor bags", "", player), true);
                 TravelTarget* target = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
-                if (target && (target->GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL ||
-                    target->GetStatus() == TravelStatus::TRAVEL_STATUS_READY))
+                bool targetReady = target && target->GetPosition() &&
+                    (target->GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL ||
+                     target->GetStatus() == TravelStatus::TRAVEL_STATUS_READY);
+                if (targetReady)
                 {
                     // Human-led bots do not normally load TravelStrategy. A
                     // scoped travel-once strategy makes this one validated
                     // vendor target executable and removes itself on arrival.
                     bot->GetPlayerbotAI()->ChangeStrategy("nc +travel once", BotState::BOT_STATE_NON_COMBAT);
+                    long departureSeconds = std::chrono::duration_cast<std::chrono::seconds>(
+                        now - action.stateSince).count();
+                    if (!action.outboundRelocated && !bot->IsInCombat() && departureSeconds >= 3)
+                    {
+                        WorldPosition* destination = target->GetPosition();
+                        bot->GetPlayerbotAI()->StopMoving();
+                        bool relocated = false;
+                        if (destination->getMapId() == bot->GetMapId())
+                        {
+                            bot->NearTeleportTo(destination->getX(), destination->getY(),
+                                destination->getZ(), destination->getO());
+                            relocated = true;
+                        }
+                        else
+                            relocated = bot->TeleportTo(destination->getMapId(), destination->getX(),
+                                destination->getY(), destination->getZ(), destination->getO());
+                        action.outboundRelocated = relocated;
+                        if (relocated)
+                            sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=relocated map=%u area=%s",
+                                bot->GetGUIDLow(), bot->GetName(), destination->getMapId(),
+                                destination->getAreaName().c_str());
+                    }
                 }
 
-                if (target && (target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK ||
+                if (!bot->IsBeingTeleported() && target && (target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK ||
                     target->Distance(bot) <= INTERACTION_DISTANCE))
                 {
                     bool sold = bot->GetPlayerbotAI()->DoSpecificAction("sell",
@@ -444,6 +479,9 @@ void PlayerbotSocialActionBroker::Update()
                 if (usage < action.initialBagUsage)
                 {
                     bot->GetPlayerbotAI()->ChangeStrategy("nc -travel once", BotState::BOT_STATE_NON_COMBAT);
+                    if (action.restoreFollow)
+                        bot->GetPlayerbotAI()->ChangeStrategy("nc +follow", BotState::BOT_STATE_NON_COMBAT);
+                    action.restoreFollow = false;
                     PlayerbotRendezvousManager::RequestResult result = sPlayerbotRendezvousManager.Request(
                         bot, player, action.actionId, false);
                     if (result == PlayerbotRendezvousManager::RequestResult::accepted ||
@@ -462,6 +500,10 @@ void PlayerbotSocialActionBroker::Update()
                     action.state = "expired";
                     action.failureReason = "vendor trip did not free bag space in time";
                     Report(action);
+                    bot->GetPlayerbotAI()->ChangeStrategy("nc -travel once", BotState::BOT_STATE_NON_COMBAT);
+                    if (action.restoreFollow)
+                        bot->GetPlayerbotAI()->ChangeStrategy("nc +follow", BotState::BOT_STATE_NON_COMBAT);
+                    action.restoreFollow = false;
                 }
             }
         }
