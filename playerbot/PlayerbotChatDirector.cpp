@@ -1136,7 +1136,14 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         {
             long age = std::chrono::duration_cast<std::chrono::seconds>(now - complete.second).count();
             if (age > oldestCompleteSeconds) oldestCompleteSeconds = age;
-            if (!stalledQuestId && age >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds) stalledQuestId = complete.first;
+            Quest const* quest = sObjectMgr.GetQuestTemplate(complete.first);
+            // A completed-but-currently-unrewardable quest must not starve all
+            // other valid turn-ins behind its lower numeric ID. Keep it in the
+            // authoritative pending set for later diagnosis, but recover the
+            // oldest quest the core can actually reward now.
+            if (!stalledQuestId && age >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds &&
+                quest && bot->CanRewardQuest(quest, false))
+                stalledQuestId = complete.first;
         }
         bool noActions = lowered.find("no actions executed") != std::string::npos;
         // A bot carrying a completed quest gets a short grace period for the
