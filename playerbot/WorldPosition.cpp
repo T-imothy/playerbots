@@ -1163,10 +1163,16 @@ bool WorldPosition::ClosestCorrectPoint(float maxRange, float maxHeight, uint32 
 
 bool WorldPosition::GetReachableRandomPointOnGround(const Player* bot, const float radius, const bool randomRange) 
 {
-#ifndef MANGOSBOT_TWO         
-    return getMap(bot ? bot->GetInstanceId() : getFirstInstanceId())->GetReachableRandomPointOnGround(coord_x, coord_y, coord_z, radius, randomRange);
+    Map* map = getMap(bot ? bot->GetInstanceId() : getFirstInstanceId());
+    if (!map)
+        return false;
+
+#ifndef MANGOSBOT_TWO
+    return map->GetReachableRandomPointOnGround(coord_x, coord_y, coord_z, radius, randomRange);
 #else
-    return getMap(bot ? bot->GetInstanceId() : getFirstInstanceId())->GetReachableRandomPointOnGround(bot->GetPhaseMask(), coord_x, coord_y, coord_z, radius, randomRange);
+    if (!bot)
+        return false;
+    return map->GetReachableRandomPointOnGround(bot->GetPhaseMask(), coord_x, coord_y, coord_z, radius, randomRange);
 #endif
 }
 

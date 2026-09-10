@@ -3436,16 +3436,65 @@ bool MoveRandomAction::isUseful()
 
 bool ProgressionMoveRandomAction::Execute(Event& event)
 {
-    // Ask the map for a reachable ground point rather than projecting an
-    // arbitrary point at the bot's current Z. The latter frequently produces
-    // an empty path near cliffs, buildings, and starter-zone geometry.
-    for (uint8 attempt = 0; attempt < 6; ++attempt)
+    // This recovery action is deliberately navmesh-only. The map terrain
+    // random-point sampler can walk invalid geometry while a bot is changing
+    // grids, so it must not be used on this realm-critical recovery path.
+    //
+    // Sample a bounded set of nearby XY destinations, ask PathFinder to
+    // project and validate each one, and move only to the terminal point of a
+    // complete normal path. If no candidate passes every check, fail closed
+    // and let the progression state machine try a different recovery later.
+    if (!bot || !bot->IsInWorld() || !bot->GetMap() || bot->IsBeingTeleported() ||
+        bot->IsTaxiFlying() || bot->GetTransport() || !bot->IsAlive() || bot->IsInCombat() ||
+        bot->InBattleGround() || bot->IsInWater() || bot->IsFlying() || bot->IsFreeFlying())
+        return false;
+
+    const uint32 movementFlags = bot->m_movementInfo.GetMovementFlags();
+    if (movementFlags & (MOVEFLAG_FALLING | MOVEFLAG_FALLINGFAR | MOVEFLAG_FLYING |
+        MOVEFLAG_LEVITATING | MOVEFLAG_HOVER | MOVEFLAG_SWIMMING))
+        return false;
+
+    const WorldPosition origin(bot);
+    if (!origin.isValid())
+        return false;
+
+    const float startAngle = frand(0.0f, 2.0f * M_PI_F);
+    const float radii[] = { 15.0f, 25.0f, 35.0f, 40.0f };
+    const uint8 maxAttempts = 4;
+
+    for (uint8 attempt = 0; attempt < maxAttempts; ++attempt)
     {
-        WorldPosition destination(bot);
-        if (!destination.GetReachableRandomPointOnGround(bot, 120.0f, true))
+        const float radius = radii[attempt % 4];
+        const float angle = startAngle + 2.39996323f * float(attempt);
+        WorldPosition requested(bot->GetMapId(),
+            origin.getX() + cos(angle) * radius,
+            origin.getY() + sin(angle) * radius,
+            origin.getZ(), origin.getO());
+        if (!requested.isValid())
             continue;
 
-        if (destination.fDist(WorldPosition(bot)) < 10.0f)
+        PathFinder pathfinder(bot);
+        pathfinder.calculate(requested.getX(), requested.getY(), requested.getZ(), false);
+        const PathType pathType = pathfinder.getPathType();
+        if (!(pathType & PATHFIND_NORMAL) || (pathType & PATHFIND_NOPATH) ||
+            (pathType & PATHFIND_SHORTCUT) || (pathType & PATHFIND_INCOMPLETE) ||
+            (pathType & PATHFIND_NOT_USING_PATH))
+            continue;
+
+        const PointsArray& points = pathfinder.getPath();
+        if (points.size() < 2)
+            continue;
+
+        const std::vector<WorldPosition> path = origin.fromPointsArray(points);
+        if (path.size() < 2 || origin.fDist(path.front()) > 10.0f)
+            continue;
+
+        const WorldPosition& destination = path.back();
+        const float displacement = origin.fDist(destination);
+        if (!destination.isValid() || destination.getMapId() != bot->GetMapId() ||
+            displacement < 8.0f || displacement > 45.0f ||
+            destination.fDist(requested) > 10.0f ||
+            origin.getPathLength(path) > radius * 3.0f)
             continue;
 
         if (MoveTo(destination.getMapId(), destination.getX(), destination.getY(), destination.getZ()))
@@ -3457,8 +3506,16 @@ bool ProgressionMoveRandomAction::Execute(Event& event)
 
 bool ProgressionMoveRandomAction::isUseful()
 {
-    return MovementAction::isUseful() && !ai->HasRealPlayerMaster() && bot->IsAlive() &&
-        !bot->IsInCombat() && !bot->InBattleGround() && WorldPosition(bot).isOverworld();
+    if (!MovementAction::isUseful() || !bot || !bot->IsInWorld() || !bot->GetMap() ||
+        bot->IsBeingTeleported() || bot->IsTaxiFlying() || bot->GetTransport() ||
+        ai->HasRealPlayerMaster() || !bot->IsAlive() || bot->IsInCombat() ||
+        bot->InBattleGround() || bot->IsInWater() || bot->IsFlying() || bot->IsFreeFlying())
+        return false;
+
+    const uint32 movementFlags = bot->m_movementInfo.GetMovementFlags();
+    return !(movementFlags & (MOVEFLAG_FALLING | MOVEFLAG_FALLINGFAR | MOVEFLAG_FLYING |
+        MOVEFLAG_LEVITATING | MOVEFLAG_HOVER | MOVEFLAG_SWIMMING)) &&
+        WorldPosition(bot).isOverworld();
 }
 
 bool MoveToAction::Execute(Event& event)
