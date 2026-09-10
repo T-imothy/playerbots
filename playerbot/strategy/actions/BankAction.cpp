@@ -5,6 +5,9 @@
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/PlayerbotInventoryPressure.h"
+#include "playerbot/PlayerbotOrganicEconomy.h"
+#include "playerbot/PlayerbotActionBroker.h"
+#include "playerbot/PlayerbotGuildSupplies.h"
 
 using namespace ai;
 
@@ -33,6 +36,49 @@ namespace
                 if (UntypedValue* value = context->GetUntypedValue(name)) value->Reset();
         }
     }
+}
+
+bool BankAction::WithdrawForRecipe(uint32 entry, uint32 targetCount, std::string& blocker)
+{
+    blocker = "recipe_banker_out_of_range";
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() ||
+        bot->GetTransport() || bot->IsBeingTeleported()) return false;
+    Creature* banker = nullptr;
+    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs no los"))
+        if ((banker = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_BANKER))) break;
+    if (!banker) return false; // Never withdraw bank contents remotely.
+    const uint32 before = bot->GetItemCount(entry, false), total = bot->GetItemCount(entry, true);
+    if (targetCount <= before) { blocker = "recipe_materials_ready"; return false; }
+    blocker = "recipe_material_reserved";
+    if (sGuildSupplies.ReservedEntry(bot->GetGUIDLow(), entry) ||
+        ItemUsageValue::IsNeededForQuest(bot, entry, true)) return false;
+    Item* item = FindItemInBank(entry);
+    if (!item) { blocker = "recipe_bank_material_missing"; return false; }
+    if (sPlayerbotActionBroker.IsItemReserved(item->GetGUIDLow())) return false;
+    uint32 count = std::min(targetCount - before, item->GetCount());
+    ItemPosCountVec dest;
+    blocker = "recipe_bag_space_unavailable";
+    if (bot->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, entry, count) != EQUIP_ERR_OK || dest.empty()) return false;
+    // A partial native split targets one actual bag position and is rechecked
+    // by the core. It cannot split a whole stack or consume promised stock.
+    count = std::min<uint32>(count, dest.front().count);
+    if (!count) return false;
+    if (count < item->GetCount()) bot->SplitItem(item->GetPos(), dest.front().pos, count);
+    else
+    {
+        uint8 bagSlot = 0;
+        dest.clear();
+        if (bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, bagSlot, false) != EQUIP_ERR_OK) return false;
+        bot->RemoveItem(item->GetBagSlot(), item->GetSlot(), true);
+        bot->StoreItem(dest, item, true);
+    }
+    ResetBankActionItemCaches(ai, std::to_string(entry), std::to_string(entry));
+    const uint32 after = bot->GetItemCount(entry, false);
+    const bool verified = after == before + count && bot->GetItemCount(entry, true) == total;
+    blocker = verified ? "withdrew_owned_recipe_materials" : "recipe_bank_transfer_not_verified";
+    PlayerbotServiceTracking::Result(bot, "profession_bank_withdraw", banker->GetEntry(), entry,
+        "bag_item_count", before, verified ? after : before, true, verified ? "" : blocker.c_str());
+    return verified;
 }
 
 bool BankAction::Execute(Event& event)
@@ -156,6 +202,7 @@ bool BankAction::Deposit(Player* requester, Item* pItem)
     const ItemPrototype* proto = pItem ? pItem->GetProto() : nullptr;
     if (!proto)
         return false;
+    if (sPlayerbotOrganicEconomy.RecipeMaterialQuantity(bot->GetGUIDLow(), pItem->GetEntry())) return false;
 
     const std::string itemId = std::to_string(proto->ItemId);
     const std::string itemQualifier = ItemQualifier(pItem).GetQualifier();
@@ -299,6 +346,7 @@ bool BankAction::AutoDeposit()
         ItemUsage currentUsage = AI_VALUE2(ItemUsage, "item usage", qualStr);
         if (currentUsage != ItemUsage::ITEM_USAGE_BANK)
             continue;
+        if (sPlayerbotOrganicEconomy.RecipeMaterialQuantity(bot->GetGUIDLow(), item->GetEntry())) continue;
 
         ItemPosCountVec dest;
         uint8 bagSlot;
@@ -339,6 +387,8 @@ bool BankAction::AutoWithdraw()
         ItemPrototype const* proto = pItem->GetProto();
         if (!proto)
             return false;
+        // The exact recipe executor withdraws only the missing quantity.
+        if (sPlayerbotOrganicEconomy.RecipeMaterialQuantity(bot->GetGUIDLow(), pItem->GetEntry())) return false;
 
         const std::string itemId = std::to_string(proto->ItemId);
         const std::string itemQualifier = ItemQualifier(pItem).GetQualifier();

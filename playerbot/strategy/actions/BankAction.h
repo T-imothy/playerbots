@@ -34,5 +34,6 @@ namespace ai
     public:
         bool AutoDeposit();
         bool AutoWithdraw();
+        bool WithdrawForRecipe(uint32 itemEntry, uint32 targetCount, std::string& blocker);
     };
 }

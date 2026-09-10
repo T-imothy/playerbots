@@ -12,6 +12,7 @@ public:
     void Update();
     bool Reserved(uint32_t guid) const;
     bool OwnsMovement(uint32_t guid) const;
+    bool CanRendezvous(uint32_t guid,uint32_t coordinator,const std::string& event) const;
     bool CanGroupWith(uint32_t first,uint32_t second) const;
     bool AllowsMovement(uint32_t guid,const std::string& action) const;
     static bool DungeonSupported(uint32_t map);

@@ -15,6 +15,7 @@
 #include "strategy/ItemVisitors.h"
 #include "strategy/values/ItemUsageValue.h"
 #include "strategy/values/TravelValues.h"
+#include "strategy/actions/BankAction.h"
 
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -102,10 +103,12 @@ namespace
         return 0;
     }
 
-    bool SafeCraftReagents(Player* bot, const SpellEntry* spell)
+    bool SafeCraftReagents(Player* bot, const SpellEntry* spell, bool includeBank = false)
     {
         ai::FindAllItemVisitor visitor;
         bot->GetPlayerbotAI()->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+        if (includeBank)
+            bot->GetPlayerbotAI()->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BANK);
         std::map<uint32, uint32> needed;
         for (uint32 i = 0; i < MAX_SPELL_REAGENTS; ++i)
             if (spell->Reagent[i] > 0 && spell->ReagentCount[i]) needed[spell->Reagent[i]] += spell->ReagentCount[i];
@@ -118,7 +121,7 @@ namespace
             for (Item* item : visitor.GetResult())
                 if (item->GetEntry() == reagent.first &&
                     sPlayerbotActionBroker.IsItemReserved(item->GetGUIDLow())) return false;
-            if (bot->GetItemCount(reagent.first, false) < reagent.second) return false;
+            if (bot->GetItemCount(reagent.first, includeBank) < reagent.second) return false;
         }
         return !needed.empty(); // No conjuring or reagent cheats.
     }
@@ -133,6 +136,20 @@ namespace
             const auto* spell = sServerFacade.LookupSpellInfo(known.first);
             if (CraftSkill(bot, spell) && SafeCraftReagents(bot, spell) &&
                 bot->GetPlayerbotAI()->CanCastSpell(known.first, bot, 0, true)) return known.first;
+        }
+        return 0;
+    }
+
+    uint32 BankCraftSpell(Player* bot)
+    {
+        // Only propose a bank trip when ALL ingredients already exist in this
+        // character's real possessions. No speculative shopping or remote craft.
+        for (const auto& known : bot->GetSpellMap())
+        {
+            if (known.second.state == PLAYERSPELL_REMOVED || known.second.disabled) continue;
+            const auto* spell = sServerFacade.LookupSpellInfo(known.first);
+            if (CraftSkill(bot, spell) && !SafeCraftReagents(bot, spell) &&
+                SafeCraftReagents(bot, spell, true)) return known.first;
         }
         return 0;
     }
@@ -279,9 +296,29 @@ std::string PlayerbotOrganicEconomy::CurrentGoalType(uint32 characterGuid) const
     return found == profiles.end() ? "" : found->second.currentGoalType;
 }
 
+uint32 PlayerbotOrganicEconomy::RecipeMaterialQuantity(uint32 guid, uint32 entry) const
+{
+    auto found = profiles.find(guid);
+    if (policy.mode != "active" || !policy.careers || found == profiles.end() ||
+        found->second.currentGoalState != "active" || found->second.currentGoalType != "profession_skill_up") return 0;
+    const std::string prefix = "profession:" + std::to_string(guid) + ":";
+    const auto& id = found->second.currentGoalId;
+    if (id.compare(0, prefix.size(), prefix)) return 0;
+    const std::string suffix = id.substr(prefix.size());
+    if (suffix.empty() || suffix.size() > 9 || suffix.find_first_not_of("0123456789") != std::string::npos) return 0;
+    const auto* spell = sServerFacade.LookupSpellInfo(uint32(std::stoul(suffix)));
+    if (!spell) return 0;
+    uint32 count = 0;
+    for (uint32 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+        if (spell->Reagent[i] > 0 && uint32(spell->Reagent[i]) == entry) count += spell->ReagentCount[i];
+    return count;
+}
+
 bool PlayerbotOrganicEconomy::SafeForEconomy(Player* bot) const
 {
-    if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() || bot->InBattleGround())
+    if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() || bot->InBattleGround() ||
+        bot->IsTaxiFlying() || bot->GetTransport() || bot->IsBeingTeleported() ||
+        !bot->GetMap() || bot->GetMap()->IsDungeon())
         return false;
     PlayerbotAI* ai = bot->GetPlayerbotAI();
     bool partyFreeTime = sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow());
@@ -337,7 +374,8 @@ bool PlayerbotOrganicEconomy::Submit(const Policy& currentPolicy)
             else if (!professionTwo) { professionTwo = skillId; skillTwo = value; break; }
         }
         std::vector<uint32> outputs = KnownCraftOutputs(bot);
-        const uint32 readyRecipe = profile.career && currentPolicy.careers ? ReadyCraftSpell(bot) : 0;
+        uint32 readyRecipe = profile.career && currentPolicy.careers ? ReadyCraftSpell(bot) : 0;
+        if (!readyRecipe && profile.career && currentPolicy.careers) readyRecipe = BankCraftSpell(bot);
         bool surplus = HasAuctionSurplus(bot);
         if (!firstEvent) events << ',';
         firstEvent = false;
@@ -559,7 +597,32 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
         if (!bot->HasSpell(recipe) || !skill)
         { failureReason = "recipe_unavailable_or_no_skill_gain"; return false; }
         if (!SafeCraftReagents(bot, spell))
-        { failureReason = "missing_or_reserved_recipe_materials"; return false; }
+        {
+            if (!SafeCraftReagents(bot, spell, true))
+            { failureReason = "missing_or_reserved_recipe_materials"; return false; }
+            std::map<uint32, uint32> needed;
+            for (uint32 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+                if (spell->Reagent[i] > 0 && spell->ReagentCount[i]) needed[spell->Reagent[i]] += spell->ReagentCount[i];
+            ai::BankAction bank(ai);
+            // At most one real stack transfer per reagent per sweep; a rejected
+            // transfer never grants stock or reports a profession completion.
+            for (const auto& reagent : needed)
+            {
+                if (bot->GetItemCount(reagent.first, false) >= reagent.second) continue;
+                bank.WithdrawForRecipe(reagent.first, reagent.second, failureReason);
+                if (failureReason == "recipe_banker_out_of_range")
+                {
+                    std::ostringstream route;
+                    route << "request travel target::" << (uint32)TravelDestinationPurpose::Bank;
+                    if (ai->DoSpecificAction(route.str(), Event("organic economy recipe", "", bot), true))
+                        failureReason = "traveling_to_owned_recipe_materials";
+                    else failureReason = "recipe_bank_route_pending";
+                    return false;
+                }
+                if (bot->GetItemCount(reagent.first, false) < reagent.second) return false;
+            }
+            if (!SafeCraftReagents(bot, spell)) return false;
+        }
         if (!ai->CanCastSpell(recipe, bot, 0, true))
         { failureReason = "recipe_requires_safe_local_tools_or_space"; return false; }
         CraftAttempt attempt;

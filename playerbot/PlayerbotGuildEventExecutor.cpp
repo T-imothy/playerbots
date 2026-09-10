@@ -203,6 +203,27 @@ bool PlayerbotGuildEventExecutor::Reserved(uint32 guid) const { return state_->r
 bool PlayerbotGuildEventExecutor::OwnsMovement(uint32 guid) const {
     auto it=state_->reservations.find(guid);return it!=state_->reservations.end()&&it->second.moving;
 }
+bool PlayerbotGuildEventExecutor::CanRendezvous(uint32 guid,uint32 coordinator,const std::string& event) const {
+    // The first rendezvous has no travel session yet. Authorize it from the
+    // executor's current accepted roster, never from an old movement session.
+    auto a=state_->reservations.find(guid),b=state_->reservations.find(coordinator);
+    auto roster=state_->rosters.find(event);
+    if(guid==coordinator||a==state_->reservations.end()||b==state_->reservations.end()||
+        roster==state_->rosters.end()||!roster->second.count(guid)||!roster->second.count(coordinator)) return false;
+    const auto& member=a->second;const auto& leader=b->second;
+    if(member.event!=event||leader.event!=event||member.revision!=leader.revision||
+        member.coordinator!=coordinator||leader.coordinator!=coordinator||
+        !member.moving||!leader.moving||member.active||leader.active) return false;
+    Player* bot=Online(guid);Player* organizer=Online(coordinator);
+    Guild* guild=bot?sGuildMgr.GetGuildById(bot->GetGuildId()):nullptr;
+    return guild&&bot&&organizer&&Safe(bot,bot->GetGuildId())&&Safe(organizer,bot->GetGuildId())&&
+        bot->GetPlayerbotAI()&&!bot->isRealPlayer()&&
+        bot->GetGuildId()==organizer->GetGuildId()&&organizer->GetGroup()&&
+        bot->GetGroup()==organizer->GetGroup()&&
+        organizer->GetGroup()->GetLeaderGuid()==organizer->GetObjectGuid()&&
+        !HasUncommittedHuman(bot,roster->second)&&
+        sGuildGovernance.Allows(guild,"events");
+}
 bool PlayerbotGuildEventExecutor::CanGroupWith(uint32 first,uint32 second) const {
     auto a=state_->reservations.find(first),b=state_->reservations.find(second);
     return (a==state_->reservations.end()&&b==state_->reservations.end())||

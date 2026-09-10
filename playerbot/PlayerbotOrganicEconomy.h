@@ -17,6 +17,7 @@ public:
     void Update();
     bool CanLearnProfessionSpell(Player* bot, uint32 learnedSpell) const;
     std::string CurrentGoalType(uint32 characterGuid) const;
+    uint32 RecipeMaterialQuantity(uint32 characterGuid, uint32 itemEntry) const;
     bool IsAuctionPostingEnabled() const { return policy.mode == "active" && policy.posting; }
 
 private:

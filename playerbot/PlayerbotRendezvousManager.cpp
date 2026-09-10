@@ -1709,13 +1709,13 @@ PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
     if (!bot || !player || !bot->IsInWorld() || !player->IsInWorld() ||
         bot->IsInCombat() || !bot->IsAlive() || !player->IsAlive() || bot->IsTaxiFlying())
         return finishRequest(RequestResult::unavailable, "participant_unavailable");
-    if (guildEvent && BlocksAutonomousPartyWork(bot->GetGUIDLow()) &&
-        !IsGuildEventAssemblyParticipant(bot->GetGUIDLow()))
+    if (guildEvent && !sGuildEventExecutor.CanRendezvous(
+        bot->GetGUIDLow(), player->GetGUIDLow(), actionId.substr(12)))
     {
         QueueActivityTelemetry(bot->GetGUIDLow(), player->GetGUIDLow(), 0,
             GetPartyActivityOwner(bot->GetGUIDLow()), GetPartyActivityPhase(bot->GetGUIDLow()),
             "conflict_prevented", "guild_event");
-        return finishRequest(RequestResult::unavailable, "party_activity_owned");
+        return finishRequest(RequestResult::unavailable, "guild_assembly_not_authorized");
     }
     auto existing = sessions.find(bot->GetGUIDLow());
     if (existing != sessions.end())
