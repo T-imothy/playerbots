@@ -1,5 +1,6 @@
 #pragma once
 #include <algorithm>
+#include "PlayerbotOrganicEconomy.h"
 #include "Entities/Pet.h"
 #include "Spells/SpellTargetDefines.h"
 
@@ -13,6 +14,12 @@ inline bool LivingWowFreeBotTraining(Player* player)
 inline bool LivingWowCanTrainSpell(Player* bot, TrainerSpell const* spell, Unit* trainer = nullptr)
 {
     if (!bot || !spell) return false;
+#ifdef MANGOSBOT_ZERO
+    if (!sPlayerbotOrganicEconomy.CanLearnProfessionSpell(bot, spell->learnedSpell)) return false;
+#else
+    for (uint32 learned : spell->learnedSpell)
+        if (learned && !sPlayerbotOrganicEconomy.CanLearnProfessionSpell(bot, learned)) return false;
+#endif
     // Pet-directed trainer spells must be eligible for the living pet, not
     // repeatedly offered because they are absent from its owner's spellbook.
     const SpellEntry* teaching = sSpellTemplate.LookupEntry<SpellEntry>(spell->spell);

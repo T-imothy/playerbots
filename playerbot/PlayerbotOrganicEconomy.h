@@ -15,6 +15,7 @@ class PlayerbotOrganicEconomy
 public:
     static PlayerbotOrganicEconomy& instance();
     void Update();
+    bool CanLearnProfessionSpell(Player* bot, uint32 learnedSpell) const;
     std::string CurrentGoalType(uint32 characterGuid) const;
     bool IsAuctionPostingEnabled() const { return policy.mode == "active" && policy.posting; }
 
@@ -35,6 +36,8 @@ private:
     struct Profile
     {
         bool career = false;
+        uint32 planVersion = 0;
+        uint32 race = 0;
         uint32 intendedOne = 0;
         uint32 intendedTwo = 0;
         std::string currentGoalId;

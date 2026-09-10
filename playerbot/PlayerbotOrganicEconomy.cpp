@@ -1,5 +1,6 @@
 #include "botpch.h"
 #include "PlayerbotOrganicEconomy.h"
+#include "LivingProfessionPlan.h"
 #include "PlayerbotInventoryPressure.h"
 
 #include "PlayerbotAI.h"
@@ -89,6 +90,23 @@ PlayerbotOrganicEconomy& PlayerbotOrganicEconomy::instance()
     return economy;
 }
 
+bool PlayerbotOrganicEconomy::CanLearnProfessionSpell(Player* bot, uint32 learnedSpell) const
+{
+    if (!bot || bot->isRealPlayer() || !bot->GetPlayerbotAI()) return true;
+    const SpellLearnSkillNode* node = sSpellMgr.GetSpellLearnSkill(learnedSpell);
+    if (!node || !LivingProfessions::Primary(node->skill) || bot->GetSkillValue(node->skill)) return true;
+    auto row = profiles.find(bot->GetGUIDLow());
+    // The first population snapshot may not have loaded yet. Defer only new
+    // primary professions until that happens; existing skills remain trainable.
+    if (row == profiles.end()) return policy.mode == "off";
+    const Profile& p = row->second;
+    unsigned learnedCount = 0;
+    for (unsigned skill : LivingProfessions::Skills)
+        if (bot->GetSkillValue(skill)) ++learnedCount;
+    return LivingProfessions::Allows(false, p.career, p.planVersion,
+        p.intendedOne, p.intendedTwo, node->skill, false, learnedCount);
+}
+
 PlayerbotOrganicEconomy::Policy PlayerbotOrganicEconomy::LoadPolicy()
 {
     Policy result;
@@ -119,7 +137,8 @@ std::map<uint32, PlayerbotOrganicEconomy::Profile> PlayerbotOrganicEconomy::Load
     std::unique_ptr<QueryResult> result = CharacterDatabase.Query(
         "SELECT profile.character_guid,profile.career_participant,COALESCE(profile.intended_profession_one,0),"
         "COALESCE(profile.intended_profession_two,0),COALESCE(goal.capability_ref,''),"
-        "COALESCE(goal.goal_type,''),COALESCE(goal.state,'') FROM organic_economy_profile profile "
+        "COALESCE(goal.goal_type,''),COALESCE(goal.state,''),profile.profession_plan_version,actor.race FROM organic_economy_profile profile "
+        "JOIN characters actor ON actor.guid=profile.character_guid "
         "LEFT JOIN organic_economy_goal goal ON goal.goal_id=(SELECT MAX(candidate.goal_id) FROM organic_economy_goal candidate "
         "WHERE candidate.character_guid=profile.character_guid AND candidate.state IN ('active','proposed','candidate') "
         "AND (candidate.expires_at IS NULL OR candidate.expires_at>NOW()))");
@@ -130,6 +149,8 @@ std::map<uint32, PlayerbotOrganicEconomy::Profile> PlayerbotOrganicEconomy::Load
             Field* fields = result->Fetch();
             Profile profile;
             profile.career = fields[1].GetBool();
+            profile.planVersion = fields[7].GetUInt32();
+            profile.race = fields[8].GetUInt32();
             profile.intendedOne = fields[2].GetUInt32();
             profile.intendedTwo = fields[3].GetUInt32();
             profile.currentGoalId = fields[4].GetString();
@@ -137,6 +158,18 @@ std::map<uint32, PlayerbotOrganicEconomy::Profile> PlayerbotOrganicEconomy::Load
             profile.currentGoalState = fields[6].GetString();
             profiles[fields[0].GetUInt32()] = profile;
         } while (result->NextRow());
+    }
+
+    LivingProfessions::Counts coverage[2] = {};
+    unsigned population[2] = {};
+    for (const auto& row : profiles)
+    {
+        const Profile& p = row.second;
+        if (!p.career) continue;
+        unsigned faction = LivingProfessions::Faction(p.race);
+        ++population[faction];
+        LivingProfessions::Add(coverage[faction], p.intendedOne);
+        if (p.intendedTwo != p.intendedOne) LivingProfessions::Add(coverage[faction], p.intendedTwo);
     }
 
     // The schema migration seeds profiles for bots that exist at install time,
@@ -155,23 +188,21 @@ std::map<uint32, PlayerbotOrganicEconomy::Profile> PlayerbotOrganicEconomy::Load
         uint64 seed = uint64(guid) * 1103515245ULL + uint64(account) * 12345ULL;
         Profile profile;
         profile.career = (seed % 100ULL) < 80ULL;
-        switch (seed % 5ULL)
+        profile.race = bot->getRace();
+        profile.planVersion = 1;
+        unsigned faction = LivingProfessions::Faction(profile.race);
+        std::vector<unsigned> learned;
+        for (unsigned skill : LivingProfessions::Skills)
+            if (bot->GetSkillValue(skill)) learned.push_back(skill);
+        auto planned = LivingProfessions::Choose(bot->getClass(), LivingProfessions::Mix(seed),
+            learned, coverage[faction], population[faction] + 1);
+        profile.intendedOne = planned.first;
+        profile.intendedTwo = planned.second;
+        if (profile.career)
         {
-            case 0: profile.intendedOne = 182; profile.intendedTwo = 171; break;
-            case 1: profile.intendedOne = 186; profile.intendedTwo =
-                (bot->getClass() == CLASS_WARRIOR || bot->getClass() == CLASS_PALADIN) ? 164 : 202; break;
-            case 2: profile.intendedOne = 393; profile.intendedTwo = 165; break;
-            case 3: profile.intendedOne = 197; profile.intendedTwo = 333; break;
-            default: profile.intendedOne = 186; profile.intendedTwo = 182; break;
-        }
-        const uint32 professionIds[] = {164,165,171,182,186,197,202,333,393,755};
-        uint32 learned = 0;
-        for (uint32 skillId : professionIds)
-        {
-            if (!bot->GetSkillValue(skillId))
-                continue;
-            if (!learned++) profile.intendedOne = skillId;
-            else { profile.intendedTwo = skillId; break; }
+            ++population[faction];
+            LivingProfessions::Add(coverage[faction], planned.first);
+            LivingProfessions::Add(coverage[faction], planned.second);
         }
         uint32 generosity = uint32((uint64(guid) * 1664525ULL + 1013904223ULL) % 101ULL);
         uint32 thrift = uint32((uint64(guid) * 22695477ULL + 1ULL) % 101ULL);
@@ -180,7 +211,7 @@ std::map<uint32, PlayerbotOrganicEconomy::Profile> PlayerbotOrganicEconomy::Load
         CharacterDatabase.PExecute(
             "INSERT IGNORE INTO organic_economy_profile "
             "(character_guid,account_id,career_participant,intended_profession_one,intended_profession_two,"
-            "generosity,thrift,bargaining_patience,risk_tolerance) VALUES (%u,%u,%u,%u,%u,%u,%u,%u,%u)",
+            "generosity,thrift,bargaining_patience,risk_tolerance,profession_plan_version) VALUES (%u,%u,%u,%u,%u,%u,%u,%u,%u,1)",
             guid, account, profile.career ? 1 : 0, profile.intendedOne, profile.intendedTwo,
             generosity, thrift, patience, risk);
         profiles[guid] = profile;
