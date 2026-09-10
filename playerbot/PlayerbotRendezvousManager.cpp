@@ -2570,8 +2570,23 @@ void PlayerbotRendezvousManager::FinishCurrentErrand(PartySession& session, Play
 {
     const uint32 task = session.currentErrand;
     ErrandObservation after = ObserveErrandState(bot);
-    if (completed) session.completedErrandMask |= task;
-    else session.deferredErrandMask |= task;
+    // One trainer visit can finish while other class trainers still have lessons
+    // (notably city teleports). Preserve the bundle until those visits complete.
+    bool continueTraining = false;
+    TravelDestination* nextTrainer = nullptr;
+    WorldPosition* nextTrainerPosition = nullptr;
+    if (completed && task == kErrandTraining && !session.freeTimeRecallRequested &&
+        bot && bot->GetPlayerbotAI())
+    {
+        AiObjectContext* context = bot->GetPlayerbotAI()->GetAiObjectContext();
+        context->ClearValues("trainable spells");
+        context->ClearValues("available trainers");
+        continueTraining = FindSettlementErrandDestination(bot, kErrandTraining,
+            nextTrainer, nextTrainerPosition) &&
+            nextTrainer->GetEntry() != int32(session.currentErrandCapability);
+    }
+    if (completed && !continueTraining) session.completedErrandMask |= task;
+    else if (!completed) session.deferredErrandMask |= task;
     PartySettlementErrand& record = session.errands[task];
     record.type = task;
     record.taskId = session.currentErrandId;
@@ -2604,6 +2619,13 @@ void PlayerbotRendezvousManager::FinishCurrentErrand(PartySession& session, Play
     session.errandOperationAccepted = false;
     session.errandRelocationPending = false;
     session.errandLastDistance = -1.0f;
+    if (continueTraining)
+    {
+        // Each verified trainer visit gets its own task id and before/after record.
+        record.taskId.clear();
+        sLog.outString("Living WoW errand event=training_continue bot=%u next_trainer=%d",
+            session.botGuid, nextTrainer->GetEntry());
+    }
     if (!session.freeTimeRecallRequested && !StartNextVerifiedErrand(session, bot))
         session.freeTimeRecallRequested = true;
     PersistPartySession(session);
