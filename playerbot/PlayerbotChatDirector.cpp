@@ -1672,6 +1672,15 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             if (!state.completedQuestSince.count(questId)) state.completedQuestSince[questId] = now;
         for (auto it = state.completedQuestSince.begin(); it != state.completedQuestSince.end();)
             if (!questSnapshot.completed.count(it->first)) it = state.completedQuestSince.erase(it); else ++it;
+        for (auto it = state.turninRouteFailures.begin(); it != state.turninRouteFailures.end();)
+            if (!questSnapshot.completed.count(it->first)) it = state.turninRouteFailures.erase(it); else ++it;
+        for (auto it = state.turninDeferredUntil.begin(); it != state.turninDeferredUntil.end();)
+        {
+            if (!questSnapshot.completed.count(it->first))
+                it = state.turninDeferredUntil.erase(it);
+            else
+                ++it;
+        }
         MovementFlags movementFlags = bot->m_movementInfo.GetMovementFlags();
         bool playerStay = lowered.find("stay") != std::string::npos || lowered.find("wait") != std::string::npos;
         bool airborne = movementFlags & (MOVEFLAG_FALLING | MOVEFLAG_FALLINGFAR | MOVEFLAG_FLYING |
@@ -1707,11 +1716,18 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         uint32 stalledQuestId = 0;
         std::vector<uint32> stalledQuestIds;
         long oldestCompleteSeconds = 0;
+        uint32 deferredTurninCount = 0;
         for (const auto& complete : state.completedQuestSince)
         {
             long age = std::chrono::duration_cast<std::chrono::seconds>(now - complete.second).count();
             if (age > oldestCompleteSeconds) oldestCompleteSeconds = age;
             Quest const* quest = sObjectMgr.GetQuestTemplate(complete.first);
+            auto deferred = state.turninDeferredUntil.find(complete.first);
+            if (deferred != state.turninDeferredUntil.end() && now < deferred->second)
+            {
+                ++deferredTurninCount;
+                continue;
+            }
             // A completed-but-currently-unrewardable quest must not starve all
             // other valid turn-ins behind its lower numeric ID. Keep it in the
             // authoritative pending set for later diagnosis, but recover the
@@ -1774,6 +1790,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         if (recoveryRouteTerminal)
         {
             uint32 terminalStep = state.recoveryStep;
+            uint32 terminalQuestId = state.recoveryQuestId;
+            state.lastRecoveryQuestId = terminalQuestId ? terminalQuestId : state.lastRecoveryQuestId;
             if ((terminalStep == 2 || terminalStep == 6) && HasActiveProgressionQuestUseItem(bot))
                 state.questItemFollowup = true;
             std::string terminalResult = terminalStep == 3 ? "quest_turnin_route_terminal" :
@@ -1785,8 +1803,25 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             bool terminalCleared = bot->GetPlayerbotAI()->DoSpecificAction(
                 "progression reset travel target",
                 Event("living progression clear terminal route"), true);
+            std::string routeOutcome = bot->GetPlayerbotAI()->GetAiObjectContext()->
+                GetValue<std::string>("manual string", "future travel outcome")->Get();
+            int routeQuestId = bot->GetPlayerbotAI()->GetAiObjectContext()->
+                GetValue<int>("manual int", "future travel quest id")->Get();
+            bool pendingTurninFailed = terminalStep == 3 && terminalQuestId &&
+                questSnapshot.completed.count(terminalQuestId);
+            if (pendingTurninFailed)
+            {
+                uint32 failures = ++state.turninRouteFailures[terminalQuestId];
+                if (failures >= 2)
+                {
+                    state.turninDeferredUntil[terminalQuestId] = now + std::chrono::minutes(30);
+                    terminalResult += "_deferred";
+                }
+            }
             state.recoveryResult = terminalResult +
                 (terminalCleared ? "_cleared" : "_clear_rejected");
+            if (routeQuestId == (int)terminalQuestId && !routeOutcome.empty())
+                state.recoveryResult += "_" + routeOutcome;
             // Terminal targets cannot be advanced. Keeping their recovery step
             // nonzero made hundreds of bots bypass the global sampling buckets
             // every ten seconds forever. Release the hot-loop state and let the
@@ -1845,6 +1880,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                         recovered = true;
                         break;
                     }
+                    state.lastRecoveryQuestId = stalledQuestId;
                     recovery = recovered ? "quest_turnin_route_requested" :
                         (reset ? "quest_turnin_request_rejected" : "quest_turnin_request_rejected_no_prior_target");
                     state.recoveryQuestId = stalledQuestId;
@@ -2089,6 +2125,17 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         std::string zoneName, subzoneName;
         if (AreaTableEntry const* zone = GetAreaEntryByAreaID(bot->GetZoneId())) zoneName = zone->area_name[0];
         if (AreaTableEntry const* area = GetAreaEntryByAreaID(areaId)) subzoneName = area->area_name[0];
+        uint32 diagnosticQuestId = state.recoveryQuestId ? state.recoveryQuestId : state.lastRecoveryQuestId;
+        Quest const* diagnosticQuest = diagnosticQuestId ? sObjectMgr.GetQuestTemplate(diagnosticQuestId) : nullptr;
+        std::string diagnosticQuestTitle = diagnosticQuest ? diagnosticQuest->GetTitle() : "";
+        int futureTurninQuestId = bot->GetPlayerbotAI()->GetAiObjectContext()->
+            GetValue<int>("manual int", "future travel quest id")->Get();
+        std::string futureTurninOutcome = bot->GetPlayerbotAI()->GetAiObjectContext()->
+            GetValue<std::string>("manual string", "future travel outcome")->Get();
+        int futureTurninRanges = bot->GetPlayerbotAI()->GetAiObjectContext()->
+            GetValue<int>("manual int", "future travel range count")->Get();
+        int futureTurninPoints = bot->GetPlayerbotAI()->GetAiObjectContext()->
+            GetValue<int>("manual int", "future travel point count")->Get();
         std::ostringstream json;
         json << "{\"bot_guid\":" << guid << ",\"bot_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(bot->GetName())
              << "\",\"level\":" << (uint32)bot->GetLevel() << ",\"level_changed\":" << (levelChanged ? "true" : "false")
@@ -2123,7 +2170,14 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recovery_step\":" << state.recoveryStep
              << ",\"recovery_quest_item_followup\":" << (state.questItemFollowup ? "true" : "false")
              << ",\"recovery_target_quest_id\":" << state.recoveryQuestId
+             << ",\"recovery_last_quest_id\":" << state.lastRecoveryQuestId
+             << ",\"recovery_target_quest_title\":\"" << PlayerbotLLMInterface::SanitizeForJson(diagnosticQuestTitle)
+             << "\",\"deferred_turnin_count\":" << deferredTurninCount
              << ",\"recovery_target_status\":" << (uint32)recoveryStatus
+             << ",\"turnin_route_quest_id\":" << futureTurninQuestId
+             << ",\"turnin_route_outcome\":\"" << PlayerbotLLMInterface::SanitizeForJson(futureTurninOutcome)
+             << "\",\"turnin_route_range_count\":" << futureTurninRanges
+             << ",\"turnin_route_point_count\":" << futureTurninPoints
              << ",\"recovery_target_bounded\":" << (boundedRecoveryTarget ? "true" : "false")
              << ",\"recovery_prepare_result\":\"" << recoveryPrepareResult << "\""
              << ",\"recovery_move_useful\":" << (recoveryMoveUseful ? "true" : "false")
@@ -2935,6 +2989,8 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
     // GetPlayers() is only the legacy manager-owned subset. The GUID list is
     // the authoritative population used by progression and organic economy.
     std::map<uint32, Player*> representatives;
+    std::map<uint32, uint32> onlineMembers, totalLevels, maximumLevels;
+    std::map<uint32, uint32> dungeonReady, tankCandidates, healerCandidates, damageCandidates;
     for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
     {
         Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
@@ -2942,6 +2998,25 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             !sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()))
             continue;
         representatives.insert(std::make_pair(bot->GetGuildId(), bot));
+        const uint32 guildId = bot->GetGuildId();
+        ++onlineMembers[guildId];
+        totalLevels[guildId] += bot->GetLevel();
+        maximumLevels[guildId] = std::max<uint32>(maximumLevels[guildId], bot->GetLevel());
+        if (bot->GetLevel() >= 10)
+        {
+            ++dungeonReady[guildId];
+            switch (bot->getClass())
+            {
+                case CLASS_WARRIOR: case CLASS_PALADIN: case CLASS_DRUID: ++tankCandidates[guildId]; break;
+                default: break;
+            }
+            switch (bot->getClass())
+            {
+                case CLASS_PRIEST: case CLASS_DRUID: case CLASS_SHAMAN: case CLASS_PALADIN: ++healerCandidates[guildId]; break;
+                default: break;
+            }
+            ++damageCandidates[guildId];
+        }
     }
     // Random bots finish logging in asynchronously after realm startup. An
     // empty first pass is not a valid fifteen-minute observation sample.
@@ -2973,6 +3048,11 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
         const char* faction = representative->GetTeam() == ALLIANCE ? "alliance" : "horde";
         const char* band = members <= 20 ? "small" : members <= 45 ? "medium" : "large";
         const uint32 target = members <= 20 ? 10 + guildId % 11 : members <= 45 ? 21 + guildId % 25 : 46 + guildId % 35;
+        const uint32 online = onlineMembers[guildId];
+        const uint32 averageLevel = online ? totalLevels[guildId] / online : 0;
+        const bool dungeonEligible = dungeonReady[guildId] >= 5 &&
+            tankCandidates[guildId] > 0 && healerCandidates[guildId] > 0;
+        const uint32 recruitmentGap = target > members ? target - members : 0;
         const std::string primary = GuildFocus(guildId, 0), secondary = GuildFocus(guildId, 1);
         const std::string name = PlayerbotLLMInterface::SanitizeForJson(guild->GetName());
         const std::string leader = PlayerbotLLMInterface::SanitizeForJson(leaderName);
@@ -2987,16 +3067,33 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             << "\",\"bot_led\":" << (botLed ? "true" : "false") << ",\"faction\":\"" << faction
             << "\",\"leader_guid\":" << guild->GetLeaderGuid().GetCounter() << ",\"leader_name\":\"" << leader
             << "\",\"member_count\":" << members
+            << ",\"size_band\":\"" << band << "\",\"target_size\":" << target
+            << ",\"primary_focus\":\"" << primary << "\",\"secondary_focus\":\"" << secondary << "\""
             << ",\"identity_candidates\":{\"culture\":[\"friendly and dependable\",\"adventurous and helpful\"],"
                "\"motto\":[\"No one adventures alone\",\"Prepared for the road ahead\"],"
                "\"recruitment_style\":[\"welcoming\",\"organized but relaxed\"]}}";
         plans << "{\"guild_id\":" << guildId << ",\"bot_led\":" << (botLed ? "true" : "false")
+            << ",\"online_members\":" << online << ",\"average_level\":" << averageLevel
+            << ",\"maximum_level\":" << maximumLevels[guildId]
+            << ",\"dungeon_ready_members\":" << dungeonReady[guildId]
+            << ",\"tank_candidates\":" << tankCandidates[guildId]
+            << ",\"healer_candidates\":" << healerCandidates[guildId]
+            << ",\"damage_candidates\":" << damageCandidates[guildId]
             << ",\"candidate_decisions\":[{\"candidate_id\":\"quest:" << guildId
-            << "\",\"type\":\"schedule_quest_group\",\"utility\":20,\"eligible\":true}"
-            << (members >= 5 ? ",{\"candidate_id\":\"dungeon:" + std::to_string(guildId) +
-                "\",\"type\":\"schedule_dungeon\",\"utility\":25,\"eligible\":true}" : "")
-            << (members < target ? ",{\"candidate_id\":\"recruit:" + std::to_string(guildId) +
-                "\",\"type\":\"recruit_members\",\"utility\":15,\"eligible\":true}" : "") << "]}";
+            << ":" << averageLevel << "\",\"type\":\"schedule_quest_group\",\"utility\":20,"
+               "\"eligible\":" << (online >= 2 ? "true" : "false") << "}"
+            << ",{\"candidate_id\":\"leveling:" << guildId << ":" << averageLevel
+            << "\",\"type\":\"schedule_leveling_group\",\"utility\":" << (averageLevel < 15 ? 24 : 16)
+            << ",\"eligible\":" << (online >= 2 ? "true" : "false") << "}"
+            << ",{\"candidate_id\":\"dungeon:" << guildId << ":" << dungeonReady[guildId]
+            << "\",\"type\":\"schedule_dungeon\",\"utility\":25,\"eligible\":"
+            << (dungeonEligible ? "true" : "false") << "}"
+            << ",{\"candidate_id\":\"recruit:" << guildId << ":" << recruitmentGap
+            << "\",\"type\":\"recruit_members\",\"utility\":" << (18 + std::min<uint32>(20, recruitmentGap))
+            << ",\"eligible\":" << (recruitmentGap ? "true" : "false") << "}"
+            << ",{\"candidate_id\":\"officers:" << guildId << ":" << members
+            << "\",\"type\":\"review_officer_coverage\",\"utility\":12,\"eligible\":"
+            << (members >= 10 ? "true" : "false") << "}]}";
         events << "{\"event_id\":\"snapshot-" << guildId << '-' << nowEpoch
             << "\",\"type\":\"guild_snapshot\",\"guild_id\":" << guildId << ",\"guild_name\":\"" << name
             << "\",\"bot_led\":" << (botLed ? "true" : "false") << ",\"faction\":\"" << faction
@@ -3004,7 +3101,12 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             << "\",\"member_count\":" << members << ",\"size_band\":\"" << band
             << "\",\"target_size\":" << target << ",\"primary_focus\":\"" << primary
             << "\",\"secondary_focus\":\"" << secondary << "\",\"state\":\""
-            << (guildPolicyMode == "active" ? "active" : "observed") << "\"}";
+            << (guildPolicyMode == "active" ? "active" : "observed")
+            << "\",\"online_members\":" << online << ",\"average_level\":" << averageLevel
+            << ",\"maximum_level\":" << maximumLevels[guildId]
+            << ",\"dungeon_ready_members\":" << dungeonReady[guildId]
+            << ",\"tank_candidates\":" << tankCandidates[guildId]
+            << ",\"healer_candidates\":" << healerCandidates[guildId] << "}";
 
         CharacterDatabase.PExecute(
             "INSERT INTO guild_society_profile (guild_id,bot_led,faction,leader_guid,size_band,target_size,primary_focus,secondary_focus,culture,motto,recruitment_style,state,created_at,updated_at) "

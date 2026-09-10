@@ -231,6 +231,9 @@ private:
         uint8 lastLevel = 0;
         uint32 lastXp = 0;
         std::string questProgressSignature;
+        uint32 lastRecoveryQuestId = 0;
+        std::map<uint32, uint32> turninRouteFailures;
+        std::map<uint32, std::chrono::steady_clock::time_point> turninDeferredUntil;
         uint32 recoveryQuestId = 0;
         uint32 recoveryStep = 0;
         bool questItemFollowup = false;

@@ -40,6 +40,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
 
     if (!futureDestinations->valid())
     {
+        SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "invalid_future");
         travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
         context->ClearValues("no active travel destinations");        
         return false;
@@ -49,6 +50,14 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         return false;
 
     PartitionedTravelList destinationList = futureDestinations->get();
+
+    uint32 destinationPoints = 0;
+    for (const auto& partition : destinationList)
+        destinationPoints += partition.second.size();
+    SET_AI_VALUE2(int, "manual int", "future travel range count", (int)destinationList.size());
+    SET_AI_VALUE2(int, "manual int", "future travel point count", (int)destinationPoints);
+    SET_AI_VALUE2(std::string, "manual string", "future travel outcome",
+        destinationPoints ? "resolved" : "empty");
 
     travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
 
@@ -89,11 +98,13 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     if (!SetBestTarget(requester, &newTarget, destinationList))
     {
         SET_AI_VALUE2(bool, "no active travel destinations", futureTravelPurpose, true);
+        SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "no_valid_target");
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
         return false;
     }
 
     setNewTarget(requester, &newTarget, travelTarget);
+    SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "selected");
     
     return true;
 }
@@ -1630,6 +1641,10 @@ bool RequestQuestTurninTargetAction::Execute(Event& event)
     AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
     SET_AI_VALUE2(std::string, "manual string", "future travel purpose", "quest-turnin-" + std::to_string(questId));
     SET_AI_VALUE2(std::string, "manual string", "future travel condition", event.getSource());
+    SET_AI_VALUE2(int, "manual int", "future travel quest id", (int)questId);
+    SET_AI_VALUE2(int, "manual int", "future travel range count", 0);
+    SET_AI_VALUE2(int, "manual int", "future travel point count", 0);
+    SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "pending");
     SET_AI_VALUE2(int, "manual int", "future travel relevance", relevance * 100);
     return true;
 }
