@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include "PartyLootWindow.h"
+#include "PlayerbotErrandTravel.h"
 #include <deque>
 #include <map>
 #include <set>
@@ -11,6 +12,7 @@
 
 class Player;
 class Map;
+namespace ai { class TravelDestination; class WorldPosition; }
 
 class PlayerbotRendezvousManager
 {
@@ -43,6 +45,8 @@ public:
     bool BeginPartyFreeTime(Player* bot, Player* player, const std::string& reason);
     bool IsPartyFreeTime(uint32 botGuid) const;
     bool HasVerifiedErrandRoute(uint32 botGuid) const;
+    bool FindClassTrainingDestination(Player* bot, ai::TravelDestination*& destination,
+        ai::WorldPosition*& position) const;
     bool YieldPartyFollowToLoot(Player* bot);
     std::string PartyState(uint32 botGuid) const;
     std::string PartyReason(uint32 botGuid) const;
@@ -173,6 +177,8 @@ private:
         bool errandRelocationPending = false;
         bool errandSummarySent = false;
         float errandLastDistance = -1.0f;
+        LivingWowErrandTravel errandTravel;
+        std::chrono::steady_clock::time_point errandWorldportSince;
         ErrandObservation errandBefore;
         float hearthStartX = 0.0f;
         float hearthStartY = 0.0f;

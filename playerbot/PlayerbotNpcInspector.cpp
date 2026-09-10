@@ -103,33 +103,19 @@ namespace
             std::to_string(offered.size()) + " spells or ranks available to learn.");
         Row(body, "training", "Trainer fees", "Free for Living bots. Normal learning requirements apply.");
 
-        std::vector<int32> entries = context->GetValue<std::vector<int32>>("available trainers", type)->Get();
-        float nearest = std::numeric_limits<float>::max();
-        std::string trainerName;
-        const float radius = float(std::max<uint32>(100, sPlayerbotAIConfig.chatDirectorPartyLocalServiceRadiusYards));
-        if (!offered.empty() && !entries.empty())
+        if (!offered.empty())
         {
-            PlayerTravelInfo info(bot);
-            WorldPosition center(bot);
-            for (TravelDestination* destination : sTravelMgr.GetDestinations(info,
-                (uint32)TravelDestinationPurpose::Trainer, entries, true, radius, false))
+            TravelDestination* destination = nullptr;
+            WorldPosition* point = nullptr;
+            if (sPlayerbotRendezvousManager.FindClassTrainingDestination(bot, destination, point))
             {
-                if (!destination || !LivingWowHasClassTraining(bot, destination->GetEntry()) ||
-                    GuidPosition(HIGHGUID_UNIT, destination->GetEntry()).IsHostileTo(bot)) continue;
-                std::list<uint8> chances = {100};
-                WorldPosition* point = destination->GetNextPoint(center, chances, true);
-                if (!point || point->getMapId() != bot->GetMapId()) continue;
-                float distance = center.distance(*point);
-                if (distance <= radius && distance < nearest)
-                {
-                    nearest = distance;
-                    const CreatureInfo* trainer = sObjectMgr.GetCreatureTemplate(destination->GetEntry());
-                    trainerName = trainer ? trainer->Name : "Class trainer";
-                }
+                const CreatureInfo* trainer = sObjectMgr.GetCreatureTemplate(destination->GetEntry());
+                std::string trainerName = trainer ? trainer->Name : "Class trainer";
+                Row(body, "training", "Training destination", trainerName + " - " + point->getAreaName());
+                Row(body, "training", "Town errand", "Training has first priority. Uses the travel system to reach the trainer, including other regions and continents.");
             }
-            Row(body, "training", "Town errand", trainerName.empty() ?
-                "Needs training; no suitable trainer within " + std::to_string(uint32(radius)) + " yards." :
-                trainerName + " is about " + std::to_string(uint32(nearest)) + " yards away. Training has first priority during town errands.");
+            else
+                Row(body, "training", "Town errand", "Needs training; no usable trainer route is currently available in the travel system.");
         }
         for (uint32 id : offered) SpellRow(body, "training", id, "Available now");
     }

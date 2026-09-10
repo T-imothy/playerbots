@@ -262,17 +262,13 @@ namespace
     }
 
     bool FindSettlementErrandDestination(Player* bot, uint32 errand,
-        TravelDestination*& selectedDestination, WorldPosition*& selectedPosition,
-        float radius = 0.0f)
+        TravelDestination*& selectedDestination, WorldPosition*& selectedPosition)
     {
         selectedDestination = nullptr;
         selectedPosition = nullptr;
         if (!bot || !bot->GetPlayerbotAI())
             return false;
         PlayerTravelInfo info(bot);
-        if (radius <= 0.0f)
-            radius = float(std::max<uint32>(100,
-                sPlayerbotAIConfig.chatDirectorPartyLocalServiceRadiusYards));
         std::vector<int32> entries;
         if (errand == kErrandTraining)
         {
@@ -282,27 +278,30 @@ namespace
             if (entries.empty()) return false;
         }
         DestinationList destinations = sTravelMgr.GetDestinations(
-            info, (uint32)ErrandPurpose(errand), entries, true, radius, false);
+            info, (uint32)ErrandPurpose(errand), entries, true, 0.0f, true);
         WorldPosition center(bot);
         float bestDistance = std::numeric_limits<float>::max();
         for (TravelDestination* destination : destinations)
         {
             if (!destination)
                 continue;
-            if (errand == kErrandTraining &&
-                (!LivingWowHasClassTraining(bot, destination->GetEntry()) ||
-                 GuidPosition(HIGHGUID_UNIT, destination->GetEntry()).IsHostileTo(bot)))
-                continue;
-            std::list<uint8> chances = {100};
-            WorldPosition* position = destination->GetNextPoint(center, chances, true);
-            if (!position || position->getMapId() != bot->GetMapId())
-                continue;
-            float distance = center.distance(*position);
-            if (distance > radius || distance >= bestDistance)
-                continue;
-            bestDistance = distance;
-            selectedDestination = destination;
-            selectedPosition = position;
+            // A service must be usable by this bot, even on a distant map.
+            const int32 entry = destination->GetEntry();
+            if (GuidPosition(entry > 0 ? HIGHGUID_UNIT : HIGHGUID_GAMEOBJECT,
+                uint32(std::abs(entry))).IsHostileTo(bot)) continue;
+            if (errand == kErrandTraining && !LivingWowHasClassTraining(bot, entry)) continue;
+            // Evaluate actual spawns rather than choosing a random far square.
+            // WorldPosition::distance includes known map-transfer links; FLT_MAX
+            // means no connection. MovementAction resolves the detailed route.
+            for (WorldPosition* position : destination->GetPoints())
+            {
+                if (!position || !position->isOverworld()) continue;
+                float distance = center.distance(*position);
+                if (!std::isfinite(distance) || distance >= bestDistance) continue;
+                bestDistance = distance;
+                selectedDestination = destination;
+                selectedPosition = position;
+            }
         }
         return selectedDestination && selectedPosition;
     }
@@ -311,9 +310,6 @@ namespace
     {
         uint32 requested = PersonalErrandMask(bot);
         uint32 grounded = 0;
-        LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
-        uint8 durability = bot && bot->GetPlayerbotAI() ? bot->GetPlayerbotAI()->
-            GetAiObjectContext()->GetValue<uint8>("durability inventory")->Get() : 100;
         const uint32 errands[] = {kErrandVendor, kErrandRepair, kErrandBank,
             kErrandMail, kErrandAuction, kErrandProfession, kErrandTraining};
         for (uint32 errand : errands)
@@ -335,16 +331,7 @@ namespace
                 grounded |= errand;
                 continue;
             }
-            bool critical = ((errand == kErrandVendor || errand == kErrandBank) &&
-                pressure.bagUsage >= std::min<uint32>(100,
-                    sPlayerbotAIConfig.chatDirectorPartyCriticalBagUsagePercent)) ||
-                (errand == kErrandRepair && durability == 0);
-            if (critical && sPlayerbotAIConfig.chatDirectorPartyFallbackTravel &&
-                FindSettlementErrandDestination(bot, errand, destination, position, 50000.0f) &&
-                position && position->getMapId() == bot->GetMapId() &&
-                sPlayerbotRendezvousManager.CanRelocateUnobserved(bot, bot->GetMap(),
-                    position->getX(), position->getY(), position->getZ()))
-                grounded |= errand;
+
         }
         return grounded;
     }
@@ -1448,9 +1435,8 @@ bool PlayerbotRendezvousManager::BeginPartyFreeTime(Player* bot, Player* player,
     session.freeTimePlayerAreaId = sServerFacade.GetAreaId(player);
     bool automaticSettlement = reason == "automatic_settlement_errands";
     bool verifiedBundle = sPlayerbotAIConfig.chatDirectorPartyVerifiedErrands;
-    session.freeTimeUntil = now + (verifiedBundle ?
-        std::chrono::seconds(std::max<uint32>(30, sPlayerbotAIConfig.chatDirectorPartyBundleActiveDeadlineSeconds)) :
-        (automaticSettlement ? std::chrono::minutes(5) : std::chrono::minutes(30)));
+    session.freeTimeUntil = verifiedBundle ? std::chrono::steady_clock::time_point() :
+        now + (automaticSettlement ? std::chrono::minutes(5) : std::chrono::minutes(30));
     session.automaticErrandScopeMask = verifiedBundle ? GroundedSettlementErrandMask(bot) :
         (automaticSettlement ? GroundedSettlementErrandMask(bot) : 0);
     session.automaticErrandMask = session.automaticErrandScopeMask;
@@ -1486,11 +1472,10 @@ bool PlayerbotRendezvousManager::BeginPartyFreeTime(Player* bot, Player* player,
     session.automaticErrandLastX = bot->GetPositionX();
     session.automaticErrandLastY = bot->GetPositionY();
     session.automaticErrandHardDeadline = verifiedBundle ?
-        now + std::chrono::seconds(std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorPartyBundleWallDeadlineSeconds)) :
+        std::chrono::steady_clock::time_point() :
         (automaticSettlement ? now + std::chrono::minutes(15) : std::chrono::steady_clock::time_point());
-    session.automaticErrandActiveDeadline = verifiedBundle ?
-        now + std::chrono::seconds(std::max<uint32>(30, sPlayerbotAIConfig.chatDirectorPartyBundleActiveDeadlineSeconds)) :
-        std::chrono::steady_clock::time_point();
+    session.automaticErrandActiveDeadline = std::chrono::steady_clock::time_point();
+    session.errandWorldportSince = std::chrono::steady_clock::time_point();
     session.currentErrandDeadline = std::chrono::steady_clock::time_point();
     session.currentErrandNoProgressDeadline = std::chrono::steady_clock::time_point();
     session.errandBlockedSince = std::chrono::steady_clock::time_point();
@@ -1531,6 +1516,12 @@ bool PlayerbotRendezvousManager::HasVerifiedErrandRoute(uint32 botGuid) const
     return sPlayerbotAIConfig.chatDirectorPartyVerifiedErrands && found != partySessions.end() &&
         found->second.state == "free_time" && found->second.currentErrand &&
         !found->second.currentErrandLocal && !found->second.freeTimeRecallRequested;
+}
+
+bool PlayerbotRendezvousManager::FindClassTrainingDestination(Player* bot,
+    ai::TravelDestination*& destination, ai::WorldPosition*& position) const
+{
+    return FindSettlementErrandDestination(bot, kErrandTraining, destination, position);
 }
 
 bool PlayerbotRendezvousManager::YieldPartyFollowToLoot(Player* bot)
@@ -2353,9 +2344,8 @@ bool PlayerbotRendezvousManager::StartNextVerifiedErrand(PartySession& session, 
     const auto now = std::chrono::steady_clock::now();
     session.currentErrandDeadline = now + std::chrono::seconds(
         std::max<uint32>(10, sPlayerbotAIConfig.chatDirectorPartyTaskActiveDeadlineSeconds));
-    session.currentErrandNoProgressDeadline = now + std::chrono::seconds(
-        std::max<uint32>(5, std::min<uint32>(15,
-            sPlayerbotAIConfig.chatDirectorPartyTaskActiveDeadlineSeconds / 2)));
+    session.errandTravel.Reset(now, bot->GetMapId(), bot->GetPositionX(),
+        bot->GetPositionY(), bot->GetPositionZ());
     session.errandRouteAttempts = 0;
     session.errandOperationAttempts = 0;
     session.errandOperationAccepted = false;
@@ -2378,54 +2368,33 @@ bool PlayerbotRendezvousManager::StartNextVerifiedErrand(PartySession& session, 
     session.currentErrandLocal = false;
     TravelDestination* destination = nullptr;
     WorldPosition* position = nullptr;
-    bool fallbackRoute = false;
     if (!FindSettlementErrandDestination(bot, session.currentErrand, destination, position))
     {
-        bool criticalBags = session.errandBefore.bagUsage >=
-            std::min<uint32>(100, sPlayerbotAIConfig.chatDirectorPartyCriticalBagUsagePercent) &&
-            (session.currentErrand == kErrandVendor || session.currentErrand == kErrandBank);
-        bool criticalRepair = session.currentErrand == kErrandRepair &&
-            session.errandBefore.durability == 0;
-        bool committed = !sPlayerbotAIConfig.chatDirectorPartyCommittedActionsOnly ||
-            (!session.currentErrandId.empty() && session.currentErrand != 0);
-        bool critical = criticalBags || criticalRepair;
-        bool remoteRoute = critical && sPlayerbotAIConfig.chatDirectorPartyFallbackTravel &&
-            committed &&
-            FindSettlementErrandDestination(bot, session.currentErrand, destination, position, 50000.0f) &&
-            position && position->getMapId() == bot->GetMapId();
-        bool fallbackCanRelocate = remoteRoute &&
-            IsPointUnobserved(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) &&
-            IsPointUnobserved(bot, position->getX(), position->getY(), position->getZ());
-        if (!fallbackCanRelocate)
-        {
-            FinishCurrentErrand(session, bot, false, critical ?
-                "critical_fallback_unavailable" : "no_local_service_route");
-            return session.currentErrand != 0;
-        }
-        fallbackRoute = true;
+        FinishCurrentErrand(session, bot, false, "no_service_route");
+        return session.currentErrand != 0;
     }
+    // The interaction timer starts on arrival. Long-distance travel is governed
+    // by observed progress and bounded retries, never an overall errand radius.
+    session.currentErrandDeadline = std::chrono::steady_clock::time_point();
     PlayerbotAI* ai = bot->GetPlayerbotAI();
     TravelTarget* target = ai->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
     sTravelMgr.SetNullTravelTarget(target);
     target->SetTarget(destination, position);
     target->SetForced(true);
-    target->SetStatus(fallbackRoute ? TravelStatus::TRAVEL_STATUS_PREPARE :
-        TravelStatus::TRAVEL_STATUS_TRAVEL);
+    target->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
     ai->GetAiObjectContext()->ClearValues("no active travel destinations");
     session.errandRouteAttempts = 1;
     taskRecord.routeAttempts = session.errandRouteAttempts;
-    taskRecord.phase = fallbackRoute ? PartyActivityPhase::departing : PartyActivityPhase::traveling;
-    session.errandRelocationPending = fallbackRoute;
+    taskRecord.phase = PartyActivityPhase::traveling;
+    session.errandRelocationPending = false;
     session.errandLastDistance = target->Distance(bot);
-    if (session.currentErrand == kErrandTraining)
-        session.currentErrandDeadline = now + std::chrono::seconds(std::max<uint32>(
-            sPlayerbotAIConfig.chatDirectorPartyTaskActiveDeadlineSeconds,
-            uint32(std::ceil(session.errandLastDistance / kRunSpeedYardsPerSecond)) + 20));
+    sLog.outString("Living WoW errand event=service_route bot=%u task=%s entry=%d map=%u distance=%.0f",
+        bot->GetGUIDLow(), ErrandName(session.currentErrand), destination->GetEntry(),
+        position->getMapId(), session.errandLastDistance);
     session.nextErrandStep = now;
     QueueActivityTelemetry(session.botGuid, session.playerGuid, session.groupId,
         PartyActivityOwner::party_errand, taskRecord.phase,
-        fallbackRoute ? "fallback_relocation_queued" : "task_traveling",
-        fallbackRoute ? "critical_service_route" : "local_service_route",
+        "task_traveling", "service_travel_route",
         session.currentErrand, &session.errandBefore, nullptr);
     return true;
 }
@@ -2608,16 +2577,6 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
         PersistPartySession(session);
         return;
     }
-    if (now >= session.automaticErrandHardDeadline || now >= session.automaticErrandActiveDeadline)
-    {
-        session.freeTimeRecallRequested = true;
-        session.reason = "bundle_deadline";
-        PersistPartySession(session);
-        // The recall branch above owns terminal verification. In particular,
-        // an accepted craft/mail operation is allowed to finish its atomic
-        // cast before its postcondition is observed exactly once.
-        return;
-    }
     if (bot->IsInCombat())
     {
         if (session.errandBlockedSince.time_since_epoch().count() == 0)
@@ -2634,9 +2593,10 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
     if (session.errandBlockedSince.time_since_epoch().count() != 0)
     {
         auto paused = now - session.errandBlockedSince;
-        session.currentErrandDeadline += paused;
-        session.currentErrandNoProgressDeadline += paused;
-        session.automaticErrandActiveDeadline += paused;
+        if (session.currentErrandDeadline.time_since_epoch().count())
+            session.currentErrandDeadline += paused;
+        session.errandTravel.Reset(now, bot->GetMapId(), bot->GetPositionX(),
+            bot->GetPositionY(), bot->GetPositionZ());
         session.errandBlockedSince = std::chrono::steady_clock::time_point();
         if (session.currentErrand)
             session.errands[session.currentErrand].phase = session.errandOperationAccepted ?
@@ -2688,8 +2648,11 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
     }
     float distance = session.currentErrandLocal ? 0.0f : target->Distance(bot);
     bool reached = session.currentErrandLocal ||
-        distance <= INTERACTION_DISTANCE;
-    if (now >= session.currentErrandDeadline)
+        (target->GetPosition()->getMapId() == bot->GetMapId() && distance <= INTERACTION_DISTANCE);
+    if (reached && !session.currentErrandDeadline.time_since_epoch().count())
+        session.currentErrandDeadline = now + std::chrono::seconds(
+            std::max<uint32>(10, sPlayerbotAIConfig.chatDirectorPartyTaskActiveDeadlineSeconds));
+    if (session.currentErrandDeadline.time_since_epoch().count() && now >= session.currentErrandDeadline)
     {
         if (session.errandOperationAccepted && bot->IsNonMeleeSpellCasted(false))
             return;
@@ -2710,14 +2673,9 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
     }
     if (!reached)
     {
-        if (distance + 1.5f < session.errandLastDistance)
-        {
-            session.errandLastDistance = distance;
-            session.currentErrandNoProgressDeadline = now + std::chrono::seconds(
-                std::max<uint32>(5, std::min<uint32>(15,
-                    sPlayerbotAIConfig.chatDirectorPartyTaskActiveDeadlineSeconds / 2)));
-        }
-        if (now >= session.currentErrandNoProgressDeadline)
+        session.errandTravel.Observe(now, bot->GetMapId(), bot->GetPositionX(),
+            bot->GetPositionY(), bot->GetPositionZ(), bot->IsTaxiFlying());
+        if (session.errandTravel.Expired(now))
         {
             const uint32 maxRoutes = std::max<uint32>(1, sPlayerbotAIConfig.chatDirectorPartyTaskRouteAttempts);
             if (session.errandRouteAttempts < maxRoutes)
@@ -2731,9 +2689,8 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
                     target->SetTarget(destination, position); target->SetForced(true);
                     target->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
                     session.errandLastDistance = target->Distance(bot);
-                    session.currentErrandNoProgressDeadline = now + std::chrono::seconds(
-                        std::max<uint32>(5, std::min<uint32>(15,
-                            sPlayerbotAIConfig.chatDirectorPartyTaskActiveDeadlineSeconds / 2)));
+                    session.errandTravel.Reset(now, bot->GetMapId(), bot->GetPositionX(),
+                        bot->GetPositionY(), bot->GetPositionZ());
                     QueueActivityTelemetry(session.botGuid, session.playerGuid, session.groupId,
                         PartyActivityOwner::party_errand, PartyActivityPhase::traveling,
                         "route_retried", "route_no_progress", session.currentErrand);
@@ -2751,7 +2708,7 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
             TravelDestination* destination = nullptr; WorldPosition* position = nullptr;
             bool canFallback = critical && committed &&
                 sPlayerbotAIConfig.chatDirectorPartyFallbackTravel &&
-                FindSettlementErrandDestination(bot, session.currentErrand, destination, position, 50000.0f) &&
+                FindSettlementErrandDestination(bot, session.currentErrand, destination, position) &&
                 position && position->getMapId() == bot->GetMapId() &&
                 IsPointUnobserved(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()) &&
                 IsPointUnobserved(bot, position->getX(), position->getY(), position->getZ());
@@ -3181,6 +3138,16 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
             // Cross-map TeleportTo detaches the player until the worldport ACK.
             // Preserve the party session and its movement lease across that
             // bounded transit window instead of reconstructing it from scratch.
+            if (session.state == "free_time" && bot->IsBeingTeleported())
+            {
+                if (!session.errandWorldportSince.time_since_epoch().count())
+                    session.errandWorldportSince = now;
+                if (now - session.errandWorldportSince < std::chrono::seconds(45))
+                {
+                    ++iterator;
+                    continue;
+                }
+            }
             bool relocationTransit = session.state == "relocating" ||
                 session.state == "returning";
             bool hearthTransit = session.state == "hearth_sync" &&
@@ -3256,6 +3223,7 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
         }
         else
         {
+            session.errandWorldportSince = std::chrono::steady_clock::time_point();
             Group* group = bot->GetGroup();
             bool originalParty = group && group->GetId() == session.groupId;
             bool rosterChanged = false;
@@ -3675,16 +3643,17 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
             }
             else if (session.state == "free_time")
             {
-                bool humanMovedOn = human->GetMapId() != bot->GetMapId() ||
-                    human->GetZoneId() != session.freeTimePlayerZoneId;
+                const bool independentErrands = sPlayerbotAIConfig.chatDirectorPartyVerifiedErrands;
+                bool humanMovedOn = !independentErrands && (human->GetMapId() != bot->GetMapId() ||
+                    human->GetZoneId() != session.freeTimePlayerZoneId);
                 bool automaticSettlement = session.reason == "automatic_settlement_errands";
-                if (automaticSettlement && !IsCapital(human) &&
+                if (!independentErrands && automaticSettlement && !IsCapital(human) &&
                     sServerFacade.GetAreaId(human) != session.freeTimePlayerAreaId)
                     humanMovedOn = true;
                 bool errandsFinished = false;
                 bool automaticHardTimeout = false;
                 bool automaticIdleTimeout = false;
-                if (human->IsInCombat() || humanMovedOn)
+                if ((!independentErrands && human->IsInCombat()) || humanMovedOn)
                 {
                     bool newlyRequested = !session.freeTimeRecallRequested;
                     session.freeTimeRecallRequested = true;
@@ -3751,9 +3720,9 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                         LogAutomaticErrandEvent(session, bot, "idle_timeout", previousErrands,
                             remainingErrands);
                 }
-                bool freeTimeExpired = automaticSettlement ?
-                    (automaticHardTimeout || automaticIdleTimeout) : now >= session.freeTimeUntil;
-                if (human->IsInCombat() || humanMovedOn || errandsFinished || freeTimeExpired)
+                bool freeTimeExpired = !independentErrands && (automaticSettlement ?
+                    (automaticHardTimeout || automaticIdleTimeout) : now >= session.freeTimeUntil);
+                if ((!independentErrands && human->IsInCombat()) || humanMovedOn || errandsFinished || freeTimeExpired)
                     session.freeTimeRecallRequested = true;
                 if (session.freeTimeRecallRequested && !bot->IsInCombat())
                 {
@@ -3764,7 +3733,7 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                         // Safety recalls do not wait for social text. Ordinary
                         // completions get one stable, per-bot delay so several
                         // errand runners do not speak in the same world tick.
-                        if (human->IsInCombat() || humanMovedOn)
+                        if ((!independentErrands && human->IsInCombat()) || humanMovedOn)
                             session.errandSummarySent = true;
                         else
                         {
