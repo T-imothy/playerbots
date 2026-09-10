@@ -85,6 +85,7 @@ private:
     std::map<uint32, Session> sessions;
     std::map<uint32, PartySession> partySessions;
     std::map<uint32, std::chrono::steady_clock::time_point> lastRelocation;
+    std::chrono::steady_clock::time_point nextPartyDiscovery;
 };
 
 #define sPlayerbotRendezvousManager PlayerbotRendezvousManager::instance()

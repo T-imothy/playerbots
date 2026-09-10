@@ -228,8 +228,30 @@ void PlayerbotRendezvousManager::Cancel(uint32 botGuid, uint32 playerGuid, const
 
 void PlayerbotRendezvousManager::Update()
 {
-    UpdatePartyAssists();
     const auto now = std::chrono::steady_clock::now();
+    if (nextPartyDiscovery.time_since_epoch().count() == 0 || now >= nextPartyDiscovery)
+    {
+        nextPartyDiscovery = now + std::chrono::seconds(2);
+        for (uint32 botGuid : sRandomPlayerbotMgr.GetChatBotGuids())
+        {
+            if (partySessions.find(botGuid) != partySessions.end())
+                continue;
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(botGuid);
+            if (!bot || !bot->IsInWorld() || !bot->GetPlayerbotAI() || !bot->GetGroup())
+                continue;
+            Player* human = FindPartyHuman(bot);
+            if (!human || bot->GetGroup()->GetLeaderGuid() != human->GetObjectGuid())
+                continue;
+
+            // Group membership persists across realm restarts, while the
+            // rendezvous registry intentionally does not. Reconstruct only a
+            // human-led mixed party through the typed invitation lifecycle.
+            // UpdatePartyAssists serializes every reconstructed arrival.
+            if (RegisterPartyAssist(bot, human))
+                LogPartyEvent(partySessions[botGuid], "recovered_persisted_party");
+        }
+    }
+    UpdatePartyAssists();
     for (auto iterator = sessions.begin(); iterator != sessions.end(); )
     {
         Session& session = iterator->second;
