@@ -3732,7 +3732,11 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
                     failureReason = "assembly_timeout";
                 }
             }
-            else if (age >= 300)
+            // An active event may re-enter assembly while its persisted bot
+            // roster is still loading after a realm restart. Its original
+            // creation age can already exceed five minutes; measure this
+            // formation window from the current state transition instead.
+            else if (stateAge >= 300)
             {
                 nextState = "failed";
                 failureReason = "formation_timeout";
