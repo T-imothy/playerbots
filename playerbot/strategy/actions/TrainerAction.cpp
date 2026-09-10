@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotServiceTracking.h"
 #include "TrainerAction.h"
 #include "playerbot/PlayerbotTraining.h"
 #include "playerbot/ServerFacade.h"
@@ -257,10 +258,18 @@ bool TrainerAction::Execute(Event& event)
             if (!Iterate(requester, creature, &TrainerAction::Learn, spells)) break;
             if (partyTraining && !LivingWowHasClassTraining(bot, creature->GetEntry())) break;
         }
+        uint32 learnedCount = 0;
         for (const auto& spell : bot->GetSpellMap())
             if (spell.second.state != PLAYERSPELL_REMOVED && !spell.second.disabled && !knownBefore.count(spell.first))
+            {
+                ++learnedCount;
                 sLog.outString("Living WoW training event=spell_learned bot=%u trainer=%u spell=%u level=%u money_before=%u money_after=%u",
                     bot->GetGUIDLow(), creature->GetEntry(), spell.first, bot->GetLevel(), moneyBefore, bot->GetMoney());
+            }
+        const auto trainerType = creature->GetCreatureInfo()->TrainerType;
+        PlayerbotServiceTracking::Result(bot, trainerType == TRAINER_TYPE_CLASS ? "class_training" :
+            trainerType == TRAINER_TYPE_TRADESKILLS ? "profession_training" : "other_training",
+            creature->GetEntry(), 0, "newly_learned_spells", 0, learnedCount);
         context->ClearValues("item usage");
         context->ClearValues("trainable spells");
         context->ClearValues("available trainers");

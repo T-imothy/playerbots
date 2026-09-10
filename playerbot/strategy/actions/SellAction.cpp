@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotServiceTracking.h"
 #include "SellAction.h"
 #include "playerbot/PlayerbotGuildSupplies.h"
 #include "playerbot/strategy/ItemVisitors.h"
@@ -111,7 +112,9 @@ bool SellAction::Sell(Player* requester, Item* item)
 
         uint32 botMoney = bot->GetMoney();
 
-        sPlayerbotAIConfig.logEvent(ai, "SellAction", item->GetProto()->Name1, std::to_string(item->GetProto()->ItemId));
+        const uint32 itemEntry = item->GetEntry();
+        const std::string itemText = chat->formatItem(item);
+        const uint32 beforeCount = bot->GetItemCount(itemEntry, false);
 
         WorldPacket p;
         p << vendorguid << itemguid << count;
@@ -122,7 +125,11 @@ bool SellAction::Sell(Player* requester, Item* item)
             bot->SetMoney(botMoney);
         }
 
-        out << "Selling " << chat->formatItem(item);
+        if (!PlayerbotServiceTracking::Result(bot, "sell", pCreature->GetEntry(), itemEntry, "bag_item_count",
+            beforeCount, bot->GetItemCount(itemEntry, false), false))
+            return false;
+        sPlayerbotAIConfig.logEvent(ai, "SellAction", itemText, std::to_string(itemEntry));
+        out << "Selling " << itemText;
         if (sPlayerbotAIConfig.globalSoundEffects)
             bot->PlayDistanceSound(120);
 

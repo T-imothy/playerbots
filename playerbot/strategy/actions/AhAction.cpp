@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotServiceTracking.h"
 #include "AhAction.h"
 #include "playerbot/PlayerbotActionBroker.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
@@ -262,13 +263,20 @@ bool AhAction::PostItem(Player* requester, Item* item, uint32 price, Unit* aucti
     packet << price; //buyout price?
     packet << time;
 
+    AuctionHouseEntry const* house = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->GetObjectGuid());
+    const uint32 deposit = house ? AuctionHouseMgr::GetAuctionDeposit(house, time * MINUTE, item) : 0;
     bot->GetSession()->HandleAuctionSellItem(packet);
+    uint32 postedAuction = 0;
+    if (house)
+        for (const auto& row : sAuctionMgr.GetAuctionsMap(house)->GetAuctions())
+            if (row.second && row.second->owner == bot->GetGUIDLow() && row.second->itemGuidLow == itemGuid.GetCounter())
+            { postedAuction = row.second->Id; break; }
+    if (!PlayerbotServiceTracking::Result(bot, "auction_post", auctioneer->GetEntry(), proto->ItemId,
+        "owned_auction_id", 0, postedAuction)) return false;
 
     if (bot->GetItemByGuid(itemGuid))
         return false;
 
-    AuctionHouseEntry const* house = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->GetObjectGuid());
-    uint32 deposit = house ? AuctionHouseMgr::GetAuctionDeposit(house, time * MINUTE, item) : 0;
     CharacterDatabase.PExecute("INSERT INTO organic_economy_auction_history "
         "(auction_id,auction_house_id,seller_guid,item_guid,item_entry,quantity,unit_price_copper,deposit_copper,outcome) "
         "VALUES (0,'%u','%u','%u','%u','%u','%u','%u','posted')",
@@ -563,7 +571,10 @@ bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price
 
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(auction->itemTemplate);
 
+    const uint32 auctionItemEntry = auction->itemTemplate;
     bot->GetSession()->HandleAuctionPlaceBid(packet);
+    PlayerbotServiceTracking::Result(bot, "auction_bid", auctioneer->GetEntry(), auctionItemEntry,
+        "money_debited_for_bid", oldMoney, bot->GetMoney(), false);
 
     if (bot->GetMoney() < oldMoney)
     {

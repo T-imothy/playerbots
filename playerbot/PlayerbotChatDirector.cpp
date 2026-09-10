@@ -1,4 +1,5 @@
 #include "botpch.h"
+#include "PlayerbotServiceTracking.h"
 #include "PlayerbotChatDirector.h"
 #include "PlayerbotGuildGovernance.h"
 #include "PlayerbotGuildSupplies.h"
@@ -4672,6 +4673,7 @@ void PlayerbotChatDirector::Update()
     MaybeCreateAmbientEvent(now);
     MaybeAdvertiseGuilds(now);
     MaybeCreateProactiveGroupEvent(now);
+    PlayerbotServiceTracking::Update();
     MaybeReportBotHealth(now);
     MaybeReportPartyActivity(now);
     MaybeReportProgressionTrace(now);

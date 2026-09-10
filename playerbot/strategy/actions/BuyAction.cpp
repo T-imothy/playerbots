@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotServiceTracking.h"
 #include "BuyAction.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
@@ -271,7 +272,7 @@ bool BuyAction::Execute(Event& event)
 
 bool BuyAction::BuyItem(Player* requester, VendorItemData const* tItems, ObjectGuid vendorguid, const ItemPrototype* proto, UsageBoughtList& bought, ItemUsage usage)
 {
-    uint32 oldCount = AI_VALUE2(uint32, "item count", proto->Name1);
+    uint32 oldCount = bot->GetItemCount(proto->ItemId, false);
 
     if (!tItems)
         return false;
@@ -297,7 +298,8 @@ bool BuyAction::BuyItem(Player* requester, VendorItemData const* tItems, ObjectG
                 bot->SetMoney(botMoney);
             }
 
-            if (oldCount < AI_VALUE2(uint32, "item count", proto->Name1)) //BuyItem Always returns false (unless unique) so we have to check the item counts.
+            if (PlayerbotServiceTracking::Result(bot, usage == ItemUsage::ITEM_USAGE_SKILL ? "profession_supplies" : "supplies",
+                vendorguid.GetEntry(), itemId, "bag_item_count", oldCount, bot->GetItemCount(itemId, false)))
             {
                 sPlayerbotAIConfig.logEvent(ai, "BuyAction", proto->Name1, std::to_string(proto->ItemId));
 

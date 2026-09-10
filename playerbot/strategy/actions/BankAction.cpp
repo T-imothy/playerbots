@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotServiceTracking.h"
 #include "BankAction.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
@@ -127,19 +128,24 @@ bool BankAction::Withdraw(Player* requester, const uint32 itemid)
 
     if (msg != EQUIP_ERR_OK)
     {
+        PlayerbotServiceTracking::Result(bot, "bank_withdraw", 0, itemid, "bag_item_count", 0, 0,
+            true, ("inventory_error_" + std::to_string(unsigned(msg))).c_str());
         bot->SendEquipError(msg, pItem, NULL);
         return false;
     }
 
+    const uint32 beforeCount = bot->GetItemCount(itemid, false);
     bot->RemoveItem(pItem->GetBagSlot(), pItem->GetSlot(), true);
     bot->StoreItem(dest, pItem, true);
+    const bool verified = PlayerbotServiceTracking::Result(bot, "bank_withdraw", 0, itemid,
+        "bag_item_count", beforeCount, bot->GetItemCount(itemid, false));
     ResetBankActionItemCaches(ai, itemId, itemQualifier);
 
     std::ostringstream out;
     out << "got " << itemText << " from bank";
     if (requester)
         ai->TellPlayer(requester, out.str());
-    return true;
+    return verified;
 }
 
 bool BankAction::Deposit(Player* requester, Item* pItem)
@@ -162,18 +168,23 @@ bool BankAction::Deposit(Player* requester, Item* pItem)
 
     if (msg != EQUIP_ERR_OK)
     {
+        PlayerbotServiceTracking::Result(bot, "bank_deposit", 0, proto->ItemId, "bank_item_count", 0, 0,
+            true, ("inventory_error_" + std::to_string(unsigned(msg))).c_str());
         bot->SendEquipError(msg, pItem, NULL);
         return false;
     }
 
+    const uint32 beforeCount = bot->GetItemCount(proto->ItemId, true) - bot->GetItemCount(proto->ItemId, false);
     bot->RemoveItem(pItem->GetBagSlot(), pItem->GetSlot(), true);
     bot->BankItem(dest, pItem, true);
+    const bool verified = PlayerbotServiceTracking::Result(bot, "bank_deposit", 0, proto->ItemId, "bank_item_count",
+        beforeCount, bot->GetItemCount(proto->ItemId, true) - bot->GetItemCount(proto->ItemId, false));
     ResetBankActionItemCaches(ai, itemId, itemQualifier);
 
     out << "put " << itemText << " to bank";
     if (requester)
         ai->TellPlayer(requester, out.str());
-	return true;
+	return verified;
 }
 
 void BankAction::ListItems(Player* requester)

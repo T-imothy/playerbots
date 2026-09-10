@@ -1,6 +1,7 @@
 
 #include "Mails/Mail.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotServiceTracking.h"
 #include "MailAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/Helpers.h"
@@ -86,76 +87,69 @@ public:
     bool Process(Player* requester, int index, Mail* mail, PlayerbotAI* ai, Event& event) override
     {
         Player* bot = ai->GetBot();
+        ObjectGuid mailbox = FindMailbox(ai);
         if (!CheckBagSpace(bot))
         {
+            PlayerbotServiceTracking::Result(bot, "mail", mailbox.GetEntry(), 0,
+                "received_items", 0, 0, true, "bag_space_unavailable");
             ai->TellError(requester, "Not enough bag space");
             return false;
         }
-
-        ObjectGuid mailbox = FindMailbox(ai);
+        bool processed = false;
         if (mail->money)
         {
-            std::ostringstream out;
-            if (event.getSource() == "rpg action")
-            {
-                copper += mail->money;
-            }
-            else
-            {
-                out << mail->subject << ", |cffffff00" << ChatHelper::formatMoney(mail->money) << "|cff00ff00 processed";
-                ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-            }
-
+            const uint32 amount = mail->money, beforeMoney = bot->GetMoney();
             WorldPacket packet;
-            packet << mailbox;
-            packet << mail->messageID;
+            packet << mailbox << mail->messageID;
             bot->GetSession()->HandleMailTakeMoney(packet);
-            RemoveMail(bot, mail->messageID, mailbox);
+            const uint32 received = bot->GetMoney() >= beforeMoney ? bot->GetMoney() - beforeMoney : 0;
+            processed = PlayerbotServiceTracking::Result(bot, "mail", mailbox.GetEntry(), 0,
+                "received_copper", 0, mail->money == 0 && received == amount ? received : 0);
+            if (processed)
+            {
+                if (event.getSource() == "rpg action") copper += received;
+                else ai->TellPlayer(requester, mail->subject + ", " + ChatHelper::formatMoney(received) + " processed",
+                    PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                RemoveMail(bot, mail->messageID, mailbox);
+            }
         }
         else if (mail->has_items)
         {
             std::list<uint32> guids;
-            for (MailItemInfoVec::iterator i = mail->items.begin(); i != mail->items.end(); ++i)
+            for (const auto& info : mail->items) guids.push_back(info.item_guid);
+            for (uint32 guid : guids)
             {
-                ItemPrototype const* proto = sObjectMgr.GetItemPrototype(i->item_template);
-                if (proto)
-                    guids.push_back(i->item_guid);
-            }
-
-            for (std::list<uint32>::iterator i = guids.begin(); i != guids.end(); ++i)
-            {
+                Item* item = bot->GetMItem(guid);
+                if (!item) continue;
+                const uint32 entry = item->GetEntry(), count = item->GetCount();
+                const uint32 before = bot->GetItemCount(entry, false);
+                const std::string itemText = ChatHelper::formatItem(item, count);
                 WorldPacket packet;
-                packet << mailbox;
-                packet << mail->messageID;
+                packet << mailbox << mail->messageID;
 #ifndef MANGOSBOT_ZERO
-                packet << *i;
+                packet << guid;
 #endif
-                Item* item = bot->GetMItem(*i);
-
-                if (item)
-                {
-                    if (event.getSource() == "rpg action")
-                    {
-                        items.push_back(ChatHelper::formatItem(item, item->GetCount()));
-                    }
-                    else
-                    {
-                        std::ostringstream out;
-                        out << mail->subject << ", " << ChatHelper::formatItem(item) << "|cff00ff00 processed";
-                        ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-                    }
-                }
-
                 bot->GetSession()->HandleMailTakeItem(packet);
+                const uint32 after = bot->GetItemCount(entry, false);
+                const bool transferred = !bot->GetMItem(guid) && after >= before && after - before == count;
+                const bool verified = PlayerbotServiceTracking::Result(bot, "mail", mailbox.GetEntry(), entry,
+                    "received_items", 0, transferred ? count : 0);
+                if (!verified) continue;
+                processed = true;
+                if (event.getSource() == "rpg action") items.push_back(itemText);
+                else ai->TellPlayer(requester, mail->subject + ", " + itemText + " processed",
+                    PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             }
-
-            RemoveMail(bot, mail->messageID, mailbox);
+            // The core also rejects deletion with attachments remaining. Avoid
+            // requesting it at all after a failed or partial transfer.
+            if (mail->items.empty()) RemoveMail(bot, mail->messageID, mailbox);
         }
-        else if (mail->sender < 10 && !ai->HasActivePlayerMaster()) //Remove empty mails from auctionhouse.
+        else if (mail->sender < 10 && !ai->HasActivePlayerMaster())
         {
             RemoveMail(bot, mail->messageID, mailbox);
+            // Empty-mail cleanup is not a verified collection operation.
         }
-        return true;
+        return processed;
     }
 
     bool After(Player* requester, PlayerbotAI* ai) override

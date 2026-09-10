@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotServiceTracking.h"
 #include "RepairAllAction.h"
 
 #include "playerbot/ServerFacade.h"
@@ -34,6 +35,7 @@ bool RepairAllAction::Execute(Event& event)
 
         float durability = AI_VALUE(uint8, "durability inventory");
 
+        const uint32 beforeDurability = PlayerbotServiceTracking::Durability(bot);
         uint32 botMoney = bot->GetMoney();
         if (ai->HasCheat(BotCheatMask::gold))
         {
@@ -73,6 +75,9 @@ bool RepairAllAction::Execute(Event& event)
         //Totalcost is bugged in core. For now we use this work-around.
         totalCost = botMoney - bot->GetMoney();
 
+        const bool verifiedRepair = PlayerbotServiceTracking::Result(bot, "repair", unit->GetEntry(), 0,
+            "durability_points", beforeDurability, PlayerbotServiceTracking::Durability(bot));
+
         if (totalCost > 0)
         {
             std::ostringstream out;
@@ -89,9 +94,10 @@ bool RepairAllAction::Execute(Event& event)
         SET_AI_VALUE(uint32, "death count", 0);
         RESET_AI_VALUE(uint8, "durability inventory");
 
-        return durability < 100 && AI_VALUE(uint8, "durability inventory") > durability;
+        return verifiedRepair;
     }
 
+    PlayerbotServiceTracking::Result(bot, "repair", 0, 0, "durability_points", 0, 0, true, "no_interactable_repair_npc");
     ai->TellPlayerNoFacing(requester, "Cannot find any npc to repair at");
     return false;
 }
