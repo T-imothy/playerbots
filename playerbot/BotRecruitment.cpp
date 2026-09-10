@@ -37,6 +37,10 @@ namespace
         unsigned size = 40;
         uint32 map = 0, instance = 0;
         bool started = false;
+        unsigned attempts = 0;
+        uint64 nextAttempt = 0;
+        float x = 0, y = 0, z = 0;
+        std::string waitReason;
     };
     struct Receipt
     {
@@ -224,12 +228,11 @@ namespace
     }
     std::string Waiting(Player* owner, Player* bot)
     {
-        if (!owner->IsInWorld() || owner->IsBeingTeleported() || !bot->IsInWorld() || bot->IsBeingTeleported()) return "transfer";
-        if (owner->GetTransport() || bot->GetTransport() || owner->IsTaxiFlying() || bot->IsTaxiFlying()) return "transport";
-        if (bot->HasCharmer()) return "controlled";
-        if (!owner->IsAlive()) return "requester_dead";
-        if (owner->InBattleGround() || IsBusyQueue(bot)) return "queued_activity";
-        if (!bot->IsAlive() && !sPlayerbotAIConfig.recruitmentRevive) return "revival_disabled";
+        if (!owner->IsInWorld() || owner->IsBeingTeleported()) return "requester_transfer";
+        if (!bot->IsInWorld() || bot->IsBeingTeleported()) return "bot_transfer";
+        if (owner->GetTransport() || owner->IsTaxiFlying()) return "requester_transport";
+        // Bot combat, death, control, flights and queues are cancelled by the
+        // explicit summon action. Never wait for autonomous activity to finish.
         return "";
     }
     bool Arrived(Player* owner, Player* bot)
@@ -406,13 +409,25 @@ namespace
         }
         if (request.operation == "summon")
         {
-            if (state.summons.count(bot->GetGUIDLow())) { Report(request,"summon_pending","existing_request"); return; }
+            auto pending = state.summons.find(bot->GetGUIDLow());
+            if (pending != state.summons.end())
+            {
+                // Preserve an in-flight transfer; acknowledge the actual stage.
+                // Different owners must never refresh another player's request.
+                if (pending->second.owner != request.owner)
+                { Report(request,"refused","other_controller"); return; }
+                // Protocol clients poll status after existing_request; their
+                // duplicate ID is not the owner of the original completion.
+                Report(request,"summon_pending",!request.id.empty() ? "existing_request" :
+                    (pending->second.waitReason.empty() ? "teleport_started" : pending->second.waitReason));
+                return;
+            }
             if (!HasRoom(state.summons,request.owner)) { Report(request,"refused","busy"); return; }
             request.expires = Now() + limits::SummonSeconds;
             request.leader = Party(owner) ? Party(owner)->GetLeaderGuid() : request.owner;
             request.membership = Party(owner);
             state.summons[bot->GetGUIDLow()] = request;
-            Report(request,"summon_pending","waiting_for_safe_state"); return;
+            Report(request,"summon_pending","queued"); return;
         }
         if (request.operation == "prepare")
         {
@@ -587,20 +602,46 @@ void BotRecruitment::Update(uint32 diff)
         if (reason.empty() && (Party(owner) ? Party(owner)->GetLeaderGuid() : request.owner) != request.leader) reason = "leader_changed";
         if (reason.empty() && request.membership &&
             (Party(owner) != request.membership || Party(bot) != request.membership)) reason = "membership_changed";
-        if (reason.empty() && limits::Expired(now,request.expires)) reason = "deadline";
+        if (reason.empty() && limits::Expired(now,request.expires))
+        {
+            reason = Waiting(owner,bot);
+            if (reason.empty()) reason = request.started ? "arrival_not_confirmed" : "work_budget";
+            Report(request,"timed_out",reason);
+            it = state.summons.erase(it); continue;
+        }
         if (!reason.empty())
         { Report(request,reason == "deadline" ? "timed_out" : "refused",reason); it = state.summons.erase(it); continue; }
-        if (request.started && owner->IsInWorld() && (owner->GetMapId() != request.map || owner->GetInstanceId() != request.instance))
-        { Report(request,"refused","destination_changed"); it = state.summons.erase(it); continue; }
-        if (Arrived(owner,bot))
-        { Report(request,"arrived","ok"); it = state.summons.erase(it); continue; }
+        if (request.started) bot->GetPlayerbotAI()->CompleteSummonRevival();
+        // Confirm the accepted landing point, not the requester's later position.
+        // A moving leader must not turn a successful teleport into a timeout.
+        bool landed = request.started && bot->IsInWorld() && !bot->IsBeingTeleported() &&
+            bot->IsAlive() && bot->GetMapId() == request.map && bot->GetInstanceId() == request.instance &&
+            bot->IsWithinDist3d(request.x,request.y,request.z,10.0f);
+        if (landed)
+        {
+            // Refill only after this explicit request reaches its accepted
+            // destination. Failed requests and replayed receipts cannot heal.
+            bot->SetHealth(bot->GetMaxHealth());
+            bot->SetPower(POWER_MANA, bot->GetMaxPower(POWER_MANA));
+            Report(request,"arrived","ok"); it = state.summons.erase(it); continue;
+        }
         reason = Waiting(owner,bot);
-        if (reason == "revival_disabled" || reason == "queued_activity")
-        { Report(request,"refused",reason); it = state.summons.erase(it); continue; }
-        if (reason.empty() && !request.started && teleports < 2)
+        if (!reason.empty())
+        {
+            if (reason != request.waitReason)
+            { request.waitReason = reason; Report(request,"summon_pending",reason); }
+            ++it; continue;
+        }
+        // A completed but rejected/fallback transfer can be retried. Never
+        // overwrite a pending native transfer or keep retrying a denied entry.
+        if (request.started && now < request.nextAttempt) { ++it; continue; }
+        if (request.attempts >= 3)
+        { Report(request,"refused","arrival_not_confirmed"); it = state.summons.erase(it); continue; }
+        if (teleports < 2)
         {
             ++teleports;
-            if (owner->GetMapId() == bot->GetMapId() && owner->GetInstanceId() != bot->GetInstanceId())
+            if (owner->GetMapId() == bot->GetMapId() && owner->GetInstanceId() != bot->GetInstanceId() &&
+                owner->GetMap()->Instanceable())
             { Report(request,"refused","different_instance"); it = state.summons.erase(it); continue; }
             SummonAction action(bot->GetPlayerbotAI());
             Event event("summon", "", owner);
@@ -608,7 +649,12 @@ void BotRecruitment::Update(uint32 diff)
             request.started = action.ExecuteImmediate(event);
             if (!request.started)
             { Report(request,"refused","destination_or_summon_policy"); it = state.summons.erase(it); continue; }
-            Report(request,"summon_pending","teleport_started");
+            WorldLocation const& destination = bot->GetTeleportDest();
+            request.x = destination.coord_x; request.y = destination.coord_y; request.z = destination.coord_z;
+            ++request.attempts;
+            request.nextAttempt = now + 2;
+            request.waitReason = "teleport_started";
+            Report(request,"summon_pending",request.waitReason);
         }
         ++it;
     }

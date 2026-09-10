@@ -8,6 +8,11 @@ from pathlib import Path
 import subprocess, tempfile, sys
 root=Path(sys.argv[1])
 source=(root/'playerbot/BotRecruitment.cpp').read_text()
+command=(root/'playerbot/PlayerbotAI.cpp').read_text().split('void PlayerbotAI::HandleCommand(',1)[1].split('void PlayerbotAI::HandleBotOutgoingPacket(',1)[0]
+routing=command.index('BotRecruitment::Queue(')
+assert command.index('chatFilter.Filter(') < routing < command.index('chatCommands.push(')
+assert command.index('PLAYERBOT_SECURITY_ALLOW_ALL') < routing
+assert 'type == CHAT_MSG_PARTY || type == CHAT_MSG_RAID' in command[:routing]
 source='\n'.join(x for x in source.splitlines() if not x.startswith('#include "'))
 start=source.index('    uint64 Now()'); end=source.index('\n    struct Request',start)
 source=source[:start]+'    uint64 Now() { return fakeNow; }\n'+source[end:]
@@ -42,9 +47,11 @@ struct WorldPacket {std::string name; WorldPacket& operator<<(std::string const&
 struct Social {bool ignored=false;bool HasIgnore(ObjectGuid){return ignored;}};
 struct Security {bool allow=true;bool CheckLevelFor(int,bool,Player*){return allow;}};
 struct AI {Player* master=nullptr; Security security; int changes=0;
+ void CompleteSummonRevival(){}
  Player* GetMaster(){return master;} void SetMaster(Player* p){master=p;} Security* GetSecurity(){return &security;}
  void ChangeStrategy(std::string const&,int){++changes;} std::string GetDefaultMovementStrategy(){return "follow";}};
-struct Map{};
+struct Map{bool instanced=true;bool Instanceable(){return instanced;}};
+struct WorldLocation{float coord_x=0,coord_y=0,coord_z=0;};
 struct LfgData {int state=LFG_STATE_NONE;int GetState(){return state;}};
 class PlayerbotHolder {public:std::string ProcessBotCommand(std::string,ObjectGuid,ObjectGuid,bool,uint32,uint32);};
 struct WorldSession {Player* player=nullptr;uint32 account=1;bool logout=false;struct {bool queued=false;} m_lfgInfo;
@@ -59,6 +66,8 @@ struct Player {
  uint32 id,level=43,cls=1,guild=0,team=0,mapId=1,instance=0;bool real=false,world=true,transfer=false,alive=true,combat=false,
  taxi=false,transport=false,charm=false,bg=false,bgQueue=false,afk=false,los=true;float distance=0;
  std::string name,talents="0-0-10";WorldSession session;AI ai;Social social;Group* group=nullptr;Group* invite=nullptr;
+ float landingDistance=0;unsigned summons=0;WorldLocation destination;
+ bool IsWithinDist3d(float,float,float,float r){return landingDistance<=r;}WorldLocation const& GetTeleportDest(){return destination;}
  Map map;LfgData lfg;PlayerbotHolder holder;unsigned gear=0;int health=50,maxHealth=100,mana=5,maxMana=100,otherPower=23;
  uint32 GetMaxHealth(){return maxHealth;}void SetHealth(uint32 value){health=value;}
  uint32 GetMaxPower(int power){assert(power==POWER_MANA);return maxMana;}
@@ -91,7 +100,7 @@ struct EventOwner {Player* p=nullptr;ObjectGuid guid;EventOwner(Player* b=nullpt
  Player* Get()const{auto it=players.find(guid.value);return it!=players.end()&&it->second==p?p:nullptr;}};
 struct Event {Player* owner;Event(std::string,std::string,Player* p):owner(p){}};
 struct WhoAction{explicit WhoAction(AI*){}std::string QuerySpec(std::string){return "Warrior (43 lvl), 100 GS (green)";}};
-struct SummonAction{AI* ai;explicit SummonAction(AI* a):ai(a){}bool ExecuteImmediate(Event&){for(auto& x:players)if(&x.second->ai==ai){x.second->transfer=true;return true;}return false;}};
+struct SummonAction{AI* ai;explicit SummonAction(AI* a):ai(a){}bool ExecuteImmediate(Event&){for(auto& x:players)if(&x.second->ai==ai){x.second->transfer=true;++x.second->summons;return true;}return false;}};
 }
 '''
 tests=r'''
@@ -160,10 +169,23 @@ int main(){
  reset();{Player p(1,true),b(2);b.team=1;assert(ai::BotRecruitment::Eligibility(&p,&b)=="wrong_faction");sWorld.cross=true;assert(ai::BotRecruitment::Eligibility(&p,&b).empty());b.bgQueue=true;assert(ai::BotRecruitment::Eligibility(&p,&b)=="queued_activity");}
  reset();{Player p(1,true),b(2);b.transfer=true;invite(p,b);players.erase(1);tick();assert(!b.invite&&!b.group);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;b.combat=true;p.combat=true;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(b.transfer&&!has("arrived"));assert(p.combat);b.transfer=false;b.distance=0;tick();assert(has("arrived"));assert(b.combat&&p.combat);}
- reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;b.taxi=true;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(!b.transfer);b.taxi=false;b.transport=true;tick();assert(!b.transfer);b.transport=false;b.charm=true;tick();assert(!b.transfer);b.charm=false;b.transfer=true;tick();assert(!has("teleport_started"));b.transfer=false;b.combat=true;tick();assert(b.transfer&&has("teleport_started"));}
+ for(unsigned state=0;state<5;++state){reset();Player p(1,true),b(2);b.ai.master=&p;b.distance=100;
+ b.taxi=state==0;b.transport=state==1;b.charm=state==2;b.bgQueue=state==3;b.alive=state!=4;
+ ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(b.transfer&&has("teleport_started"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;b.transfer=true;
+ command(p,"s summon 2");assert(!has("teleport_started")&&has("bot_transfer"));tick(41);assert(has("timed_out bot_transfer")&&b.summons==0);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;command(p,"s summon 2");
+ p.mapId=2;b.distance=1000;b.transfer=false;tick();assert(has("arrived ok")&&b.summons==1);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;b.landingDistance=100;
+ command(p,"s summon 2");for(int i=0;i<3;++i){b.transfer=false;tick(3);}assert(b.summons==3&&has("refused arrival_not_confirmed"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;command(p,"s summon 2");
+ command(p,"repeat summon 2");assert(b.summons==1&&has("repeat 2 summon_pending existing_request"));ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(b.summons==1&&has("Bot2: summon_pending (bot_transfer)"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;p.transport=true;
+ command(p,"s summon 2");assert(b.summons==0&&has("requester_transport"));p.transport=false;tick();assert(b.summons==1);}
+
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;p.combat=true;command(p,"combat summon 2");assert(b.transfer&&has("teleport_started"));command(p,"combat summon 2");assert(b.transfer);b.transfer=false;b.distance=0;b.combat=true;tick();assert(has("arrived"));command(p,"prep prepare 2 gear");assert(b.gear==1&&b.combat&&p.combat);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.instance=1;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(!b.transfer&&has("different_instance"));}
- reset();{Player p(1,true),b(2);b.ai.master=&p;b.alive=false;sPlayerbotAIConfig.recruitmentRevive=false;command(p,"s summon 2");assert(!b.transfer&&has("revival_disabled"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.alive=false;sPlayerbotAIConfig.recruitmentRevive=false;command(p,"s summon 2");assert(b.transfer&&has("teleport_started"));}
  reset();{Player p(1,true),b(2);b.ai.master=&p;command(p,"g prepare 2 gear");assert(b.gear==1);command(p,"g prepare 2 gear");assert(b.gear==1);command(p,"g summon 2");assert(has("id_conflict"));}
  reset();{Player p(1,true),b(2);b.ai.master=&p;unsigned count=0;auto apply=[&](){++count;return std::string("random gear equipped");};assert(ai::BotRecruitment::Prepare(&p,&b,"gear","",apply)=="random gear equipped");ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(count==1);b.talents="10-0-0";tick(1);ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(count==2);b.real=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(count==2);}
  reset();{Player p(1,true),b(2);b.transfer=true;invite(p,b);command(p,"c cancel 2");b.transfer=false;tick();assert(!b.group&&!b.invite);}
@@ -189,6 +211,14 @@ int main(){
  reset();{Player p(1,true),a(2),b(3),c(4),d(5);a.level=41;b.level=45;c.level=40;d.level=46;
  command(p,"bounds discover 1 41 45 0");assert(has("Bot2")&&has("Bot3")&&!has("Bot4")&&!has("Bot5"));}
  for(auto range:{"45 41","0 40","1x 40","-1 40","1 9999999999999"}){reset();Player p(1,true);command(p,std::string("bad discover 1 ")+range+" 0");assert(has("refused arguments"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.health=4;b.mana=2;
+ command(p,"heal summon 2");assert(b.health==4&&b.mana==2);b.transfer=false;tick();
+ assert(b.health==100&&b.mana==100&&p.health==50&&p.mana==5&&b.otherPower==23);
+ b.health=7;b.mana=3;command(p,"heal summon 2");assert(b.health==7&&b.mana==3);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.maxMana=0;b.mana=0;b.health=4;
+ command(p,"warrior summon 2");b.transfer=false;tick();assert(b.health==100&&b.mana==0&&b.otherPower==23);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.health=4;b.mana=2;b.landingDistance=100;
+ command(p,"failed summon 2");for(int i=0;i<3;++i){b.transfer=false;tick(3);}assert(b.health==4&&b.mana==2);}
  std::cout<<"PASS: actual coordinator permissions, native-invite scheduling, stale/replaced invites, ownership, combat/death, session loss, transports, arrival, replay, cancellation, mixed 40-member capacity, bounded discovery/work\n";
 }
 '''

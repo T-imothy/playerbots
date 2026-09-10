@@ -1,0 +1,9 @@
+# Explicit bot summons
+
+An authorized summon interrupts the bot's combat, casts, incoming/outgoing charm and flight. Native teleport detaches transport passengers and leaves a source battleground. Dead bots are revived only after the accepted destination is acknowledged. Successful explicit summons then restore full HP and mana, including for bots already nearby. Failed requests and replayed protocol receipts do not heal, and rage/energy are not refilled. The legacy recruitment revival preference does not disable resurrection for an explicit summon. No real player is resurrected, moved or taken out of combat by this action.
+
+Whisper, party and raid summons enter the world-thread request service after command-prefix, role-filter and authorization checks, without waiting for normal bot AI. Bot queues no longer block a summon; personal queue entries are withdrawn on their owning queue threads, while the requester's group queue is preserved. Destination instance admission and group/ownership permissions remain enforced. Actual instance mismatches are distinguished from internal continent partitions. A requester currently in a transfer, taxi or transport must reach a stable destination; the bot's state does not require manual preparation.
+
+Existing native world transfers are allowed to finish rather than overwriting transfer flags. Progress reports identify the wait stage. Duplicate requests report that stage. Successful arrival is checked against the accepted landing point, so a moving requester does not cause a false timeout. Completed fallback transfers receive at most three attempts within the existing 40-second request lifetime. Timeout reasons preserve the remaining blocker.
+
+Validation details and release receipts are recorded separately. Deterministic tests are not live realm testing.

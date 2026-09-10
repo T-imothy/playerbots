@@ -15,6 +15,7 @@ namespace ai
 
     protected:
         bool Teleport(Player* requester, Player *summoner, Player *player);
+        void CancelAutonomousQueues();
         bool SummonUsingGos(Player* requester, Player *summoner, Player *player);
         bool SummonUsingNpcs(Player* requester, Player *summoner, Player *player);
     };

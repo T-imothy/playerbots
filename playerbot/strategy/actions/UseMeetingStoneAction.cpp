@@ -6,6 +6,10 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 
+#include "BattleGround/BattleGround.h"
+#include "BattleGround/BattleGroundMgr.h"
+#include "LFG/LFGQueue.h"
+
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
@@ -97,9 +101,6 @@ bool SummonAction::ExecuteImmediate(Event& event)
     if(bot->GetMapId() == requester->GetMapId() && !WorldPosition(bot).canPathTo(requester, bot) && bot->GetDistance(requester) < sPlayerbotAIConfig.sightDistance) //We can't walk to requester so fine to short-range teleport.
         return Teleport(requester, requester, bot);
 
-    if (bot->IsTaxiFlying())
-        return false;
-
     if (SummonUsingGos(requester, requester, bot) || SummonUsingNpcs(requester, requester, bot))
     {
         ai->TellPlayerNoFacing(requester, BOT_TEXT("hello"));
@@ -158,6 +159,50 @@ bool SummonAction::SummonUsingNpcs(Player* requester, Player *summoner, Player *
     return false;
 }
 
+void SummonAction::CancelAutonomousQueues()
+{
+    // Cancel only the bot's own queue entries, never the requester's group queue.
+    ObjectGuid const guid = bot->GetObjectGuid();
+#ifdef MANGOSBOT_ZERO
+    sWorld.GetLFGQueue().GetMessager().AddMessage([guid](LFGQueue* queue)
+    {
+        queue->RemovePlayerFromQueue(guid, PLAYER_CLIENT_LEAVE);
+    });
+#elif defined(MANGOSBOT_ONE)
+    sWorld.GetLFGQueue().GetMessager().AddMessage([guid](LFGQueue* queue)
+    {
+        queue->StopLookingForGroup(guid, guid);
+    });
+#else
+    if (!bot->GetGroup())
+        bot->GetLfgData().SetState(LFG_STATE_NONE);
+    sWorld.GetLFGQueue().GetMessager().AddMessage([guid](LFGQueue* queue)
+    {
+        queue->RemoveFromQueue(guid);
+    });
+#endif
+    for (uint32 slot = 0; slot < PLAYER_MAX_BATTLEGROUND_QUEUES; ++slot)
+    {
+        BattleGroundQueueTypeId const queue = bot->GetBattleGroundQueueTypeId(slot);
+        if (queue == BATTLEGROUND_QUEUE_NONE)
+            continue;
+        BattleGroundTypeId const type = sBattleGroundMgr.BgTemplateId(queue);
+        // The native teleport removes active BG membership when leaving its map.
+        if (bot->InBattleGround() && type == bot->GetBattleGroundTypeId())
+            continue;
+        WorldPacket leave(CMSG_BATTLEFIELD_PORT, 20);
+#ifdef MANGOSBOT_ZERO
+        BattleGround* bg = sBattleGroundMgr.GetBattleGroundTemplate(type);
+        if (!bg)
+            continue;
+        leave << uint32(bg->GetMapId()) << uint8(0);
+#else
+        leave << uint8(sBattleGroundMgr.BgArenaType(queue)) << uint8(0) << uint32(type) << uint16(0) << uint8(0);
+#endif
+        bot->GetSession()->HandleBattlefieldPortOpcode(leave);
+    }
+}
+
 bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 {
     if (!requester || !summoner || !player || player != bot || player->isRealPlayer() ||
@@ -168,17 +213,16 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 
     // Never attach a passenger manually after starting a far teleport. That
     // mixes world coordinates with transport offsets before the worldport ACK.
-    if (summoner->GetTransport() || player->GetTransport() ||
-        summoner->IsTaxiFlying() || player->IsTaxiFlying() ||
-        player->HasCharmer())
+    if (summoner->GetTransport() || summoner->IsTaxiFlying())
     {
-        ai->TellPlayerNoFacing(requester, "I cannot be summoned while controlled or travelling on a transport.");
+        ai->TellPlayerNoFacing(requester, "Your destination is moving on a flight or transport. Summon me again after you disembark.");
         return false;
     }
 
     // A near teleport cannot transfer between two instances of the same map.
     // Let the regular instance-entry/transition system handle that case.
-    if (summoner->GetMapId() == player->GetMapId() && summoner->GetMap() != player->GetMap())
+    if (summoner->GetMapId() == player->GetMapId() && summoner->GetMap() != player->GetMap() &&
+        summoner->GetMap()->Instanceable())
         return false;
     if (summoner->GetMap() != player->GetMap() && !summoner->GetMap()->CanEnter(player))
         return false;
@@ -203,14 +247,21 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 
             if (summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
             {
-                bool const revive = sServerFacade.UnitIsDead(player) && sServerFacade.IsAlive(summoner);
-                if (revive)
+                bool const revive = sServerFacade.UnitIsDead(player);
+
+                // Only the explicitly summoned bot is interrupted. Native cleanup
+                // restores possession/mover and taxi state; TeleportTo detaches a
+                // transport passenger and handles combat, pets and BG departure.
+                player->BreakCharmIncoming();
+                player->BreakCharmOutgoing();
+                if (player->HasCharmer())
                 {
-                    if (!sPlayerbotAIConfig.recruitmentRevive)
-                        return false;
-                    if (!ai->IsSafe(player) || !ai->IsSafe(summoner))
-                        return false;
+                    ai->TellPlayerNoFacing(requester, "The server could not release my controlling charm.");
+                    return false;
                 }
+                if (!player->TaxiFlightInterrupt() && player->IsTaxiFlying())
+                    player->OnTaxiFlightEject();
+                player->InterruptNonMeleeSpells(false);
 
                 // Combat does not block an explicit convenience summon. The native
                 // teleport stops the summoned bot's combat; the requester stays in combat.
@@ -221,6 +272,9 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
                     ai->TellPlayerNoFacing(requester, "The server refused the summon destination.");
                     return false;
                 }
+                CancelAutonomousQueues();
+                if (!summoner->InBattleGround())
+                    ai->ChangeStrategy("-lfg,-bg", BotState::BOT_STATE_NON_COMBAT);
                 if (revive)
                     ai->QueueSummonRevival(mapId, x, y, z, summoner->GetInstanceId());
                 player->GetMotionMaster()->Clear();

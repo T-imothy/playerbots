@@ -1295,15 +1295,25 @@ void PlayerbotAI::QueueSummonRevival(uint32 mapId, float x, float y, float z, ui
 void PlayerbotAI::CompleteSummonRevival()
 {
     const PendingSummonRevival pending = pendingSummonRevival;
+    if (!pending.active)
+        return;
+    if (time(nullptr) > pending.expires || IsRealPlayer() || bot->IsAlive())
+    {
+        pendingSummonRevival = {};
+        return;
+    }
+    if (!bot->IsInWorld() || bot->IsBeingTeleported())
+        return;
+    // A same-map ACK may schedule the continent partition switch for the next
+    // world tick. Preserve revival until that switch has finished.
+    if (bot->GetMapId() == pending.mapId && bot->GetInstanceId() != pending.instanceId &&
+        !bot->GetMap()->Instanceable())
+        return;
     pendingSummonRevival = {};
-    // A rejected/fallback worldport must not resurrect at the source or home
-    // bind. Only consume this request after reaching its accepted destination.
-    if (!pending.active || time(nullptr) > pending.expires || IsRealPlayer() ||
-        !bot->IsInWorld() || bot->IsBeingTeleported() || bot->IsAlive() ||
-        (bot->GetMapId() != pending.mapId || bot->GetInstanceId() != pending.instanceId) ||
+    // A denied/fallback teleport must never resurrect at the source or home bind.
+    if (bot->GetMapId() != pending.mapId || bot->GetInstanceId() != pending.instanceId ||
         !bot->IsWithinDist3d(pending.x, pending.y, pending.z, 1.0f) || !IsSafe(bot))
         return;
-
     bot->ResurrectPlayer(1.0f, false);
     bot->SpawnCorpseBones();
 }
@@ -1535,14 +1545,6 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
     if (type == CHAT_MSG_SYSTEM)
         return;
 
-    // These control-plane requests must not wait for combat/non-combat AI.
-    if (type == CHAT_MSG_WHISPER && fromPlayer.isRealPlayer() &&
-        (filtered == "who" || filtered == "summon"))
-    {
-        BotRecruitment::Queue(&fromPlayer, bot, filtered);
-        return;
-    }
-
     if (filtered.find(sPlayerbotAIConfig.commandSeparator) != std::string::npos)
     {
         std::vector<std::string> commands;
@@ -1597,6 +1599,16 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 
     if (!IsAllowedCommand(filtered) && !GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, type != CHAT_MSG_WHISPER, &fromPlayer))
         return;
+
+    // Respect command prefixes, role filters and authorization, then deliver
+    // explicit summons without waiting for a stunned, dead or stalled AI tick.
+    if (fromPlayer.isRealPlayer() &&
+        ((filtered == "summon" && (type == CHAT_MSG_WHISPER || type == CHAT_MSG_PARTY || type == CHAT_MSG_RAID)) ||
+         (filtered == "who" && type == CHAT_MSG_WHISPER)))
+    {
+        BotRecruitment::Queue(&fromPlayer, bot, filtered);
+        return;
+    }
 
     if (type == CHAT_MSG_RAID_WARNING && filtered.find(bot->GetName()) != std::string::npos && filtered.find("award") == std::string::npos)
     {
