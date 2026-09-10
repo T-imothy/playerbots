@@ -2883,6 +2883,13 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             continue;
         representatives.insert(std::make_pair(bot->GetGuildId(), bot));
     }
+    // Random bots finish logging in asynchronously after realm startup. An
+    // empty first pass is not a valid fifteen-minute observation sample.
+    if (representatives.empty())
+    {
+        nextGuildSample = now + std::chrono::minutes(1);
+        return;
+    }
 
     std::ostringstream enrich, plans, events;
     enrich << "{\"guilds\":[";
