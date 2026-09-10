@@ -10,12 +10,14 @@
 #include <vector>
 
 class Group;
+class GroupLootRoll;
 class Player;
 class Unit;
 
 namespace ai
 {
     class Action;
+    enum class ItemUsage : uint8;
 
     enum class LivingPartyRole : uint8
     {
@@ -51,6 +53,12 @@ namespace ai
         bool healerDuty = true;
         bool tacticalRules = true;
         bool addonTelemetry = true;
+        bool manaAssistance = true;
+        bool humanFirstLoot = true;
+        bool equipmentLootNeed = true;
+        bool professionLootNeed = true;
+        bool questLootNeed = true;
+        bool announceLootNeed = true;
         bool botLedAutoMark = true;
         bool humanLedAutoMark = false;
         uint32 stabilizeMilliseconds = 2000;
@@ -65,6 +73,10 @@ namespace ai
         uint8 hotHealthPercent = 85;
         uint8 manaReservePercent = 30;
         uint8 maximumOverhealPercent = 40;
+        uint16 combatManaRegenPercent = 125;
+        uint16 combatCastingRegenFloorPercent = 25;
+        uint16 outOfCombatManaRegenPercent = 200;
+        uint8 humanRollSafetySeconds = 3;
         uint32 telemetryMilliseconds = 500;
     };
 
@@ -89,6 +101,12 @@ namespace ai
         bool HandleAddonMessage(Player* receiverBot, Player* sender, const std::string& message);
         bool CanInitiate(Player* bot, Unit* target) const;
         float ActionMultiplier(Player* bot, Action* action) const;
+        float AdjustManaRegen(Player* member, bool recentCast, float currentRegen, float normalRegen) const;
+        bool ShouldDeferLootRoll(Player* bot, GroupLootRoll* roll) const;
+        bool HumanNeededLoot(Player* bot, GroupLootRoll* roll) const;
+        bool BotCanNeedForUsage(ItemUsage usage) const;
+        bool ShouldAnnounceLootNeed() const;
+        bool IsActiveMixedParty(Player* member) const;
         LivingPartyRoleState GetRole(Player* member) const;
         Unit* GetPreferredTarget(Player* bot) const;
         std::string GetCandidateJson(Player* bot, Player* speaker) const;
@@ -117,6 +135,7 @@ namespace ai
             std::set<ObjectGuid> threatClients;
             std::set<ObjectGuid> approvedTargets;
             std::set<ObjectGuid> threatHeld;
+            std::set<ObjectGuid> threatSoftHeld;
             std::vector<LivingPartyTacticalRule> rules;
             bool hold = false;
             bool humanLeader = false;

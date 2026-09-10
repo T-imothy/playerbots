@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotPartyCombatCoordinator.h"
+#include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/strategy/Action.h"
 
@@ -87,6 +88,12 @@ void PlayerbotPartyCombatCoordinator::ReloadPolicy() const
     policy.healerDuty = ReadBool(json, "healingDuty", policy.healerDuty);
     policy.tacticalRules = ReadBool(json, "tacticalRules", policy.tacticalRules);
     policy.addonTelemetry = ReadBool(json, "addonTelemetry", policy.addonTelemetry);
+    policy.manaAssistance = ReadBool(json, "manaAssistance", policy.manaAssistance);
+    policy.humanFirstLoot = ReadBool(json, "humanFirstLoot", policy.humanFirstLoot);
+    policy.equipmentLootNeed = ReadBool(json, "equipmentUpgradeNeed", policy.equipmentLootNeed);
+    policy.professionLootNeed = ReadBool(json, "professionNeed", policy.professionLootNeed);
+    policy.questLootNeed = ReadBool(json, "questNeed", policy.questLootNeed);
+    policy.announceLootNeed = ReadBool(json, "announceNeedReason", policy.announceLootNeed);
     policy.stabilizeMilliseconds = ReadUInt(json, "stabilizeMilliseconds", policy.stabilizeMilliseconds);
     policy.maximumHoldMilliseconds = ReadUInt(json, "maximumHoldMilliseconds", policy.maximumHoldMilliseconds);
     policy.softThreatPercent = ReadUInt(json, "softThreatPercent", policy.softThreatPercent);
@@ -98,6 +105,10 @@ void PlayerbotPartyCombatCoordinator::ReloadPolicy() const
     policy.hotHealthPercent = ReadUInt(json, "hotHealthPercent", policy.hotHealthPercent);
     policy.manaReservePercent = ReadUInt(json, "manaReservePercent", policy.manaReservePercent);
     policy.maximumOverhealPercent = ReadUInt(json, "maximumOverhealPercent", policy.maximumOverhealPercent);
+    policy.combatManaRegenPercent = ReadUInt(json, "combatManaRegenPercent", policy.combatManaRegenPercent);
+    policy.combatCastingRegenFloorPercent = ReadUInt(json, "combatCastingRegenFloorPercent", policy.combatCastingRegenFloorPercent);
+    policy.outOfCombatManaRegenPercent = ReadUInt(json, "outOfCombatManaRegenPercent", policy.outOfCombatManaRegenPercent);
+    policy.humanRollSafetySeconds = ReadUInt(json, "humanRollSafetySeconds", policy.humanRollSafetySeconds);
     policy.telemetryMilliseconds = ReadUInt(json, "telemetryMilliseconds", policy.telemetryMilliseconds);
 }
 
@@ -312,14 +323,97 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
         return elapsed < policy.stabilizeMilliseconds ? 0.0f : (threat == ActionThreatType::ACTION_THREAT_AOE ? 0.0f : 0.35f);
     Player* tank = FindMember(bot->GetGroup(), state->tank);
     uint8 pct = ThreatPercent(bot, target, tank);
-    if (pct >= policy.hardThreatPercent) { state->threatHeld.insert(bot->GetObjectGuid()); return 0.0f; }
+    if (pct >= policy.hardThreatPercent)
+    {
+        state->threatSoftHeld.erase(bot->GetObjectGuid());
+        if (state->threatHeld.insert(bot->GetObjectGuid()).second)
+            sLog.outDetail("LivingParty threat hard-hold bot=%s target=%u threat=%u action=%s",
+                bot->GetName(), target ? target->GetGUIDLow() : 0, pct, action->getName().c_str());
+        return 0.0f;
+    }
     if (state->threatHeld.count(bot->GetObjectGuid()))
     {
         if (pct > policy.resumeThreatPercent) return 0.0f;
         state->threatHeld.erase(bot->GetObjectGuid());
+        sLog.outDetail("LivingParty threat resume bot=%s target=%u threat=%u",
+            bot->GetName(), target ? target->GetGUIDLow() : 0, pct);
     }
-    if (pct >= policy.softThreatPercent) return threat == ActionThreatType::ACTION_THREAT_AOE ? 0.0f : 0.35f;
+    if (pct >= policy.softThreatPercent)
+    {
+        if (state->threatSoftHeld.insert(bot->GetObjectGuid()).second)
+            sLog.outDetail("LivingParty threat soft-throttle bot=%s target=%u threat=%u action=%s",
+                bot->GetName(), target ? target->GetGUIDLow() : 0, pct, action->getName().c_str());
+        return threat == ActionThreatType::ACTION_THREAT_AOE ? 0.0f : 0.35f;
+    }
+    if (state->threatSoftHeld.erase(bot->GetObjectGuid()))
+        sLog.outDetail("LivingParty threat normal bot=%s target=%u threat=%u",
+            bot->GetName(), target ? target->GetGUIDLow() : 0, pct);
     return 1.0f;
+}
+
+float PlayerbotPartyCombatCoordinator::AdjustManaRegen(Player* member, bool recentCast, float currentRegen, float normalRegen) const
+{
+    ReloadPolicy();
+    if (!member || !member->GetPlayerbotAI() || policy.mode != "active" || !policy.manaAssistance ||
+        !IsMixedGroup(member->GetGroup()))
+        return currentRegen;
+
+    if (!member->IsInCombat())
+        return currentRegen * policy.outOfCombatManaRegenPercent / 100.0f;
+
+    float adjusted = currentRegen * policy.combatManaRegenPercent / 100.0f;
+    if (recentCast)
+        adjusted = std::max(adjusted, normalRegen * policy.combatCastingRegenFloorPercent / 100.0f);
+    return adjusted;
+}
+
+bool PlayerbotPartyCombatCoordinator::ShouldDeferLootRoll(Player* bot, GroupLootRoll* roll) const
+{
+    ReloadPolicy();
+    if (!bot || !roll || policy.mode != "active" || !policy.humanFirstLoot || !IsMixedGroup(bot->GetGroup()))
+        return false;
+    if (roll->GetEndTime() <= time(NULL) + policy.humanRollSafetySeconds)
+        return false;
+
+    Group::MemberSlotList const& slots = bot->GetGroup()->GetMemberSlots();
+    for (Group::MemberSlotList::const_iterator i = slots.begin(); i != slots.end(); ++i)
+        if (Player* member = sObjectAccessor.FindPlayer(i->guid))
+            if (member->isRealPlayer() && roll->GetPlayerVote(member->GetObjectGuid()) == ROLL_NOT_EMITED_YET)
+                return true;
+    return false;
+}
+
+bool PlayerbotPartyCombatCoordinator::HumanNeededLoot(Player* bot, GroupLootRoll* roll) const
+{
+    ReloadPolicy();
+    if (!bot || !roll || !policy.humanFirstLoot || !IsMixedGroup(bot->GetGroup())) return false;
+    Group::MemberSlotList const& slots = bot->GetGroup()->GetMemberSlots();
+    for (Group::MemberSlotList::const_iterator i = slots.begin(); i != slots.end(); ++i)
+        if (Player* member = sObjectAccessor.FindPlayer(i->guid))
+            if (member->isRealPlayer() && roll->GetPlayerVote(member->GetObjectGuid()) == ROLL_NEED)
+                return true;
+    return false;
+}
+
+bool PlayerbotPartyCombatCoordinator::BotCanNeedForUsage(ItemUsage usage) const
+{
+    ReloadPolicy();
+    if (usage == ItemUsage::ITEM_USAGE_EQUIP) return policy.equipmentLootNeed;
+    if (usage == ItemUsage::ITEM_USAGE_SKILL) return policy.professionLootNeed;
+    if (usage == ItemUsage::ITEM_USAGE_QUEST) return policy.questLootNeed;
+    return usage == ItemUsage::ITEM_USAGE_FORCE_NEED;
+}
+
+bool PlayerbotPartyCombatCoordinator::ShouldAnnounceLootNeed() const
+{
+    ReloadPolicy();
+    return policy.mode == "active" && policy.humanFirstLoot && policy.announceLootNeed;
+}
+
+bool PlayerbotPartyCombatCoordinator::IsActiveMixedParty(Player* member) const
+{
+    ReloadPolicy();
+    return member && policy.mode == "active" && IsMixedGroup(member->GetGroup());
 }
 
 std::vector<std::string> PlayerbotPartyCombatCoordinator::Fields(const std::string& message)

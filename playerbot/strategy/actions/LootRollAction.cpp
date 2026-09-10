@@ -6,6 +6,38 @@
 
 using namespace ai;
 
+namespace
+{
+    GroupLootRoll* GetGroupLootRoll(Player* bot, ObjectGuid lootGuid, uint32 slot)
+    {
+        Loot* loot = sLootMgr.GetLoot(bot, lootGuid);
+        return loot ? loot->GetRollForSlot(slot) : NULL;
+    }
+
+    RollVote ApplyMixedPartyLootPolicy(Player* bot, ItemUsage usage, RollVote vote, GroupLootRoll* roll)
+    {
+        if (!bot || !roll || !sPlayerbotPartyCombatCoordinator.IsActiveMixedParty(bot))
+            return vote;
+
+        if (sPlayerbotPartyCombatCoordinator.HumanNeededLoot(bot, roll))
+            return vote == ROLL_NEED ? ROLL_GREED : vote;
+
+        if (sPlayerbotPartyCombatCoordinator.BotCanNeedForUsage(usage))
+            return ROLL_NEED;
+
+        return vote == ROLL_NEED ? ROLL_GREED : vote;
+    }
+
+    void AnnounceMixedPartyNeed(PlayerbotAI* ai, ItemQualifier& itemQualifier, ItemUsage usage)
+    {
+        if (!ai || !sPlayerbotPartyCombatCoordinator.ShouldAnnounceLootNeed())
+            return;
+
+        std::string reason = ItemUsageValue::ReasonForNeed(usage, itemQualifier, 1, ai->GetBot());
+        ai->SayToParty("I'll need on " + ChatHelper::formatItem(itemQualifier) + " " + reason, true);
+    }
+}
+
 bool LootStartRollAction::Execute(Event& event)
 {
     WorldPacket p(event.getPacket()); //WorldPacket packet for CMSG_LOOT_ROLL, (8+4+1)
@@ -284,30 +316,61 @@ bool LootRollAction::Execute(Event& event)
     if (!itemQualifier.GetId())
         return false;
 
-    RollVote vote = CalculateRollVote(itemQualifier);
+    GroupLootRoll* lootRoll = GetGroupLootRoll(bot, guid, slot);
+    if (!lootRoll || sPlayerbotPartyCombatCoordinator.ShouldDeferLootRoll(bot, lootRoll))
+        return false;
 
-    return RollOnItemInSlot(vote, guid, slot);
+    ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", itemQualifier.GetQualifier());
+    RollVote vote = ApplyMixedPartyLootPolicy(bot, usage, CalculateRollVote(itemQualifier), lootRoll);
+
+    bool rolled = RollOnItemInSlot(vote, guid, slot);
+    if (rolled && vote == ROLL_NEED)
+        AnnounceMixedPartyNeed(ai, itemQualifier, usage);
+    return rolled;
 }
 
 bool AutoLootRollAction::Execute(Event& event)
 {
     LootRollMap lootRolls = AI_VALUE(LootRollMap, "active rolls");
 
-    auto currentRoll = lootRolls.begin();
+    std::vector<LootRollMap::value_type> eligibleRolls;
+    for (LootRollMap::const_iterator i = lootRolls.begin(); i != lootRolls.end(); ++i)
+    {
+        GroupLootRoll* lootRoll = GetGroupLootRoll(bot, i->first, i->second);
+        if (lootRoll && !sPlayerbotPartyCombatCoordinator.ShouldDeferLootRoll(bot, lootRoll))
+            eligibleRolls.push_back(*i);
+    }
+    if (eligibleRolls.empty())
+        return false;
 
-    currentRoll = std::next(currentRoll, urand(0, lootRolls.size() - 1));
+    LootRollMap::value_type const& currentRoll = eligibleRolls[urand(0, eligibleRolls.size() - 1)];
 
-    ItemQualifier itemQualifier = GetRollItem(currentRoll->first, currentRoll->second);
+    ItemQualifier itemQualifier = GetRollItem(currentRoll.first, currentRoll.second);
 
     if (!itemQualifier.GetId())
         return false;
 
-    RollVote vote = CalculateRollVote(itemQualifier);
+    GroupLootRoll* lootRoll = GetGroupLootRoll(bot, currentRoll.first, currentRoll.second);
+    ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", itemQualifier.GetQualifier());
+    RollVote vote = ApplyMixedPartyLootPolicy(bot, usage, CalculateRollVote(itemQualifier), lootRoll);
 
-    return RollOnItemInSlot(vote, currentRoll->first, currentRoll->second);
+    bool rolled = RollOnItemInSlot(vote, currentRoll.first, currentRoll.second);
+    if (rolled && vote == ROLL_NEED)
+        AnnounceMixedPartyNeed(ai, itemQualifier, usage);
+    return rolled;
 }
 
 bool AutoLootRollAction::isPossible()
 {
-    return bot->GetGroup() && !AI_VALUE(LootRollMap, "active rolls").empty() && AI_VALUE(uint8, "bag space") < 100;
+    if (!bot->GetGroup() || AI_VALUE(uint8, "bag space") >= 100)
+        return false;
+
+    LootRollMap lootRolls = AI_VALUE(LootRollMap, "active rolls");
+    for (LootRollMap::const_iterator i = lootRolls.begin(); i != lootRolls.end(); ++i)
+    {
+        GroupLootRoll* lootRoll = GetGroupLootRoll(bot, i->first, i->second);
+        if (lootRoll && !sPlayerbotPartyCombatCoordinator.ShouldDeferLootRoll(bot, lootRoll))
+            return true;
+    }
+    return false;
 }
