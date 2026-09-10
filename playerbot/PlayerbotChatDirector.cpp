@@ -285,6 +285,18 @@ static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandid
         return;
     PopulateGuildState(bot, speaker, candidate);
     Group* group = bot->GetGroup();
+    if (bot->GetMapId() == speaker->GetMapId() &&
+        sServerFacade.GetDistance2d(bot, speaker) <= sPlayerbotAIConfig.farDistance)
+    {
+        const char* emotes[] = {"wave", "bow", "cheer", "salute", "laugh", "dance"};
+        for (const char* emote : emotes)
+        {
+            std::ostringstream ref;
+            ref << "social:emote:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow() << ':' << emote;
+            AddSocialCapability(candidate, ref.str(), "perform_emote", 0, bot->GetGUIDLow(), 0,
+                "Perform the " + std::string(emote) + " emote toward the requesting player.");
+        }
+    }
     if (bot->GetMapId() == speaker->GetMapId() && bot->GetZoneId() == speaker->GetZoneId() &&
         !bot->IsWithinDistInMap(speaker, INTERACTION_DISTANCE))
     {
@@ -379,6 +391,19 @@ static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandid
 
     if (speaker->GetGroup() == group)
     {
+        std::ostringstream waitRef;
+        waitRef << "travel:wait:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow() << ':' << state.groupId;
+        AddSocialCapability(candidate, waitRef.str(), "wait_here", state.groupId, bot->GetGUIDLow(), 0,
+            "Stop moving and wait at the current safe location until the party resumes.");
+        if (!bot->IsInCombat() && !bot->InBattleGround() && !bot->IsTaxiFlying() &&
+            bot->GetPlayerbotAI()->CanDoSpecificAction("hearthstone", true, true))
+        {
+            std::ostringstream hearthRef;
+            hearthRef << "travel:hearth:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow()
+                << ':' << state.groupId;
+            AddSocialCapability(candidate, hearthRef.str(), "use_hearthstone", state.groupId,
+                bot->GetGUIDLow(), 0, "Use this character's ready hearthstone through normal game rules.");
+        }
         Item* petition = (!bot->GetGuildId() && !bot->GetGuildIdInvited()) ?
             bot->GetItemByEntry(5863) : nullptr;
         if (petition)
@@ -2300,9 +2325,11 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
                 capability.type == "bank_items" || capability.type == "retrieve_mail") family = "vendorInventory";
             else if (capability.type == "meet_player" || capability.type == "travel_to_party" ||
                 capability.type == "return_to_activity" || capability.type == "resume_party_assist" ||
-                capability.type == "grant_party_free_time") family = "travel";
+                capability.type == "grant_party_free_time" || capability.type == "wait_here" ||
+                capability.type == "use_hearthstone") family = "travel";
             else if (capability.type == "transfer_guild_leadership" ||
-                capability.type == "solicit_petition_signatures") family = "socialGovernance";
+                capability.type == "solicit_petition_signatures" ||
+                capability.type == "perform_emote") family = "socialGovernance";
             else if (capability.type.find("group") != std::string::npos || capability.type == "pass_leadership" ||
                 capability.type == "set_party_role" || capability.type == "clear_party_role" ||
                 capability.type == "set_puller" || capability.type == "hold_attacks" ||

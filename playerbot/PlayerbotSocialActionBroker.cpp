@@ -34,6 +34,7 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
         type == "leave_ai_party_for_player" ||
         type == "solicit_petition_signatures" ||
         type == "transfer_guild_leadership" ||
+        type == "perform_emote" || type == "wait_here" || type == "use_hearthstone" ||
         type == "share_quest" || type == "accept_party_quest_plan" || type == "meet_player" ||
         type == "vendor_bags" || type == "gather_node" || type == "decline_gather_node" ||
         type == "open_chest" || type == "decline_chest" ||
@@ -722,6 +723,57 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             else
                 action.failureReason = "normal guild rank rules did not permit that leadership transfer";
         }
+    }
+    else if (proposal.type == "perform_emote" &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(social:emote:([0-9]+):([0-9]+):(wave|bow|cheer|salute|laugh|dance))")) &&
+        (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow())
+    {
+        std::string emote = match[3].str();
+        completed = bot->GetMapId() == player->GetMapId() &&
+            sServerFacade.GetDistance2d(bot, player) <= sPlayerbotAIConfig.farDistance &&
+            bot->GetPlayerbotAI()->DoSpecificAction("emote",
+                Event("living natural language emote", emote, player), true);
+        if (!completed)
+            action.failureReason = "the requested emote is not currently possible nearby";
+    }
+    else if (proposal.type == "wait_here" &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(travel:wait:([0-9]+):([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow())
+    {
+        uint32 groupId = (uint32)std::stoul(match[3].str());
+        Group* group = bot->GetGroup();
+        action.groupId = groupId;
+        if (group && group == player->GetGroup() && group->GetId() == groupId &&
+            !bot->IsTaxiFlying() && !bot->GetTransport())
+        {
+            completed = !sServerFacade.isMoving(bot) || bot->GetPlayerbotAI()->DoSpecificAction(
+                "stay", Event("living natural language wait", "", player), true);
+        }
+        if (!completed)
+            action.failureReason = "the current party or movement state does not permit waiting here";
+    }
+    else if (proposal.type == "use_hearthstone" &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(travel:hearth:([0-9]+):([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow())
+    {
+        uint32 groupId = (uint32)std::stoul(match[3].str());
+        Group* group = bot->GetGroup();
+        action.groupId = groupId;
+        if (group && group == player->GetGroup() && group->GetId() == groupId &&
+            !bot->IsInCombat() && !bot->InBattleGround() && !bot->IsTaxiFlying() &&
+            bot->GetPlayerbotAI()->CanDoSpecificAction("hearthstone", true, true))
+        {
+            completed = bot->GetPlayerbotAI()->DoSpecificAction("hearthstone",
+                Event("living natural language hearth", "", player), true);
+        }
+        if (!completed)
+            action.failureReason = "the hearthstone is unavailable, on cooldown, or unsafe to use now";
     }
     else if (proposal.type == "vendor_bags" &&
         std::regex_match(proposal.capabilityRef, match, std::regex(R"(vendor:([0-9]+):([0-9]+))")) &&

@@ -39,6 +39,12 @@ PlayerbotNaturalLanguageCapabilityRegistry::PlayerbotNaturalLanguageCapabilityRe
             LivingCapabilityExecutor::social);
     Register("transfer_guild_leadership", "socialGovernance", "consequential", "guild_leader",
         "explicit_confirmation", LivingCapabilityExecutor::social);
+    Register("perform_emote", "socialGovernance", "routine", "unrestricted_social_request",
+        "low_risk", LivingCapabilityExecutor::social);
+    Register("wait_here", "travel", "routine", "contextual_party_authority",
+        "low_risk", LivingCapabilityExecutor::social);
+    Register("use_hearthstone", "travel", "routine", "contextual_party_authority",
+        "low_risk", LivingCapabilityExecutor::social);
 
     const char* combat[] = {"set_party_role", "clear_party_role", "set_puller", "hold_attacks",
         "resume_assist", "set_tactical_rule", "assign_marker_manager", "clear_tactical_rule"};
