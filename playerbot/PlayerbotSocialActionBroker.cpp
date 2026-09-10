@@ -31,7 +31,8 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
         type == "pass_leadership" || type == "leave_group" ||
         type == "leave_ai_party_for_player" ||
         type == "share_quest" || type == "accept_party_quest_plan" || type == "meet_player" ||
-        type == "vendor_bags" || type == "gather_node" || type == "decline_gather_node");
+        type == "vendor_bags" || type == "gather_node" || type == "decline_gather_node" ||
+        type == "open_chest" || type == "decline_chest");
 }
 
 static bool GroupHasRealHuman(Group* group)
@@ -88,7 +89,7 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
         bot->IsInCombat() || HasActiveVendorTrip(bot->GetGUIDLow()))
         return false;
     uint8 bagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
-    if (bagUsage <= 80)
+    if (bagUsage < 80)
         return false;
 
     LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
@@ -142,8 +143,11 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     // The scoped trip owns non-combat movement until the bot has sold its
     // inventory. Otherwise ordinary party follow continually pulls the bot
     // back to the human while TravelStrategy tries to reach the vendor.
-    action.restoreFollow = ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT);
-    if (action.restoreFollow)
+    // A scoped maintenance trip must always restore ordinary party following,
+    // even when the bot joined with a stale/non-follow strategy or the trip
+    // could not free a slot.
+    action.restoreFollow = true;
+    if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT))
         ai->ChangeStrategy("nc -follow", BotState::BOT_STATE_NON_COMBAT);
     ai->StopMoving();
     actions[action.actionId] = action;
@@ -172,7 +176,7 @@ static bool InviteSocialPlayer(Player* inviter, Player* player)
     return player->GetGroupInvite() != nullptr;
 }
 
-bool PlayerbotSocialActionBroker::CanGatherNode(Player* bot, Player* player, ObjectGuid guid)
+bool PlayerbotSocialActionBroker::CanUseSharedObject(Player* bot, Player* player, ObjectGuid guid)
 {
     if (!bot || !player || !guid.IsGameObject() || !bot->GetPlayerbotAI() || !bot->GetGroup() ||
         bot->GetGroup() != player->GetGroup() || !player->isRealPlayer())
@@ -180,25 +184,42 @@ bool PlayerbotSocialActionBroker::CanGatherNode(Player* bot, Player* player, Obj
 
     LootObject loot(bot, guid);
     GameObject* node = bot->GetPlayerbotAI()->GetGameObject(guid);
-    if (!node || (loot.skillId != SKILL_MINING && loot.skillId != SKILL_HERBALISM))
+    if (!node)
         return true;
 
-    uint32 required = std::max<uint32>(1, loot.reqSkillValue);
-    bool playerCanGather = player->HasSkill((SkillType)loot.skillId) &&
-        uint32(player->GetSkillValue(loot.skillId)) >= required;
-    if (loot.skillId == SKILL_MINING && !player->HasItemCount(2901, 1))
-        playerCanGather = false;
-    // Do not ask the human to reserve a node they cannot actually use.
-    if (!playerCanGather)
+    bool gatheringNode = loot.skillId == SKILL_MINING || loot.skillId == SKILL_HERBALISM;
+    bool ordinaryChest = node->GetGoType() == GAMEOBJECT_TYPE_CHEST &&
+        !sObjectMgr.IsGameObjectForQuests(guid.GetEntry()) && !gatheringNode;
+    if (!gatheringNode && !ordinaryChest)
         return true;
+
+    uint32 required = gatheringNode ? std::max<uint32>(1, loot.reqSkillValue) : 0;
+    if (gatheringNode)
+    {
+        bool playerCanGather = player->HasSkill((SkillType)loot.skillId) &&
+            uint32(player->GetSkillValue(loot.skillId)) >= required;
+        if (loot.skillId == SKILL_MINING && !player->HasItemCount(2901, 1))
+            playerCanGather = false;
+        // Do not ask the human to reserve a node they cannot actually use.
+        if (!playerCanGather)
+            return true;
+    }
 
     const auto now = std::chrono::steady_clock::now();
-    auto found = gatheringOffers.find(bot->GetGUIDLow());
-    if (found != gatheringOffers.end() && found->second.objectGuid == guid.GetRawValue() &&
+    auto found = sharedObjectOffers.find(bot->GetGUIDLow());
+    if (found != sharedObjectOffers.end() && found->second.objectGuid == guid.GetRawValue() &&
         found->second.playerGuid == player->GetGUIDLow() && found->second.expires > now)
         return found->second.state == "approved";
 
-    GatheringOffer offer;
+    // Only one party bot may ask about a particular node or chest. Other bots
+    // leave it alone while that exact offer is pending, approved, or declined.
+    for (const auto& pair : sharedObjectOffers)
+        if (pair.second.objectGuid == guid.GetRawValue() &&
+            pair.second.playerGuid == player->GetGUIDLow() && pair.second.groupId == bot->GetGroup()->GetId() &&
+            pair.second.expires > now)
+            return false;
+
+    SharedObjectOffer offer;
     offer.botGuid = bot->GetGUIDLow();
     offer.playerGuid = player->GetGUIDLow();
     offer.groupId = bot->GetGroup()->GetId();
@@ -207,15 +228,19 @@ bool PlayerbotSocialActionBroker::CanGatherNode(Player* bot, Player* player, Obj
     offer.skillId = loot.skillId;
     offer.requiredSkill = required;
     offer.nodeName = node->GetName();
+    offer.objectKind = ordinaryChest ? "chest" : "gathering_node";
     offer.state = "pending";
     offer.expires = now + std::chrono::seconds(90);
-    gatheringOffers[offer.botGuid] = offer;
+    sharedObjectOffers[offer.botGuid] = offer;
 
     std::ostringstream text;
-    text << "I see " << offer.nodeName << ". Can I gather it?";
+    if (ordinaryChest)
+        text << "There's " << offer.nodeName << " here. Do you want me to open it?";
+    else
+        text << "I see " << offer.nodeName << ". Can I gather it?";
     bot->GetPlayerbotAI()->SayToParty(text.str(), true);
-    sLog.outString("Living WoW gathering permission bot=%u player=%u node=%u skill=%u required=%u result=offered",
-        offer.botGuid, offer.playerGuid, offer.objectEntry, offer.skillId, offer.requiredSkill);
+    sLog.outString("Living WoW shared object permission bot=%u player=%u object=%u kind=%s skill=%u required=%u result=offered",
+        offer.botGuid, offer.playerGuid, offer.objectEntry, offer.objectKind.c_str(), offer.skillId, offer.requiredSkill);
     return false;
 }
 
@@ -292,15 +317,15 @@ void PlayerbotSocialActionBroker::QueuePartyReturn(Action& action, Player* bot, 
     Report(action);
 }
 
-void PlayerbotSocialActionBroker::AddGatheringCapabilities(Player* bot, Player* player,
+void PlayerbotSocialActionBroker::AddSharedObjectCapabilities(Player* bot, Player* player,
     ChatDirectorCandidate& candidate)
 {
     if (!bot || !player)
         return;
-    auto found = gatheringOffers.find(bot->GetGUIDLow());
-    if (found == gatheringOffers.end())
+    auto found = sharedObjectOffers.find(bot->GetGUIDLow());
+    if (found == sharedObjectOffers.end())
         return;
-    GatheringOffer const& offer = found->second;
+    SharedObjectOffer const& offer = found->second;
     if (offer.state != "pending" || offer.playerGuid != player->GetGUIDLow() ||
         offer.expires <= std::chrono::steady_clock::now() || !bot->GetGroup() ||
         bot->GetGroup() != player->GetGroup() || bot->GetGroup()->GetId() != offer.groupId)
@@ -309,15 +334,19 @@ void PlayerbotSocialActionBroker::AddGatheringCapabilities(Player* bot, Player* 
     for (const std::string& decision : { std::string("allow"), std::string("decline") })
     {
         ChatDirectorCapability capability;
-        capability.capabilityRef = "gather:" + decision + ':' + std::to_string(offer.botGuid) + ':' +
+        std::string prefix = offer.objectKind == "chest" ? "chest" : "gather";
+        capability.capabilityRef = prefix + ':' + decision + ':' + std::to_string(offer.botGuid) + ':' +
             std::to_string(offer.playerGuid) + ':' + std::to_string(offer.objectGuid);
-        capability.type = decision == "allow" ? "gather_node" : "decline_gather_node";
-        capability.itemKind = "gathering_node";
+        capability.type = offer.objectKind == "chest" ?
+            (decision == "allow" ? "open_chest" : "decline_chest") :
+            (decision == "allow" ? "gather_node" : "decline_gather_node");
+        capability.itemKind = offer.objectKind;
         capability.quantity = capability.minQuantity = capability.maxQuantity = 1;
         capability.groupId = offer.groupId;
         capability.actorGuid = offer.botGuid;
         capability.description = decision == "allow" ?
-            "Gather the exact nearby " + offer.nodeName + " after the human granted permission." :
+            (offer.objectKind == "chest" ? "Open the exact nearby " : "Gather the exact nearby ") +
+                offer.nodeName + " after the human granted permission." :
             "Leave the exact nearby " + offer.nodeName + " for the human player.";
         capability.deliveries.push_back("immediate");
         candidate.actionCapabilities.push_back(std::move(capability));
@@ -490,18 +519,22 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             return true;
         action.failureReason = "no safe vendor trip is currently available";
     }
-    else if ((proposal.type == "gather_node" || proposal.type == "decline_gather_node") &&
+    else if ((proposal.type == "gather_node" || proposal.type == "decline_gather_node" ||
+              proposal.type == "open_chest" || proposal.type == "decline_chest") &&
         std::regex_match(proposal.capabilityRef, match,
-            std::regex(R"(gather:(allow|decline):([0-9]+):([0-9]+):([0-9]+))")) &&
-        (uint32)std::stoul(match[2].str()) == bot->GetGUIDLow() &&
-        (uint32)std::stoul(match[3].str()) == player->GetGUIDLow())
+            std::regex(R"((gather|chest):(allow|decline):([0-9]+):([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[3].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[4].str()) == player->GetGUIDLow())
     {
-        uint64 objectGuid = std::stoull(match[4].str());
-        auto offer = gatheringOffers.find(bot->GetGUIDLow());
-        completed = offer != gatheringOffers.end() && offer->second.state == "pending" &&
+        uint64 objectGuid = std::stoull(match[5].str());
+        auto offer = sharedObjectOffers.find(bot->GetGUIDLow());
+        bool approving = proposal.type == "gather_node" || proposal.type == "open_chest";
+        bool kindMatches = offer != sharedObjectOffers.end() &&
+            ((offer->second.objectKind == "chest") == (match[1].str() == "chest"));
+        completed = offer != sharedObjectOffers.end() && kindMatches && offer->second.state == "pending" &&
             offer->second.objectGuid == objectGuid && offer->second.playerGuid == player->GetGUIDLow() &&
             offer->second.expires > std::chrono::steady_clock::now() && bot->GetGroup() == player->GetGroup();
-        if (completed && proposal.type == "gather_node")
+        if (completed && approving)
         {
             ObjectGuid guid(objectGuid);
             LootObject loot(bot, guid);
@@ -558,13 +591,13 @@ uint32 PlayerbotSocialActionBroker::PreferredQuest(uint32 botGuid) const
 void PlayerbotSocialActionBroker::Update()
 {
     const auto now = std::chrono::steady_clock::now();
-    for (auto offer = gatheringOffers.begin(); offer != gatheringOffers.end(); )
+    for (auto offer = sharedObjectOffers.begin(); offer != sharedObjectOffers.end(); )
     {
         Player* bot = sRandomPlayerbotMgr.GetPlayerBot(offer->second.botGuid);
         Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, offer->second.playerGuid));
         if (offer->second.expires <= now || !bot || !player || !bot->GetGroup() ||
             bot->GetGroup() != player->GetGroup() || bot->GetGroup()->GetId() != offer->second.groupId)
-            offer = gatheringOffers.erase(offer);
+            offer = sharedObjectOffers.erase(offer);
         else
             ++offer;
     }
@@ -705,7 +738,7 @@ void PlayerbotSocialActionBroker::Update()
                             bot->GetPlayerbotAI()->DoSpecificAction("bank",
                                 Event("rpg action", "usage 16", nullptr), true) :
                             bot->GetPlayerbotAI()->DoSpecificAction("sell",
-                                Event("rpg action", "usage 12", player), true);
+                                Event("rpg action", "living-wow-safe-vendor", player), true);
                         // Bag-space is a cached Playerbots value. Invalidate it
                         // after each real sell attempt so completion observes
                         // the changed inventory instead of the pre-trip value.

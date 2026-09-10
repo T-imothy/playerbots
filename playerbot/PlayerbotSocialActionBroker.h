@@ -18,8 +18,8 @@ public:
     static PlayerbotSocialActionBroker& instance();
     bool Supports(const std::string& type) const;
     bool Create(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event);
-    bool CanGatherNode(Player* bot, Player* player, ObjectGuid guid);
-    void AddGatheringCapabilities(Player* bot, Player* player, ChatDirectorCandidate& candidate);
+    bool CanUseSharedObject(Player* bot, Player* player, ObjectGuid guid);
+    void AddSharedObjectCapabilities(Player* bot, Player* player, ChatDirectorCandidate& candidate);
     uint32 PreferredQuest(uint32 botGuid) const;
     void Update();
 
@@ -48,7 +48,7 @@ private:
         std::chrono::steady_clock::time_point completedAt;
     };
 
-    struct GatheringOffer
+    struct SharedObjectOffer
     {
         uint32 botGuid = 0;
         uint32 playerGuid = 0;
@@ -58,6 +58,7 @@ private:
         uint32 skillId = 0;
         uint32 requiredSkill = 0;
         std::string nodeName;
+        std::string objectKind;
         std::string state;
         std::chrono::steady_clock::time_point expires;
     };
@@ -74,7 +75,7 @@ private:
     std::map<uint32, std::pair<uint32, std::chrono::steady_clock::time_point>> preferredQuests;
     std::map<uint32, std::chrono::steady_clock::time_point> vendorCooldowns;
     std::set<uint32> vendorPressureNotified;
-    std::map<uint32, GatheringOffer> gatheringOffers;
+    std::map<uint32, SharedObjectOffer> sharedObjectOffers;
     std::chrono::steady_clock::time_point nextVendorScan;
 };
 

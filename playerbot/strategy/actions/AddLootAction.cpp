@@ -113,6 +113,18 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
         return false;
     }
 
+    // Ordinary world chests are shared opportunities in a mixed party. Give
+    // the human the first choice and open only after consent for this exact
+    // object. Quest objects retain their normal deterministic quest behavior.
+    if (guid.IsGameObject())
+    {
+        GameObject* gameObject = bot->GetPlayerbotAI()->GetGameObject(guid);
+        if (gameObject && gameObject->GetGoType() == GAMEOBJECT_TYPE_CHEST &&
+            ai->HasActivePlayerMaster() && requester &&
+            !sPlayerbotSocialActionBroker.CanUseSharedObject(bot, requester, guid))
+            return false;
+    }
+
     float lootDistanceToUse = sPlayerbotAIConfig.lootDistance;
 
     bool isInGroup = group ? true : false;
@@ -236,7 +248,7 @@ bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
     // In a mixed party, reserve a node for a human with the same profession
     // until that player grants this bot permission for the exact world object.
     if (ai->HasActivePlayerMaster() && requester &&
-        !sPlayerbotSocialActionBroker.CanGatherNode(bot, requester, guid))
+        !sPlayerbotSocialActionBroker.CanUseSharedObject(bot, requester, guid))
         return false;
 
     float gatheringDistanceToUse = sPlayerbotAIConfig.gatheringDistance;

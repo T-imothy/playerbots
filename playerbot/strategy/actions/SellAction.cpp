@@ -40,7 +40,12 @@ bool SellAction::Execute(Event& event)
     if (text == "*" || text.empty())
         text = "gray";
 
-    std::list<Item*> items = ai->InventoryParseItems(text, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+    // LIV-71 party maintenance must execute the same authoritative
+    // disposition used during preflight. Re-parsing only "usage 12" excluded
+    // safe BAD_EQUIP/FORCE_GREED stacks that preflight had already approved.
+    std::list<Item*> items = ai->InventoryParseItems(
+        event.getSource() == "rpg action" && text == "living-wow-safe-vendor" ? "inventory" : text,
+        IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
 
     if (event.getSource() == "rpg action")
     {

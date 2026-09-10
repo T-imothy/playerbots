@@ -798,7 +798,7 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
         report.deliveries.push_back("immediate");
         candidate.actionCapabilities.push_back(std::move(report));
         LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
-        if (bagUsage > 80 && pressure.HasQuickMaintenance())
+        if (bagUsage >= 80 && pressure.HasQuickMaintenance())
         {
             ChatDirectorCapability capability;
             capability.capabilityRef = "vendor:" + std::to_string(bot->GetGUIDLow()) + ':' +
@@ -813,7 +813,7 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
                 " vendor stacks and " + std::to_string(pressure.bankStacks) + " bank stacks.";
             candidate.actionCapabilities.push_back(std::move(capability));
         }
-        sPlayerbotSocialActionBroker.AddGatheringCapabilities(bot, speaker, candidate);
+        sPlayerbotSocialActionBroker.AddSharedObjectCapabilities(bot, speaker, candidate);
     }
 
 }
