@@ -1623,6 +1623,21 @@ static bool HasActiveProgressionQuestUseItem(Player* bot)
     return false;
 }
 
+// An outstanding quest must not seize a trainer route that the normal travel
+// strategy still owns. Its original expiry, retries, eligibility, and movement
+// rules remain authoritative; this grants neither movement nor extra lifetime.
+static bool LivingHasActiveTrainingRoute(TravelTarget* target)
+{
+    if (!target || !target->GetDestination() ||
+        target->GetDestination()->GetPurpose() != TravelDestinationPurpose::Trainer)
+        return false;
+    const TravelStatus status = target->GetStatus();
+    return (status == TravelStatus::TRAVEL_STATUS_READY ||
+        status == TravelStatus::TRAVEL_STATUS_TRAVEL ||
+        status == TravelStatus::TRAVEL_STATUS_WORK) &&
+        target->GetTimeLeft() > 0 && target->IsConditionsActive();
+}
+
 void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time_point now)
 {
     if (nextHealthSample.time_since_epoch().count() != 0 && now < nextHealthSample)
@@ -1896,12 +1911,28 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         bool inventoryBlocked = bagUsed >= 95;
         bool inventoryStalled = inventoryBlocked && noActions &&
             stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
-        bool suspected = !excluded && (movementStalled || actionStarved || questStalled || inventoryStalled);
+        const bool activeTrainingRoute = LivingHasActiveTrainingRoute(observedTravelTarget);
+        // Recovery may have selected a quest before ordinary travel selected a
+        // trainer. Release that stale recovery ownership without resetting the
+        // new target, teaching spells, or recording an errand completion.
+        if (activeTrainingRoute && state.recoveryStep > 0)
+        {
+            state.recoveryStep = 0;
+            state.questItemFollowup = false;
+            state.recoveryQuestId = 0;
+            state.recoveryStartedAt = std::chrono::steady_clock::time_point();
+            state.recoveryInteractionAttempts = 0;
+            state.lastRecoveryInteraction = std::chrono::steady_clock::time_point();
+            state.recoveryResult = "yielded_to_training_route";
+        }
+        bool suspected = !excluded && !activeTrainingRoute &&
+            (movementStalled || actionStarved || questStalled || inventoryStalled);
         std::string classification = "active";
         if (!bot->IsAlive()) classification = "dead";
         else if (bot->IsInCombat()) classification = "combat";
         else if (bot->IsTaxiFlying() || bot->GetTransport()) classification = "transport";
         else if (playerStay || humanDirectedGroup || botOnlyGroupFollower) classification = "group_wait";
+        else if (activeTrainingRoute) classification = "training_trip";
         else if (inventoryStalled) classification = "inventory_blocked";
         else if (questStalled) classification = "completed_quest_awaiting_turn_in";
         else if (movementStalled) classification = "movement_stalled";
