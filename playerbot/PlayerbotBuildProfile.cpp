@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotBuildProfile.h"
+#include "playerbot/BuildWorldSafety.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomItemMgr.h"
@@ -464,7 +465,7 @@ void PlayerbotBuildProfileMgr::EquipSavedSet(Player* bot, const char* buildSlot)
 
 void PlayerbotBuildProfileMgr::Update(Player* bot)
 {
-    if (!bot || !bot->GetPlayerbotAI()) return;
+    if (!living_build_safety::HasWorld(bot) || !bot->GetPlayerbotAI()) return;
     time_t now = time(NULL);
     if (now - lastPolicyLoad >= 5)
     {
@@ -489,8 +490,7 @@ void PlayerbotBuildProfileMgr::Update(Player* bot)
 
 void PlayerbotBuildProfileMgr::ReconcileAvailableBuild(Player* bot)
 {
-    if (!bot || !IsActive() || bot->GetLevel() < 10 || bot->IsInCombat() || !bot->IsAlive() ||
-        bot->IsTaxiFlying() || bot->InBattleGround() || (bot->GetMap() && bot->GetMap()->IsDungeon())) return;
+    if (!IsActive() || !living_build_safety::CanReconcile(bot)) return;
     LivingBotBuildProfile profile = Get(bot);
     if (profile.partySessionId || (profile.activeReason != "main" && profile.activeReason != "ability_fallback"))
         return;

@@ -430,7 +430,7 @@ PlayerbotAI::~PlayerbotAI()
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
-    if (strategyResetRequested)
+    if (strategyResetRequested && bot->IsInWorld() && !bot->IsBeingTeleported())
     {
         const bool autoLoad = strategyResetAutoLoad;
         const std::string postNonCombatChanges = strategyResetPostNonCombatChanges;
@@ -441,7 +441,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         if (!postNonCombatChanges.empty())
             ChangeStrategy(postNonCombatChanges, BotState::BOT_STATE_NON_COMBAT);
     }
-    sPlayerbotPartyCombatCoordinator.Update(bot);
+    // Do not run build/role reconciliation before the later map-transfer
+    // acknowledgement path has restored this player's world membership.
+    if (bot->IsInWorld() && !bot->IsBeingTeleported())
+        sPlayerbotPartyCombatCoordinator.Update(bot);
     AiObjectContext* context = aiObjectContext;
     std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
     auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAI " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());

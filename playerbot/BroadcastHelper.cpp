@@ -758,6 +758,12 @@ bool BroadcastHelper::BroadcastGuildGroupOrRaidInvite(
     Guild* guild
 )
 {
+    // These stock announcements run on each autonomous bot-to-bot invitation,
+    // not on a real guild recruitment/event decision. Chat v2 owns announcements;
+    // suppress only this legacy output, leaving native group invitations intact.
+    if (sPlayerbotAIConfig.chatDirectorV2 && sPlayerbotAIConfig.chatDirectorSuppressLegacyOperationalChat)
+        return false;
+
     std::map<std::string, std::string> placeholders;
     placeholders["%name"] = player->GetName();
     AreaTableEntry const* current_area = ai->GetCurrentArea();
