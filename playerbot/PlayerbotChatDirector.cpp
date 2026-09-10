@@ -1513,7 +1513,11 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
             }
             json << "]}";
         }
-        json << "]}";
+        Player* candidateBot = sRandomPlayerbotMgr.GetPlayerBot(candidate.guid);
+        Player* conversationSpeaker = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, event.speakerGuid));
+        json << "],\"party_combat_state\":"
+             << (candidateBot ? sPlayerbotPartyCombatCoordinator.GetCandidateJson(candidateBot, conversationSpeaker) : "null")
+             << "}";
     }
     json << "],\"active_economic_quotes\":[";
     sPlayerbotActionBroker.AppendEconomicQuotesJson(event.speakerGuid, event.candidates, json);
@@ -1704,9 +1708,17 @@ void PlayerbotChatDirector::Update()
         for (const ChatDirectorActionProposal& proposal : proposals)
         {
             bool social = sPlayerbotSocialActionBroker.Supports(proposal.type);
+            bool partyCombat = sPlayerbotPartyCombatCoordinator.SupportsProposal(proposal.type);
             PlayerbotActionResult actionResult;
             bool made = false;
-            if (social)
+            if (partyCombat)
+            {
+                Player* bot = sRandomPlayerbotMgr.GetPlayerBot(proposal.botGuid);
+                Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, proposal.targetGuid));
+                made = bot && player && sPlayerbotPartyCombatCoordinator.ExecuteProposal(bot, player,
+                    proposal.type, proposal.capabilityRef, proposal.intent) == "completed";
+            }
+            else if (social)
                 made = sPlayerbotSocialActionBroker.Create(proposal, it->event);
             else
             {
@@ -1714,7 +1726,7 @@ void PlayerbotChatDirector::Update()
                 made = actionResult.created;
             }
             created[proposal.proposalId] = made;
-            if (made || social || (proposal.type != "give_item" && proposal.type != "sell_item" &&
+            if (made || social || partyCombat || (proposal.type != "give_item" && proposal.type != "sell_item" &&
                 proposal.type != "buy_item" && proposal.type != "accept_player_gift" &&
                 proposal.type != "conjure_water"))
                 continue;

@@ -25,6 +25,7 @@
 #include "generic/GuardStrategy.h"
 #include "generic/CastTimeStrategy.h"
 #include "generic/ThreatStrategy.h"
+#include "generic/LivingPartyCombatStrategy.h"
 #include "generic/TellTargetStrategy.h"
 #include "generic/AttackEnemyPlayersStrategy.h"
 #include "generic/MarkRtiStrategy.h"
@@ -87,6 +88,7 @@ namespace ai
             creators["potions"] = [](PlayerbotAI* ai) { return new UsePotionsStrategy(ai); };
             creators["cast time"] = [](PlayerbotAI* ai) { return new CastTimeStrategy(ai); };
             creators["threat"] = [](PlayerbotAI* ai) { return new ThreatStrategy(ai); };
+            creators["living party combat"] = [](PlayerbotAI* ai) { return new LivingPartyCombatStrategy(ai); };
             creators["tell target"] = [](PlayerbotAI* ai) { return new TellTargetStrategy(ai); };
             creators["pvp"] = [](PlayerbotAI* ai) { return new AttackEnemyPlayersStrategy(ai); };
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnStrategy(ai); };

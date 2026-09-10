@@ -254,6 +254,7 @@ PlayerbotAI::~PlayerbotAI()
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
+    sPlayerbotPartyCombatCoordinator.Update(bot);
     AiObjectContext* context = aiObjectContext;
     std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
     auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAI " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
@@ -1372,6 +1373,9 @@ bool PlayerbotAI::IsAllowedCommand(std::string text)
 void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fromPlayer, const uint32 lang)
 {
     std::string filtered = text;
+
+    if (lang == LANG_ADDON && sPlayerbotPartyCombatCoordinator.HandleAddonMessage(bot, &fromPlayer, filtered))
+        return;
 
     // Public chat reaches Playerbots through several manager-level fan-out
     // paths before the normal outgoing packet observer. Never let one public
@@ -2542,6 +2546,7 @@ void PlayerbotAI::ResetStrategies(bool autoLoad)
     }
 
     AiFactory::AddDefaultCombatStrategies(bot, this, engines[(uint8)BotState::BOT_STATE_COMBAT]);
+    engines[(uint8)BotState::BOT_STATE_COMBAT]->addStrategy("living party combat");
     AiFactory::AddDefaultNonCombatStrategies(bot, this, engines[(uint8)BotState::BOT_STATE_NON_COMBAT]);
     AiFactory::AddDefaultDeadStrategies(bot, this, engines[(uint8)BotState::BOT_STATE_DEAD]);
     AiFactory::AddDefaultReactionStrategies(bot, this, reactionEngine);
@@ -2586,6 +2591,12 @@ bool PlayerbotAI::IsMelee(Player* player, bool inGroup)
 
 bool PlayerbotAI::IsTank(Player* player, bool inGroup)
 {
+    if (player && player->GetGroup() && sPlayerbotPartyCombatCoordinator.GetPolicy().mode == "active")
+    {
+        LivingPartyRoleState role = sPlayerbotPartyCombatCoordinator.GetRole(player);
+        if (role.primary == LivingPartyRole::Tank) return true;
+        if (role.primary == LivingPartyRole::Healer || role.primary == LivingPartyRole::Damage) return false;
+    }
     PlayerbotAI* botAi = player->GetPlayerbotAI();
     if (botAi)
     {
@@ -2601,6 +2612,13 @@ bool PlayerbotAI::IsTank(Player* player, bool inGroup)
 
 bool PlayerbotAI::IsHeal(Player* player, bool inGroup)
 {
+    if (player && player->GetGroup() && sPlayerbotPartyCombatCoordinator.GetPolicy().mode == "active" &&
+        sPlayerbotPartyCombatCoordinator.GetPolicy().healerDuty)
+    {
+        LivingPartyRoleState role = sPlayerbotPartyCombatCoordinator.GetRole(player);
+        if (role.primary == LivingPartyRole::Healer) return true;
+        if (role.primary == LivingPartyRole::Tank || role.primary == LivingPartyRole::Damage) return false;
+    }
     PlayerbotAI* botAi = player->GetPlayerbotAI();
     if (botAi)
     {

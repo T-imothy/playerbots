@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PlayerbotPartyCombatCoordinator.h"
 
 #include "Spells/Spell.h"
 #include "Server/WorldPacket.h"
