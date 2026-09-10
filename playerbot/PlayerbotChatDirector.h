@@ -126,6 +126,12 @@ struct ChatDirectorCandidate
     uint32 petitionRequired = 0;
     std::vector<std::string> signedPartyMembers;
     std::vector<std::string> eligiblePetitionPartyMembers;
+    uint32 volunteerPetitionOwnerGuid = 0;
+    std::string volunteerPetitionOwnerName;
+    uint32 volunteerPetitionGuid = 0;
+    std::string volunteerPetitionName;
+    uint32 volunteerPetitionSignatures = 0;
+    uint32 volunteerPetitionRequired = 0;
     uint32 guildId = 0;
     std::string guildName;
     uint32 guildLeaderGuid = 0;

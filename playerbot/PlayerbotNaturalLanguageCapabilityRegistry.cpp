@@ -27,10 +27,12 @@ PlayerbotNaturalLanguageCapabilityRegistry::PlayerbotNaturalLanguageCapabilityRe
         "accept_group_invite", "share_quest", "accept_party_quest_plan", "meet_player",
         "vendor_bags", "gather_node", "decline_gather_node", "open_chest", "decline_chest",
         "reserve_gathering_nodes", "release_gathering_nodes", "ask_gathering_nodes",
-        "grant_party_free_time", "resume_party_assist", "solicit_petition_signatures"
+        "grant_party_free_time", "resume_party_assist", "solicit_petition_signatures",
+        "volunteer_for_guild_charter"
     };
     for (const char* key : socialRoutine)
-        Register(key, key == std::string("solicit_petition_signatures") ? "socialGovernance" : "grouping",
+        Register(key, (key == std::string("solicit_petition_signatures") ||
+            key == std::string("volunteer_for_guild_charter")) ? "socialGovernance" : "grouping",
             "routine", "contextual_party_authority", "low_risk", LivingCapabilityExecutor::social);
 
     const char* socialConsequential[] = {"pass_leadership", "leave_group", "leave_ai_party_for_player"};

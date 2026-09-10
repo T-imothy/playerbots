@@ -24,6 +24,7 @@ public:
     // Used while grounding chat capabilities so a leader can queue broader
     // personal free time behind an already-authorized maintenance trip.
     bool HasActiveVendorTrip(uint32 botGuid) const;
+    uint32 PendingPetitionVolunteers(uint32 petitionGuid) const;
     void Update();
 
 private:
@@ -36,6 +37,7 @@ private:
         std::string capabilityRef;
         uint32 botGuid = 0;
         uint32 playerGuid = 0;
+        uint32 subjectGuid = 0;
         uint32 groupId = 0;
         uint32 questId = 0;
         uint8 initialBagUsage = 0;
@@ -52,6 +54,7 @@ private:
         std::chrono::steady_clock::time_point serviceReadyAt;
         std::chrono::steady_clock::time_point stateSince;
         std::chrono::steady_clock::time_point lastSellAttempt;
+        std::chrono::steady_clock::time_point lastActionAttempt;
         std::chrono::steady_clock::time_point completedAt;
     };
 

@@ -255,6 +255,133 @@ static void PopulatePartyPetitionMembers(Player* bot, Group* group, uint32 petit
     }
 }
 
+static bool PartyContainsRealHuman(Group* group)
+{
+    if (!group)
+        return false;
+    for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
+    {
+        Player* member = reference->getSource();
+        if (member && member->IsInWorld() && member->isRealPlayer())
+            return true;
+    }
+    return false;
+}
+
+static bool FindOwnedGuildPetition(Player* owner, uint32& petitionGuid, std::string& petitionName,
+    uint32& signatures, uint32& required)
+{
+    petitionGuid = signatures = 0;
+    petitionName.clear();
+    required = sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS);
+    if (!owner || owner->GetGuildId() || owner->GetGuildIdInvited())
+        return false;
+    Item* petition = owner->GetItemByEntry(5863);
+    if (!petition)
+        return false;
+    petitionGuid = petition->GetObjectGuid().GetCounter();
+    auto petitionRow = CharacterDatabase.PQuery(
+        "SELECT name FROM petition WHERE petitionguid = '%u' AND ownerguid = '%u'",
+        petitionGuid, owner->GetGUIDLow());
+    if (!petitionRow)
+        return false;
+    petitionName = petitionRow->Fetch()[0].GetString();
+    auto signatureRows = CharacterDatabase.PQuery(
+        "SELECT playerguid FROM petition_sign WHERE petitionguid = '%u'", petitionGuid);
+    signatures = signatureRows ? signatureRows->GetRowCount() : 0;
+    return signatures < required;
+}
+
+static void PopulatePublicPetitionVolunteer(Player* bot, Player* speaker, const std::string& message,
+    ChatDirectorCandidate& candidate)
+{
+    if (!bot || !speaker || !bot->GetSession() || bot == speaker || bot->GetTeam() != speaker->GetTeam() ||
+        bot->GetMapId() != speaker->GetMapId() || !bot->IsAlive() || bot->IsInCombat() ||
+        bot->GetGuildId() || bot->GetGuildIdInvited() || bot->InBattleGround() ||
+        bot->IsTaxiFlying() || bot->GetTransport() || sPlayerbotRendezvousManager.IsActive(
+            bot->GetGUIDLow(), speaker->GetGUIDLow()))
+        return;
+
+    std::string lowered = boost::algorithm::to_lower_copy(message);
+    if ((lowered.find("charter") == std::string::npos && lowered.find("petition") == std::string::npos) ||
+        (lowered.find("sign") == std::string::npos && lowered.find("signature") == std::string::npos))
+        return;
+
+    Group* botGroup = bot->GetGroup();
+    if (botGroup && PartyContainsRealHuman(botGroup))
+        return;
+
+    std::vector<Player*> owners;
+    owners.push_back(speaker);
+    if (Group* speakerGroup = speaker->GetGroup())
+        for (GroupReference* reference = speakerGroup->GetFirstMember(); reference; reference = reference->next())
+        {
+            Player* member = reference->getSource();
+            if (member && member != speaker)
+                owners.push_back(member);
+        }
+
+    Player* selectedOwner = nullptr;
+    uint32 selectedPetition = 0, selectedSignatures = 0, selectedRequired = 0;
+    std::string selectedName;
+    for (Player* owner : owners)
+    {
+        uint32 petitionGuid = 0, signatures = 0, required = 0;
+        std::string petitionName;
+        if (!owner || !owner->GetPlayerbotAI() ||
+            !FindOwnedGuildPetition(owner, petitionGuid, petitionName, signatures, required))
+            continue;
+        bool explicitlyNamed = boost::algorithm::icontains(message, owner->GetName());
+        if (!selectedOwner || explicitlyNamed)
+        {
+            selectedOwner = owner;
+            selectedPetition = petitionGuid;
+            selectedName = petitionName;
+            selectedSignatures = signatures;
+            selectedRequired = required;
+        }
+        if (explicitlyNamed)
+            break;
+    }
+    if (!selectedOwner)
+        return;
+
+    uint32 pendingVolunteers = sPlayerbotSocialActionBroker.PendingPetitionVolunteers(selectedPetition);
+    if (selectedSignatures + pendingVolunteers >= selectedRequired)
+        return;
+
+    auto priorSignature = CharacterDatabase.PQuery(
+        "SELECT playerguid FROM petition_sign WHERE player_account = '%u' AND petitionguid = '%u'",
+        bot->GetSession()->GetAccountId(), selectedPetition);
+    if (priorSignature)
+        return;
+
+    candidate.volunteerPetitionOwnerGuid = selectedOwner->GetGUIDLow();
+    candidate.volunteerPetitionOwnerName = selectedOwner->GetName();
+    candidate.volunteerPetitionGuid = selectedPetition;
+    candidate.volunteerPetitionName = selectedName;
+    candidate.volunteerPetitionSignatures = selectedSignatures;
+    candidate.volunteerPetitionRequired = selectedRequired;
+
+    ChatDirectorCapability capability;
+    std::ostringstream ref;
+    ref << "guild:petition-volunteer:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow()
+        << ':' << selectedOwner->GetGUIDLow() << ':' << selectedPetition;
+    capability.capabilityRef = ref.str();
+    capability.type = "volunteer_for_guild_charter";
+    capability.itemName = selectedName;
+    capability.itemKind = "guild_charter";
+    capability.demandReason = std::string("charter_owner:") + selectedOwner->GetName();
+    capability.quantity = capability.minQuantity = capability.maxQuantity = 1;
+    capability.actorGuid = bot->GetGUIDLow();
+    capability.questId = selectedPetition;
+    capability.description = std::string("Volunteer to sign ") + selectedOwner->GetName() + "'s existing " + selectedName +
+        " guild charter. Whisper the owner, rendezvous through the safe travel manager, sign only through the normal "
+        "petition exchange, and then return to the previous activity.";
+    capability.deliveries.push_back("immediate");
+    candidate.actionCapabilities.push_back(std::move(capability));
+}
+
 static void PopulateGuildState(Player* bot, Player* speaker, ChatDirectorCandidate& candidate)
 {
     if (!bot || !speaker || !bot->GetGuildId())
@@ -1989,6 +2116,7 @@ void PlayerbotChatDirector::Observe(Player* bot, uint32 msgType, uint32 speakerG
         Player* speaker = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, speakerGuid));
         PopulateGrounding(bot, speaker, message, candidate);
         PopulateSocialState(bot, speaker, candidate);
+        PopulatePublicPetitionVolunteer(bot, speaker, message, candidate);
     if (PlayerbotAI::IsTank(bot, false)) candidate.role = "tank";
     else if (PlayerbotAI::IsHeal(bot, false)) candidate.role = "healer";
     else candidate.role = "damage";
@@ -2341,7 +2469,13 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
             if (signerIndex) json << ',';
             json << "\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.eligiblePetitionPartyMembers[signerIndex]) << "\"";
         }
-        json << "]},\"guild_state\":{\"guild_id\":" << candidate.guildId
+        json << "]},\"volunteer_opportunity\":{\"owner_guid\":" << candidate.volunteerPetitionOwnerGuid
+             << ",\"owner_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.volunteerPetitionOwnerName)
+             << "\",\"petition_guid\":" << candidate.volunteerPetitionGuid << ",\"charter_name\":\""
+             << PlayerbotLLMInterface::SanitizeForJson(candidate.volunteerPetitionName)
+             << "\",\"signatures\":" << candidate.volunteerPetitionSignatures
+             << ",\"required_signatures\":" << candidate.volunteerPetitionRequired
+             << "},\"guild_state\":{\"guild_id\":" << candidate.guildId
              << ",\"guild_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.guildName)
              << "\",\"leader_guid\":" << candidate.guildLeaderGuid
              << ",\"rank\":" << candidate.guildRank
@@ -2367,7 +2501,9 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
             (candidate.groupState.memberCount << 24) ^ (candidate.inCombat ? 0x40000000 : 0) ^
             (uint32)candidate.actionCapabilities.size() ^ (candidate.petitionSignatures << 8) ^
             (uint32)candidate.eligiblePetitionPartyMembers.size() ^ candidate.guildId ^
-            (candidate.guildLeaderGuid << 3) ^ (candidate.guildRank << 16);
+            (candidate.guildLeaderGuid << 3) ^ (candidate.guildRank << 16) ^
+            candidate.volunteerPetitionOwnerGuid ^ (candidate.volunteerPetitionGuid << 5) ^
+            (candidate.volunteerPetitionSignatures << 20);
         json << ",\"state_revision\":" << stateRevision << ",\"action_capabilities\":[";
         bool firstCapability = true;
         for (const ChatDirectorCapability& capability : candidate.actionCapabilities)

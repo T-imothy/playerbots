@@ -32,7 +32,7 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
         type == "request_leader_invite" || type == "accept_group_invite" ||
         type == "pass_leadership" || type == "leave_group" ||
         type == "leave_ai_party_for_player" ||
-        type == "solicit_petition_signatures" ||
+        type == "solicit_petition_signatures" || type == "volunteer_for_guild_charter" ||
         type == "transfer_guild_leadership" ||
         type == "invite_to_guild" || type == "promote_guild_member" ||
         type == "demote_guild_member" || type == "remove_guild_member" ||
@@ -76,6 +76,46 @@ static bool GroupHasRealHuman(Group* group)
             return true;
     }
     return false;
+}
+
+static bool ValidatePetitionVolunteer(Player* bot, Player* owner, uint32 petitionGuid,
+    uint32& signatureCount, uint32& required)
+{
+    signatureCount = 0;
+    required = sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS);
+    if (!bot || !owner || bot == owner || !bot->GetSession() || !bot->IsInWorld() || !owner->IsInWorld() ||
+        bot->GetTeam() != owner->GetTeam() || bot->GetMapId() != owner->GetMapId() ||
+        !bot->IsAlive() || bot->IsInCombat() || bot->GetGuildId() || bot->GetGuildIdInvited() ||
+        bot->InBattleGround() || bot->IsTaxiFlying() || bot->GetTransport() ||
+        owner->GetGuildId() || owner->GetGuildIdInvited())
+        return false;
+    Item* petition = owner->GetItemByEntry(5863);
+    if (!petition || petition->GetObjectGuid().GetCounter() != petitionGuid)
+        return false;
+    auto petitionRow = CharacterDatabase.PQuery(
+        "SELECT ownerguid FROM petition WHERE petitionguid = '%u' AND ownerguid = '%u'",
+        petitionGuid, owner->GetGUIDLow());
+    if (!petitionRow)
+        return false;
+    auto priorSignature = CharacterDatabase.PQuery(
+        "SELECT playerguid FROM petition_sign WHERE player_account = '%u' AND petitionguid = '%u'",
+        bot->GetSession()->GetAccountId(), petitionGuid);
+    if (priorSignature)
+        return false;
+    auto signatures = CharacterDatabase.PQuery(
+        "SELECT playerguid FROM petition_sign WHERE petitionguid = '%u'", petitionGuid);
+    signatureCount = signatures ? signatures->GetRowCount() : 0;
+    return signatureCount < required;
+}
+
+static bool HasPetitionSignature(Player* bot, uint32 petitionGuid)
+{
+    if (!bot || !bot->GetSession())
+        return false;
+    auto signature = CharacterDatabase.PQuery(
+        "SELECT playerguid FROM petition_sign WHERE player_account = '%u' AND petitionguid = '%u'",
+        bot->GetSession()->GetAccountId(), petitionGuid);
+    return signature != nullptr;
 }
 
 static bool LeaveAiOnlyParty(Player* bot, uint32 expectedGroupId)
@@ -648,6 +688,52 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living party quest plan", std::to_string(questId), player), true);
         }
     }
+    else if (proposal.type == "volunteer_for_guild_charter" &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(guild:petition-volunteer:([0-9]+):([0-9]+):([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow())
+    {
+        uint32 ownerGuid = (uint32)std::stoul(match[3].str());
+        uint32 petitionGuid = (uint32)std::stoul(match[4].str());
+        Player* owner = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, ownerGuid));
+        uint32 signatures = 0, required = 0;
+        Group* group = bot->GetGroup();
+        if (group && GroupHasRealHuman(group))
+            action.failureReason = "this volunteer is now helping a human-led party";
+        else if (group && !LeaveAiOnlyParty(bot, group->GetId()))
+            action.failureReason = "this volunteer could not safely leave its autonomous party";
+        else if (!ValidatePetitionVolunteer(bot, owner, petitionGuid, signatures, required))
+            action.failureReason = "the charter or volunteer eligibility changed before travel began";
+        else if (signatures + PendingPetitionVolunteers(petitionGuid) >= required)
+            action.failureReason = "the charter already has enough signed or traveling volunteers";
+        else
+        {
+            PlayerbotRendezvousManager::RequestResult result = sPlayerbotRendezvousManager.Request(
+                bot, owner, action.actionId, true);
+            if (result == PlayerbotRendezvousManager::RequestResult::accepted ||
+                result == PlayerbotRendezvousManager::RequestResult::ordinary_travel)
+            {
+                action.subjectGuid = ownerGuid;
+                action.questId = petitionGuid;
+                action.state = "traveling_for_charter";
+                action.stateSince = std::chrono::steady_clock::now();
+                action.expires = action.stateSince + std::chrono::minutes(3);
+                actions[action.actionId] = action;
+                bot->Whisper("I heard you're looking for charter signatures. I'm on my way.",
+                    LANG_UNIVERSAL, owner->GetObjectGuid());
+                owner->Whisper("Great. Meet me here and I'll show you the charter.",
+                    LANG_UNIVERSAL, bot->GetObjectGuid());
+                sLog.outString("Living WoW charter volunteer event=travel_started bot=%u owner=%u requester=%u petition=%u",
+                    bot->GetGUIDLow(), ownerGuid, player->GetGUIDLow(), petitionGuid);
+                Report(actions[action.actionId]);
+                return true;
+            }
+            action.failureReason = result == PlayerbotRendezvousManager::RequestResult::unsafe ?
+                "there is no observer-safe route to the charter owner" :
+                "the volunteer cannot travel to the charter owner right now";
+        }
+    }
     else if (proposal.type == "solicit_petition_signatures" &&
         std::regex_match(proposal.capabilityRef, match,
             std::regex(R"(guild:petition-solicit:([0-9]+):([0-9]+):([0-9]+):([0-9]+))")) &&
@@ -965,6 +1051,22 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
                 offer->second.expires = std::chrono::steady_clock::now() + std::chrono::minutes(2);
                 completed = bot->GetPlayerbotAI()->GetAiObjectContext()->
                     GetValue<LootObjectStack*>("available loot")->Get()->Add(guid);
+                if (completed)
+                {
+                    // The offer may have been made while the bot was away on a
+                    // city errand. Merely adding the old object to available
+                    // loot let party follow win and produced a truthful queue
+                    // acknowledgement with no visible movement. Reissue the
+                    // exact-object loot movement immediately; normal loot
+                    // validation still rejects a despawned or inaccessible GO.
+                    bot->GetPlayerbotAI()->StopMoving();
+                    if (bot->GetPlayerbotAI()->CanDoSpecificAction("move to loot", true, true))
+                        bot->GetPlayerbotAI()->DoSpecificAction("move to loot",
+                            Event("living shared object approval", guid, player), true);
+                    sLog.outString("Living WoW shared object permission bot=%u player=%u object=%u kind=%s result=movement_reissued",
+                        bot->GetGUIDLow(), player->GetGUIDLow(), offer->second.objectEntry,
+                        offer->second.objectKind.c_str());
+                }
             }
         }
         else if (completed)
@@ -1002,6 +1104,16 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
     actions[action.actionId] = action;
     Report(actions[action.actionId]);
     return completed;
+}
+
+uint32 PlayerbotSocialActionBroker::PendingPetitionVolunteers(uint32 petitionGuid) const
+{
+    uint32 count = 0;
+    for (const auto& pair : actions)
+        if (pair.second.type == "volunteer_for_guild_charter" && pair.second.questId == petitionGuid &&
+            (pair.second.state == "traveling_for_charter" || pair.second.state == "waiting_for_charter"))
+            ++count;
+    return count;
 }
 
 uint32 PlayerbotSocialActionBroker::PreferredQuest(uint32 botGuid) const
@@ -1095,7 +1207,66 @@ void PlayerbotSocialActionBroker::Update()
     for (auto& pair : actions)
     {
         Action& action = pair.second;
-        if (action.state == "waiting_to_leave_ai_party")
+        if (action.state == "traveling_for_charter" || action.state == "waiting_for_charter")
+        {
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
+            Player* owner = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.subjectGuid));
+            bool signedNow = HasPetitionSignature(bot, action.questId);
+            if (signedNow)
+            {
+                action.state = "completed";
+                action.completedAt = now;
+                if (bot && owner)
+                {
+                    bot->Whisper("Signed. Good luck with the guild!", LANG_UNIVERSAL, owner->GetObjectGuid());
+                    owner->Whisper("Thanks for signing.", LANG_UNIVERSAL, bot->GetObjectGuid());
+                    sPlayerbotRendezvousManager.BeginDeparture(bot->GetGUIDLow(), owner->GetGUIDLow(),
+                        "charter_signed");
+                }
+                sLog.outString("Living WoW charter volunteer event=signed bot=%u owner=%u requester=%u petition=%u",
+                    action.botGuid, action.subjectGuid, action.playerGuid, action.questId);
+                Report(action);
+            }
+            else if (!bot || !owner || !bot->IsInWorld() || !owner->IsInWorld() || now >= action.expires)
+            {
+                if (bot && owner)
+                    sPlayerbotRendezvousManager.Cancel(bot->GetGUIDLow(), owner->GetGUIDLow(),
+                        "charter_recruitment_expired");
+                action.state = now >= action.expires ? "expired" : "failed";
+                action.failureReason = now >= action.expires ?
+                    "the charter meetup expired before the normal petition exchange completed" :
+                    "the charter owner or volunteer became unavailable";
+                Report(action);
+            }
+            else
+            {
+                uint32 signatures = 0, required = 0;
+                if (!ValidatePetitionVolunteer(bot, owner, action.questId, signatures, required))
+                {
+                    action.state = "rejected";
+                    action.failureReason = signatures >= required ?
+                        "the charter received enough signatures before this volunteer arrived" :
+                        "the charter or volunteer eligibility changed during the meetup";
+                    sPlayerbotRendezvousManager.Cancel(bot->GetGUIDLow(), owner->GetGUIDLow(),
+                        "charter_state_changed");
+                    Report(action);
+                }
+                else if ((sPlayerbotRendezvousManager.State(bot->GetGUIDLow(), owner->GetGUIDLow()) == "arrived" ||
+                          bot->IsWithinDistInMap(owner, INTERACTION_DISTANCE)) &&
+                         (!action.lastActionAttempt.time_since_epoch().count() ||
+                          std::chrono::duration_cast<std::chrono::seconds>(now - action.lastActionAttempt).count() >= 2))
+                {
+                    action.state = "waiting_for_charter";
+                    action.lastActionAttempt = now;
+                    bool offered = owner->GetPlayerbotAI() && owner->GetPlayerbotAI()->DoSpecificAction(
+                        "offer petition", Event("living charter volunteer", bot->GetObjectGuid(), owner), true);
+                    sLog.outString("Living WoW charter volunteer event=petition_offered bot=%u owner=%u requester=%u petition=%u result=%s",
+                        bot->GetGUIDLow(), owner->GetGUIDLow(), action.playerGuid, action.questId,
+                        offered ? "offered" : "retrying");
+                }
+            }
+        }
+        else if (action.state == "waiting_to_leave_ai_party")
         {
             Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
             Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
