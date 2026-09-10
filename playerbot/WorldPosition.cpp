@@ -692,10 +692,10 @@ WorldPosition WorldPosition::RandomPointOnTrans(GenericTransport* transport, uin
             if (posPath.empty())
                 continue;
 
-            WorldPosition wantedEnd = pos;
-            wantedEnd.CalculatePassengerOffset(transport);
-
-            if (wantedEnd.sqDistance(posPath.back()) > 5.0f)
+            // getPathStepFrom already returns world coordinates for passengers.
+            // Comparing a deck-local destination to that world endpoint rejects
+            // valid boarding paths on every transport away from the world origin.
+            if (pos.sqDistance(posPath.back()) > 25.0f)
                 continue;
 
             bestPath = posPath;
@@ -710,6 +710,8 @@ WorldPosition WorldPosition::RandomPointOnTrans(GenericTransport* transport, uin
 
     path = bestPath;
 
+    if (botForPath && path.empty())
+        return WorldPosition();
     return bestPos;
 }
 
@@ -993,6 +995,9 @@ std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& s
     type = pathfinder->getPathType();
 
     std::vector<WorldPosition> retvec = fromPointsArray(points);
+
+    if (retvec.empty())
+        return {};
 
     if (type == PATHFIND_INCOMPLETE)
     {
