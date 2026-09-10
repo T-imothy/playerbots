@@ -1388,6 +1388,9 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 {
     std::string filtered = text;
 
+    if (lang == LANG_ADDON && sPlayerbotChatDirector.HandleGuildAddonMessage(bot, &fromPlayer, filtered))
+        return;
+
     if (lang == LANG_ADDON && sPlayerbotPartyCombatCoordinator.HandleAddonMessage(bot, &fromPlayer, filtered))
         return;
 

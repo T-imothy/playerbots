@@ -27,6 +27,26 @@
 #include <sstream>
 #include <thread>
 
+static std::string ReadGuildPolicyMode()
+{
+    std::ifstream input("/srv/living-wow/config/guilds.json");
+    if (!input.good())
+        return "observe";
+    std::ostringstream value;
+    value << input.rdbuf();
+    std::smatch match;
+    const std::string text = value.str();
+    if (std::regex_search(text, match, std::regex("\\\"mode\\\"\\s*:\\s*\\\"(off|observe|active)\\\"")))
+        return match[1].str();
+    return "observe";
+}
+
+static std::string GuildFocus(uint32 guildId, uint32 offset)
+{
+    static const char* focuses[] = {"social leveling", "dungeons", "crafting and trade", "exploration and questing"};
+    return focuses[(guildId + offset) % 4];
+}
+
 PlayerbotChatDirector& PlayerbotChatDirector::instance()
 {
     static PlayerbotChatDirector director;
@@ -395,6 +415,21 @@ static void PopulateGuildState(Player* bot, Player* speaker, ChatDirectorCandida
     candidate.guildRank = bot->GetRank();
     candidate.guildMemberCount = guild->GetMemberSize();
     candidate.isGuildLeader = guild->GetLeaderGuid() == bot->GetObjectGuid();
+
+    std::ostringstream membershipRef;
+    membershipRef << "guild:membership:" << guild->GetId() << ':' << bot->GetGUIDLow();
+    AddSocialCapability(candidate, membershipRef.str(), "report_guild_membership", guild->GetId(),
+        bot->GetGUIDLow(), 0, "Report the authoritative membership and recruiting state for " + guild->GetName() + ".");
+    if (speaker->GetGuildId() == bot->GetGuildId())
+    {
+        std::ostringstream scheduleRef, resourcesRef;
+        scheduleRef << "guild:schedule:" << guild->GetId() << ':' << bot->GetGUIDLow();
+        resourcesRef << "guild:resources:" << guild->GetId() << ':' << bot->GetGUIDLow();
+        AddSocialCapability(candidate, scheduleRef.str(), "report_guild_schedule", guild->GetId(),
+            bot->GetGUIDLow(), 0, "Report authoritative upcoming guild events and current roster needs.");
+        AddSocialCapability(candidate, resourcesRef.str(), "report_guild_resources", guild->GetId(),
+            bot->GetGUIDLow(), 0, "Report authoritative guild-bank supply goals and current shortages.");
+    }
 
     if (speaker == bot)
         return;
@@ -2770,6 +2805,165 @@ void PlayerbotChatDirector::Dispatch(const ScheduledReply& scheduledReply)
     else ai->SayToGeneral(text);
 }
 
+void PlayerbotChatDirector::ReloadGuildPolicy(std::chrono::steady_clock::time_point now)
+{
+    if (nextGuildPolicyReload.time_since_epoch().count() && now < nextGuildPolicyReload)
+        return;
+    nextGuildPolicyReload = now + std::chrono::seconds(60);
+    guildPolicyMode = ReadGuildPolicyMode();
+}
+
+static std::string EscapeGuildAddon(const std::string& value)
+{
+    std::string result;
+    for (std::string::const_iterator i = value.begin(); i != value.end(); ++i)
+        result += (*i == '\t' || *i == '\n' || *i == '\r' || *i == '|') ? ' ' : *i;
+    return result;
+}
+
+static void SendGuildAddon(Player* source, Player* target, const std::string& payload)
+{
+    if (!source || !target || !target->GetSession())
+        return;
+    WorldPacket data;
+    ChatHandler::BuildChatPacket(data, CHAT_MSG_GUILD, payload.c_str(), LANG_ADDON,
+        CHAT_TAG_NONE, source->GetObjectGuid(), source->GetName());
+    target->GetSession()->SendPacket(data);
+}
+
+void PlayerbotChatDirector::SendGuildAddonSnapshot(Player* source, Player* receiver)
+{
+    if (!source || !receiver || !source->GetGuildId() || source->GetGuildId() != receiver->GetGuildId())
+        return;
+    Guild* guild = sGuildMgr.GetGuildById(source->GetGuildId());
+    if (!guild)
+        return;
+    const uint32 revision = uint32(time(nullptr));
+    std::ostringstream snapshot;
+    snapshot << "LWOWG1\tSNAP\t" << revision << '\t' << EscapeGuildAddon(guild->GetName())
+        << '\t' << GuildFocus(guild->GetId(), 0) << '\t' << GuildFocus(guild->GetId(), 1)
+        << '\t' << (guildPolicyMode == "active" ? "active guild society" : "guild society observation");
+    SendGuildAddon(source, receiver, snapshot.str());
+    std::string leaderName;
+    sObjectMgr.GetPlayerNameByGUID(guild->GetLeaderGuid(), leaderName);
+    std::ostringstream officer;
+    officer << "LWOWG1\tOFF\t" << revision << '\t' << EscapeGuildAddon(leaderName) << "\tguild master";
+    SendGuildAddon(source, receiver, officer.str());
+}
+
+bool PlayerbotChatDirector::HandleGuildAddonMessage(Player* receiverBot, Player* sender, const std::string& message)
+{
+    if (message.find("LWOWG1\t") != 0 || !receiverBot || !sender || !sender->isRealPlayer() ||
+        !receiverBot->GetGuildId() || receiverBot->GetGuildId() != sender->GetGuildId())
+        return false;
+    guildAddonClients.insert(sender->GetGUIDLow());
+    ReloadGuildPolicy(std::chrono::steady_clock::now());
+    if (message.find("LWOWG1\tHELLO") == 0 || message.find("LWOWG1\tGET") == 0)
+        SendGuildAddonSnapshot(receiverBot, sender);
+    else if (message.find("LWOWG1\tRSVP") == 0)
+        SendGuildAddon(receiverBot, sender, "LWOWG1\tERR\t0\tNo authoritative guild event is open for RSVP yet.");
+    return true;
+}
+
+void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock::time_point now)
+{
+    ReloadGuildPolicy(now);
+    if (guildPolicyMode == "off")
+        return;
+    if (nextGuildSample.time_since_epoch().count() && now < nextGuildSample)
+        return;
+    nextGuildSample = now + std::chrono::minutes(15);
+
+    std::map<uint32, Player*> representatives;
+    for (const auto& entry : sRandomPlayerbotMgr.GetPlayers())
+    {
+        Player* bot = entry.second;
+        if (!bot || !bot->IsInWorld() || !bot->GetGuildId() || !bot->GetSession() ||
+            !sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()))
+            continue;
+        representatives.insert(std::make_pair(bot->GetGuildId(), bot));
+    }
+
+    std::ostringstream enrich, plans, events;
+    enrich << "{\"guilds\":[";
+    plans << "{\"guilds\":[";
+    events << "{\"effective_policy\":{\"schemaVersion\":1,\"mode\":\"" << guildPolicyMode
+        << "\"},\"events\":[";
+    bool first = true;
+    const uint32 nowEpoch = uint32(time(nullptr));
+    for (const auto& entry : representatives)
+    {
+        const uint32 guildId = entry.first;
+        Player* representative = entry.second;
+        Guild* guild = sGuildMgr.GetGuildById(guildId);
+        if (!guild)
+            continue;
+        const uint32 leaderAccount = sObjectMgr.GetPlayerAccountIdByGUID(guild->GetLeaderGuid());
+        const bool botLed = sPlayerbotAIConfig.IsInRandomAccountList(leaderAccount);
+        std::string leaderName;
+        sObjectMgr.GetPlayerNameByGUID(guild->GetLeaderGuid(), leaderName);
+        const uint32 members = guild->GetMemberSize();
+        const char* faction = representative->GetTeam() == ALLIANCE ? "alliance" : "horde";
+        const char* band = members <= 20 ? "small" : members <= 45 ? "medium" : "large";
+        const uint32 target = members <= 20 ? 10 + guildId % 11 : members <= 45 ? 21 + guildId % 25 : 46 + guildId % 35;
+        const std::string primary = GuildFocus(guildId, 0), secondary = GuildFocus(guildId, 1);
+        const std::string name = PlayerbotLLMInterface::SanitizeForJson(guild->GetName());
+        const std::string leader = PlayerbotLLMInterface::SanitizeForJson(leaderName);
+        if (!first)
+        {
+            enrich << ',';
+            plans << ',';
+            events << ',';
+        }
+        first = false;
+        enrich << "{\"guild_id\":" << guildId << ",\"guild_name\":\"" << name
+            << "\",\"bot_led\":" << (botLed ? "true" : "false") << ",\"faction\":\"" << faction
+            << "\",\"leader_guid\":" << guild->GetLeaderGuid().GetCounter() << ",\"leader_name\":\"" << leader
+            << "\",\"member_count\":" << members
+            << ",\"identity_candidates\":{\"culture\":[\"friendly and dependable\",\"adventurous and helpful\"],"
+               "\"motto\":[\"No one adventures alone\",\"Prepared for the road ahead\"],"
+               "\"recruitment_style\":[\"welcoming\",\"organized but relaxed\"]}}";
+        plans << "{\"guild_id\":" << guildId << ",\"bot_led\":" << (botLed ? "true" : "false")
+            << ",\"candidate_decisions\":[{\"candidate_id\":\"quest:" << guildId
+            << "\",\"type\":\"schedule_quest_group\",\"utility\":20,\"eligible\":true}"
+            << (members >= 5 ? ",{\"candidate_id\":\"dungeon:" + std::to_string(guildId) +
+                "\",\"type\":\"schedule_dungeon\",\"utility\":25,\"eligible\":true}" : "")
+            << (members < target ? ",{\"candidate_id\":\"recruit:" + std::to_string(guildId) +
+                "\",\"type\":\"recruit_members\",\"utility\":15,\"eligible\":true}" : "") << "]}";
+        events << "{\"event_id\":\"snapshot-" << guildId << '-' << nowEpoch
+            << "\",\"type\":\"guild_snapshot\",\"guild_id\":" << guildId << ",\"guild_name\":\"" << name
+            << "\",\"bot_led\":" << (botLed ? "true" : "false") << ",\"faction\":\"" << faction
+            << "\",\"leader_guid\":" << guild->GetLeaderGuid().GetCounter() << ",\"leader_name\":\"" << leader
+            << "\",\"member_count\":" << members << ",\"size_band\":\"" << band
+            << "\",\"target_size\":" << target << ",\"primary_focus\":\"" << primary
+            << "\",\"secondary_focus\":\"" << secondary << "\",\"state\":\""
+            << (guildPolicyMode == "active" ? "active" : "observed") << "\"}";
+
+        CharacterDatabase.PExecute(
+            "INSERT INTO guild_society_profile (guild_id,bot_led,faction,leader_guid,size_band,target_size,primary_focus,secondary_focus,culture,motto,recruitment_style,state,created_at,updated_at) "
+            "VALUES (%u,%u,'%s',%u,'%s',%u,'%s','%s','','','welcoming','%s',%u,%u) ON DUPLICATE KEY UPDATE "
+            "bot_led=VALUES(bot_led),faction=VALUES(faction),leader_guid=VALUES(leader_guid),size_band=VALUES(size_band),"
+            "target_size=VALUES(target_size),primary_focus=VALUES(primary_focus),secondary_focus=VALUES(secondary_focus),"
+            "state=VALUES(state),updated_at=VALUES(updated_at)", guildId, botLed ? 1 : 0, faction,
+            guild->GetLeaderGuid().GetCounter(), band, target, primary.c_str(), secondary.c_str(),
+            guildPolicyMode == "active" ? "active" : "observed", nowEpoch, nowEpoch);
+    }
+    enrich << "]}";
+    plans << "]}";
+    events << "]}";
+    const std::string enrichBody = enrich.str(), planBody = plans.str(), eventBody = events.str();
+    std::thread([enrichBody, planBody, eventBody]()
+    {
+        std::vector<std::string> debug;
+        PlayerbotLLMInterface::Generate(eventBody, 9, sPlayerbotAIConfig.llmMaxSimultaniousGenerations,
+            debug, true, "/v2/guilds/events");
+        PlayerbotLLMInterface::Generate(enrichBody, 9, sPlayerbotAIConfig.llmMaxSimultaniousGenerations,
+            debug, true, "/v2/guilds/enrich");
+        PlayerbotLLMInterface::Generate(planBody, 9, sPlayerbotAIConfig.llmMaxSimultaniousGenerations,
+            debug, true, "/v2/guilds/plans");
+    }).detach();
+}
+
 void PlayerbotChatDirector::MaybeReportOrganicEconomy(std::chrono::steady_clock::time_point now)
 {
     if (nextEconomySample.time_since_epoch().count() && now < nextEconomySample)
@@ -2834,6 +3028,7 @@ void PlayerbotChatDirector::Update()
     MaybeCreateProactiveGroupEvent(now);
     MaybeReportBotHealth(now);
     MaybeReportProgressionTrace(now);
+    MaybeReportGuildSocieties(now);
     sPlayerbotOrganicEconomy.Update();
     sPlayerbotActionBroker.Update();
     sPlayerbotSocialActionBroker.Update();

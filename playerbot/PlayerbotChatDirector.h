@@ -181,6 +181,7 @@ public:
     void ObservePartyQuestPlan(Player* bot, uint32 questId, const std::string& questName,
         const std::string& objective, const std::string& areaName, uint32 distanceYards);
     void ObserveGroupInviteConflict(Player* bot, Player* initiator);
+    bool HandleGuildAddonMessage(Player* receiverBot, Player* sender, const std::string& message);
     void Update();
 
 private:
@@ -208,6 +209,9 @@ private:
     void MaybeReportBotHealth(std::chrono::steady_clock::time_point now);
     void MaybeReportProgressionTrace(std::chrono::steady_clock::time_point now);
     void MaybeReportOrganicEconomy(std::chrono::steady_clock::time_point now);
+    void MaybeReportGuildSocieties(std::chrono::steady_clock::time_point now);
+    void ReloadGuildPolicy(std::chrono::steady_clock::time_point now);
+    void SendGuildAddonSnapshot(Player* source, Player* receiver);
 
     struct BotHealthState
     {
@@ -239,6 +243,10 @@ private:
     std::chrono::steady_clock::time_point nextGuildAdvertisement;
     std::chrono::steady_clock::time_point lastConversation;
     std::chrono::steady_clock::time_point nextEconomySample;
+    std::chrono::steady_clock::time_point nextGuildSample;
+    std::chrono::steady_clock::time_point nextGuildPolicyReload;
+    std::string guildPolicyMode = "observe";
+    std::set<uint32> guildAddonClients;
     std::chrono::steady_clock::time_point nextHealthSample;
     std::chrono::steady_clock::time_point nextProgressionTraceSample;
     std::map<uint32, BotHealthState> botHealth;
