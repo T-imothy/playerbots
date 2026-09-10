@@ -570,13 +570,45 @@ void PlayerbotPartyCombatCoordinator::Update(Player* bot)
             !maintenanceAi->GetAiObjectContext()->GetValue<LootObject>("loot target")->Get().IsEmpty());
     uint32 now = WorldTimer::getMSTime();
     uint32& lastLootScan = lastPartyLootScan[bot->GetGUIDLow()];
+    bool pendingRolls = maintenanceAi &&
+        !maintenanceAi->GetAiObjectContext()->GetValue<LootRollMap>("active rolls")->Get().empty();
+    // Resolve group rolls before driving corpse movement. Move-to-loot sets an
+    // action duration and can otherwise repeatedly pre-empt the automatic roll
+    // until the server timeout. Human-first policy is still enforced inside
+    // AutoLootRollAction; a full bot will submit PASS rather than block.
+    if (pendingRolls && bot->IsAlive() && !bot->IsInCombat() &&
+        !bot->IsNonMeleeSpellCasted(false) &&
+        (!lastLootScan || WorldTimer::getMSTimeDiff(lastLootScan, now) >= 250))
+    {
+        lastLootScan = now;
+        bool rolled = maintenanceAi->CanDoSpecificAction("auto loot roll", true, true) &&
+            maintenanceAi->DoSpecificAction("auto loot roll",
+                Event("living mixed party loot roll"), true);
+        pendingRolls = !maintenanceAi->GetAiObjectContext()->
+            GetValue<LootRollMap>("active rolls")->Get().empty();
+        if (rolled)
+            sLog.outDetail("LivingParty loot roll submitted bot=%u name=%s remaining=%u",
+                bot->GetGUIDLow(), bot->GetName(), pendingRolls ? 1u : 0u);
+
+        if (pendingRolls)
+        {
+            LootObject selected = maintenanceAi->GetAiObjectContext()->
+                GetValue<LootObject>("loot target")->Get();
+            if (!selected.IsEmpty())
+            {
+                maintenanceAi->StopMoving();
+                maintenanceAi->GetAiObjectContext()->GetValue<LootObject>("loot target")->
+                    Set(LootObject());
+            }
+        }
+    }
     // Random-bot loot discovery normally runs as a low-priority "often"
     // action. Mixed-party maintenance can starve both discovery and the later
     // select/move/open steps, leaving the human locked out of a corpse assigned
     // to a bot. Drive the existing validated actions in their normal order at
     // a bounded cadence; ownership, distance, movement, and bag checks remain
     // inside those standard Playerbots actions.
-    if (maintenanceAi && maintenancePositionStable && bot->IsAlive() &&
+    if (maintenanceAi && maintenancePositionStable && !pendingRolls && bot->IsAlive() &&
         !bot->IsInCombat() && !bot->IsNonMeleeSpellCasted(false) &&
         (!lastLootScan || WorldTimer::getMSTimeDiff(lastLootScan, now) >= 1000))
     {
