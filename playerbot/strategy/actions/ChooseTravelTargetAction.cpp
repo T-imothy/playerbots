@@ -1497,7 +1497,11 @@ bool RequestQuestTurninTargetAction::Execute(Event& event)
         return false;
 
     WorldPosition center(bot);
-    float range = 1000 + (bot->GetLevel() * bot->GetLevel()) * 75;
+    // Completed quests can legitimately lead back across an entire continent,
+    // and displaced low-level bots are exactly the population this recovery is
+    // intended to repair. The quest id keeps this lookup narrow; the normal
+    // travel manager still validates level, faction, and route feasibility.
+    float range = 1000000.0f;
     *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async,
         [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, questId, range]()
         {

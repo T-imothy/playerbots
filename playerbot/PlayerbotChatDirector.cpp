@@ -1127,7 +1127,11 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             if (!stalledQuestId && age >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds) stalledQuestId = complete.first;
         }
         bool noActions = lowered.find("no actions executed") != std::string::npos;
-        bool movementStalled = expectsMovement && noActions &&
+        // A bot carrying a completed quest gets a short grace period for the
+        // ordinary travel strategy to find its turn-in. Do not spend its first
+        // limited recovery attempt on generic objective reselection while that
+        // more authoritative diagnosis is aging toward questStalled.
+        bool movementStalled = questSnapshot.completed.empty() && expectsMovement && noActions &&
             progressSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
         bool questStalled = stalledQuestId && noActions &&
             progressSeconds >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds;
@@ -1188,9 +1192,14 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 }
                 else
                 {
-                    recovered = bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living progression objective recovery"), true);
-                    if (recovered && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 2)
-                        recovered = bot->GetPlayerbotAI()->DoSpecificAction("choose travel target", Event("living progression route recovery"), true);
+                    // ResetTargetAction returns false when there was no active
+                    // target to clear. That is not a reason to skip choosing a
+                    // new target: action-starved bots commonly have no target.
+                    bool reset = bot->GetPlayerbotAI()->DoSpecificAction(
+                        "reset travel target", Event("living progression objective recovery"), true);
+                    recovered = sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 2 ?
+                        bot->GetPlayerbotAI()->DoSpecificAction(
+                            "choose travel target", Event("living progression route recovery"), true) : reset;
                     recovery = recovered ? "objective_route_reselected" : "objective_reselection_rejected";
                     state.recoveryStep = std::min<uint32>(2, sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep);
                 }
