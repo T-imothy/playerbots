@@ -2962,11 +2962,14 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
     std::thread([enrichBody, planBody, eventBody]()
     {
         std::vector<std::string> debug;
-        PlayerbotLLMInterface::Generate(eventBody, 9, sPlayerbotAIConfig.llmMaxSimultaniousGenerations,
+        // These are bounded internal telemetry posts, not model generations.
+        // They must not disappear when player chat occupies every provider slot.
+        const int telemetryConcurrencyCeiling = 1000000;
+        PlayerbotLLMInterface::Generate(eventBody, 9, telemetryConcurrencyCeiling,
             debug, true, "/v2/guilds/events");
-        PlayerbotLLMInterface::Generate(enrichBody, 9, sPlayerbotAIConfig.llmMaxSimultaniousGenerations,
+        PlayerbotLLMInterface::Generate(enrichBody, 9, telemetryConcurrencyCeiling,
             debug, true, "/v2/guilds/enrich");
-        PlayerbotLLMInterface::Generate(planBody, 9, sPlayerbotAIConfig.llmMaxSimultaniousGenerations,
+        PlayerbotLLMInterface::Generate(planBody, 9, telemetryConcurrencyCeiling,
             debug, true, "/v2/guilds/plans");
     }).detach();
 }
