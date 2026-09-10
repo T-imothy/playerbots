@@ -210,6 +210,7 @@ private:
     void MaybeReportProgressionTrace(std::chrono::steady_clock::time_point now);
     void MaybeReportOrganicEconomy(std::chrono::steady_clock::time_point now);
     void MaybeReportGuildSocieties(std::chrono::steady_clock::time_point now);
+    void ApplyGuildPlans(const std::string& response, std::chrono::steady_clock::time_point now);
     void ReloadGuildPolicy(std::chrono::steady_clock::time_point now);
     void SendGuildAddonSnapshot(Player* source, Player* receiver);
 
@@ -257,6 +258,9 @@ private:
     std::chrono::steady_clock::time_point nextGuildSample;
     std::chrono::steady_clock::time_point nextGuildPolicyReload;
     std::string guildPolicyMode = "observe";
+    std::string guildRolloutScope = "canary";
+    std::set<uint32> guildCanaryIds;
+    std::future<std::string> pendingGuildPlans;
     std::set<uint32> guildAddonClients;
     std::chrono::steady_clock::time_point nextHealthSample;
     std::chrono::steady_clock::time_point nextProgressionTraceSample;
