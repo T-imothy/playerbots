@@ -1306,6 +1306,9 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 // condition made long routes cool down before arrival.
                 recoveryTarget->SetConditions({});
                 recoveryTarget->SetRelevance(std::max<uint32>(recoveryTarget->GetRelevance(), 199u));
+                // MoveToTravelTargetAction recognizes the exact QuestTaker
+                // purpose plus this relevance as bounded recovery priority.
+                // Its normal path, group, taxi, and free-movement guards remain.
                 if (recoveryTarget->GetTimeLeft() < 15 * 60 * 1000)
                     recoveryTarget->SetExpireIn(15 * 60 * 1000);
             }

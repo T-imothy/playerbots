@@ -200,6 +200,17 @@ bool MoveToTravelTargetAction::isUseful()
             break;
         }
     }
+    QuestTravelDestination* questDestination =
+        dynamic_cast<QuestTravelDestination*>(travelTarget->GetDestination());
+    if (questDestination &&
+        questDestination->GetPurpose() == TravelDestinationPurpose::QuestTaker &&
+        travelTarget->GetRelevance() >= 199)
+    {
+        // Exact turn-in recovery deliberately clears volatile lifetime
+        // conditions. Retain its typed priority marker so population activity
+        // load shedding cannot starve the already validated route.
+        progressionRecoveryTarget = true;
+    }
 
     // Activity priority is a population load-shedding decision, not a
     // movement-safety decision. A bot that has already been classified as
