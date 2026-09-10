@@ -813,6 +813,32 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
                 " vendor stacks and " + std::to_string(pressure.StorableStacks()) + " storable stacks.";
             candidate.actionCapabilities.push_back(std::move(capability));
         }
+
+        Group* party = bot->GetGroup();
+        if (party->IsLeader(speaker->GetObjectGuid()))
+        {
+            ChatDirectorCapability capability;
+            capability.actorGuid = bot->GetGUIDLow();
+            capability.groupId = party->GetId();
+            capability.quantity = capability.minQuantity = capability.maxQuantity = 1;
+            capability.deliveries.push_back("immediate");
+            if (sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow()))
+            {
+                capability.capabilityRef = "party:resume-assist:" + std::to_string(bot->GetGUIDLow()) + ':' +
+                    std::to_string(speaker->GetGUIDLow()) + ':' + std::to_string(party->GetId());
+                capability.type = "resume_party_assist";
+                capability.description = "Recall this party member from personal errands and resume close party follow.";
+            }
+            else if (bot->GetMapId() == speaker->GetMapId() && bot->IsWithinDistInMap(speaker, 120.0f))
+            {
+                capability.capabilityRef = "party:free-time:" + std::to_string(bot->GetGUIDLow()) + ':' +
+                    std::to_string(speaker->GetGUIDLow()) + ':' + std::to_string(party->GetId());
+                capability.type = "grant_party_free_time";
+                capability.description = "Temporarily release this party member from close follow for safe personal vendor, mail, bank, auction, repair, trainer, and profession errands.";
+            }
+            if (!capability.type.empty())
+                candidate.actionCapabilities.push_back(std::move(capability));
+        }
         sPlayerbotSocialActionBroker.AddSharedObjectCapabilities(bot, speaker, candidate);
     }
 
@@ -2059,7 +2085,8 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
                 capability.type == "offer_vendor_trip" || capability.type == "repair" ||
                 capability.type == "bank_items" || capability.type == "retrieve_mail") family = "vendorInventory";
             else if (capability.type == "meet_player" || capability.type == "travel_to_party" ||
-                capability.type == "return_to_activity" || capability.type == "resume_party_assist") family = "travel";
+                capability.type == "return_to_activity" || capability.type == "resume_party_assist" ||
+                capability.type == "grant_party_free_time") family = "travel";
             else if (capability.type.find("group") != std::string::npos || capability.type == "pass_leadership" ||
                 capability.type == "set_party_role" || capability.type == "clear_party_role" ||
                 capability.type == "set_puller" || capability.type == "hold_attacks" ||

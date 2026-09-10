@@ -35,7 +35,8 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
         type == "vendor_bags" || type == "gather_node" || type == "decline_gather_node" ||
         type == "open_chest" || type == "decline_chest" ||
         type == "reserve_gathering_nodes" || type == "release_gathering_nodes" ||
-        type == "ask_gathering_nodes");
+        type == "ask_gathering_nodes" || type == "grant_party_free_time" ||
+        type == "resume_party_assist");
 }
 
 static std::string GatheringPolicyKey(uint32 groupId, uint32 playerGuid, uint32 skillId)
@@ -631,6 +632,29 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
         if (StartVendorTrip(bot, player, action.actionId, action.eventId, action.proposalId, false))
             return true;
         action.failureReason = "no safe vendor trip is currently available";
+    }
+    else if (proposal.type == "grant_party_free_time" &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(party:free-time:([0-9]+):([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow() &&
+        bot->GetGroup() && bot->GetGroup() == player->GetGroup() &&
+        bot->GetGroup()->GetId() == (uint32)std::stoul(match[3].str()) &&
+        !HasActiveVendorTrip(bot->GetGUIDLow()))
+    {
+        completed = sPlayerbotRendezvousManager.BeginPartyFreeTime(
+            bot, player, "party_leader_granted_free_time");
+    }
+    else if (proposal.type == "resume_party_assist" &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(party:resume-assist:([0-9]+):([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow() &&
+        bot->GetGroup() && bot->GetGroup() == player->GetGroup() &&
+        bot->GetGroup()->GetId() == (uint32)std::stoul(match[3].str()))
+    {
+        completed = sPlayerbotRendezvousManager.ResumePartyAssist(
+            bot, player, "party_leader_recalled_free_time");
     }
     else if ((proposal.type == "reserve_gathering_nodes" ||
               proposal.type == "release_gathering_nodes" || proposal.type == "ask_gathering_nodes") &&

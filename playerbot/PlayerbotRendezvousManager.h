@@ -23,6 +23,11 @@ public:
     // vending) so the bot returns through the same catch-up relocation used
     // after an invitation instead of selecting ordinary long-distance travel.
     bool ResumePartyAssist(Player* bot, Player* player, const std::string& reason);
+    // Temporarily release a human-led party bot from close follow so its
+    // existing RPG/economy strategies can perform personal errands. The bot
+    // remains in the party and can be recalled through ResumePartyAssist.
+    bool BeginPartyFreeTime(Player* bot, Player* player, const std::string& reason);
+    bool IsPartyFreeTime(uint32 botGuid) const;
     void BeginDeparture(uint32 botGuid, uint32 playerGuid, const std::string& reason);
     void Cancel(uint32 botGuid, uint32 playerGuid, const std::string& reason);
     void Update();
@@ -48,10 +53,12 @@ private:
         bool relocated = false;
         bool forceRelocation = false;
         bool approachIssued = false;
+        bool freeTimeRecallRequested = false;
         uint32 approachAttempts = 0;
         uint32 deadRecoveryAttempts = 0;
         float lastHumanDistance = 0.0f;
         uint32 hearthStartMapId = 0;
+        uint32 freeTimePlayerZoneId = 0;
         float hearthStartX = 0.0f;
         float hearthStartY = 0.0f;
         float hearthStartZ = 0.0f;
@@ -62,6 +69,7 @@ private:
         std::chrono::steady_clock::time_point nextFollowRepair;
         std::chrono::steady_clock::time_point deadRecoveryStarted;
         std::chrono::steady_clock::time_point nextDeadRecoveryAttempt;
+        std::chrono::steady_clock::time_point freeTimeUntil;
         std::chrono::steady_clock::time_point hearthStarted;
     };
 

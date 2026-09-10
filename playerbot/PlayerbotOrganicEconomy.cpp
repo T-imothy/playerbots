@@ -5,6 +5,7 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotLLMInterface.h"
+#include "PlayerbotRendezvousManager.h"
 #include "RandomPlayerbotMgr.h"
 #include "ServerFacade.h"
 #include "strategy/ItemVisitors.h"
@@ -148,7 +149,8 @@ bool PlayerbotOrganicEconomy::SafeForEconomy(Player* bot) const
     if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() || bot->InBattleGround())
         return false;
     PlayerbotAI* ai = bot->GetPlayerbotAI();
-    if (!ai || ai->GetMaster())
+    bool partyFreeTime = sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow());
+    if (!ai || (ai->GetMaster() && !partyFreeTime))
         return false;
     Group* group = bot->GetGroup();
     if (group)
@@ -156,7 +158,7 @@ bool PlayerbotOrganicEconomy::SafeForEconomy(Player* bot) const
         for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
         {
             Player* member = reference->getSource();
-            if (member && !member->GetPlayerbotAI())
+            if (member && !member->GetPlayerbotAI() && !partyFreeTime)
                 return false;
         }
     }

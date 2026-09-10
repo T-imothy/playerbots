@@ -80,11 +80,16 @@ public:
     {
         copper = 0;
         items.clear();
+        silentMaintenance = false;
         return true;
     }
 
     bool Process(Player* requester, int index, Mail* mail, PlayerbotAI* ai, Event& event) override
     {
+        silentMaintenance = silentMaintenance ||
+            (sPlayerbotAIConfig.chatDirectorV2 &&
+             sPlayerbotAIConfig.chatDirectorSuppressLegacyOperationalChat &&
+             event.getSource() == "rpg action");
         Player* bot = ai->GetBot();
         if (!CheckBagSpace(bot))
         {
@@ -160,6 +165,8 @@ public:
 
     bool After(Player* requester, PlayerbotAI* ai) override
     {
+        if (silentMaintenance)
+            return true;
         if (!items.empty())
         {
             std::map<std::string, std::string> args;
@@ -217,6 +224,7 @@ private:
 private:
     uint32 copper = 0;
     std::vector<std::string> items;
+    bool silentMaintenance = false;
 };
 
 class DeleteMailProcessor : public MailProcessor
@@ -270,7 +278,8 @@ bool MailAction::Execute(Event& event)
 
     if (!MailProcessor::FindMailbox(ai) && event.getSource() != "debug")
     {
-        ai->TellError(requester, "There is no mailbox nearby");
+        if (event.getSource() != "rpg action")
+            ai->TellError(requester, "There is no mailbox nearby");
         return false;
     }
 

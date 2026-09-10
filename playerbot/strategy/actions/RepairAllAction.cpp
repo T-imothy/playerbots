@@ -8,8 +8,9 @@ using namespace ai;
 
 bool RepairAllAction::Execute(Event& event)
 {
-    bool silentMaintenance = event.getSource() == "rpg action" &&
-        event.getParam() == "living-wow-maintenance";
+    bool silentMaintenance = sPlayerbotAIConfig.chatDirectorV2 &&
+        sPlayerbotAIConfig.chatDirectorSuppressLegacyOperationalChat &&
+        event.getSource() == "rpg action";
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
     for (std::list<ObjectGuid>::iterator i = npcs.begin(); i != npcs.end(); i++)

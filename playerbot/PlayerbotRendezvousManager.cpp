@@ -67,7 +67,7 @@ bool PlayerbotRendezvousManager::ResumePartyAssist(Player* bot, Player* player, 
 {
     if (!bot || !player || !bot->GetGroup() || bot->GetGroup() != player->GetGroup() ||
         !bot->IsInWorld() || !player->IsInWorld() || !bot->IsAlive() || !player->IsAlive() ||
-        bot->IsInCombat() || bot->IsTaxiFlying() || bot->GetTransport() ||
+        bot->IsTaxiFlying() || bot->GetTransport() ||
         bot->InBattleGround() || bot->GetMap()->IsDungeon() || player->GetMap()->IsDungeon())
         return false;
 
@@ -82,15 +82,84 @@ bool PlayerbotRendezvousManager::ResumePartyAssist(Player* bot, Player* player, 
     if (session.groupId != bot->GetGroup()->GetId())
         return false;
 
+    if (bot->IsInCombat())
+    {
+        if (session.state != "free_time")
+            return false;
+        session.freeTimeRecallRequested = true;
+        session.reason = "free_time_recall_after_combat";
+        LogPartyEvent(session, "free_time_recall_queued");
+        return true;
+    }
+
+    if (session.state == "free_time")
+    {
+        bot->GetPlayerbotAI()->SetMaster(player);
+        bot->GetPlayerbotAI()->RequestStrategyReset(false);
+        bot->GetPlayerbotAI()->DoSpecificAction(
+            "reset travel target", Event("living party free time", "resume", player), true);
+    }
+
     session.playerGuid = player->GetGUIDLow();
     session.state = "pending";
     session.reason = reason;
     session.forceRelocation = true;
     session.approachIssued = false;
+    session.freeTimeRecallRequested = false;
+    session.freeTimeUntil = std::chrono::steady_clock::time_point();
     session.nextApproachAttempt = std::chrono::steady_clock::time_point();
     session.stateSince = std::chrono::steady_clock::now();
     LogPartyEvent(session, "party_return_queued");
     return true;
+}
+
+bool PlayerbotRendezvousManager::BeginPartyFreeTime(Player* bot, Player* player, const std::string& reason)
+{
+    if (!bot || !player || !bot->GetPlayerbotAI() || !bot->GetGroup() ||
+        bot->GetGroup() != player->GetGroup() || !bot->GetGroup()->IsLeader(player->GetObjectGuid()) ||
+        !bot->IsInWorld() || !player->IsInWorld() || !bot->IsAlive() || !player->IsAlive() ||
+        bot->IsInCombat() || player->IsInCombat() || bot->IsTaxiFlying() || bot->GetTransport() ||
+        bot->InBattleGround() || bot->GetMap()->IsDungeon() || player->GetMap()->IsDungeon() ||
+        bot->GetMapId() != player->GetMapId() || !bot->IsWithinDistInMap(player, 120.0f))
+        return false;
+
+    auto found = partySessions.find(bot->GetGUIDLow());
+    if (found == partySessions.end())
+    {
+        if (!RegisterPartyAssist(bot, player))
+            return false;
+        found = partySessions.find(bot->GetGUIDLow());
+    }
+    PartySession& session = found->second;
+    if (session.groupId != bot->GetGroup()->GetId())
+        return false;
+    if (session.state == "free_time")
+        return true;
+
+    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    ai->StopMoving();
+    ai->DoSpecificAction("reset travel target", Event("living party free time", "begin", player), true);
+    ai->SetMaster(nullptr);
+    ai->ChangeStrategy(
+        "nc -follow,+rpg,+rpg craft,+travel,-rpg quest,-rpg explore,-rpg bg,-rpg player,-rpg guild",
+        BotState::BOT_STATE_NON_COMBAT);
+
+    const auto now = std::chrono::steady_clock::now();
+    session.playerGuid = player->GetGUIDLow();
+    session.state = "free_time";
+    session.reason = reason;
+    session.freeTimeRecallRequested = false;
+    session.freeTimePlayerZoneId = player->GetZoneId();
+    session.freeTimeUntil = now + std::chrono::minutes(30);
+    session.stateSince = now;
+    LogPartyEvent(session, "free_time_started");
+    return true;
+}
+
+bool PlayerbotRendezvousManager::IsPartyFreeTime(uint32 botGuid) const
+{
+    auto found = partySessions.find(botGuid);
+    return found != partySessions.end() && found->second.state == "free_time";
 }
 
 PlayerbotRendezvousManager::Session* PlayerbotRendezvousManager::Find(uint32 botGuid, uint32 playerGuid)
@@ -617,7 +686,8 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
             bool canSyncHearth = originalParty && human && bot->IsAlive() && human->IsAlive() &&
                 !bot->IsInCombat() && !human->IsInCombat() &&
                 !bot->IsTaxiFlying() && !bot->GetTransport() && !bot->IsBeingTeleported() &&
-                session.state != "departing" && session.state != "hearth_sync";
+                session.state != "departing" && session.state != "hearth_sync" &&
+                session.state != "free_time";
             if (canSyncHearth && IsCastingHearthstone(human))
             {
                 session.state = "hearth_sync";
@@ -703,6 +773,16 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                         LogPartyEvent(session, "hearth_sync_cancelled");
                     }
                 }
+            }
+            else if (session.state == "free_time")
+            {
+                bool humanMovedOn = human->GetMapId() != bot->GetMapId() ||
+                    human->GetZoneId() != session.freeTimePlayerZoneId;
+                if (human->IsInCombat() || humanMovedOn || now >= session.freeTimeUntil)
+                    session.freeTimeRecallRequested = true;
+                if (session.freeTimeRecallRequested && !bot->IsInCombat())
+                    ResumePartyAssist(bot, human, humanMovedOn ?
+                        "free_time_party_moved_on" : "free_time_complete");
             }
             else if (session.state == "pending")
             {
