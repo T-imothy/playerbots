@@ -76,6 +76,16 @@ uint32 ItemQualifier::GemId(Item* item, uint8 gemSlot)
 #endif
 }
 
+// A working supply is enough to carry, not a request for another bank stack.
+// Allow a partial second stack so whole-stack transfers settle without
+// repeatedly overshooting an exact-one-stack equality test.
+static ItemUsage CraftStockUsage(float stacks, bool acquiring)
+{
+    if (stacks < 1.0f) return ItemUsage::ITEM_USAGE_SKILL;
+    if (!acquiring && stacks < 2.0f) return ItemUsage::ITEM_USAGE_KEEP;
+    return ItemUsage::ITEM_USAGE_BANK;
+}
+
 ItemUsage ItemUsageValue::Calculate()
 {
     return CalculateUsage(false);
@@ -172,10 +182,7 @@ ItemUsage ItemUsageValue::CalculateUsage(bool acquiringBankItem)
         if (IsItemNeededForSkill(proto))
         {
             float stacks = CurrentStacks(ai, proto);
-            if (stacks < 1)
-                return ItemUsage::ITEM_USAGE_SKILL; //Buy more.
-            else if (stacks == 1)
-                return ItemUsage::ITEM_USAGE_KEEP; //Keep in inventory.
+            return CraftStockUsage(stacks, acquiringBankItem);
         }
     }
     else
@@ -185,10 +192,7 @@ ItemUsage ItemUsageValue::CalculateUsage(bool acquiringBankItem)
         if (IsItemNeededForSkill(proto))
         {
             float stacks = CurrentStacks(ai, proto);
-            if (stacks < 1)
-                return ItemUsage::ITEM_USAGE_SKILL; //Buy more.
-            else if (stacks == 1)
-                return ItemUsage::ITEM_USAGE_KEEP; //Keep in inventory.
+            return CraftStockUsage(stacks, acquiringBankItem);
         }
         else
         {
@@ -212,10 +216,7 @@ ItemUsage ItemUsageValue::CalculateUsage(bool acquiringBankItem)
             if (proto->Class == ITEM_CLASS_RECIPE && stacks > 0) //Only buy one recipe.
                 return ItemUsage::ITEM_USAGE_KEEP;
 
-            if (stacks < 1)
-                return ItemUsage::ITEM_USAGE_SKILL; //Buy more.
-            else if (stacks == 1)
-                return ItemUsage::ITEM_USAGE_KEEP; //Do not buy more.
+            return CraftStockUsage(stacks, acquiringBankItem);
         }
     }
 
@@ -2005,8 +2006,9 @@ bool ItemUsageValue::IsItemUsefulForFutureCraft(ItemPrototype const* proto)
     if (proto->Quality < ITEM_QUALITY_NORMAL)
         return false;
 
-    if (IsItemNeededForUsefullCraft(proto, false))
-        return false; // already needed now, handled by SKILL usage
+    // Current recipes can also have surplus reagents. Their working supply
+    // was handled above; recipe desirability must not turn banked surplus
+    // into a vendor/withdraw candidate merely because carried stock changed.
 
     // Check if this is a crafting reagent for any recipe the bot's professions use
     if (!m_allReagentItemIdsForCraftingSkills.count(proto->ItemId))
