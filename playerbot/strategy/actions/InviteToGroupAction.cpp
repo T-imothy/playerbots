@@ -381,9 +381,9 @@ namespace ai
                     placeholders["%player"] = player->GetName();
 
                     if (group && group->IsRaidGroup())
-                        bot->Say(BOT_TEXT2("join_raid", placeholders), (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+                        ai->Say(BOT_TEXT2("join_raid", placeholders));
                     else
-                        bot->Say(BOT_TEXT2("join_group", placeholders), (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+                        ai->Say(BOT_TEXT2("join_group", placeholders));
                 }
             }
 

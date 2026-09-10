@@ -1,6 +1,7 @@
 #include "botpch.h"
 #include "PlayerbotActionBroker.h"
 
+#include "PlayerbotAI.h"
 #include "PlayerbotChatDirector.h"
 #include "PlayerbotChatJson.h"
 #include "PlayerbotLLMInterface.h"
@@ -628,8 +629,9 @@ bool PlayerbotActionBroker::ValidateTrade(Player* bot, Player* trader)
         if (transaction->failureReason != "player inventory has no room")
         {
             transaction->failureReason = "player inventory has no room";
-            bot->Whisper("Your bags look full. Make some room and try accepting again.",
-                LANG_UNIVERSAL, trader->GetObjectGuid());
+            bot->GetPlayerbotAI()->Whisper(
+                "Your bags look full. Make some room and try accepting again.",
+                trader->GetName(), false, PlayerbotAI::ChatMessageClass::social);
             Report(*transaction);
         }
         return false;
@@ -789,8 +791,9 @@ void PlayerbotActionBroker::Update()
                     WorldPacket packet(CMSG_INITIATE_TRADE);
                     packet << player->GetObjectGuid();
                     bot->GetSession()->HandleInitiateTradeOpcode(packet);
-                    bot->Whisper(crafting ? "It's ready. Open trade." : "Water is ready. Open trade.",
-                        LANG_UNIVERSAL, player->GetObjectGuid());
+                    bot->GetPlayerbotAI()->Whisper(
+                        crafting ? "It's ready. Open trade." : "Water is ready. Open trade.",
+                        player->GetName(), false, PlayerbotAI::ChatMessageClass::social);
                 }
                 else
                 {
@@ -801,7 +804,10 @@ void PlayerbotActionBroker::Update()
                         meeting == PlayerbotRendezvousManager::RequestResult::ordinary_travel)
                     {
                         transaction.lastMeetingMove = now;
-                        bot->Whisper(crafting ? "It's ready. I'm heading to you." : "Water is ready. I'm heading to you.", LANG_UNIVERSAL, player->GetObjectGuid());
+                        bot->GetPlayerbotAI()->Whisper(
+                            crafting ? "It's ready. I'm heading to you." :
+                                "Water is ready. I'm heading to you.",
+                            player->GetName(), false, PlayerbotAI::ChatMessageClass::social);
                     }
                 else if (transaction.delivery == "mail")
                 {
@@ -809,10 +815,15 @@ void PlayerbotActionBroker::Update()
                     std::ostringstream action;
                     action << "request travel target::" << (uint32)TravelDestinationPurpose::Mail;
                     bot->GetPlayerbotAI()->DoSpecificAction(action.str(), Event("chat action commission mail", "", player), true);
-                    bot->Whisper("It's ready. I'll mail it once I reach a mailbox.", LANG_UNIVERSAL, player->GetObjectGuid());
+                    bot->GetPlayerbotAI()->Whisper(
+                        "It's ready. I'll mail it once I reach a mailbox.", player->GetName(),
+                        false, PlayerbotAI::ChatMessageClass::social);
                 }
                     else
-                        bot->Whisper(crafting ? "It's ready, but I can't head over right now." : "Water is ready, but I can't head over right now.", LANG_UNIVERSAL, player->GetObjectGuid());
+                        bot->GetPlayerbotAI()->Whisper(
+                            crafting ? "It's ready, but I can't head over right now." :
+                                "Water is ready, but I can't head over right now.",
+                            player->GetName(), false, PlayerbotAI::ChatMessageClass::social);
                 }
                 Report(transaction);
             }
@@ -820,7 +831,10 @@ void PlayerbotActionBroker::Update()
             {
                 transaction.state = "failed";
                 transaction.failureReason = crafting ? "crafting did not produce the promised item" : "conjuring did not produce the promised stack";
-                bot->Whisper(crafting ? "I couldn't finish that craft after all, sorry." : "Couldn't conjure that water after all, sorry.", LANG_UNIVERSAL, player->GetObjectGuid());
+                bot->GetPlayerbotAI()->Whisper(
+                    crafting ? "I couldn't finish that craft after all, sorry." :
+                        "Couldn't conjure that water after all, sorry.",
+                    player->GetName(), false, PlayerbotAI::ChatMessageClass::social);
                 Report(transaction);
             }
             continue;

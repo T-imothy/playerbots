@@ -34,7 +34,8 @@ namespace
             return;
 
         std::string reason = ItemUsageValue::ReasonForNeed(usage, itemQualifier, 1, ai->GetBot());
-        ai->SayToParty("I'll need on " + ChatHelper::formatItem(itemQualifier) + " " + reason, true);
+        ai->SayToParty("I'll need on " + ChatHelper::formatItem(itemQualifier) + " " + reason, true,
+            PlayerbotAI::ChatMessageClass::social);
     }
 }
 

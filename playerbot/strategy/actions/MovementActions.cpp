@@ -3736,7 +3736,7 @@ bool JumpAction::Execute(ai::Event &event)
                 if (ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
                 {
                     std::string text = "Moving to jumping position!";
-                    bot->Say(text, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+                    ai->Say(text, false, PlayerbotAI::ChatMessageClass::diagnostic);
                 }
 
                 // see spell action will handle the movement
@@ -3770,7 +3770,7 @@ bool JumpAction::Execute(ai::Event &event)
                 if (ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
                 {
                     std::string text = "Jumping to you!";
-                    bot->Say(text, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+                    ai->Say(text, false, PlayerbotAI::ChatMessageClass::diagnostic);
                 }
 
                 if (showLanding)
@@ -4388,7 +4388,7 @@ bool JumpAction::DoJump(const WorldPosition &dest, const WorldPosition& highestP
     if (ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
     {
         std::string text = "Jump: cos: " + std::to_string(vcos) + " sin: " + std::to_string(vsin) + " distance: " + std::to_string(distanceToLand) + " speed: " + std::to_string(hSpeed);
-        bot->Say(text, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+        ai->Say(text, false, PlayerbotAI::ChatMessageClass::diagnostic);
     }
 
     return true;

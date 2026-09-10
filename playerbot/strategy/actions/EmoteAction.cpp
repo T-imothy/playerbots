@@ -627,10 +627,10 @@ bool EmoteActionBase::ReceiveEmote(Player* requester, Player* source, uint32 emo
     if (verbal)
     {
         if (emoteText.size())
-            bot->Say(emoteText, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+            ai->Say(emoteText);
 
         if (emoteYell.size())
-            bot->Yell(emoteYell, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+            ai->Yell(emoteYell);
     }
 
     if (textEmote)

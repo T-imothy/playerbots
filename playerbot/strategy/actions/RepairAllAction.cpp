@@ -8,7 +8,9 @@ using namespace ai;
 
 bool RepairAllAction::Execute(Event& event)
 {
-    bool silentMaintenance = sPlayerbotAIConfig.chatDirectorV2 &&
+    // Retain the legacy sound policy independently. Chat visibility is owned
+    // by PlayerbotAI's scoped central boundary.
+    bool suppressMaintenanceSound = sPlayerbotAIConfig.chatDirectorV2 &&
         sPlayerbotAIConfig.chatDirectorSuppressLegacyOperationalChat &&
         event.getSource() == "rpg action";
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
@@ -73,13 +75,10 @@ bool RepairAllAction::Execute(Event& event)
 
         if (totalCost > 0)
         {
-            if (!silentMaintenance)
-            {
-                std::ostringstream out;
-                out << "Repair: " << chat->formatMoney(totalCost) << " (" << unit->GetName() << ")";
-                ai->TellPlayerNoFacing(requester, out.str(),PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-            }
-            if (!silentMaintenance && sPlayerbotAIConfig.globalSoundEffects)
+            std::ostringstream out;
+            out << "Repair: " << chat->formatMoney(totalCost) << " (" << unit->GetName() << ")";
+            ai->TellPlayerNoFacing(requester, out.str(),PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            if (!suppressMaintenanceSound && sPlayerbotAIConfig.globalSoundEffects)
                 bot->PlayDistanceSound(7994);
 
             sPlayerbotAIConfig.logEvent(ai, "RepairAllAction", std::to_string(durability), std::to_string(totalCost));
@@ -93,7 +92,6 @@ bool RepairAllAction::Execute(Event& event)
         return durability < 100 && AI_VALUE(uint8, "durability inventory") > durability;
     }
 
-    if (!silentMaintenance)
-        ai->TellPlayerNoFacing(requester, "Cannot find any npc to repair at");
+    ai->TellPlayerNoFacing(requester, "Cannot find any npc to repair at");
     return false;
 }

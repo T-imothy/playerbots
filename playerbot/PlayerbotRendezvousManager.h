@@ -235,6 +235,15 @@ private:
         uint64 generation = 0;
     };
 
+    struct SuppressedActivityAggregate
+    {
+        uint32 botGuid = 0;
+        uint32 count = 0;
+        std::string origin;
+        std::string suppressionClass;
+        std::string actionClass;
+    };
+
     Session* Find(uint32 botGuid, uint32 playerGuid);
     const Session* Find(uint32 botGuid, uint32 playerGuid) const;
     bool IsPointUnobserved(Player* bot, float x, float y, float z) const;
@@ -282,6 +291,8 @@ private:
     std::map<uint32, Session> sessions;
     std::map<uint32, PartySession> partySessions;
     std::map<uint32, ExternalLease> externalLeases;
+    std::map<std::string, SuppressedActivityAggregate> suppressedActivityAggregates;
+    std::chrono::steady_clock::time_point nextSuppressionTelemetryFlush;
     std::deque<std::string> activityTelemetry;
     uint32 activityTelemetryDropped = 0;
     uint32 activityTelemetryRetried = 0;

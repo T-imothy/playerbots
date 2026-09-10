@@ -1329,7 +1329,7 @@ bool DebugAction::HandleGrid(Event& event, Player* requester, const std::string&
 
     out << "Map: " << botPos.getMapId() << " " << botPos.getAreaName() << " Grid: " << botPos.getGridPair().x_coord << "," << botPos.getGridPair().y_coord << " [" << loaded << "] Cell: " << botPos.getCellPair().x_coord << "," << botPos.getCellPair().y_coord;
 
-    bot->Whisper(out.str().c_str(), LANG_UNIVERSAL, event.getOwner()->GetObjectGuid());
+    ai->Whisper(out.str(), event.getOwner()->GetName(), false, PlayerbotAI::ChatMessageClass::diagnostic);
 
     return true;
 }
@@ -2095,7 +2095,7 @@ bool DebugAction::HandleLogoutTime(Event& event, Player* requester, const std::s
 
     out << "Logout in: " << hr << ":" << min << ":" << time;
 
-    bot->Whisper(out.str().c_str(), LANG_UNIVERSAL, event.getOwner()->GetObjectGuid());
+    ai->Whisper(out.str(), event.getOwner()->GetName(), false, PlayerbotAI::ChatMessageClass::diagnostic);
 
     return true;
 }
@@ -2111,7 +2111,7 @@ bool DebugAction::HandleLevel(Event& event, Player* requester, const std::string
 
     out << "Level: " << level << ", xp:" << xp << "/" << nextLevelXp << " :" || flevel;
 
-    bot->Whisper(out.str().c_str(), LANG_UNIVERSAL, event.getOwner()->GetObjectGuid());
+    ai->Whisper(out.str(), event.getOwner()->GetName(), false, PlayerbotAI::ChatMessageClass::diagnostic);
 
     return true;
 }
@@ -4891,7 +4891,7 @@ bool DebugAction::HandleSounds(Event& event, Player* requester, const std::strin
     for (uint32 i = 0; i < 100; i++)
     {
         bot->PlayDistanceSound(i + soundEffects * 100);
-        bot->Say(std::to_string(i + soundEffects * 100), 0);
+        ai->Say(std::to_string(i + soundEffects * 100), false, PlayerbotAI::ChatMessageClass::diagnostic);
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
     }
     return true;

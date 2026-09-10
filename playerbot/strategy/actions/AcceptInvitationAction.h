@@ -80,9 +80,9 @@ namespace ai
                     Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
 
                     if (guild && master->IsInGuild(bot))
-                        guild->BroadcastToGuild(bot->GetSession(), reply, LANG_UNIVERSAL);
+                        ai->SayToGuild(reply);
                     else if (sServerFacade.GetDistance2d(bot, master) < sPlayerbotAIConfig.spellDistance * 1.5)
-                        bot->Say(reply, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+                        ai->Say(reply);
                 }
 
                 Formation* masterFormation = MAI_VALUE(Formation*, "formation");
@@ -90,7 +90,8 @@ namespace ai
                 value->Load(masterFormation->getName());
             }
 
-            ai->TellPlayer(inviter, BOT_TEXT("hello"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            ai->TellPlayer(inviter, BOT_TEXT("hello"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL,
+                false, false, PlayerbotAI::ChatMessageClass::social);
 
             ai->DoSpecificAction("reset raids", event, true);
             ai->DoSpecificAction("update gear", event, true);

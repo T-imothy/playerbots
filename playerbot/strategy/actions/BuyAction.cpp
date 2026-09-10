@@ -12,8 +12,6 @@ using namespace ai;
 bool BuyAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    suppressOperationalChat = sPlayerbotAIConfig.chatDirectorV2 &&
-        sPlayerbotAIConfig.chatDirectorSuppressLegacyOperationalChat && event.getSource() == "rpg action";
     bool buyUseful = false;
     ItemIds itemIds;
     std::string link = event.getParam();
@@ -240,8 +238,7 @@ bool BuyAction::Execute(Event& event)
                 if (!result)
                 {
                     std::ostringstream out; out << "Nobody sells " << ChatHelper::formatItem(proto) << " nearby";
-                    if (!suppressOperationalChat)
-                        ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                    ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
                 }
             }
         }
@@ -249,8 +246,7 @@ bool BuyAction::Execute(Event& event)
 
     if (!vendored)
     {
-        if (!suppressOperationalChat)
-            ai->TellError(requester, "There are no vendors nearby");
+        ai->TellError(requester, "There are no vendors nearby");
         return false;
     }
     else
@@ -265,8 +261,7 @@ bool BuyAction::Execute(Event& event)
                 
                 out << "Buying " << ChatHelper::formatItem(qualifier, count) << " ";
                 out << ItemUsageValue::ReasonForNeed(usage, qualifier, count, bot);
-                if (!suppressOperationalChat)
-                    ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             }
         }
     }
@@ -310,8 +305,7 @@ bool BuyAction::BuyItem(Player* requester, VendorItemData const* tItems, ObjectG
                 {
 
                     std::ostringstream out; out << "Buying " << ChatHelper::formatItem(proto);
-                    if (!suppressOperationalChat)
-                        ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                    ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
                 }
                 else if (usage == ItemUsage::ITEM_USAGE_EQUIP) //We need to put these here since we are only buying 1 (hopefully) and need to report ReasonForNeed with old item still equiped.
                 {
@@ -321,8 +315,7 @@ bool BuyAction::BuyItem(Player* requester, VendorItemData const* tItems, ObjectG
 
                     out << "Buying " << ChatHelper::formatItem(qualifier) << " ";
                     out << ItemUsageValue::ReasonForNeed(usage, qualifier, 1, bot);
-                    if (!suppressOperationalChat)
-                        ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                    ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
                 }
                 else
                 {

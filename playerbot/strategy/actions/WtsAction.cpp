@@ -48,8 +48,9 @@ bool WtsAction::Execute(Event& event)
         std::ostringstream tell;
         tell << "I'll buy " << chat->formatItem(proto) << " for " << chat->formatMoney(buyPrice);
 
-        // ignore random bot chat filter
-        bot->Whisper(tell.str(), LANG_UNIVERSAL, owner->GetObjectGuid());
+        // Ignore the random bot chat filter, but still pass through the
+        // central origin-aware emission boundary.
+        ai->Whisper(tell.str(), owner->GetName());
     }
 
     return true;

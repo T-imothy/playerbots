@@ -78,6 +78,16 @@ static bool GroupHasRealHuman(Group* group)
     return false;
 }
 
+static void SendSocialWhisper(Player* sender, Player* receiver, const std::string& message)
+{
+    if (!sender || !receiver)
+        return;
+    if (PlayerbotAI* ai = sender->GetPlayerbotAI())
+        ai->Whisper(message, receiver->GetName(), false, PlayerbotAI::ChatMessageClass::social);
+    else
+        sender->Whisper(message, LANG_UNIVERSAL, receiver->GetObjectGuid());
+}
+
 static bool ValidatePetitionVolunteer(Player* bot, Player* owner, uint32 petitionGuid,
     uint32& signatureCount, uint32& required)
 {
@@ -182,7 +192,8 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
         sPlayerbotInventoryPressure.Defer(bot, pressure, reason);
         if (announce)
             bot->GetPlayerbotAI()->SayToParty(
-                "My bags are packed, but everything left is protected for quests, crafting, banking, or the auction house. I'll sort it out after the group.", true);
+                "My bags are packed, but everything left is protected for quests, crafting, banking, or the auction house. I'll sort it out after the group.", true,
+                PlayerbotAI::ChatMessageClass::social);
         sPlayerbotRendezvousManager.ResumePartyAssist(bot, player,
             "vendor_trip_not_started");
         sPlayerbotRendezvousManager.ReleasePartyActivityLease(bot->GetGUIDLow(),
@@ -251,7 +262,8 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     if (announce)
         bot->GetPlayerbotAI()->SayToParty(maintenanceType == "bank" ?
             "My bags are full of things I need to keep. I'll put them in the bank and catch back up." :
-            "My bags are full. I need to make a quick vendor run; I'll catch back up.", true);
+            "My bags are full. I need to make a quick vendor run; I'll catch back up.", true,
+            PlayerbotAI::ChatMessageClass::social);
     return true;
 }
 
@@ -375,7 +387,8 @@ bool PlayerbotSocialActionBroker::CanUseSharedObject(Player* bot, Player* player
         text << "There's " << offer.nodeName << " here. Do you want me to open it?";
     else
         text << "I see " << offer.nodeName << ". Can I gather it?";
-    bot->GetPlayerbotAI()->SayToParty(text.str(), true);
+    bot->GetPlayerbotAI()->SayToParty(text.str(), true,
+        PlayerbotAI::ChatMessageClass::social);
     sLog.outString("Living WoW shared object permission bot=%u player=%u object=%u kind=%s skill=%u required=%u result=offered",
         offer.botGuid, offer.playerGuid, offer.objectEntry, offer.objectKind.c_str(), offer.skillId, offer.requiredSkill);
     return false;
@@ -443,8 +456,6 @@ bool PlayerbotSocialActionBroker::ContinueAtBank(Action& action, Player* bot)
     action.sellAttempts = 0;
     action.lastSellAttempt = std::chrono::steady_clock::time_point();
     action.stateSince = std::chrono::steady_clock::now();
-    bot->GetPlayerbotAI()->SayToParty(
-        "I sold what I could. I'm putting the materials and other things I need to keep in the bank too.", true);
     Report(action);
     return true;
 }
@@ -706,15 +717,15 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             if (bot->IsInCombat())
             {
                 action.state = "waiting_to_leave_ai_party";
-                bot->Whisper("I'm in a fight right now. I'll leave this group when it's safe, then let you know.",
-                    LANG_UNIVERSAL, player->GetObjectGuid());
+                SendSocialWhisper(bot, player,
+                    "I'm in a fight right now. I'll leave this group when it's safe, then let you know.");
                 actions[action.actionId] = action;
                 Report(actions[action.actionId]);
                 return true;
             }
             completed = LeaveAiOnlyParty(bot, groupId);
             if (completed)
-                bot->Whisper("I'm free now. You can invite me.", LANG_UNIVERSAL, player->GetObjectGuid());
+                SendSocialWhisper(bot, player, "I'm free now. You can invite me.");
         }
         else
             action.failureReason = GroupHasRealHuman(group) ? "a human is now in the party" :
@@ -784,10 +795,10 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
                 action.stateSince = std::chrono::steady_clock::now();
                 action.expires = action.stateSince + std::chrono::minutes(3);
                 actions[action.actionId] = action;
-                bot->Whisper("I heard you're looking for charter signatures. I'm on my way.",
-                    LANG_UNIVERSAL, owner->GetObjectGuid());
-                owner->Whisper("Great. Meet me here and I'll show you the charter.",
-                    LANG_UNIVERSAL, bot->GetObjectGuid());
+                SendSocialWhisper(bot, owner,
+                    "I heard you're looking for charter signatures. I'm on my way.");
+                SendSocialWhisper(owner, bot,
+                    "Great. Meet me here and I'll show you the charter.");
                 sLog.outString("Living WoW charter volunteer event=travel_started bot=%u owner=%u requester=%u petition=%u",
                     bot->GetGUIDLow(), ownerGuid, player->GetGUIDLow(), petitionGuid);
                 Report(actions[action.actionId]);
@@ -1258,7 +1269,8 @@ void PlayerbotSocialActionBroker::Update()
                 {
                     std::ostringstream notice;
                     notice << "I'm at " << (uint32)bagUsage << "% bag space. Can I go vendor?";
-                    bot->GetPlayerbotAI()->SayToParty(notice.str(), true);
+                    bot->GetPlayerbotAI()->SayToParty(notice.str(), true,
+                        PlayerbotAI::ChatMessageClass::social);
                     sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=permission_requested bag=%u player=%u",
                         bot->GetGUIDLow(), bot->GetName(), (uint32)bagUsage, player->GetGUIDLow());
                 }
@@ -1283,8 +1295,8 @@ void PlayerbotSocialActionBroker::Update()
                 action.completedAt = now;
                 if (bot && owner)
                 {
-                    bot->Whisper("Signed. Good luck with the guild!", LANG_UNIVERSAL, owner->GetObjectGuid());
-                    owner->Whisper("Thanks for signing.", LANG_UNIVERSAL, bot->GetObjectGuid());
+                    SendSocialWhisper(bot, owner, "Signed. Good luck with the guild!");
+                    SendSocialWhisper(owner, bot, "Thanks for signing.");
                     sPlayerbotRendezvousManager.BeginDeparture(bot->GetGUIDLow(), owner->GetGUIDLow(),
                         "charter_signed");
                 }
@@ -1348,7 +1360,7 @@ void PlayerbotSocialActionBroker::Update()
             {
                 action.state = "completed";
                 action.completedAt = now;
-                bot->Whisper("I'm free now. You can invite me.", LANG_UNIVERSAL, player->GetObjectGuid());
+                SendSocialWhisper(bot, player, "I'm free now. You can invite me.");
                 Report(action);
             }
             else if (now >= action.expires)
@@ -1577,13 +1589,15 @@ void PlayerbotSocialActionBroker::Update()
                     if (targetReached)
                         bot->GetPlayerbotAI()->SayToParty(action.maintenanceType == "bank" ?
                             "I put the things I need to keep in the bank. Heading back now." :
-                            "I cleared enough bag space to keep going. Heading back now.", true);
+                            "I cleared enough bag space to keep going. Heading back now.", true,
+                            PlayerbotAI::ChatMessageClass::social);
                     else
                     {
                         std::ostringstream notice;
                         notice << "I freed what I safely could. My bags are still " << (uint32)usage
                             << "% full because the rest is protected, so I'm heading back.";
-                        bot->GetPlayerbotAI()->SayToParty(notice.str(), true);
+                        bot->GetPlayerbotAI()->SayToParty(notice.str(), true,
+                            PlayerbotAI::ChatMessageClass::social);
                     }
                     QueuePartyReturn(action, bot, player,
                         targetReached ? "vendor_trip_complete" : "vendor_trip_partial",
@@ -1599,7 +1613,8 @@ void PlayerbotSocialActionBroker::Update()
                         sPlayerbotInventoryPressure.Defer(bot, remaining, "quick_maintenance_freed_no_slot");
                         bot->GetPlayerbotAI()->SayToParty(action.bestBagUsage < action.initialBagUsage ?
                             "I freed what I safely could. The rest is quest gear or other protected supplies, so I'm heading back." :
-                            "I couldn't free a slot without losing quest items or other protected supplies. I'm heading back.", true);
+                            "I couldn't free a slot without losing quest items or other protected supplies. I'm heading back.", true,
+                            PlayerbotAI::ChatMessageClass::social);
                         QueuePartyReturn(action, bot, player, "vendor_trip_no_space_freed",
                             action.bestBagUsage < action.initialBagUsage);
                     }

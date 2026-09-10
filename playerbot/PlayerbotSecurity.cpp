@@ -254,7 +254,10 @@ bool PlayerbotSecurity::CheckLevelFor(PlayerbotSecurityLevel level, bool silent,
     if (!lastSaid || (time(0) - lastSaid) >= sPlayerbotAIConfig.repeatDelay / 1000)
     {
         whispers[guid][text] = time(0);
-        bot->Whisper(text, LANG_UNIVERSAL, ObjectGuid(guid));
+        // Security diagnostics can run inside a nested autonomous maintenance
+        // action. Keep them on the same origin-aware boundary as every other
+        // Playerbots response; explicit human/GM commands remain visible.
+        bot->GetPlayerbotAI()->Whisper(text, from->GetName());
     }
     return false;
 }

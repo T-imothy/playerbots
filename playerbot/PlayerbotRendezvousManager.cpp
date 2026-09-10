@@ -425,6 +425,33 @@ namespace
         }
         return escaped;
     }
+
+    std::string ActivityEnumToken(const std::string& value, const char* fallback)
+    {
+        std::string token;
+        token.reserve(std::min<size_t>(48, value.size()));
+        bool underscore = false;
+        for (unsigned char c : value)
+        {
+            if (token.size() >= 48)
+                break;
+            if (std::isalnum(c))
+            {
+                token.push_back((char)std::tolower(c));
+                underscore = false;
+            }
+            else if (!token.empty() && !underscore)
+            {
+                token.push_back('_');
+                underscore = true;
+            }
+        }
+        while (!token.empty() && token.back() == '_')
+            token.pop_back();
+        if (token.empty() || !std::isalpha((unsigned char)token[0]))
+            return fallback;
+        return token;
+    }
 }
 
 PlayerbotRendezvousManager& PlayerbotRendezvousManager::instance()
@@ -3220,7 +3247,8 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                             std::string announcement = ErrandAnnouncement(errands);
                             if (BeginPartyFreeTime(bot, human, "automatic_settlement_errands"))
                             {
-                                bot->GetPlayerbotAI()->SayToParty(announcement, true);
+                                bot->GetPlayerbotAI()->SayToParty(announcement, true,
+                                    PlayerbotAI::ChatMessageClass::social);
                                 LogPartyEvent(session, "automatic_settlement_errands_started");
                             }
                         }
@@ -3572,7 +3600,8 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                                     (session.completedErrandMask ?
                                         "I finished what I could. I'll handle the rest later and catch back up now." :
                                         "I couldn't finish that safely right now. I'm catching back up.") :
-                                    "I'm done with my errands. I'm catching back up now.", true);
+                                    "I'm done with my errands. I'm catching back up now.", true,
+                                    PlayerbotAI::ChatMessageClass::social);
                             }
                         }
                     }
@@ -3919,9 +3948,109 @@ std::string PlayerbotRendezvousManager::BuildActivityTelemetry(uint32 botGuid, u
     return json.str();
 }
 
+void PlayerbotRendezvousManager::RecordSuppressedActivity(Player* bot, const std::string& origin,
+    const std::string& suppressionClass, const std::string& actionClass, uint32 count)
+{
+    if (!bot || !count)
+        return;
+
+    std::string safeOrigin = ActivityEnumToken(origin, "autonomous");
+    std::string safeClass = ActivityEnumToken(suppressionClass, "operational");
+    std::string safeAction = ActivityEnumToken(actionClass, "unknown");
+    std::string key = safeOrigin + '|' + safeClass + '|' + safeAction;
+    // Keep the world-thread accumulator bounded even if future adapters add
+    // parameterized action names. Overflow remains visible as one safe bucket.
+    // Thirty-two global buckets per minute also fit beneath the gateway's
+    // seven-day 500k event cap at the absolute worst sustained rate.
+    if (suppressedActivityAggregates.find(key) == suppressedActivityAggregates.end() &&
+        suppressedActivityAggregates.size() >= 31)
+    {
+        safeOrigin = "autonomous";
+        safeClass = "operational";
+        safeAction = "other";
+        key = "suppression_overflow";
+    }
+
+    SuppressedActivityAggregate& aggregate = suppressedActivityAggregates[key];
+    aggregate.botGuid = aggregate.botGuid ? aggregate.botGuid : bot->GetGUIDLow();
+    aggregate.origin = safeOrigin;
+    aggregate.suppressionClass = safeClass;
+    aggregate.actionClass = safeAction;
+    aggregate.count = std::min<uint32>(
+        100000, aggregate.count + std::min<uint32>(100000, count));
+}
+
 std::vector<std::string> PlayerbotRendezvousManager::DrainPartyActivityTelemetry(
     bool includeSnapshots, size_t* transitionCount)
 {
+    const auto now = std::chrono::steady_clock::now();
+    if (!nextSuppressionTelemetryFlush.time_since_epoch().count())
+        nextSuppressionTelemetryFlush = now + std::chrono::minutes(1);
+    const bool flushSuppression = now >= nextSuppressionTelemetryFlush;
+    // The director drains ordinary activity every five seconds. Suppression
+    // counts deliberately remain coalesced for a full minute, producing at
+    // most 32 safe aggregate events per minute across the whole realm.
+    if (flushSuppression)
+    {
+        for (const auto& pair : suppressedActivityAggregates)
+        {
+            const SuppressedActivityAggregate& aggregate = pair.second;
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(aggregate.botGuid);
+            Player* human = bot ? FindPartyHuman(bot) : nullptr;
+            uint32 playerGuid = human ? human->GetGUIDLow() : 0;
+            std::string partySessionId = bot ? GetPartySessionId(bot) : "player:0";
+            auto retainedParty = partySessions.find(aggregate.botGuid);
+            if (retainedParty != partySessions.end())
+            {
+                if (!playerGuid) playerGuid = retainedParty->second.playerGuid;
+                if (!retainedParty->second.partySessionId.empty())
+                    partySessionId = retainedParty->second.partySessionId;
+            }
+            else
+            {
+                auto rendezvous = sessions.find(aggregate.botGuid);
+                if (rendezvous != sessions.end())
+                {
+                    if (!playerGuid) playerGuid = rendezvous->second.playerGuid;
+                    Player* player = playerGuid ? sObjectAccessor.FindPlayer(
+                        ObjectGuid(HIGHGUID_PLAYER, playerGuid)) : nullptr;
+                    partySessionId = player && (!bot || !bot->GetGroup() ||
+                        player->GetGroup() == bot->GetGroup()) ? GetPartySessionId(player) :
+                        "player:" + std::to_string(playerGuid);
+                }
+            }
+            PartyActivityOwner owner = GetPartyActivityOwner(aggregate.botGuid);
+            PartyActivityPhase phase = GetPartyActivityPhase(aggregate.botGuid);
+            std::string suppressedClass = ActivityEnumToken(
+                aggregate.suppressionClass + '_' + aggregate.actionClass, "operational_other");
+            if (!activitySequence) activitySequence = uint64(time(nullptr)) * 1000000ULL;
+            uint64 revision = ++activitySequence;
+            std::ostringstream json;
+            json << "{\"event_id\":\"party-activity-" << aggregate.botGuid << '-' << time(nullptr)
+                 << '-' << revision << "\",\"bot_guid\":" << aggregate.botGuid
+                 << ",\"player_guid\":" << playerGuid
+                 << ",\"party_session_id\":\"" << partySessionId
+                 << "\",\"state_revision\":" << revision
+                 << ",\"movement_owner\":\"" << PartyActivityOwnerName(owner)
+                 << "\",\"phase\":\"" << PartyActivityPhaseName(phase)
+                 << "\",\"task_type\":\"" << aggregate.actionClass
+                 << "\",\"outcome_code\":\"suppressed\",\"suppressed_class\":\""
+                 << suppressedClass
+                 << "\",\"latency_ms\":0,\"detail\":{\"event\":\"chat_suppressed\",\"count\":"
+                 << aggregate.count << ",\"origin\":\"" << aggregate.origin
+                 << "\",\"action_class\":\"" << aggregate.actionClass << "\"}}";
+            activityTelemetryReporter = aggregate.botGuid;
+            activityTelemetry.push_back(json.str());
+            while (activityTelemetry.size() > 500)
+            {
+                activityTelemetry.pop_front();
+                ++activityTelemetryDropped;
+            }
+        }
+        suppressedActivityAggregates.clear();
+        nextSuppressionTelemetryFlush = now + std::chrono::minutes(1);
+    }
+
     std::vector<std::string> result;
     result.reserve(activityTelemetry.size() + (includeSnapshots ?
         partySessions.size() + externalLeases.size() + sessions.size() : 0));

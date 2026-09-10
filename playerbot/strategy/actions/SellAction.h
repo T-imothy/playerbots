@@ -13,7 +13,6 @@ namespace ai
         bool Sell(Player* requester, Item* item);
 
     private:
-        bool announceOperations = true;
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "sell"; } //Must equal iternal name

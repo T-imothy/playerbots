@@ -212,6 +212,7 @@ bool ReactionEngine::Update(uint32 elapsed, bool minimal, bool isStunned, bool& 
 
 bool ReactionEngine::ListenAndExecute(Action* action, Event& event)
 {
+    PlayerbotAI::ScopedChatAction chatActionScope(ai, action->getName(), event);
     bool actionExecuted = false;
     if (actionExecutionListeners.Before(action, event))
     {
@@ -245,7 +246,9 @@ bool ReactionEngine::ListenAndExecute(Action* action, Event& event)
         if(actionExecuted)
             out << " (duration: " << ((float)incomingReaction.GetDuration() / static_cast<float>(IN_MILLISECONDS)) << "s)";
 
-        ai->TellPlayerNoFacing(ai->GetMaster(), out);
+        ai->TellPlayerNoFacing(ai->GetMaster(), out,
+            PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, true, false,
+            PlayerbotAI::ChatMessageClass::diagnostic);
     }
 
     actionExecuted = actionExecutionListeners.OverrideResult(action, actionExecuted, event);

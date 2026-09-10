@@ -207,12 +207,13 @@ bool GuildManageNearbyAction::Execute(Event& event)
             for (auto line : lines)
                 if (sameGroup)
                 {
-                    WorldPacket data;
-                    ChatHandler::BuildChatPacket(data, bot->GetGroup()->IsRaidGroup() ? CHAT_MSG_RAID : CHAT_MSG_PARTY, line.c_str(), LANG_UNIVERSAL, CHAT_TAG_NONE, bot->GetObjectGuid(), bot->GetName());
-                    bot->GetGroup()->BroadcastPacket(data,true);
+                    if (bot->GetGroup()->IsRaidGroup())
+                        ai->SayToRaid(line);
+                    else
+                        ai->SayToParty(line);
                 }
                 else
-                    bot->Say(line, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+                    ai->Say(line);
         }
         
         if (ai->DoSpecificAction("guild invite", Event("guild management", guid), true))
@@ -253,11 +254,8 @@ bool GuildLeaveAction::Execute(Event& event)
     {
         std::map<std::string, std::string> placeholders;
         placeholders["%guild_bot_limit"] = std::to_string(sPlayerbotAIConfig.guildMaxBotLimit);
-        guild->BroadcastToGuild(
-            bot->GetSession(),
-            BOT_TEXT2("I am leaving this guild to prevent it from reaching the %guild_bot_limit member limit.", placeholders),
-            LANG_UNIVERSAL
-        );
+        ai->SayToGuild(BOT_TEXT2(
+            "I am leaving this guild to prevent it from reaching the %guild_bot_limit member limit.", placeholders));
     }
 
     sPlayerbotAIConfig.logEvent(ai, "GuildLeaveAction", guild->GetName(), std::to_string(guild->GetMemberSize()));

@@ -366,9 +366,12 @@ bool RpgAIChatAction::SpeakLine()
     if (bot->GetObjectGuid() == senderGuid)
     {
         if (type == CHAT_MSG_EMOTE)
-            bot->TextEmote(message.c_str());
+        {
+            if (!ai->ShouldSuppressChatMessage())
+                bot->TextEmote(message.c_str());
+        }
         else
-            bot->Say(message.c_str(), lang);
+            ai->Say(message.c_str());
         message = bot->GetName() + std::string(": ") + message;
     }
     else
@@ -377,14 +380,15 @@ bool RpgAIChatAction::SpeakLine()
 
         if (unit)
         {
-            if (type == CHAT_MSG_MONSTER_EMOTE)
+            if (!ai->ShouldSuppressChatMessage())
             {
-                std::string emote = unit->GetName() + std::string(" ") + message;
-                unit->MonsterTextEmote(emote.c_str(), bot);
-            }
-            else
-            {
-                unit->MonsterSay(message.c_str(), lang, bot);               
+                if (type == CHAT_MSG_MONSTER_EMOTE)
+                {
+                    std::string emote = unit->GetName() + std::string(" ") + message;
+                    unit->MonsterTextEmote(emote.c_str(), bot);
+                }
+                else
+                    unit->MonsterSay(message.c_str(), lang, bot);
             }
             
             message = unit->GetName() + std::string(": ") + message;
@@ -589,7 +593,8 @@ void RpgAIChatAction::ManualChat(GuidPosition target, const std::string& line)
     {
         llmContext.clear();
         SET_GAI_VALUE2(std::string, "global string", "llmcontext manual" + std::to_string(target.GetCounter()), llmContext);
-        bot->SendMessageToPlayer("<conversation restarted>");
+        if (!ai->ShouldSuppressChatMessage())
+            bot->SendMessageToPlayer("<conversation restarted>");
         return;
     }
     else if (line == "undo")
@@ -600,7 +605,8 @@ void RpgAIChatAction::ManualChat(GuidPosition target, const std::string& line)
 
         llmContext = llmContext.substr(0, std::max(lastBot,lastUnit));
         SET_GAI_VALUE2(std::string, "global string", "llmcontext manual" + std::to_string(target.GetCounter()), llmContext);
-        bot->SendMessageToPlayer("<last message remove>");
+        if (!ai->ShouldSuppressChatMessage())
+            bot->SendMessageToPlayer("<last message remove>");
         return;
     }
     else if (line == "impersonate")
@@ -611,10 +617,13 @@ void RpgAIChatAction::ManualChat(GuidPosition target, const std::string& line)
 
         std::string unitLine = line.substr(12);
 
-        if (line.find("*") == 0)
-            unit->MonsterTextEmote(unitLine.c_str(), bot);
-        else
-            unit->MonsterSay(unitLine.c_str(), LANG_UNIVERSAL, bot);
+        if (!ai->ShouldSuppressChatMessage())
+        {
+            if (line.find("*") == 0)
+                unit->MonsterTextEmote(unitLine.c_str(), bot);
+            else
+                unit->MonsterSay(unitLine.c_str(), LANG_UNIVERSAL, bot);
+        }
 
         llmContext += std::string(" ") + bot->GetName() + std::string(":") + line;
         SET_GAI_VALUE2(std::string, "global string", "llmcontext manual" + std::to_string(target.GetCounter()), llmContext);
@@ -636,9 +645,12 @@ void RpgAIChatAction::ManualChat(GuidPosition target, const std::string& line)
         SET_AI_VALUE2(int32, "manual int", "rpg ai chat line", 11);
 
         if (line.find("*") == 0)
-            bot->TextEmote(line);
+        {
+            if (!ai->ShouldSuppressChatMessage())
+                bot->TextEmote(line);
+        }
         else
-            bot->Say(line, LANG_UNIVERSAL);
+            ai->Say(line);
 
         llmContext += std::string(" ") + bot->GetName() + std::string(":") + line;
     }
@@ -734,7 +746,7 @@ bool RpgTradeUsefulAction::Execute(Event& event)
             if (bot->GetGroup() && bot->GetGroup()->IsMember(guidP))
                 ai->TellPlayerNoFacing(GetMaster(), "You can use this " + chat->formatItem(item) + " better than me, " + player->GetName() + ".", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
             else
-                bot->Say("You can use this " + chat->formatItem(item) + " better than me, " + player->GetName() + ".", (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+                ai->Say("You can use this " + chat->formatItem(item) + " better than me, " + player->GetName() + ".");
 
             if (!urand(0, 4) || items.size() < 2) //Complete the trade if we have no more items to trade.
             {
@@ -833,7 +845,7 @@ bool RpgEnchantAction::Execute(Event& event)
                     if (bot->GetGroup() && bot->GetGroup()->IsMember(guidP))
                         ai->TellPlayerNoFacing(GetMaster(), "Let me enchant this " + chat->formatItem(item) + " with " + chat->formatSpell(spellId) + " for you " + player->GetName() + ".", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
                     else
-                        bot->Say("Let me enchant this " + chat->formatItem(item) + " with " + chat->formatSpell(spellId) + " for you " + player->GetName() + ".", (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+                        ai->Say("Let me enchant this " + chat->formatItem(item) + " with " + chat->formatSpell(spellId) + " for you " + player->GetName() + ".");
 
                     WorldPacket p;
                     uint32 status = TRADE_STATUS_TRADE_ACCEPT;

@@ -4776,7 +4776,8 @@ void PlayerbotChatDirector::Update()
             {
                 std::string failure = actionResult.playerMessage.empty() ?
                     "Sorry, I can't complete that transaction right now." : actionResult.playerMessage;
-                bot->Whisper(failure, LANG_UNIVERSAL, player->GetObjectGuid());
+                bot->GetPlayerbotAI()->Whisper(failure, player->GetName(), false,
+                    PlayerbotAI::ChatMessageClass::social);
             }
         }
         for (ChatDirectorReply& reply : replies)

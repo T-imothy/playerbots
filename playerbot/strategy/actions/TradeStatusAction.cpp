@@ -221,7 +221,7 @@ bool TradeStatusAction::CheckTrade()
             }
             else
             {
-                bot->Say("Thank you " + name + ".", (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));
+                ai->Say("Thank you " + name + ".");
             }
         }
         return isGettingItem;

@@ -689,6 +689,7 @@ Action* Engine::InitializeAction(ActionNode* actionNode)
 
 bool Engine::ListenAndExecute(Action* action, Event& event)
 {
+    PlayerbotAI::ScopedChatAction chatActionScope(ai, action->getName(), event);
     bool actionExecuted = false;
     Action* prevExecutedAction = lastExecutedAction;
     if (actionExecutionListeners.Before(action, event))
@@ -728,7 +729,9 @@ bool Engine::ListenAndExecute(Action* action, Event& event)
             }
         }
 
-        ai->TellPlayerNoFacing(ai->GetMaster() ? ai->GetMaster() : ai->GetBot(), out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+        ai->TellPlayerNoFacing(ai->GetMaster() ? ai->GetMaster() : ai->GetBot(), out,
+            PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false, false,
+            PlayerbotAI::ChatMessageClass::diagnostic);
     }
 
     if (ai->HasStrategy("debug threat", BotState::BOT_STATE_NON_COMBAT))
@@ -744,7 +747,9 @@ bool Engine::ListenAndExecute(Action* action, Event& event)
 
         out << "threat: " << int32(currentThreat)<< "+" << int32(deltaThreat) << " / " << int32(tankThreat) << " ||| " << relThreat;
 
-        ai->TellPlayerNoFacing(ai->GetMaster() ? ai->GetMaster() : ai->GetBot(), out);
+        ai->TellPlayerNoFacing(ai->GetMaster() ? ai->GetMaster() : ai->GetBot(), out,
+            PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, true, false,
+            PlayerbotAI::ChatMessageClass::diagnostic);
     }
 
     actionExecuted = actionExecutionListeners.OverrideResult(action, actionExecuted, event);

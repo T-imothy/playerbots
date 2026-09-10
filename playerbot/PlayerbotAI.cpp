@@ -1,6 +1,7 @@
 #include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
 #include <stdarg.h>
+#include <cctype>
 #include <iomanip>
 
 #include "playerbot/AiFactory.h"
@@ -241,6 +242,177 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
     {
         DoSpecificAction("auto talents");
     }
+}
+
+PlayerbotAI::ScopedChatAction::ScopedChatAction(PlayerbotAI* ai, const std::string& actionName, Event& event) : ai(ai)
+{
+    if (ai)
+        ai->PushChatActionContext(actionName, event);
+}
+
+PlayerbotAI::ScopedChatAction::~ScopedChatAction()
+{
+    if (ai)
+        ai->PopChatActionContext();
+}
+
+bool PlayerbotAI::IsAutonomousMaintenanceSource(const Event& event) const
+{
+    std::string source = boost::algorithm::to_lower_copy(event.getSource());
+    static const char* operationalSources[] = {
+        "rpg action", "organic economy", "chat action", "guild management",
+        "guild society", "create group", "travel action", "move action", "do loot"
+    };
+    for (const char* marker : operationalSources)
+        if (source.find(marker) != std::string::npos)
+            return true;
+
+    return source.find("living ") == 0 || source.find("living-wow-safe-") == 0;
+}
+
+std::string PlayerbotAI::ClassifyOperationalChatAction(
+    const std::string& actionName, const Event& event) const
+{
+    std::string action = boost::algorithm::to_lower_copy(actionName);
+
+    auto containsToken = [](const std::string& text, const std::string& token)
+    {
+        size_t position = text.find(token);
+        while (position != std::string::npos)
+        {
+            bool leftBoundary = position == 0 || !std::isalnum(static_cast<unsigned char>(text[position - 1]));
+            size_t after = position + token.size();
+            bool rightBoundary = after == text.size() || !std::isalnum(static_cast<unsigned char>(text[after]));
+            if (leftBoundary && rightBoundary)
+                return true;
+            position = text.find(token, position + 1);
+        }
+        return false;
+    };
+
+    // Loot-roll explanations are intentional social coordination.  The
+    // mechanical corpse/open/store actions remain operational.
+    if (containsToken(action, "loot") && containsToken(action, "roll"))
+        return "";
+
+    static const char* operationalTokens[] = {
+        "vendor", "sell", "buy", "buyback", "wts", "wtb", "trade", "repair", "bank", "mail", "sendmail",
+        "auction", "ah", "trainer", "train", "equip", "unequip", "quest", "travel",
+        "taxi", "flight", "hearth", "home", "innkeeper", "gossip", "rpg", "loot",
+        "use", "cast", "craft", "talent", "profession", "maintenance", "errand", "storage",
+        "greet", "greeting", "hello", "accept invitation"
+    };
+    for (const char* token : operationalTokens)
+        if (containsToken(action, token))
+            return token;
+
+    // World-owned workflows often invoke a generic nested action such as
+    // "use" or "cast", so their event origin is authoritative too.
+    return IsAutonomousMaintenanceSource(event) ? "maintenance" : "";
+}
+
+void PlayerbotAI::PushChatActionContext(const std::string& actionName, Event& event)
+{
+    const std::string actionClass = ClassifyOperationalChatAction(actionName, event);
+    const bool operational = !actionClass.empty();
+    const bool worldOwnedMaintenance = IsAutonomousMaintenanceSource(event);
+    Player* owner = event.getOwner();
+    const bool humanActor = owner && owner->isRealPlayer();
+    // A real player attached to a gameplay packet (loot, quest, taxi,
+    // gossip/trainer, and similar notifications) is context, not a request
+    // for every bot to narrate that operation. Direct chat/GM commands arrive
+    // as parameter events; nested packet work inherits that explicit origin.
+    const bool explicitHuman = humanActor && event.getPacket().empty();
+    const bool explicitGm = explicitHuman && owner->GetSession() &&
+        owner->GetSession()->GetSecurity() >= SEC_GAMEMASTER;
+
+    ChatActionContext context;
+    // Store only a controlled family label. Action names can contain dynamic
+    // qualifiers, so retaining them would risk putting conversation fragments
+    // into operational telemetry.
+    context.actionClass = actionClass.empty() ? "other" : actionClass;
+    context.messageClass = operational ? ChatMessageClass::operational : ChatMessageClass::contextual;
+    context.origin = operational ? ChatActionOrigin::autonomousMaintenance : ChatActionOrigin::autonomous;
+
+    // Brokers sometimes carry the affected human as Event::owner so the
+    // action can validate permissions.  A world-owned source still means the
+    // legacy action text is operational; the broker/director owns any social
+    // acknowledgement.  Direct legacy commands use their actual command name
+    // as the source and therefore retain their requested diagnostics.
+    if (worldOwnedMaintenance)
+    {
+        context.origin = ChatActionOrigin::autonomousMaintenance;
+        context.messageClass = ChatMessageClass::operational;
+    }
+    else if (explicitGm)
+    {
+        context.origin = ChatActionOrigin::gmDiagnostic;
+        context.messageClass = ChatMessageClass::diagnostic;
+    }
+    else if (explicitHuman)
+    {
+        context.origin = ChatActionOrigin::humanRequest;
+        context.messageClass = operational ? ChatMessageClass::diagnostic : ChatMessageClass::contextual;
+    }
+
+    if (!chatActionContexts.empty())
+    {
+        const ChatActionContext& parent = chatActionContexts.back();
+        // An autonomous maintenance action must keep ownership across nested
+        // DoSpecificAction calls, even if a nested action happens to carry a
+        // player pointer.  Conversely, diagnostics explicitly requested by a
+        // human or GM remain visible through the complete nested operation.
+        if (parent.origin == ChatActionOrigin::autonomousMaintenance ||
+            parent.origin == ChatActionOrigin::humanRequest ||
+            parent.origin == ChatActionOrigin::gmDiagnostic)
+        {
+            context.origin = parent.origin;
+            if (parent.origin == ChatActionOrigin::autonomousMaintenance)
+                context.messageClass = ChatMessageClass::operational;
+            else if (operational)
+                context.messageClass = ChatMessageClass::diagnostic;
+        }
+    }
+
+    chatActionContexts.push_back(context);
+}
+
+void PlayerbotAI::PopChatActionContext()
+{
+    if (!chatActionContexts.empty())
+        chatActionContexts.pop_back();
+}
+
+bool PlayerbotAI::ShouldSuppressChatMessage(ChatMessageClass messageClass) const
+{
+    if (!sPlayerbotAIConfig.chatDirectorV2 ||
+        !sPlayerbotAIConfig.chatDirectorSuppressLegacyOperationalChat ||
+        !sPlayerbotAIConfig.chatDirectorPartyCentralSuppression ||
+        chatActionContexts.empty() || messageClass == ChatMessageClass::social)
+        return false;
+
+    const ChatActionContext& context = chatActionContexts.back();
+    if (context.origin == ChatActionOrigin::humanRequest ||
+        context.origin == ChatActionOrigin::gmDiagnostic)
+        return false;
+
+    ChatMessageClass effectiveClass = messageClass == ChatMessageClass::contextual ?
+        context.messageClass : messageClass;
+    const bool suppress = context.origin == ChatActionOrigin::autonomousMaintenance ||
+        effectiveClass == ChatMessageClass::operational ||
+        effectiveClass == ChatMessageClass::diagnostic ||
+        effectiveClass == ChatMessageClass::error;
+    if (!suppress)
+        return false;
+
+    const char* originName = context.origin == ChatActionOrigin::autonomousMaintenance ?
+        "autonomous_maintenance" : "autonomous";
+    const char* className = effectiveClass == ChatMessageClass::operational ? "operational" :
+        (effectiveClass == ChatMessageClass::diagnostic ? "diagnostic" :
+        (effectiveClass == ChatMessageClass::error ? "error" : "contextual"));
+    sPlayerbotRendezvousManager.RecordSuppressedActivity(
+        bot, originName, className, context.actionClass);
+    return true;
 }
 
 PlayerbotAI::~PlayerbotAI()
@@ -2433,6 +2605,10 @@ bool PlayerbotAI::CanDoSpecificAction(const std::string& name, bool isUseful, bo
 
 bool PlayerbotAI::DoSpecificAction(const std::string& name, Event event, bool silent)
 {
+    // Keep the caller's origin alive around engine selection and the
+    // post-execution "impossible/useless/failed" diagnostics. The selected
+    // engine adds a nested scope, which inherits this origin.
+    ScopedChatAction chatActionScope(this, name, event);
     Player* requester = event.getOwner();
     for (uint8 i = 0 ; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
@@ -3124,6 +3300,9 @@ ChatChannelSource PlayerbotAI::GetChatChannelSource(Player* bot, uint32 type, st
 
 bool PlayerbotAI::SayToGuild(std::string msg, bool likePlayer)
 {
+    if (ShouldSuppressChatMessage())
+        return true;
+
     if (msg.empty())
     {
         return false;
@@ -3172,6 +3351,9 @@ bool PlayerbotAI::SayToGuild(std::string msg, bool likePlayer)
 
 bool PlayerbotAI::SayToWorld(std::string msg)
 {
+    if (ShouldSuppressChatMessage())
+        return true;
+
     if (msg.empty())
     {
         return false;
@@ -3195,6 +3377,9 @@ bool PlayerbotAI::SayToWorld(std::string msg)
 
 bool PlayerbotAI::SayToGeneral(std::string msg)
 {
+    if (ShouldSuppressChatMessage())
+        return true;
+
     if (msg.empty())
     {
         return false;
@@ -3228,6 +3413,9 @@ bool PlayerbotAI::SayToGeneral(std::string msg)
 
 bool PlayerbotAI::SayToTrade(std::string msg)
 {
+    if (ShouldSuppressChatMessage())
+        return true;
+
     if (msg.empty())
     {
         return false;
@@ -3269,6 +3457,9 @@ bool PlayerbotAI::SayToTrade(std::string msg)
 
 bool PlayerbotAI::SayToLFG(std::string msg)
 {
+    if (ShouldSuppressChatMessage())
+        return true;
+
     if (msg.empty())
     {
         return false;
@@ -3301,6 +3492,9 @@ bool PlayerbotAI::SayToLFG(std::string msg)
 
 bool PlayerbotAI::SayToLocalDefense(std::string msg)
 {
+    if (ShouldSuppressChatMessage())
+        return true;
+
     if (msg.empty())
     {
         return false;
@@ -3334,6 +3528,9 @@ bool PlayerbotAI::SayToLocalDefense(std::string msg)
 
 bool PlayerbotAI::SayToWorldDefense(std::string msg)
 {
+    if (ShouldSuppressChatMessage())
+        return true;
+
 #ifdef MANGOSBOT_ZERO
     //check if 11 honor rank
     if (bot->GetHonorRankInfo().rank < 11)
@@ -3366,6 +3563,9 @@ bool PlayerbotAI::SayToWorldDefense(std::string msg)
 
 bool PlayerbotAI::SayToGuildRecruitment(std::string msg)
 {
+    if (ShouldSuppressChatMessage())
+        return true;
+
     //check for bot's level? level 60?
     if (msg.empty())
     {
@@ -3407,8 +3607,11 @@ bool PlayerbotAI::SayToGuildRecruitment(std::string msg)
 #endif
 }
 
-bool PlayerbotAI::SayToParty(std::string msg, bool likePlayer)
+bool PlayerbotAI::SayToParty(std::string msg, bool likePlayer, ChatMessageClass messageClass)
 {
+    if (ShouldSuppressChatMessage(messageClass))
+        return true;
+
     if (!bot->GetGroup())
     {
         return false;
@@ -3448,8 +3651,11 @@ bool PlayerbotAI::SayToParty(std::string msg, bool likePlayer)
     return true;
 }
 
-bool PlayerbotAI::SayToRaid(std::string msg)
+bool PlayerbotAI::SayToRaid(std::string msg, ChatMessageClass messageClass)
 {
+    if (ShouldSuppressChatMessage(messageClass))
+        return true;
+
     if (!bot->GetGroup() || !bot->GetGroup()->IsRaidGroup())
     {
         return false;
@@ -3468,6 +3674,9 @@ bool PlayerbotAI::SayToRaid(std::string msg)
 
 bool PlayerbotAI::Yell(std::string msg, bool likePlayer)
 {
+    if (ShouldSuppressChatMessage())
+        return true;
+
     uint32 lang = LANG_UNIVERSAL;
     if (bot->GetTeam() == ALLIANCE)
     {
@@ -3501,8 +3710,11 @@ bool PlayerbotAI::Yell(std::string msg, bool likePlayer)
     return true;
 }
 
-bool PlayerbotAI::Say(std::string msg, bool likePlayer)
+bool PlayerbotAI::Say(std::string msg, bool likePlayer, ChatMessageClass messageClass)
 {
+    if (ShouldSuppressChatMessage(messageClass))
+        return true;
+
     uint32 lang = LANG_UNIVERSAL;
     if (bot->GetTeam() == ALLIANCE)
     {
@@ -3537,8 +3749,11 @@ bool PlayerbotAI::Say(std::string msg, bool likePlayer)
     return true;
 }
 
-bool PlayerbotAI::Whisper(std::string msg, std::string receiverName, bool likePlayer)
+bool PlayerbotAI::Whisper(std::string msg, std::string receiverName, bool likePlayer, ChatMessageClass messageClass)
 {
+    if (ShouldSuppressChatMessage(messageClass))
+        return true;
+
     ObjectGuid receiver = sObjectMgr.GetPlayerGuidByName(receiverName);
     Player* rPlayer = sObjectMgr.GetPlayer(receiver);
 
@@ -3568,8 +3783,11 @@ bool PlayerbotAI::Whisper(std::string msg, std::string receiverName, bool likePl
     return true;
 }
 
-bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, PlayerbotSecurityLevel securityLevel, bool isPrivate, bool noRepeat, bool ignoreSilent)
+bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, PlayerbotSecurityLevel securityLevel, bool isPrivate, bool noRepeat, bool ignoreSilent, ChatMessageClass messageClass)
 {
+    if (ShouldSuppressChatMessage(messageClass))
+        return true;
+
     if(!player)
         return false;
 
@@ -3651,13 +3869,13 @@ bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, Playerbot
 
             case CHAT_MSG_RAID:
             {
-                this->SayToRaid(text.c_str());
+                this->SayToRaid(text.c_str(), messageClass);
 
                 return true;
             }
             case CHAT_MSG_PARTY:
             {
-                SayToParty(text.c_str());
+                SayToParty(text.c_str(), false, messageClass);
 
                 return true;
             }
@@ -3684,7 +3902,7 @@ bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, Playerbot
                     return true;
                 }
 
-                this->Whisper(text, player->GetName());
+                this->Whisper(text, player->GetName(), false, messageClass);
                 return true;
             }
 
@@ -3698,6 +3916,9 @@ bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, Playerbot
 
 bool PlayerbotAI::TellError(Player* player, std::string text, PlayerbotSecurityLevel securityLevel, bool ignoreSilent)
 {
+    if (ShouldSuppressChatMessage(ChatMessageClass::error))
+        return false;
+
     if (!IsTellAllowed(player, securityLevel) || !IsSafe(player) || player->GetPlayerbotAI())
         return false;
 
@@ -3726,9 +3947,12 @@ bool PlayerbotAI::IsTellAllowed(Player* player, PlayerbotSecurityLevel securityL
     return true;
 }
 
-bool PlayerbotAI::TellPlayer(Player* player, std::string text, PlayerbotSecurityLevel securityLevel, bool isPrivate, bool ignoreSilent)
+bool PlayerbotAI::TellPlayer(Player* player, std::string text, PlayerbotSecurityLevel securityLevel, bool isPrivate, bool ignoreSilent, ChatMessageClass messageClass)
 {
-    if (!TellPlayerNoFacing(player, text, securityLevel, isPrivate, ignoreSilent))
+    if (ShouldSuppressChatMessage(messageClass))
+        return true;
+
+    if (!TellPlayerNoFacing(player, text, securityLevel, isPrivate, ignoreSilent, false, messageClass))
         return false;
 
     if (player && !player->IsBeingTeleported() && !sServerFacade.isMoving(bot) && !sServerFacade.IsInCombat(bot) && bot->GetMapId() == player->GetMapId() && !bot->IsTaxiFlying() && !bot->IsFlying())

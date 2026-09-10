@@ -365,6 +365,43 @@ private:
 class PlayerbotAI : public PlayerbotAIBase
 {
 public:
+
+    // Chat generated while an action is executing carries both an origin and
+    // a message class.  This lets Chat v2 silence legacy maintenance details
+    // at one boundary even when an action invokes other actions internally.
+    // Social dialogue emitted outside an action (for example rendezvous
+    // arrival/return summaries) is intentionally unaffected.
+    enum class ChatActionOrigin : uint8
+    {
+        none = 0,
+        autonomous,
+        autonomousMaintenance,
+        humanRequest,
+        gmDiagnostic
+    };
+
+    enum class ChatMessageClass : uint8
+    {
+        contextual = 0,
+        social,
+        operational,
+        diagnostic,
+        error
+    };
+
+    class ScopedChatAction
+    {
+    public:
+        ScopedChatAction(PlayerbotAI* ai, const std::string& actionName, Event& event);
+        ~ScopedChatAction();
+
+        ScopedChatAction(const ScopedChatAction&) = delete;
+        ScopedChatAction& operator=(const ScopedChatAction&) = delete;
+
+    private:
+        PlayerbotAI* ai;
+    };
+
 	PlayerbotAI();
 	PlayerbotAI(Player* bot);
 	virtual ~PlayerbotAI();
@@ -447,17 +484,18 @@ public:
     bool SayToLocalDefense(std::string msg);
     bool SayToWorldDefense(std::string msg);
     bool SayToGuildRecruitment(std::string msg);
-    bool SayToParty(std::string msg, bool likePlayer = false);
-    bool SayToRaid(std::string msg);
+    bool SayToParty(std::string msg, bool likePlayer = false, ChatMessageClass messageClass = ChatMessageClass::contextual);
+    bool SayToRaid(std::string msg, ChatMessageClass messageClass = ChatMessageClass::contextual);
     bool Yell(std::string msg, bool likePlayer = false);
-    bool Say(std::string msg, bool likePlayer = false);
-    bool Whisper(std::string msg, std::string receiverName, bool likePlayer = false);
-    bool TellPlayer(Player* player, std::ostringstream &stream, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool ignoreSilent = false) { return TellPlayer(player, stream.str(), securityLevel, isPrivate, ignoreSilent); }
-    bool TellPlayer(Player* player, std::string text, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool ignoreSilent = false);
-    bool TellPlayerNoFacing(Player* player, std::ostringstream& stream, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool noRepeat = true, bool ignoreSilent = false) { return TellPlayerNoFacing(player, stream.str(), securityLevel, isPrivate, noRepeat, ignoreSilent); }
-    bool TellPlayerNoFacing(Player* player, std::string text, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool noRepeat = true, bool ignoreSilent = false);
-    bool TellDebug(Player* player, std::string text, std::string strategy = "debug", BotState state = BotState::BOT_STATE_NON_COMBAT){ if (HasStrategy(strategy, state)) return TellPlayerNoFacing(player, text, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false); return false;}
+    bool Say(std::string msg, bool likePlayer = false, ChatMessageClass messageClass = ChatMessageClass::contextual);
+    bool Whisper(std::string msg, std::string receiverName, bool likePlayer = false, ChatMessageClass messageClass = ChatMessageClass::contextual);
+    bool TellPlayer(Player* player, std::ostringstream &stream, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool ignoreSilent = false, ChatMessageClass messageClass = ChatMessageClass::contextual) { return TellPlayer(player, stream.str(), securityLevel, isPrivate, ignoreSilent, messageClass); }
+    bool TellPlayer(Player* player, std::string text, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool ignoreSilent = false, ChatMessageClass messageClass = ChatMessageClass::contextual);
+    bool TellPlayerNoFacing(Player* player, std::ostringstream& stream, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool noRepeat = true, bool ignoreSilent = false, ChatMessageClass messageClass = ChatMessageClass::contextual) { return TellPlayerNoFacing(player, stream.str(), securityLevel, isPrivate, noRepeat, ignoreSilent, messageClass); }
+    bool TellPlayerNoFacing(Player* player, std::string text, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool isPrivate = true, bool noRepeat = true, bool ignoreSilent = false, ChatMessageClass messageClass = ChatMessageClass::contextual);
+    bool TellDebug(Player* player, std::string text, std::string strategy = "debug", BotState state = BotState::BOT_STATE_NON_COMBAT){ if (HasStrategy(strategy, state)) return TellPlayerNoFacing(player, text, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false, false, ChatMessageClass::diagnostic); return false;}
     bool TellError(Player* player, std::string text, PlayerbotSecurityLevel securityLevel = PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, bool ignoreSilent = false);
+    bool ShouldSuppressChatMessage(ChatMessageClass messageClass = ChatMessageClass::contextual) const;
     void SpellInterrupted(uint32 spellid);
     int32 CalculateGlobalCooldown(uint32 spellid);
     void InterruptSpell(bool withMeleeAndAuto = true);
@@ -700,6 +738,17 @@ public:
 #endif
 
 private:
+    struct ChatActionContext
+    {
+        ChatActionOrigin origin = ChatActionOrigin::none;
+        ChatMessageClass messageClass = ChatMessageClass::contextual;
+        std::string actionClass;
+    };
+
+    void PushChatActionContext(const std::string& actionName, Event& event);
+    void PopChatActionContext();
+    bool IsAutonomousMaintenanceSource(const Event& event) const;
+    std::string ClassifyOperationalChatAction(const std::string& actionName, const Event& event) const;
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
 
@@ -744,6 +793,7 @@ protected:
     bool m_recordIncommingMessages = false;
     std::vector<std::string> m_recordedMessages;
     Event lastEvent;
+    std::vector<ChatActionContext> chatActionContexts;
 
 public:
     void RecordMessages(bool record, bool incomming = false) { m_recordMessages = record; m_recordIncommingMessages = incomming; if (!record) m_recordedMessages.clear(); }

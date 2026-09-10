@@ -92,6 +92,6 @@ bool RevealGatheringItemAction::Execute(Event& event)
 
     // everything is fine, do it
     ai->Ping(go->GetPositionX(), go->GetPositionY());
-    bot->Say(msg.str(), LANG_UNIVERSAL);
+    ai->Say(msg.str());
     return true;
 }
