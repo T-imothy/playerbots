@@ -89,6 +89,8 @@ private:
     std::map<uint32, std::chrono::steady_clock::time_point> vendorCooldowns;
     std::set<uint32> vendorPressureNotified;
     std::map<uint32, SharedObjectOffer> sharedObjectOffers;
+    std::map<std::string, std::chrono::steady_clock::time_point> sharedObjectCooldowns;
+    std::map<std::string, std::chrono::steady_clock::time_point> sharedObjectPartyCooldowns;
     std::map<std::string, GatheringPolicy> gatheringPolicies;
     std::chrono::steady_clock::time_point nextVendorScan;
 };

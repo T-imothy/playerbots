@@ -43,6 +43,16 @@ static std::string GatheringPolicyKey(uint32 groupId, uint32 playerGuid, uint32 
     return std::to_string(groupId) + ':' + std::to_string(playerGuid) + ':' + std::to_string(skillId);
 }
 
+static std::string SharedObjectPartyKey(uint32 groupId, uint32 playerGuid)
+{
+    return std::to_string(groupId) + ':' + std::to_string(playerGuid);
+}
+
+static std::string SharedObjectKey(uint32 groupId, uint32 playerGuid, uint64 objectGuid)
+{
+    return SharedObjectPartyKey(groupId, playerGuid) + ':' + std::to_string(objectGuid);
+}
+
 static const char* GatheringSkillName(uint32 skillId)
 {
     return skillId == SKILL_MINING ? "mining" : "herbalism";
@@ -236,23 +246,43 @@ bool PlayerbotSocialActionBroker::CanUseSharedObject(Player* bot, Player* player
     }
 
     const auto now = std::chrono::steady_clock::now();
+    const uint32 groupId = bot->GetGroup()->GetId();
+    const std::string partyKey = SharedObjectPartyKey(groupId, player->GetGUIDLow());
+    const std::string objectKey = SharedObjectKey(groupId, player->GetGUIDLow(), guid.GetRawValue());
     auto found = sharedObjectOffers.find(bot->GetGUIDLow());
     if (found != sharedObjectOffers.end() && found->second.objectGuid == guid.GetRawValue() &&
         found->second.playerGuid == player->GetGUIDLow() && found->second.expires > now)
         return found->second.state == "approved";
 
-    // Only one party bot may ask about a particular node or chest. Other bots
-    // leave it alone while that exact offer is pending, approved, or declined.
+    // A bot may hold only one unresolved offer. Previously, walking among two
+    // nearby containers replaced this entry on every AI pass, invalidating the
+    // player's reply and producing a fresh announcement each time.
+    if (found != sharedObjectOffers.end() && found->second.expires > now &&
+        found->second.state == "pending")
+        return false;
+
+    auto objectCooldown = sharedObjectCooldowns.find(objectKey);
+    if (objectCooldown != sharedObjectCooldowns.end() && objectCooldown->second > now)
+        return false;
+
+    // The party resolves one world-object question at a time, even when a town
+    // contains several crates or barrels. This also gives short replies such as
+    // "yes" exactly one stable offer to confirm.
     for (const auto& pair : sharedObjectOffers)
-        if (pair.second.objectGuid == guid.GetRawValue() &&
-            pair.second.playerGuid == player->GetGUIDLow() && pair.second.groupId == bot->GetGroup()->GetId() &&
+        if (pair.second.playerGuid == player->GetGUIDLow() && pair.second.groupId == groupId &&
+            (pair.second.state == "pending" || pair.second.state == "approved") &&
             pair.second.expires > now)
             return false;
+
+
+    auto partyCooldown = sharedObjectPartyCooldowns.find(partyKey);
+    if (partyCooldown != sharedObjectPartyCooldowns.end() && partyCooldown->second > now)
+        return false;
 
     SharedObjectOffer offer;
     offer.botGuid = bot->GetGUIDLow();
     offer.playerGuid = player->GetGUIDLow();
-    offer.groupId = bot->GetGroup()->GetId();
+    offer.groupId = groupId;
     offer.objectGuid = guid.GetRawValue();
     offer.objectEntry = guid.GetEntry();
     offer.skillId = loot.skillId;
@@ -266,6 +296,8 @@ bool PlayerbotSocialActionBroker::CanUseSharedObject(Player* bot, Player* player
     offer.state = "pending";
     offer.expires = now + std::chrono::seconds(90);
     sharedObjectOffers[offer.botGuid] = offer;
+    sharedObjectCooldowns[objectKey] = now + std::chrono::minutes(10);
+    sharedObjectPartyCooldowns[partyKey] = now + std::chrono::seconds(60);
 
     std::ostringstream text;
     if (ordinaryChest)
@@ -669,6 +701,10 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             offer->second.state = "declined";
             offer->second.expires = std::chrono::steady_clock::now() + std::chrono::minutes(10);
         }
+        if (completed)
+            sLog.outString("Living WoW shared object permission bot=%u player=%u object=%u kind=%s result=%s",
+                bot->GetGUIDLow(), player->GetGUIDLow(), offer->second.objectEntry,
+                offer->second.objectKind.c_str(), approving ? "approved_queued" : "declined");
     }
     else if (proposal.type == "meet_player" &&
         std::regex_match(proposal.capabilityRef, match, std::regex(R"(meet:([0-9]+):([0-9]+))")) &&
@@ -708,6 +744,16 @@ uint32 PlayerbotSocialActionBroker::PreferredQuest(uint32 botGuid) const
 void PlayerbotSocialActionBroker::Update()
 {
     const auto now = std::chrono::steady_clock::now();
+    for (auto cooldown = sharedObjectCooldowns.begin(); cooldown != sharedObjectCooldowns.end(); )
+        if (cooldown->second <= now)
+            cooldown = sharedObjectCooldowns.erase(cooldown);
+        else
+            ++cooldown;
+    for (auto cooldown = sharedObjectPartyCooldowns.begin(); cooldown != sharedObjectPartyCooldowns.end(); )
+        if (cooldown->second <= now)
+            cooldown = sharedObjectPartyCooldowns.erase(cooldown);
+        else
+            ++cooldown;
     for (auto policy = gatheringPolicies.begin(); policy != gatheringPolicies.end(); )
     {
         Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, policy->second.playerGuid));

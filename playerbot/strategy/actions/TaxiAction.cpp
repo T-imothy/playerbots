@@ -9,6 +9,8 @@ using namespace ai;
 bool TaxiAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    const bool suppressRoutineTaxiNarration = sPlayerbotAIConfig.chatDirectorV2 &&
+        requester && requester->isRealPlayer();
     ai->RemoveShapeshift();
 
     LastMovement& movement = context->GetValue<LastMovement&>("last taxi")->Get();
@@ -84,7 +86,8 @@ bool TaxiAction::Execute(Event& event)
         {
             movement.taxiNodes.clear();
             movement.Set(NULL);
-            if (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+            if (!suppressRoutineTaxiNarration &&
+                (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT)))
                 ai->TellPlayerNoFacing(requester, "I can't fly with you");
             return false;
         }
@@ -96,7 +99,8 @@ bool TaxiAction::Execute(Event& event)
         return true;
     }
 
-    if(!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+    if (!suppressRoutineTaxiNarration &&
+        (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT)))
         ai->TellPlayerNoFacing(requester, "Cannot find any flightmaster to talk");
 
     return false;
