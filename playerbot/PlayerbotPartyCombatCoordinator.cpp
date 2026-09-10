@@ -466,6 +466,18 @@ bool PlayerbotPartyCombatCoordinator::HandleAddonMessage(Player* receiverBot, Pl
     if (f[1] == "HELLO" || f[1] == "GET") { state->addonClients.insert(sender->GetObjectGuid()); ++state->revision; }
     else if (f[1] == "THREAT_ON") { state->addonClients.insert(sender->GetObjectGuid()); state->threatClients.insert(sender->GetObjectGuid()); }
     else if (f[1] == "THREAT_OFF") state->threatClients.erase(sender->GetObjectGuid());
+    else if (f[1] == "TAKE_LEAD")
+    {
+        Group* group = receiverBot->GetGroup();
+        // PARTY addon messages are delivered to every bot. Exactly the current
+        // bot leader is allowed to act, so one click can never fan out into
+        // multiple transfers or legacy chat commands.
+        if (!group || !group->IsLeader(receiverBot->GetObjectGuid()) ||
+            !group->IsMember(sender->GetObjectGuid()))
+            return true;
+        group->ChangeLeader(sender->GetObjectGuid());
+        ++state->revision;
+    }
     else if (!IsLeader(sender)) SendAddon(receiverBot, sender, "LWOWP1\tE\tleader_required");
     else if (f[1] == "HOLD") { state->hold = true; ++state->revision; }
     else if (f[1] == "ASSIST") { state->hold = false; ++state->revision; }

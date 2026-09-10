@@ -15,19 +15,15 @@ namespace ai
             Player* passLeaderTo = PassLeaderTo(event);
             if (passLeaderTo && passLeaderTo != bot && bot->GetGroup() && bot->GetGroup()->IsMember(passLeaderTo->GetObjectGuid()))
             {
-                WorldPacket p(SMSG_GROUP_SET_LEADER, 8);
-                p << passLeaderTo->GetObjectGuid();
-                bot->GetSession()->HandleGroupSetLeaderOpcode(p);
+                // Change the authoritative group directly on the world thread.
+                // Resetting the AI from inside its currently executing action
+                // invalidates the engine/action lifetime and can terminate the
+                // realm process. The normal next AI tick observes the new leader.
+                bot->GetGroup()->ChangeLeader(passLeaderTo->GetObjectGuid());
                 
                 if (!message.empty())
                     ai->TellPlayerNoFacing(passLeaderTo, message);
 
-                if (sRandomPlayerbotMgr.IsRandomBot(bot))
-                {
-                    ai->ResetStrategies();
-                    ai->Reset();
-                }
-                
                 return true;
             }
 
