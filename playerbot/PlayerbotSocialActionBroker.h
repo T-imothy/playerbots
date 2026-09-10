@@ -30,6 +30,7 @@ private:
         uint32 playerGuid = 0;
         uint32 groupId = 0;
         uint32 questId = 0;
+        uint8 initialBagUsage = 0;
         std::string state;
         std::string failureReason;
         std::chrono::steady_clock::time_point expires;

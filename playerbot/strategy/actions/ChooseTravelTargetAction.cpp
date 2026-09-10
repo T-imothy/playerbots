@@ -69,6 +69,11 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         newTarget.SetForced(true);
         newTarget.SetRelevance(std::max<uint32>(targetRelevance, 198u));
     }
+    else if (AI_VALUE2(std::string, "manual string", "future travel condition") == "living vendor bags")
+    {
+        newTarget.SetForced(true);
+        newTarget.SetRelevance(std::max<uint32>(targetRelevance, 197u));
+    }
     else
     {
         newTarget.SetRelevance(targetRelevance);

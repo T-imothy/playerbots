@@ -756,6 +756,29 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
         }
     }
 
+    // A full party member can truthfully offer a scoped vendor trip.  The
+    // action broker, not the language model, owns the travel and return.
+    if (speaker && sameZone && bot->GetGroup() && bot->GetGroup() == speaker->GetGroup() &&
+        !bot->IsInCombat())
+    {
+        uint8 bagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
+        bool canSell = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<bool>("can sell")->Get();
+        if (bagUsage >= 90 && canSell)
+        {
+            ChatDirectorCapability capability;
+            capability.capabilityRef = "vendor:" + std::to_string(bot->GetGUIDLow()) + ':' +
+                std::to_string(speaker->GetGUIDLow());
+            capability.type = "vendor_bags";
+            capability.quantity = 1;
+            capability.minQuantity = 1;
+            capability.maxQuantity = 1;
+            capability.deliveries.push_back("immediate");
+            capability.description = "Inventory is " + std::to_string((uint32)bagUsage) +
+                " percent full and contains items safe to sell to a normal vendor.";
+            candidate.actionCapabilities.push_back(std::move(capability));
+        }
+    }
+
 }
 
 void PlayerbotChatDirector::MaybeCreateAmbientEvent(std::chrono::steady_clock::time_point now)

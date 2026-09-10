@@ -24,7 +24,8 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
     return sPlayerbotAIConfig.chatDirectorSocialActions && (type == "create_group_and_invite" || type == "invite_to_existing_group" ||
         type == "request_leader_invite" || type == "accept_group_invite" ||
         type == "pass_leadership" || type == "leave_group" ||
-        type == "share_quest" || type == "accept_party_quest_plan" || type == "meet_player");
+        type == "share_quest" || type == "accept_party_quest_plan" || type == "meet_player" ||
+        type == "vendor_bags");
 }
 
 bool PlayerbotSocialActionBroker::ValidateCommon(Player* bot, Player* player) const
@@ -67,6 +68,12 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
     if (!ValidateCommon(bot, player))
         return false;
 
+    if (proposal.type == "vendor_bags")
+        for (const auto& pair : actions)
+            if (pair.second.botGuid == proposal.botGuid && pair.second.type == "vendor_bags" &&
+                (pair.second.state == "vendor_travel" || pair.second.state == "returning"))
+                return false;
+
     Action action;
     action.actionId = "wow-social-" + event.eventId + "-" + proposal.proposalId;
     action.eventId = event.eventId;
@@ -76,7 +83,8 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
     action.botGuid = proposal.botGuid;
     action.playerGuid = proposal.targetGuid;
     action.state = "preparing";
-    action.expires = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+    action.expires = std::chrono::steady_clock::now() + std::chrono::seconds(
+        proposal.type == "vendor_bags" ? 300 : 90);
 
     std::smatch match;
     bool completed = false;
@@ -169,6 +177,26 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living party quest plan", std::to_string(questId), player), true);
         }
     }
+    else if (proposal.type == "vendor_bags" &&
+        std::regex_match(proposal.capabilityRef, match, std::regex(R"(vendor:([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow() &&
+        bot->GetGroup() && bot->GetGroup() == player->GetGroup() && !bot->IsInCombat())
+    {
+        action.initialBagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
+        bool canSell = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<bool>("can sell")->Get();
+        bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living vendor bags", "", player), true);
+        bool requested = canSell && action.initialBagUsage >= 90 &&
+            bot->GetPlayerbotAI()->DoSpecificAction("request travel target::512", Event("living vendor bags", "", player), true);
+        if (requested)
+        {
+            action.state = "vendor_travel";
+            actions[action.actionId] = action;
+            Report(actions[action.actionId]);
+            return true;
+        }
+        action.failureReason = "no safe vendor trip is currently available";
+    }
     else if (proposal.type == "meet_player" &&
         std::regex_match(proposal.capabilityRef, match, std::regex(R"(meet:([0-9]+):([0-9]+))")) &&
         (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
@@ -210,7 +238,58 @@ void PlayerbotSocialActionBroker::Update()
     for (auto& pair : actions)
     {
         Action& action = pair.second;
-        if (action.state == "meeting")
+        if (action.state == "vendor_travel")
+        {
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
+            Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
+            if (!bot || !player || !ValidateCommon(bot, player) || bot->GetGroup() != player->GetGroup())
+            {
+                action.state = "failed";
+                action.failureReason = "party or character state changed during vendor trip";
+                Report(action);
+            }
+            else
+            {
+                // The destination request resolves asynchronously. Re-running
+                // choose is cheap and becomes effective as soon as it is ready.
+                bot->GetPlayerbotAI()->DoSpecificAction("choose travel target", Event("living vendor bags", "", player), true);
+                uint8 usage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
+                if (usage < action.initialBagUsage)
+                {
+                    PlayerbotRendezvousManager::RequestResult result = sPlayerbotRendezvousManager.Request(
+                        bot, player, action.actionId, false);
+                    if (result == PlayerbotRendezvousManager::RequestResult::accepted ||
+                        result == PlayerbotRendezvousManager::RequestResult::ordinary_travel)
+                        action.state = "returning";
+                    else
+                    {
+                        action.state = "completed";
+                        action.completedAt = now;
+                        action.failureReason = "items sold; returning by ordinary party travel";
+                    }
+                    Report(action);
+                }
+                else if (now >= action.expires)
+                {
+                    action.state = "expired";
+                    action.failureReason = "vendor trip did not free bag space in time";
+                    Report(action);
+                }
+            }
+        }
+        else if (action.state == "returning")
+        {
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
+            Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
+            if (bot && player && bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
+            {
+                sPlayerbotRendezvousManager.BeginDeparture(action.botGuid, action.playerGuid, "vendor_return_complete");
+                action.state = "completed";
+                action.completedAt = now;
+                Report(action);
+            }
+        }
+        else if (action.state == "meeting")
         {
             Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
             Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
