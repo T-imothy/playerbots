@@ -273,9 +273,16 @@ void PlayerbotPartyCombatCoordinator::Update(Player* bot)
     // strategy. Run the narrowly grounded quest-source action explicitly from
     // the mixed-party coordinator instead of relying on a trigger that does
     // not exist in this engine configuration.
+    PlayerbotAI* maintenanceAi = bot->GetPlayerbotAI();
+    Player* maintenanceMaster = maintenanceAi ? maintenanceAi->GetMaster() : nullptr;
+    bool maintenancePositionStable = !bot->IsBeingTeleported() &&
+        (!maintenanceMaster || !maintenanceMaster->IsInWorld() ||
+            (bot->GetMapId() == maintenanceMaster->GetMapId() &&
+                bot->GetInstanceId() == maintenanceMaster->GetInstanceId() &&
+                bot->IsWithinDistInMap(maintenanceMaster, 15.0f)));
     uint32 now = WorldTimer::getMSTime();
     uint32& lastAttempt = lastQuestMaintenance[bot->GetGUIDLow()];
-    if (bot->IsAlive() && !bot->IsInCombat() &&
+    if (maintenancePositionStable && bot->IsAlive() && !bot->IsInCombat() &&
         (!lastAttempt || WorldTimer::getMSTimeDiff(lastAttempt, now) >= 3000))
     {
         lastAttempt = now;

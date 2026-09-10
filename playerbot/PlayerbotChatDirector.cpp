@@ -1091,15 +1091,9 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         }
         std::string action = bot->GetPlayerbotAI()->HandleRemoteCommand("action");
         std::string lowered = boost::algorithm::to_lower_copy(action);
-        Player* humanMaster = bot->GetPlayerbotAI()->GetMaster();
-        if (bot->GetGroup() && humanMaster && humanMaster->isRealPlayer() && humanMaster->IsInWorld() &&
-            humanMaster->GetMapId() == bot->GetMapId() && bot->GetDistance(humanMaster) >
-                7.0f * std::max<uint32>(10, sPlayerbotAIConfig.chatDirectorRendezvousTriggerSeconds) &&
-            (lowered.find("follow") != std::string::npos || bot->GetPlayerbotAI()->HasRealPlayerMaster()))
-        {
-            sPlayerbotRendezvousManager.Request(bot, humanMaster,
-                "group-follow-" + std::to_string(bot->GetGUIDLow()), false);
-        }
+        // Party travel is registered once by the authoritative invitation
+        // lifecycle. Health sampling must never create a second rendezvous or
+        // relocate an already-persisted party during login.
         ProgressionQuestSnapshot questSnapshot = GetProgressionQuestSnapshot(bot);
         bool questProgressChanged = !state.questProgressSignature.empty() &&
             state.questProgressSignature != questSnapshot.signature;
