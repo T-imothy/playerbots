@@ -8,6 +8,7 @@
 #include "PlayerbotSecurity.h"
 #include "PlayerbotTextMgr.h"
 #include "BotState.h"
+#include "OutdoorRecoveryMemory.h"
 #include "PlayerTalentSpec.h"
 #include <stack>
 #include "strategy/IterateItemsMask.h"
@@ -364,7 +365,9 @@ private:
 
 class PlayerbotAI : public PlayerbotAIBase
 {
+    ai::OutdoorRecoveryMemory outdoorRecovery;
 public:
+    bool ShouldAvoidDeathArea(const WorldPosition& position);
 
     // Chat generated while an action is executing carries both an origin and
     // a message class.  This lets Chat v2 silence legacy maintenance details

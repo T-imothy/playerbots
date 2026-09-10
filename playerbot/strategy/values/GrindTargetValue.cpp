@@ -206,6 +206,11 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
             continue;
         }
 
+        // Apply learning to optional pulls only. The earlier attacker branch
+        // remains available for self-defense inside a dangerous camp.
+        if (ai->ShouldAvoidDeathArea(WorldPosition(unit)))
+            continue;
+
         if (creature && creature->IsCritter() && urand(0, 10))
         {
             if (ai->HasStrategy("debug grind", BotState::BOT_STATE_NON_COMBAT))

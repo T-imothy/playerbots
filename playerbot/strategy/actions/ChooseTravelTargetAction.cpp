@@ -399,6 +399,11 @@ inline std::string PrintPartion(uint32 sqPartition)
 //Sets the target to the best destination.
 bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* target, PartitionedTravelList& partitionedList, bool onlyActive)
 {
+    auto unsafeObjective = [this](TravelDestination* destination, WorldPosition* position)
+    {
+        return position && (dynamic_cast<QuestObjectiveTravelDestination*>(destination) ||
+            dynamic_cast<GrindTravelDestination*>(destination)) && ai->ShouldAvoidDeathArea(*position);
+    };
     bool distanceCheck = true;
     std::unordered_map<TravelDestination*, bool> isActive;
 
@@ -414,6 +419,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
         {
             for (auto& [destination, position, distance] : travelPointList)
             {
+                if (!target->IsForced() && unsafeObjective(destination, position)) continue;
                 QuestTravelDestination* questDestination = dynamic_cast<QuestTravelDestination*>(destination);
                 if (!questDestination || questDestination->GetQuestId() != preferredQuest ||
                     (!target->IsForced() && !destination->IsActive(bot, PlayerTravelInfo(bot))))
@@ -430,6 +436,7 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
 
         for (auto& [destination, position, distance] : travelPointList)
         {
+            if (!target->IsForced() && unsafeObjective(destination, position)) continue;
             if (!target->IsForced() && isActive.find(destination) != isActive.end() && !isActive[destination])
                 continue;
 

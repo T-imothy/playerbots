@@ -1186,6 +1186,28 @@ void PlayerbotAI::OnCombatEnded()
     }
 }
 
+bool PlayerbotAI::ShouldAvoidDeathArea(const WorldPosition& position)
+{
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->InBattleGround() || bot->duel ||
+        bot->GetMap()->IsDungeon() || HasRealPlayerMaster() ||
+        !outdoorRecovery.Avoid(position.getMapId(), position.getX(), position.getY(), time(nullptr)))
+        return false;
+    // Actual nearby, healthy party support changes the risk. Merely having a
+    // remote group or waiting for an invitation does not make the camp safe.
+    uint32 helpers = 0;
+    if (Group* group = bot->GetGroup())
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->getSource();
+            if (member && !member->GetPlayerbotAI()) return false;
+            if (member && member != bot && member->IsInWorld() && member->IsAlive() &&
+                member->GetInstanceId() == bot->GetInstanceId() && bot->IsWithinDistInMap(member, 40.0f) &&
+                member->GetHealthPercent() >= 60 && member->GetLevel() + 2 >= bot->GetLevel())
+                ++helpers;
+        }
+    return helpers < 2;
+}
+
 void PlayerbotAI::OnDeath()
 {
     if (!IsStateActive(BotState::BOT_STATE_DEAD) && !sServerFacade.IsAlive(bot))
@@ -1198,6 +1220,13 @@ void PlayerbotAI::OnDeath()
         {
 
             SET_AI_VALUE(uint32, "death count", AI_VALUE(uint32, "death count") + 1);
+            if (bot->IsInWorld() && !bot->GetMap()->IsDungeon() && !bot->duel)
+            {
+                outdoorRecovery.RecordDeath(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), time(nullptr));
+                if (outdoorRecovery.deaths >= 2)
+                    sLog.outString("Living WoW outdoor recovery bot=%u name=%s reason=repeated_local_deaths avoid_seconds=900",
+                        bot->GetGUIDLow(), bot->GetName());
+            }
 
             if (sPlayerbotAIConfig.hasLog("deaths.csv"))
             {

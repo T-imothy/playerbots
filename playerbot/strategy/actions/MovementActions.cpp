@@ -2034,6 +2034,17 @@ bool MovementAction::Flee(Unit *target)
 
     time_t lastFlee = AI_VALUE(LastMovement&, "last movement").lastFlee;
     time_t now = time(0);
+    // The normal position history samples changes on a 60-second cadence.
+    // Flee recovery needs its own actual-position clock for a five-second stall.
+    WorldPosition fleePosition = AI_VALUE2(WorldPosition, "custom position", "living flee progress");
+    int progressAt = AI_VALUE2(int, "manual int", "living flee progress at");
+    if (!progressAt || fleePosition.getMapId() != bot->GetMapId() || fleePosition.fDist(bot) > 1.0f)
+    {
+        SET_AI_VALUE2(WorldPosition, "custom position", "living flee progress", WorldPosition(bot));
+        SET_AI_VALUE2(int, "manual int", "living flee progress at", int(now));
+        progressAt = int(now);
+    }
+    bool fleeProgress = now - progressAt < 5;
     uint32 fleeDelay = urand(2, sPlayerbotAIConfig.returnDelay / 1000);
 
     // let hunter/kiter kite mob
@@ -2043,7 +2054,7 @@ bool MovementAction::Flee(Unit *target)
         fleeDelay = 1;
     }
 
-    if (lastFlee && sServerFacade.isMoving(bot))
+    if (lastFlee && fleeProgress && sServerFacade.isMoving(bot))
     {
         if ((now - lastFlee) <= fleeDelay)
         {
@@ -2160,7 +2171,7 @@ bool MovementAction::Flee(Unit *target)
         succeeded = MoveNear(fleeTarget);
     }
 
-    if (!ai->HasRealPlayerMaster() && !ai->IsRealPlayer(target))
+    if (!succeeded && !ai->HasRealPlayerMaster() && !ai->IsRealPlayer(target))
     {
         bool fullDistance = false;
         if (target->IsPlayer())
@@ -2172,16 +2183,27 @@ bool MovementAction::Flee(Unit *target)
 
         MotionMaster* mm = bot->GetMotionMaster();
 
+        bool stalledChase = lastFlee && !fleeProgress && now - lastFlee < 30;
         if (mm->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
         {
             ChaseMovementGenerator* chase = (ChaseMovementGenerator*)mm->GetCurrent();
-
             if (chase->GetCurrentTarget() == target && sServerFacade.GetChaseOffset(bot) == distance)
-                return true;
+            {
+                // An installed movement generator is not proof of movement.
+                if (fleeProgress)
+                    return true;
+                stalledChase = true;
+            }
         }
-
-        mm->MoveChase(target, distance, WorldPosition(bot).getAngleTo(target), true, false, true, false);
-        return true;
+        if (!stalledChase)
+        {
+            AI_VALUE(LastMovement&, "last movement").lastFlee = now;
+            mm->MoveChase(target, distance, WorldPosition(bot).getAngleTo(target), true, false, true, false);
+            return true;
+        }
+        // Try the existing path-checked escape-point search. If that fails,
+        // return failure so fleeing cannot starve every defensive action.
+        ai->StopMoving();
     }
 
     // Generate a position to flee

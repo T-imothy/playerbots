@@ -975,6 +975,15 @@ void TravelTarget::CheckStatus()
     if (!IsActive())
         return;
 
+    if (!IsForced() && wPosition &&
+        (dynamic_cast<QuestObjectiveTravelDestination*>(tDestination) ||
+         dynamic_cast<GrindTravelDestination*>(tDestination)) && ai->ShouldAvoidDeathArea(*wPosition))
+    {
+        sTravelMgr.SetNullTravelTarget(this);
+        ai->GetAiObjectContext()->ClearValues("no active travel destinations");
+        return;
+    }
+
     if (groupMember)
     {
         Player* member = groupMember.GetPlayer();
