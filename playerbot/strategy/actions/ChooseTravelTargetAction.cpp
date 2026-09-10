@@ -36,11 +36,13 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     FutureDestinations* futureDestinations = AI_VALUE(FutureDestinations*, "future travel destinations");
     std::string futureTravelPurpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
     std::string futureTravelPurposeName = GetTravelPurposeName(futureTravelPurpose);
+    bool turninRouteDiagnostic = futureTravelPurpose.find("quest-turnin-") == 0;
     uint32 targetRelevance = AI_VALUE2(int, "manual int", "future travel relevance");
 
     if (!futureDestinations->valid())
     {
-        SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "invalid_future");
+        if (turninRouteDiagnostic)
+            SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "invalid_future");
         travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
         context->ClearValues("no active travel destinations");        
         return false;
@@ -54,10 +56,13 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     uint32 destinationPoints = 0;
     for (const auto& partition : destinationList)
         destinationPoints += partition.second.size();
-    SET_AI_VALUE2(int, "manual int", "future travel range count", (int)destinationList.size());
-    SET_AI_VALUE2(int, "manual int", "future travel point count", (int)destinationPoints);
-    SET_AI_VALUE2(std::string, "manual string", "future travel outcome",
-        destinationPoints ? "resolved" : "empty");
+    if (turninRouteDiagnostic)
+    {
+        SET_AI_VALUE2(int, "manual int", "future travel range count", (int)destinationList.size());
+        SET_AI_VALUE2(int, "manual int", "future travel point count", (int)destinationPoints);
+        SET_AI_VALUE2(std::string, "manual string", "future travel outcome",
+            destinationPoints ? "resolved" : "empty");
+    }
 
     travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
 
@@ -98,13 +103,15 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     if (!SetBestTarget(requester, &newTarget, destinationList))
     {
         SET_AI_VALUE2(bool, "no active travel destinations", futureTravelPurpose, true);
-        SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "no_valid_target");
+        if (turninRouteDiagnostic)
+            SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "no_valid_target");
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
         return false;
     }
 
     setNewTarget(requester, &newTarget, travelTarget);
-    SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "selected");
+    if (turninRouteDiagnostic)
+        SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "selected");
     
     return true;
 }
