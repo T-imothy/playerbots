@@ -5,6 +5,7 @@
 #include <iomanip>
 
 #include "playerbot/AiFactory.h"
+#include "playerbot/BuildStrategyRestore.h"
 
 #include "MotionGenerators/MovementGenerator.h"
 #include "Grids/GridNotifiers.h"
@@ -2759,7 +2760,42 @@ void PlayerbotAI::ResetStrategies(bool autoLoad)
     AiFactory::AddDefaultNonCombatStrategies(bot, this, engines[(uint8)BotState::BOT_STATE_NON_COMBAT]);
     AiFactory::AddDefaultDeadStrategies(bot, this, engines[(uint8)BotState::BOT_STATE_DEAD]);
     AiFactory::AddDefaultReactionStrategies(bot, this, reactionEngine);
-    if (autoLoad && HasPlayerRelation()) sPlayerbotDbStore.Load(this);
+    if (autoLoad && HasPlayerRelation())
+    {
+        // AiFactory has just selected the current build. Saved AI presets may
+        // predate a respec or a temporary party assignment, so restore their
+        // unrelated settings without letting them replace that build again.
+        std::vector<std::string> buildStrategies[(uint8)BotState::BOT_STATE_ALL];
+        const bool reconcileBuild = sPlayerbotAIConfig.chatDirectorV2;
+        if (reconcileBuild)
+            for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; ++i)
+                for (const auto& name : engines[i]->GetStrategies())
+                    if (IsBuildOwnedStrategy(std::string(name), bot->getClass()))
+                        buildStrategies[i].push_back(std::string(name));
+
+        sPlayerbotDbStore.Load(this);
+
+        if (reconcileBuild)
+        {
+            uint32 removed = 0;
+            for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; ++i)
+            {
+                // Copy names: strategy removal may invalidate string_views and
+                // invokes dependency callbacks. Never iterate the live map here.
+                std::vector<std::string> stale;
+                for (const auto& name : engines[i]->GetStrategies())
+                    if (IsBuildOwnedStrategy(std::string(name), bot->getClass()))
+                        stale.push_back(std::string(name));
+                for (const std::string& name : stale)
+                    if (engines[i]->removeStrategy(name))
+                        ++removed;
+                for (const std::string& name : buildStrategies[i])
+                    engines[i]->addStrategy(name);
+            }
+            sLog.outDetail("LivingBuild strategy_restore bot=%u build_tab=%d replaced=%u",
+                bot->GetGUIDLow(), AiFactory::GetPlayerBuildTab(bot), removed);
+        }
+    }
 
     for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
