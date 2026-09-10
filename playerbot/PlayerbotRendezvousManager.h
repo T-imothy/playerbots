@@ -63,6 +63,8 @@ private:
         float lastHumanDistance = 0.0f;
         uint32 hearthStartMapId = 0;
         uint32 freeTimePlayerZoneId = 0;
+        uint32 freeTimePlayerAreaId = 0;
+        uint32 settlementKey = 0;
         float hearthStartX = 0.0f;
         float hearthStartY = 0.0f;
         float hearthStartZ = 0.0f;
@@ -74,6 +76,10 @@ private:
         std::chrono::steady_clock::time_point deadRecoveryStarted;
         std::chrono::steady_clock::time_point nextDeadRecoveryAttempt;
         std::chrono::steady_clock::time_point freeTimeUntil;
+        std::chrono::steady_clock::time_point automaticErrandReadyAt;
+        std::chrono::steady_clock::time_point automaticErrandCooldownUntil;
+        std::chrono::steady_clock::time_point nextSettlementCheck;
+        std::chrono::steady_clock::time_point nextAutomaticErrandCheck;
         std::chrono::steady_clock::time_point hearthStarted;
     };
 

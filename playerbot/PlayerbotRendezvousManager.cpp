@@ -2,12 +2,18 @@
 #include "PlayerbotRendezvousManager.h"
 
 #include "Entities/Transports.h"
+#include "Mails/Mail.h"
 #include "MotionGenerators/PathFinder.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
+#include "PlayerbotInventoryPressure.h"
+#include "PlayerbotOrganicEconomy.h"
 #include "RandomPlayerbotMgr.h"
+#include "ServerFacade.h"
 
 #include <cmath>
+#include <sstream>
+#include <vector>
 
 namespace
 {
@@ -22,6 +28,101 @@ namespace
     {
         Spell* spell = player ? player->GetCurrentSpell(CURRENT_GENERIC_SPELL) : nullptr;
         return spell && spell->m_spellInfo && spell->m_spellInfo->Id == 8690;
+    }
+
+    bool IsCapital(Player* player)
+    {
+        AreaTableEntry const* area = player ? GetAreaEntryByAreaID(sServerFacade.GetAreaId(player)) : nullptr;
+        AreaTableEntry const* zone = player ? GetAreaEntryByAreaID(player->GetZoneId()) : nullptr;
+        return (area && (area->flags & AREA_FLAG_CAPITAL)) || (zone && (zone->flags & AREA_FLAG_CAPITAL));
+    }
+
+    uint32 SettlementKey(Player* bot, Player* human)
+    {
+        if (!bot || !human || bot->GetMapId() != human->GetMapId() ||
+            !bot->IsWithinDistInMap(human, 120.0f))
+            return 0;
+        if (IsCapital(human))
+            return 0x80000000u | human->GetZoneId();
+
+        PlayerbotAI* ai = bot->GetPlayerbotAI();
+        if (!ai)
+            return 0;
+        bool vendor = false, supportingService = false;
+        uint32 serviceKinds = 0;
+        std::list<ObjectGuid> npcs = ai->GetAiObjectContext()->
+            GetValue<std::list<ObjectGuid>>("nearest npcs no los")->Get();
+        for (ObjectGuid const& guid : npcs)
+        {
+            Unit* npc = ai->GetUnit(guid);
+            if (!npc)
+                continue;
+            if (npc->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_VENDOR | UNIT_NPC_FLAG_REPAIR))
+            {
+                vendor = true;
+                ++serviceKinds;
+            }
+            if (npc->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_TRAINER | UNIT_NPC_FLAG_TRAINER_CLASS |
+                UNIT_NPC_FLAG_TRAINER_PROFESSION | UNIT_NPC_FLAG_INNKEEPER | UNIT_NPC_FLAG_BANKER |
+                UNIT_NPC_FLAG_AUCTIONEER | UNIT_NPC_FLAG_FLIGHTMASTER))
+            {
+                supportingService = true;
+                ++serviceKinds;
+            }
+        }
+        return vendor && supportingService && serviceKinds >= 2 ? sServerFacade.GetAreaId(human) : 0;
+    }
+
+    std::vector<std::string> PersonalErrands(Player* bot)
+    {
+        std::vector<std::string> errands;
+        if (!bot || !bot->GetPlayerbotAI())
+            return errands;
+        PlayerbotAI* ai = bot->GetPlayerbotAI();
+        LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
+        if (pressure.vendorStacks)
+            errands.push_back("sell some junk");
+        if (ai->GetAiObjectContext()->GetValue<uint8>("durability inventory")->Get() < 85)
+            errands.push_back("repair my gear");
+        if (pressure.StorableStacks() && (pressure.bagUsage >= 70 || pressure.StorableStacks() >= 3))
+            errands.push_back("put some materials in the bank");
+
+        time_t now = time(nullptr);
+        for (PlayerMails::iterator mail = bot->GetMailBegin(); mail != bot->GetMailEnd(); ++mail)
+        {
+            if ((*mail)->state != MAIL_STATE_DELETED && now >= (*mail)->deliver_time &&
+                ((*mail)->has_items || (*mail)->money))
+            {
+                errands.push_back("pick up my mail");
+                break;
+            }
+        }
+
+        std::string goal = sPlayerbotOrganicEconomy.CurrentGoalType(bot->GetGUIDLow());
+        if (pressure.auctionStacks || goal == "list_surplus")
+            errands.push_back("check the auction house");
+        if (goal == "profession_skill_up")
+            errands.push_back("work on my profession");
+        return errands;
+    }
+
+    std::string ErrandAnnouncement(std::vector<std::string> const& errands)
+    {
+        if (errands.empty())
+            return "";
+        std::ostringstream message;
+        message << "I've got to ";
+        size_t shown = std::min<size_t>(3, errands.size());
+        for (size_t index = 0; index < shown; ++index)
+        {
+            if (index)
+                message << (index + 1 == shown ? (shown == 2 ? " and " : ", and ") : ", ");
+            message << errands[index];
+        }
+        if (errands.size() > shown)
+            message << ", plus a couple other things";
+        message << ". I'll catch back up when I'm done.";
+        return message.str();
     }
 }
 
@@ -150,7 +251,9 @@ bool PlayerbotRendezvousManager::BeginPartyFreeTime(Player* bot, Player* player,
     session.reason = reason;
     session.freeTimeRecallRequested = false;
     session.freeTimePlayerZoneId = player->GetZoneId();
-    session.freeTimeUntil = now + std::chrono::minutes(30);
+    session.freeTimePlayerAreaId = sServerFacade.GetAreaId(player);
+    bool automaticSettlement = reason == "automatic_settlement_errands";
+    session.freeTimeUntil = now + (automaticSettlement ? std::chrono::minutes(5) : std::chrono::minutes(30));
     session.stateSince = now;
     LogPartyEvent(session, "free_time_started");
     return true;
@@ -734,6 +837,45 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                 LogPartyEvent(session, "dead_recovery_completed");
             }
 
+            // Human-led mixed parties take a natural, bounded break when they
+            // settle in a capital or a genuine service hub. Only bots with
+            // authoritative work leave follow, and their start times are
+            // staggered so entering town does not produce a chat chorus.
+            if (originalParty && human && session.state == "active" && bot->IsAlive() && human->IsAlive() &&
+                !bot->IsInCombat() && !human->IsInCombat() && !bot->IsTaxiFlying() && !bot->GetTransport() &&
+                group->IsLeader(human->GetObjectGuid()) &&
+                (!session.nextSettlementCheck.time_since_epoch().count() || now >= session.nextSettlementCheck))
+            {
+                session.nextSettlementCheck = now + std::chrono::seconds(5);
+                uint32 settlement = SettlementKey(bot, human);
+                if (!settlement)
+                {
+                    session.settlementKey = 0;
+                    session.automaticErrandReadyAt = std::chrono::steady_clock::time_point();
+                }
+                else if (session.settlementKey != settlement)
+                {
+                    session.settlementKey = settlement;
+                    session.automaticErrandReadyAt = now + std::chrono::seconds(8 + (session.botGuid % 5));
+                }
+                else if (now >= session.automaticErrandReadyAt &&
+                    (!session.automaticErrandCooldownUntil.time_since_epoch().count() ||
+                     now >= session.automaticErrandCooldownUntil))
+                {
+                    std::vector<std::string> errands = PersonalErrands(bot);
+                    session.automaticErrandCooldownUntil = now + std::chrono::minutes(errands.empty() ? 2 : 10);
+                    if (!errands.empty())
+                    {
+                        std::string announcement = ErrandAnnouncement(errands);
+                        if (BeginPartyFreeTime(bot, human, "automatic_settlement_errands"))
+                        {
+                            bot->GetPlayerbotAI()->SayToParty(announcement, true);
+                            LogPartyEvent(session, "automatic_settlement_errands_started");
+                        }
+                    }
+                }
+            }
+
             bool canSyncHearth = originalParty && human && bot->IsAlive() && human->IsAlive() &&
                 !bot->IsInCombat() && !human->IsInCombat() &&
                 !bot->IsTaxiFlying() && !bot->GetTransport() && !bot->IsBeingTeleported() &&
@@ -829,11 +971,25 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
             {
                 bool humanMovedOn = human->GetMapId() != bot->GetMapId() ||
                     human->GetZoneId() != session.freeTimePlayerZoneId;
-                if (human->IsInCombat() || humanMovedOn || now >= session.freeTimeUntil)
+                bool automaticSettlement = session.reason == "automatic_settlement_errands";
+                if (automaticSettlement && !IsCapital(human) &&
+                    sServerFacade.GetAreaId(human) != session.freeTimePlayerAreaId)
+                    humanMovedOn = true;
+                bool errandsFinished = false;
+                if (automaticSettlement &&
+                    std::chrono::duration_cast<std::chrono::seconds>(now - session.stateSince).count() >= 45 &&
+                    (!session.nextAutomaticErrandCheck.time_since_epoch().count() ||
+                     now >= session.nextAutomaticErrandCheck))
+                {
+                    session.nextAutomaticErrandCheck = now + std::chrono::seconds(10);
+                    errandsFinished = PersonalErrands(bot).empty();
+                }
+                if (human->IsInCombat() || humanMovedOn || errandsFinished || now >= session.freeTimeUntil)
                     session.freeTimeRecallRequested = true;
                 if (session.freeTimeRecallRequested && !bot->IsInCombat())
                     ResumePartyAssist(bot, human, humanMovedOn ?
-                        "free_time_party_moved_on" : "free_time_complete");
+                        "free_time_party_moved_on" : errandsFinished ?
+                        "automatic_settlement_errands_complete" : "free_time_complete");
             }
             else if (session.state == "pending")
             {
