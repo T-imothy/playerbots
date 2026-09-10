@@ -31,7 +31,7 @@ Send as an ordinary chat command, e.g. SAY:
 .bot recruit v1 <id> cancel <botGuidLow-or-0-for-all>
 ```
 
-ID: 1ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“32 ASCII letters, digits, `_` or `-`, scoped to the requester. Input maximum 240 characters. Use one ID per logical operation; retry identical payloads with the same ID. A changed payload under the same ID returns `id_conflict`. New status polls use new IDs (reusing an old ID returns its recorded answer). Discovery cursor starts at 0; follow the returned cursor until it is 0. Discovery lists eligible public/free random bots managed by the random-bot holder; direct identity/status checks also support authorized online account/guild alts. No account IDs or private-alt inventory are returned.
+ID: 1ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ32 ASCII letters, digits, `_` or `-`, scoped to the requester. Input maximum 240 characters. Use one ID per logical operation; retry identical payloads with the same ID. A changed payload under the same ID returns `id_conflict`. New status polls use new IDs (reusing an old ID returns its recorded answer). Discovery cursor starts at 0; follow the returned cursor until it is 0. Discovery lists eligible public/free random bots managed by the random-bot holder; direct identity/status checks also support authorized online account/guild alts. No account IDs or private-alt inventory are returned.
 
 Preparation operation: exactly `gear`, `food`, `potions`, `consumes`, `reagents`, `ammo`. Talents and strategy configuration continue through existing commands; v1 does not infer or automatically apply a role. Selected size must be 5, 10, 20, 25 or 40; no automatic conversion. A party's native limit remains five regardless of a larger requested size.
 
@@ -68,3 +68,5 @@ Cancellation releases pending recruitment and reservations, leaves joined member
 Full native builds, deployment hashes and live results are recorded in the release handoff separately. Live taxi/worldport, instance lockouts, dead-bot revival, exact gear/supply contents for every class/level, native rituals, native LFG groups, and multiple concurrent real clients still need gameplay verification. The harness stubs native group/teleport/inventory boundaries and does not establish those end-to-end results.
 
 The addon must keep its existing human-role and Keep/Prepare protections. A later addon task may adopt v1 for explicit statuses and replay safety. No claim is made that the core alone now orchestrates an entire party/raid or that existing 0.8.0 understands v1.
+
+Discovery minimum and maximum levels are inclusive. The maximum must not exceed either the configured MaxPlayerLevel or the expansion cap (60 Classic, 70 TBC, 80 Wrath). Malformed/reversed ranges are refused. Existing group members are unaffected.

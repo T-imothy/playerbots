@@ -305,12 +305,20 @@ namespace
         }
         if (request.operation == "discover")
         {
+#if defined(MANGOSBOT_ZERO)
+            const uint32 expansionLevelCap = 60;
+#elif defined(MANGOSBOT_ONE)
+            const uint32 expansionLevelCap = 70;
+#else
+            const uint32 expansionLevelCap = 80;
+#endif
             uint32 cls, low, high, cursor;
             std::string a,b,c,d,extra;
             std::istringstream args(request.arguments);
             args >> a >> b >> c >> d;
             if ((args >> extra) || !Number(a,cls) || !Number(b,low) || !Number(c,high) || !Number(d,cursor) ||
-                !cls || cls > 11 || !low || high < low || high > sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL))
+                !cls || cls > 11 || !low || high < low || high > expansionLevelCap ||
+                high > sWorld.getConfig(CONFIG_UINT32_MAX_PLAYER_LEVEL))
             { Report(request,"refused","arguments"); return; }
             if (Now() < state.nextDiscovery || Now() < state.discoveryTime[owner->GetGUIDLow()])
             { Report(request,"refused","discovery_rate_limit"); return; }

@@ -177,6 +177,18 @@ int main(){
  reset();{std::vector<std::unique_ptr<Player>> owners,bots;for(unsigned n=1;n<=32;++n){owners.emplace_back(new Player(n,true));for(unsigned j=1;j<=16;++j){bots.emplace_back(new Player(100+n*16+j));ai::BotRecruitment::Queue(owners.back().get(),bots.back().get(),"who");}}assert(State().incoming.size()==256);tick();assert(State().incoming.size()==248);}
  reset();{Player p(1,true),b(2);command(p,"bad accept 2");assert(has("unsupported_operation")&&!b.group);}
  assert(!limits::Arrived(true,false,true,1,2,1,3,0,true));assert(!limits::HasVacancy(25,25,true));
+#if defined(MANGOSBOT_ZERO)
+ const unsigned cap=60;
+#elif defined(MANGOSBOT_ONE)
+ const unsigned cap=70;
+#else
+ const unsigned cap=80;
+#endif
+ reset();{Player p(1,true);command(p,"cap discover 1 1 "+std::to_string(cap+1)+" 0");assert(has("refused arguments"));}
+ reset();{Player p(1,true),b(2);b.level=cap;command(p,"cap discover 1 "+std::to_string(cap)+" "+std::to_string(cap)+" 0");assert(has("eligible"));}
+ reset();{Player p(1,true),a(2),b(3),c(4),d(5);a.level=41;b.level=45;c.level=40;d.level=46;
+ command(p,"bounds discover 1 41 45 0");assert(has("Bot2")&&has("Bot3")&&!has("Bot4")&&!has("Bot5"));}
+ for(auto range:{"45 41","0 40","1x 40","-1 40","1 9999999999999"}){reset();Player p(1,true);command(p,std::string("bad discover 1 ")+range+" 0");assert(has("refused arguments"));}
  std::cout<<"PASS: actual coordinator permissions, native-invite scheduling, stale/replaced invites, ownership, combat/death, session loss, transports, arrival, replay, cancellation, mixed 40-member capacity, bounded discovery/work\n";
 }
 '''
