@@ -2176,6 +2176,23 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 recoveryPrepareResult = "target_finalize_impossible";
         }
         bool exactTurninTarget = false;
+        if (recoveryExecutionScope && state.recoveryStep > 0 && recoveryTarget &&
+            !recoveryTarget->IsForced() && recoveryTarget->GetRelevance() >= 199 &&
+            (recoveryStatus == TravelStatus::TRAVEL_STATUS_READY ||
+             recoveryStatus == TravelStatus::TRAVEL_STATUS_TRAVEL ||
+             recoveryStatus == TravelStatus::TRAVEL_STATUS_WORK))
+        {
+            // "can move around" is an execution guard, not a durable route
+            // condition. Group readiness and non-combat casting can make it
+            // false for a moment; retaining it on the target caused valid
+            // recovery routes to enter cooldown before their first movement.
+            // MovementAction and MoveToTravelTargetAction still revalidate all
+            // of those safety conditions on every execution.
+            boundedRecoveryTarget = true;
+            recoveryTarget->SetConditions({});
+            if (recoveryTarget->GetTimeLeft() < 15 * 60 * 1000)
+                recoveryTarget->SetExpireIn(15 * 60 * 1000);
+        }
         if (recoveryExecutionScope && state.recoveryStep == 3 && state.recoveryQuestId && recoveryTarget)
         {
             // Async travel requests share legacy metadata slots with ordinary
@@ -3602,6 +3619,11 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
                     nextState = "active";
                 else if (state == "forming")
                     nextState = "traveling";
+                else if (age >= 300)
+                {
+                    nextState = "failed";
+                    failureReason = "assembly_timeout";
+                }
             }
             else if (age >= 300)
             {
@@ -3636,6 +3658,19 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
             "UPDATE guild_society_event SET state='%s',failure_reason='%s',ends_at=%s,updated_at=%u "
             "WHERE event_id='%s' AND state='%s'", nextState.c_str(), failureReason.c_str(),
             endsAt.c_str(), nowEpoch, eventId.c_str(), state.c_str());
+
+        // Keep the organizer stationary while the roster is assembling. The
+        // rendezvous manager follows the live organizer, so starting the
+        // activity route before this transition creates a moving target that
+        // can keep an otherwise valid party scattered indefinitely.
+        if (nextState == "active" && organizer && organizer->GetPlayerbotAI())
+        {
+            const char* activityAction = eventType == "leveling" ?
+                "request progression grind travel target" :
+                "request progression quest travel target";
+            organizer->GetPlayerbotAI()->DoSpecificAction(
+                activityAction, Event("can move around"), true);
+        }
 
         const std::string safeType = PlayerbotLLMInterface::SanitizeForJson(eventType);
         const std::string safeTitle = PlayerbotLLMInterface::SanitizeForJson(title);
@@ -3872,10 +3907,6 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
                     rejection = "group_formation_failed";
                 if (eventState == "traveling")
                 {
-                    const char* activityAction = effectiveDecisionType == "schedule_leveling_group" ?
-                        "request progression grind travel target" : "request progression quest travel target";
-                    organizer->GetPlayerbotAI()->DoSpecificAction(
-                        activityAction, Event("can move around"), true);
                     for (Player* member : roster)
                     {
                         if (member == organizer || !organizer->GetGroup() ||

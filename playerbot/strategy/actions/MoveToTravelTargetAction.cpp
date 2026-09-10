@@ -192,6 +192,8 @@ bool MoveToTravelTargetAction::isUseful()
 {
     TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
     bool progressionRecoveryTarget = false;
+    if (!travelTarget->IsForced() && travelTarget->GetRelevance() >= 199)
+        progressionRecoveryTarget = true;
     for (std::string const& condition : travelTarget->GetConditions())
     {
         if (condition == "can move around")
