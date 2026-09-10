@@ -12,6 +12,7 @@
 #include "Social/SocialMgr.h"
 #include "playerbot/TravelMgr.h"
 #include "SayAction.h"
+#include "playerbot/PlayerbotActionBroker.h"
 #include "playerbot/PlayerbotLLMInterface.h"
 #include "BankAction.h"
 #include "GuildBankAction.h"
@@ -693,6 +694,14 @@ bool RpgTradeUsefulAction::Execute(Event& event)
     if (!player)
         return false;
 
+    // In Chat Director v2, social gameplay involving a real player must be
+    // backed by an exact broker transaction.  Do not let the legacy RPG
+    // strategy open unsolicited trade windows merely because the bot happens
+    // to have an item it considers useful.
+    if (sPlayerbotAIConfig.chatDirectorV2 && player->isRealPlayer() &&
+        !sPlayerbotActionBroker.Authorizes(bot, player))
+        return false;
+
     std::list<Item*> items = AI_VALUE(std::list<Item*>, "items useful to give");
 
     if (items.empty())
@@ -758,6 +767,10 @@ bool RpgEnchantAction::Execute(Event& event)
     Player* player = guidP.GetPlayer();
 
     if (!player)
+        return false;
+
+    if (sPlayerbotAIConfig.chatDirectorV2 && player->isRealPlayer() &&
+        !sPlayerbotActionBroker.Authorizes(bot, player))
         return false;
 
     if (!ai->IsSafe(player))

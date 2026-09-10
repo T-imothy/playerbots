@@ -66,7 +66,12 @@ bool TalkToQuestGiverAction::ProcessQuest(Player* requester, Quest const* quest,
         }
     }
 
-    ai->TellPlayer(requester, outputMessage, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+    // Chat Director v2 records authoritative quest state and decides whether it
+    // is socially relevant.  The legacy action runs for every nearby group
+    // member's quest-giver interaction, so echoing routine status here creates
+    // repeated whispers such as "I have not completed the quest ...".
+    if (!sPlayerbotAIConfig.chatDirectorV2)
+        ai->TellPlayer(requester, outputMessage, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
     return isCompleted;
 }
