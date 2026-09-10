@@ -207,7 +207,11 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
 
             if (usedBagSpacePercent > 99)
             {
-                ai->TellPlayer(requester, "Can not loot quest item, my bags are full", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                // Mixed parties receive one grounded inventory-pressure notice
+                // and maintenance offer from the social broker. This legacy
+                // loot-loop message otherwise fires for every corpse/object.
+                if (!ai->HasActivePlayerMaster())
+                    ai->TellPlayer(requester, "Can not loot quest item, my bags are full", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
                 return false;
             }
 
@@ -335,7 +339,8 @@ bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
 
             if (usedBagSpacePercent > 99)
             {
-                ai->TellPlayer(requester, "Can not loot quest item, my bags are full", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                if (!ai->HasActivePlayerMaster())
+                    ai->TellPlayer(requester, "Can not loot quest item, my bags are full", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
                 return false;
             }
 

@@ -324,13 +324,18 @@ bool PlayerbotSocialActionBroker::SetMaintenanceTarget(Player* bot, const std::s
     TravelDestination* bestDestination = nullptr;
     WorldPosition* bestPosition = nullptr;
     float bestDistance = std::numeric_limits<float>::max();
+    // Dungeon maps do not contain ordinary vendors or bankers. For a scoped
+    // party maintenance break, select the closest reachable world service and
+    // return through the preserved mixed-party session afterward. Outdoor
+    // maintenance remains same-map only.
+    bool allowCrossMap = bot->GetMap() && bot->GetMap()->IsDungeon();
     for (TravelDestination* destination : destinations)
     {
         if (!destination)
             continue;
         std::list<uint8> chances = { 100 };
         WorldPosition* position = destination->GetNextPoint(center, chances, true);
-        if (!position || position->getMapId() != bot->GetMapId())
+        if (!position || (!allowCrossMap && position->getMapId() != bot->GetMapId()))
             continue;
         float distance = center.distance(*position);
         if (distance < bestDistance)
@@ -385,7 +390,19 @@ void PlayerbotSocialActionBroker::QueuePartyReturn(Action& action, Player* bot, 
     sTravelMgr.SetNullTravelTarget(completedTarget);
     bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("no active travel destinations");
     vendorPressureNotified.erase(bot->GetGUIDLow());
-    if (player && sPlayerbotRendezvousManager.ResumePartyAssist(bot, player, reason))
+    // The ordinary rendezvous manager intentionally rejects instances. A
+    // vendor trip that began inside a dungeon is narrower: the bot is still in
+    // the same party, and the validated maintenance action owns its return.
+    // Teleport to the live party member so normal instance binding chooses the
+    // correct copy, then let the returning state restore follow on arrival.
+    bool dungeonReturn = false;
+    if (player && player->GetMap() && player->GetMap()->IsDungeon() &&
+        !bot->IsInCombat() && !bot->IsBeingTeleported())
+    {
+        dungeonReturn = bot->TeleportTo(player->GetMapId(), player->GetPositionX(),
+            player->GetPositionY(), player->GetPositionZ(), player->GetOrientation());
+    }
+    if (dungeonReturn || (player && sPlayerbotRendezvousManager.ResumePartyAssist(bot, player, reason)))
     {
         action.state = "returning";
         action.expires = std::chrono::steady_clock::now() + std::chrono::seconds(90);
@@ -906,10 +923,19 @@ void PlayerbotSocialActionBroker::Update()
                     {
                         WorldPosition* destination = target->GetPosition();
                         bot->GetPlayerbotAI()->StopMoving();
-                        bool relocated = destination->getMapId() == bot->GetMapId();
-                        if (relocated)
+                        bool sameMap = destination->getMapId() == bot->GetMapId();
+                        bool relocated = false;
+                        if (sameMap)
+                        {
                             bot->NearTeleportTo(destination->getX(), destination->getY(),
                                 destination->getZ(), destination->getO());
+                            relocated = true;
+                        }
+                        else if (bot->GetMap() && bot->GetMap()->IsDungeon())
+                        {
+                            relocated = bot->TeleportTo(destination->getMapId(), destination->getX(),
+                                destination->getY(), destination->getZ(), destination->getO());
+                        }
                         action.outboundRelocated = relocated;
                         if (relocated)
                         {
