@@ -1657,7 +1657,9 @@ void PlayerbotSocialActionBroker::Update()
                     if (!action.outboundRelocated && !bot->IsInCombat() && departureSeconds >= 3)
                     {
                         WorldPosition* destination = target->GetPosition();
-                        bot->GetPlayerbotAI()->StopMoving();
+                        // Keep walking out of sight while relocation is denied.
+                        // Stopping before the visibility/slot checks trapped a
+                        // departing bot beside the human until the human moved.
                         bool sameMap = destination->getMapId() == bot->GetMapId();
                         bool relocated = false;
                         if (sameMap)
@@ -1667,6 +1669,7 @@ void PlayerbotSocialActionBroker::Update()
                                 destination->getZ()) &&
                                 sPlayerbotRendezvousManager.ClaimRelocationSlot())
                             {
+                                bot->GetPlayerbotAI()->StopMoving();
                                 bot->NearTeleportTo(destination->getX(), destination->getY(),
                                     destination->getZ(), destination->getO());
                                 relocated = true;
@@ -1679,8 +1682,11 @@ void PlayerbotSocialActionBroker::Update()
                                 destinationMap, destination->getX(), destination->getY(),
                                 destination->getZ()) &&
                                 sPlayerbotRendezvousManager.ClaimRelocationSlot())
+                            {
+                                bot->GetPlayerbotAI()->StopMoving();
                                 relocated = bot->TeleportTo(destination->getMapId(), destination->getX(),
                                     destination->getY(), destination->getZ(), destination->getO());
+                            }
                         }
                         action.outboundRelocated = relocated;
                         if (relocated)

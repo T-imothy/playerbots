@@ -1,4 +1,5 @@
 #include "playerbot/TravelMgr.h"
+#include "LivingTravelRegion.h"
 #include "PlayerbotRendezvousManager.h"
 #include <numeric>
 #include <iomanip>
@@ -2656,27 +2657,9 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
     bool canFightElite = info.GetBoolValue("can fight elite");
     int32 botLevel = static_cast<int32>(info.GetLevel());
 
-    if (position.getMapId() == 530 && info.GetLevel() < 58)
-    {
-        // Map 530 contains both Outland and the Blood Elf/Draenei starting
-        // continents. Treating the whole map as Outland removed every travel
-        // destination for low-level characters in those starter zones.
-        AreaTableEntry const* area = position.GetArea();
-        uint32 zoneId = area ? (area->zone ? area->zone : area->ID) : 0;
-        switch (zoneId)
-        {
-            case 3430: // Eversong Woods
-            case 3433: // Ghostlands
-            case 3487: // Silvermoon City
-            case 3479: // The Veiled Sea: Azuremyst ferry, dock, and coastal approach
-            case 3524: // Azuremyst Isle
-            case 3525: // Bloodmyst Isle
-            case 3557: // The Exodar
-                break;
-            default:
-                return false;
-        }
-    }
+    if (position.getMapId() == 530 && info.GetLevel() < 58 &&
+        !LivingIsStarterContinentPosition(position.getMapId(), position.getX(), position.getY()))
+        return false;
 
     if (position.getMapId() == 571 && info.GetLevel() < 68) //Northrend
         return false;

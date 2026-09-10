@@ -195,12 +195,12 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
     {
         if (ai->HasQuestItemsInWOLootList(wo))
         {
-            if (usedBagSpacePercent > 99 && ai->DoSpecificAction("destroy all gray"))
+            if (usedBagSpacePercent > 99 && ai->DoSpecificAction("destroy all gray", Event("living full bag loot cleanup"), true))
             {
                 usedBagSpacePercent = AI_VALUE(uint8, "bag space");
             }
 
-            if (usedBagSpacePercent > 99 && ai->DoSpecificAction("smart destroy item"))
+            if (usedBagSpacePercent > 99 && ai->DoSpecificAction("smart destroy item", Event("living full bag loot cleanup"), true))
             {
                 usedBagSpacePercent = AI_VALUE(uint8, "bag space");
             }
@@ -327,12 +327,12 @@ bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
     {
         if (ai->HasQuestItemsInWOLootList(wo))
         {
-            if (usedBagSpacePercent > 99 && ai->DoSpecificAction("destroy all gray"))
+            if (usedBagSpacePercent > 99 && ai->DoSpecificAction("destroy all gray", Event("living full bag loot cleanup"), true))
             {
                 usedBagSpacePercent = AI_VALUE(uint8, "bag space");
             }
 
-            if (usedBagSpacePercent > 99 && ai->DoSpecificAction("smart destroy item"))
+            if (usedBagSpacePercent > 99 && ai->DoSpecificAction("smart destroy item", Event("living full bag loot cleanup"), true))
             {
                 usedBagSpacePercent = AI_VALUE(uint8, "bag space");
             }

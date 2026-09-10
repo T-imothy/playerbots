@@ -1,6 +1,7 @@
 #include "TravelNode.h"
 #include "TravelRouteQueue.h"
 #include "playerbot/TravelMgr.h"
+#include "LivingTravelRegion.h"
 
 #include <iomanip>
 #include <regex>
@@ -113,27 +114,9 @@ float TravelNodePath::getCost(Unit* unit, uint32 cGold)
     Player* bot = dynamic_cast<Player*>(unit);
     if (bot)
     {
-        if (path.size() && path.back().getMapId() == 530 && bot->GetLevel() < 58)
-        {
-            // Map 530 also contains the low-level Blood Elf and Draenei zones.
-            // Match TravelMgr::IsLocationLevelValid: an eligible destination
-            // must remain reachable through ordinary roads and transports.
-            AreaTableEntry const* area = path.back().GetArea();
-            uint32 zoneId = area ? (area->zone ? area->zone : area->ID) : 0;
-            switch (zoneId)
-            {
-                case 3430: // Eversong Woods
-                case 3433: // Ghostlands
-                case 3487: // Silvermoon City
-                case 3479: // The Veiled Sea: Azuremyst ferry, dock, and coastal approach
-                case 3524: // Azuremyst Isle
-                case 3525: // Bloodmyst Isle
-                case 3557: // The Exodar
-                    break;
-                default:
-                    return -1;
-            }
-        }
+        if (path.size() && path.back().getMapId() == 530 && bot->GetLevel() < 58 &&
+            !LivingIsStarterContinentPosition(path.back().getMapId(), path.back().getX(), path.back().getY()))
+            return -1;
 
         if (path.size() && path.back().getMapId() == 571 && bot->GetLevel() < 68) //Northrend
             return -1;
