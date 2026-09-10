@@ -249,6 +249,7 @@ private:
     bool IsPointUnobserved(Player* bot, float x, float y, float z) const;
     bool IsPointUnobservedOnMap(Map* map, Player* bot, float x, float y, float z) const;
     bool FindStagingPoint(Player* bot, Player* player, float& x, float& y, float& z) const;
+    bool FindPartyRecoveryPoint(Player* bot, Player* player, float& x, float& y, float& z) const;
     bool ValidPath(Player* bot, float sx, float sy, float sz, Player* player) const;
     bool ReturnToActivity(Session& session, Player* bot);
     void UpdatePartyAssists();

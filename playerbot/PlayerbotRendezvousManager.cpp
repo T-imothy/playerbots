@@ -1589,6 +1589,45 @@ bool PlayerbotRendezvousManager::FindStagingPoint(Player* bot, Player* player, f
     return false;
 }
 
+bool PlayerbotRendezvousManager::FindPartyRecoveryPoint(Player* bot, Player* player,
+    float& x, float& y, float& z) const
+{
+    if (!bot || !player || !player->GetMap() || bot->GetMapId() != player->GetMapId() ||
+        bot->GetInstanceId() != player->GetInstanceId())
+        return false;
+
+    // A hidden staging point can occasionally pass the preflight path check
+    // but still fail when MoveFollow builds its live path (dynamic obstacles,
+    // steep terrain, or a moving target).  This bounded recovery point is
+    // intentionally close enough to finish the party handoff immediately.
+    // It is used only after the configured maximum arrival time has elapsed.
+    const float radii[] = { 8.0f, 10.0f, 12.0f };
+    const uint32 firstStep = bot->GetGUIDLow() % 16;
+    for (float radius : radii)
+    {
+        for (uint32 offset = 0; offset < 16; ++offset)
+        {
+            const uint32 step = (firstStep + offset) % 16;
+            const float angle = float(step) * float(M_PI) / 8.0f;
+            float cx = player->GetPositionX();
+            float cy = player->GetPositionY();
+            float cz = player->GetPositionZ();
+            player->GetNearPoint(bot, cx, cy, cz, bot->GetObjectBoundingRadius(), radius, angle);
+            const float ground = player->GetMap()->GetHeight(cx, cy, player->GetPositionZ() + 10.0f);
+            if (ground < -100000.0f) continue;
+            cz = ground + 0.1f;
+            if (!player->IsWithinLOS(cx, cy, cz + bot->GetCollisionHeight(), true) ||
+                !ValidPath(bot, cx, cy, cz, player))
+                continue;
+            x = cx;
+            y = cy;
+            z = cz;
+            return true;
+        }
+    }
+    return false;
+}
+
 PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
     Player* bot, Player* player, const std::string& actionId, bool returnAfter)
 {
@@ -2817,6 +2856,9 @@ bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Playe
     session.state = "approaching";
     session.stateSince = now;
     session.approachIssued = false;
+    session.lastHumanDistance = bot->GetDistance(player);
+    session.lastFollowProgress = now;
+    session.nextApproachAttempt = now;
     PersistPartySession(session);
     return true;
 }
@@ -3650,6 +3692,9 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                     session.reason = "worldport_ack_complete";
                     session.stateSince = now;
                     session.approachIssued = true;
+                    session.lastHumanDistance = bot->GetDistance(human);
+                    session.lastFollowProgress = now;
+                    session.nextApproachAttempt = now + std::chrono::seconds(4);
                     bot->GetMotionMaster()->MoveFollow(human, 2.0f, 0.0f, true, false);
                     PersistPartySession(session);
                     LogPartyEvent(session, "relocation_attached");
@@ -3701,17 +3746,79 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
             {
                 if (bot->GetMapId() == human->GetMapId() && bot->GetInstanceId() == human->GetInstanceId())
                 {
+                    const float distance = bot->GetDistance(human);
                     if (bot->IsWithinDistInMap(human, 12.0f))
                     {
                         BeginPartyHandoff(session, bot, human, "arrival_state_reset");
                     }
-                    else if (!session.approachIssued && !bot->IsInCombat() && !bot->IsBeingTeleported())
+                    else if (!bot->IsInCombat() && !bot->IsBeingTeleported() &&
+                        !bot->IsTaxiFlying() && !bot->GetTransport())
                     {
-                        // Do not replace the follow movement generator every
-                        // world update. Playerbots' normal party strategies can
-                        // resume it if another authoritative action interrupts.
-                        bot->GetMotionMaster()->MoveFollow(human, 2.0f, 0.0f, true, false);
-                        session.approachIssued = true;
+                        if (session.lastHumanDistance <= 0.0f ||
+                            distance + 1.0f < session.lastHumanDistance)
+                        {
+                            session.lastHumanDistance = distance;
+                            session.lastFollowProgress = now;
+                        }
+
+                        const long approachSeconds = std::chrono::duration_cast<std::chrono::seconds>(
+                            now - session.stateSince).count();
+                        const long stalledSeconds = session.lastFollowProgress.time_since_epoch().count() == 0 ?
+                            approachSeconds : std::chrono::duration_cast<std::chrono::seconds>(
+                                now - session.lastFollowProgress).count();
+                        const uint32 maximumSeconds = std::max<uint32>(10,
+                            std::min<uint32>(60, sPlayerbotAIConfig.chatDirectorRendezvousMaximumSeconds));
+
+                        if (approachSeconds >= maximumSeconds &&
+                            (session.nextApproachAttempt.time_since_epoch().count() == 0 ||
+                             now >= session.nextApproachAttempt))
+                        {
+                            float recoveryX = 0.0f, recoveryY = 0.0f, recoveryZ = 0.0f;
+                            session.nextApproachAttempt = now + std::chrono::seconds(5);
+                            if (FindPartyRecoveryPoint(bot, human, recoveryX,
+                                recoveryY, recoveryZ) && ClaimRelocationSlot())
+                            {
+                                bot->GetPlayerbotAI()->StopMoving();
+                                bot->NearTeleportTo(recoveryX, recoveryY, recoveryZ,
+                                    bot->GetAngle(human));
+                                session.relocated = true;
+                                session.reason = "close_relocation_after_no_progress";
+                                lastRelocation[session.botGuid] = now;
+                                QueueActivityTelemetry(session.botGuid, session.playerGuid,
+                                    session.groupId, PartyActivityOwner::rendezvous,
+                                    PartyActivityPhase::traveling, "arrival_route_recovered",
+                                    session.reason);
+                                LogPartyEvent(session, "arrival_route_recovered");
+                                BeginPartyHandoff(session, bot, human,
+                                    "arrival_route_recovered");
+                            }
+                            else if (session.reason != "arrival_recovery_point_unavailable")
+                            {
+                                session.reason = "arrival_recovery_point_unavailable";
+                                QueueActivityTelemetry(session.botGuid, session.playerGuid,
+                                    session.groupId, PartyActivityOwner::rendezvous,
+                                    PartyActivityPhase::blocked, "arrival_blocked",
+                                    session.reason);
+                                PersistPartySession(session);
+                            }
+                        }
+                        else if ((!session.approachIssued || stalledSeconds >= 4) &&
+                            (session.nextApproachAttempt.time_since_epoch().count() == 0 ||
+                             now >= session.nextApproachAttempt))
+                        {
+                            // A live follow path can fail even after staging
+                            // validation. Reissue it at a bounded cadence and
+                            // keep measuring actual distance progress.
+                            bot->GetPlayerbotAI()->StopMoving();
+                            bot->GetMotionMaster()->MoveFollow(human, 2.0f, 0.0f, true, false);
+                            if (session.approachIssued)
+                                QueueActivityTelemetry(session.botGuid, session.playerGuid,
+                                    session.groupId, PartyActivityOwner::rendezvous,
+                                    PartyActivityPhase::traveling, "arrival_follow_reissued",
+                                    "route_no_progress");
+                            session.approachIssued = true;
+                            session.nextApproachAttempt = now + std::chrono::seconds(4);
+                        }
                     }
                 }
             }
