@@ -251,6 +251,8 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             if (bot->IsInCombat())
             {
                 action.state = "waiting_to_leave_ai_party";
+                bot->Whisper("I'm in a fight right now. I'll leave this group when it's safe, then let you know.",
+                    LANG_UNIVERSAL, player->GetObjectGuid());
                 actions[action.actionId] = action;
                 Report(actions[action.actionId]);
                 return true;
