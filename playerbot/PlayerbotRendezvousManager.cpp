@@ -1285,7 +1285,6 @@ bool PlayerbotRendezvousManager::RegisterPartyAssist(Player* bot, Player* invite
             bot->GetPlayerbotAI()->HandleRemoteCommand("action"));
     }
     session.state = sameDungeonInstance ? "instance_handoff" : "pending";
-    session.freshCooldownBypassAvailable = sPlayerbotAIConfig.chatDirectorPartyFreshCooldownBypass;
     session.stateSince = std::chrono::steady_clock::now();
     partySessions[session.botGuid] = session;
     PersistPartySession(partySessions[session.botGuid]);
@@ -1712,11 +1711,6 @@ PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
     {
         if (!sPlayerbotAIConfig.chatDirectorRendezvousCatchup)
             return finishRequest(RequestResult::unavailable, "catchup_disabled");
-        auto cooldown = lastRelocation.find(bot->GetGUIDLow());
-        if (cooldown != lastRelocation.end() &&
-            std::chrono::duration_cast<std::chrono::seconds>(now - cooldown->second).count() <
-                std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorRendezvousCooldownSeconds))
-            return finishRequest(RequestResult::unavailable, "relocation_cooldown");
         // Never make either end of the relocation disappear in front of a real
         // observer. Camera orientation is not authoritative server data, so LOS
         // and visibility from every nearby human are the conservative boundary.
@@ -1895,7 +1889,6 @@ void PlayerbotRendezvousManager::Update()
                 else
                 {
                     session.relocated = true;
-                    lastRelocation[bot->GetGUIDLow()] = now;
                     session.state = sameMap ? "approaching" : "relocating";
                     session.stateSince = now;
                     if (sameMap)
@@ -2832,25 +2825,8 @@ bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Playe
             session.reason = "catchup_disabled";
             return false;
         }
-        auto cooldown = lastRelocation.find(bot->GetGUIDLow());
-        bool relocationOnCooldown = cooldown != lastRelocation.end() &&
-            std::chrono::duration_cast<std::chrono::seconds>(now - cooldown->second).count() <
-                std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorRendezvousCooldownSeconds);
-        if (relocationOnCooldown && !session.freshCooldownBypassAvailable)
-        {
-            session.reason = "relocation_cooldown";
-            QueueActivityTelemetry(session.botGuid, session.playerGuid, session.groupId,
-                PartyActivityOwner::rendezvous, PartyActivityPhase::blocked,
-                "arrival_blocked", "relocation_cooldown");
-            return false;
-        }
-        if (relocationOnCooldown)
-        {
-            session.freshCooldownBypassAvailable = false;
-            QueueActivityTelemetry(session.botGuid, session.playerGuid, session.groupId,
-                PartyActivityOwner::rendezvous, PartyActivityPhase::traveling,
-                "fresh_session_cooldown_bypass", "one_time_bypass");
-        }
+        // Authorized catch-up and errand returns do not wait on a per-bot
+        // timer. Keep the safety checks and shared world-update relocation slot.
 
         // FindStagingPoint uses the target player's map and authoritative path
         // data. This also permits a /who invite from another outdoor zone.
@@ -2886,7 +2862,6 @@ bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Playe
         }
         session.relocated = true;
         session.forceRelocation = false;
-        lastRelocation[bot->GetGUIDLow()] = now;
         LogPartyEvent(session, "relocated_for_arrival");
         if (crossMapRelocation)
         {
@@ -3834,7 +3809,6 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                                     bot->GetAngle(human));
                                 session.relocated = true;
                                 session.reason = "close_relocation_after_no_progress";
-                                lastRelocation[session.botGuid] = now;
                                 QueueActivityTelemetry(session.botGuid, session.playerGuid,
                                     session.groupId, PartyActivityOwner::rendezvous,
                                     PartyActivityPhase::traveling, "arrival_route_recovered",

@@ -672,14 +672,16 @@ bool PlayerbotAIConfig::Initialize()
     chatDirectorRendezvousTargetSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousTargetSeconds", 10);
     chatDirectorRendezvousMaximumSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousMaximumSeconds", 30);
     chatDirectorRendezvousTriggerSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousTriggerSeconds", 30);
-    chatDirectorRendezvousCooldownSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousCooldownSeconds", 300);
+    // Deprecated wire fields retained for older Admin/gateway contracts only.
+    // Old persisted settings must not reintroduce a relocation cooldown.
+    chatDirectorRendezvousCooldownSeconds = 0;
     chatDirectorRendezvousDepartureSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousDepartureSeconds", 90);
     chatDirectorPartyDisconnectGraceSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorPartyDisconnectGraceSeconds", 300);
     chatDirectorPartyActivityOwnership = config.GetBoolDefault("AiPlayerbot.ChatDirectorPartyActivityOwnership", true);
     chatDirectorPartyVerifiedErrands = config.GetBoolDefault("AiPlayerbot.ChatDirectorPartyVerifiedErrands", true);
     chatDirectorPartyFallbackTravel = config.GetBoolDefault("AiPlayerbot.ChatDirectorPartyFallbackTravel", true);
     chatDirectorPartyCentralSuppression = config.GetBoolDefault("AiPlayerbot.ChatDirectorPartyCentralSuppression", true);
-    chatDirectorPartyFreshCooldownBypass = config.GetBoolDefault("AiPlayerbot.ChatDirectorPartyFreshPartyCooldownBypass", true);
+    chatDirectorPartyFreshCooldownBypass = false;
     chatDirectorPartyErrandSummaries = config.GetBoolDefault("AiPlayerbot.ChatDirectorPartyErrandSummaries", true);
     chatDirectorPartyCommittedActionsOnly = config.GetBoolDefault("AiPlayerbot.ChatDirectorPartyCommittedActionsOnly", true);
     chatDirectorPartyReturnWaitSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorPartyReturnWaitSeconds", 120);

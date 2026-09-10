@@ -137,7 +137,6 @@ private:
         std::string reason;
         bool relocated = false;
         bool forceRelocation = false;
-        bool freshCooldownBypassAvailable = false;
         bool approachIssued = false;
         bool freeTimeRecallRequested = false;
         uint32 approachAttempts = 0;
@@ -310,7 +309,6 @@ private:
     // rejected. Periodic restart discovery must not reinterpret that same
     // live roster as a persisted session and bypass the restriction.
     std::map<uint32, uint64> freshRestrictedPartyRevisions;
-    std::map<uint32, std::chrono::steady_clock::time_point> lastRelocation;
     std::chrono::steady_clock::time_point nextPartyDiscovery;
     bool partyPersistencePruned = false;
 };
