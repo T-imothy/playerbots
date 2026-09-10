@@ -194,6 +194,7 @@ PlayerbotGuildEventExecutor::PlayerbotGuildEventExecutor():state_(new State) {}
 PlayerbotGuildEventExecutor::~PlayerbotGuildEventExecutor()=default;
 PlayerbotGuildEventExecutor& PlayerbotGuildEventExecutor::instance() { static PlayerbotGuildEventExecutor value;return value; }
 bool PlayerbotGuildEventExecutor::DungeonSupported(uint32 map) {return DungeonFor(map).valid;}
+bool PlayerbotGuildEventExecutor::DungeonParticipantReady(Player* player,uint32 map) {return DungeonReady(player,DungeonFor(map));}
 void PlayerbotGuildEventExecutor::RecordCredit(uint32 actor,uint32 guild,uint32 group,uint32 kind,
     uint32 entry,uint64_t source,uint32 map,uint32 instance,uint32 occurred) {
     state_->mailbox.Record(actor,guild,group,kind,entry,source,map,instance,occurred);
@@ -267,7 +268,7 @@ void PlayerbotGuildEventExecutor::Update() {
         std::set<uint32> accepted,declined;
         auto responses=CharacterDatabase.PQuery("SELECT character_guid,response,accepted_revision FROM guild_society_rsvp WHERE event_id='%s'",e.id.c_str());
         if(responses) do {
-            Field* r=responses->Fetch();const auto response=r[1].GetString();
+            Field* r=responses->Fetch();const std::string response=r[1].GetCppString();
             if(response=="accepted"&&r[2].GetUInt32()==e.revision) accepted.insert(r[0].GetUInt32());
             else declined.insert(r[0].GetUInt32()); // No silent override of a no, maybe or renewal.
         } while(responses->NextRow());

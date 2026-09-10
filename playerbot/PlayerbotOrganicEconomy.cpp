@@ -2,6 +2,8 @@
 #include "PlayerbotOrganicEconomy.h"
 #include "LivingProfessionPlan.h"
 #include "PlayerbotInventoryPressure.h"
+#include "PlayerbotActionBroker.h"
+#include "PlayerbotGuildSupplies.h"
 
 #include "PlayerbotAI.h"
 #include "PlayerbotBuildProfile.h"
@@ -81,6 +83,58 @@ namespace
                 return true;
         }
         return false;
+    }
+
+    // Primary-profession recipes only: knowing Cooking must not turn every
+    // career into a cooking goal. Spell/skill and all reagents are real state.
+    uint32 CraftSkill(Player* bot, const SpellEntry* spell)
+    {
+        if (!spell || spell->Effect[0] != SPELL_EFFECT_CREATE_ITEM || !spell->EffectItemType[0]) return 0;
+        auto bounds = sSpellMgr.GetSkillLineAbilityMapBoundsBySpellId(spell->Id);
+        for (auto it = bounds.first; it != bounds.second; ++it)
+        {
+            const auto* line = it->second;
+            const uint32 value = bot->GetSkillValuePure(line->skillId);
+            if (LivingProfessions::Primary(line->skillId) && value &&
+                value < bot->GetSkillMaxPure(line->skillId) && value < line->max_value)
+                return line->skillId;
+        }
+        return 0;
+    }
+
+    bool SafeCraftReagents(Player* bot, const SpellEntry* spell)
+    {
+        ai::FindAllItemVisitor visitor;
+        bot->GetPlayerbotAI()->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+        std::map<uint32, uint32> needed;
+        for (uint32 i = 0; i < MAX_SPELL_REAGENTS; ++i)
+            if (spell->Reagent[i] > 0 && spell->ReagentCount[i]) needed[spell->Reagent[i]] += spell->ReagentCount[i];
+        for (const auto& reagent : needed)
+        {
+            // The native spell consumes stacks itself. Reject the whole entry
+            // if any stack is promised, rather than risk consuming that stack.
+            if (sGuildSupplies.ReservedEntry(bot->GetGUIDLow(), reagent.first) ||
+                ai::ItemUsageValue::IsNeededForQuest(bot, reagent.first, true)) return false;
+            for (Item* item : visitor.GetResult())
+                if (item->GetEntry() == reagent.first &&
+                    sPlayerbotActionBroker.IsItemReserved(item->GetGUIDLow())) return false;
+            if (bot->GetItemCount(reagent.first, false) < reagent.second) return false;
+        }
+        return !needed.empty(); // No conjuring or reagent cheats.
+    }
+
+    uint32 ReadyCraftSpell(Player* bot)
+    {
+        // Called on the existing ten-minute planning snapshot, not every tick.
+        // CanCastSpell validates tools, local forge/anvil, bag space and cooldown.
+        for (const auto& known : bot->GetSpellMap())
+        {
+            if (known.second.state == PLAYERSPELL_REMOVED || known.second.disabled) continue;
+            const auto* spell = sServerFacade.LookupSpellInfo(known.first);
+            if (CraftSkill(bot, spell) && SafeCraftReagents(bot, spell) &&
+                bot->GetPlayerbotAI()->CanCastSpell(known.first, bot, 0, true)) return known.first;
+        }
+        return 0;
     }
 }
 
@@ -283,6 +337,7 @@ bool PlayerbotOrganicEconomy::Submit(const Policy& currentPolicy)
             else if (!professionTwo) { professionTwo = skillId; skillTwo = value; break; }
         }
         std::vector<uint32> outputs = KnownCraftOutputs(bot);
+        const uint32 readyRecipe = profile.career && currentPolicy.careers ? ReadyCraftSpell(bot) : 0;
         bool surplus = HasAuctionSurplus(bot);
         if (!firstEvent) events << ',';
         firstEvent = false;
@@ -325,9 +380,9 @@ bool PlayerbotOrganicEconomy::Submit(const Policy& currentPolicy)
                 << "\",\"type\":\"maintain_supplies\",\"utility\":10,\"eligible\":true,\"duration_seconds\":3600}";
             firstGoal = false;
         }
-        if (profile.career && !outputs.empty())
-            plans << ",{\"goal_id\":\"profession:" << guid << ':' << outputs.front()
-                << "\",\"type\":\"profession_skill_up\",\"utility\":30,\"eligible\":true,\"duration_seconds\":5400}";
+        if (readyRecipe)
+            plans << ",{\"goal_id\":\"profession:" << guid << ':' << readyRecipe
+                << "\",\"type\":\"profession_skill_up\",\"utility\":70,\"eligible\":true,\"duration_seconds\":1800}";
         if (profile.career && profile.currentGoalType == "storage_pressure")
             plans << ",{\"goal_id\":\"storage:" << guid
                 << "\",\"type\":\"storage_pressure\",\"utility\":100,\"eligible\":true,\"duration_seconds\":1800}";
@@ -475,9 +530,45 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
     }
     if (goalType == "profession_skill_up" && currentPolicy.careers)
     {
-        if (ai->DoSpecificAction("craft random item", Event("organic economy", "", bot), true))
-            return true;
-        failureReason = "no_craftable_recipe_or_materials";
+        const uint32 epoch = uint32(time(nullptr));
+        auto pending = craftAttempts.find(bot->GetGUIDLow());
+        if (pending != craftAttempts.end() && pending->second.goal != goalId)
+        { craftAttempts.erase(pending); pending = craftAttempts.end(); }
+        if (pending != craftAttempts.end())
+        {
+            const CraftAttempt attempt = pending->second;
+            if (bot->GetSkillValuePure(attempt.skill) > attempt.beforeSkill)
+            {
+                craftAttempts.erase(pending);
+                return true; // Actual skill gain, never a queued command.
+            }
+            if (bot->IsNonMeleeSpellCasted(true) || epoch < attempt.started + 30)
+            { failureReason = "awaiting_profession_result"; return false; }
+            failureReason = bot->GetItemCount(attempt.output, false) > attempt.beforeOutput ?
+                "crafted_without_skill_gain" : "craft_interrupted_or_rejected";
+            craftAttempts.erase(pending);
+            return false;
+        }
+        const std::string prefix = "profession:" + std::to_string(bot->GetGUIDLow()) + ":";
+        const std::string suffix = goalId.compare(0, prefix.size(), prefix) == 0 ? goalId.substr(prefix.size()) : "";
+        if (suffix.empty() || suffix.size() > 9 || suffix.find_first_not_of("0123456789") != std::string::npos)
+        { failureReason = "invalid_profession_recipe"; return false; }
+        const uint32 recipe = uint32(std::stoul(suffix));
+        const auto* spell = sServerFacade.LookupSpellInfo(recipe);
+        const uint32 skill = CraftSkill(bot, spell);
+        if (!bot->HasSpell(recipe) || !skill)
+        { failureReason = "recipe_unavailable_or_no_skill_gain"; return false; }
+        if (!SafeCraftReagents(bot, spell))
+        { failureReason = "missing_or_reserved_recipe_materials"; return false; }
+        if (!ai->CanCastSpell(recipe, bot, 0, true))
+        { failureReason = "recipe_requires_safe_local_tools_or_space"; return false; }
+        CraftAttempt attempt;
+        attempt.goal = goalId; attempt.spell = recipe; attempt.skill = skill;
+        attempt.beforeSkill = bot->GetSkillValuePure(skill);
+        attempt.output = spell->EffectItemType[0]; attempt.beforeOutput = bot->GetItemCount(attempt.output, false);
+        attempt.started = epoch;
+        if (ai->CastSpell(recipe, bot)) craftAttempts[bot->GetGUIDLow()] = attempt;
+        failureReason = craftAttempts.count(bot->GetGUIDLow()) ? "awaiting_profession_result" : "craft_rejected";
         return false;
     }
     if (goalType == "list_surplus" && currentPolicy.posting)
@@ -582,7 +673,17 @@ void PlayerbotOrganicEconomy::ProcessActiveGoals(const Policy& currentPolicy,
         std::string failureReason;
         bool completed = ExecuteGoal(bot, profile, currentPolicy, failureReason);
         retryCooldowns[guid] = now + std::chrono::seconds(completed ? 600 : 20);
-        if (!completed) continue;
+        if (!completed)
+        {
+            if (lastBlockers[guid] != failureReason)
+            {
+                lastBlockers[guid] = failureReason;
+                CharacterDatabase.PExecute("UPDATE organic_economy_goal SET failure_reason='%s' WHERE character_guid=%u AND capability_ref='%s' AND state='active'",
+                    failureReason.c_str(), guid, profile.currentGoalId.c_str());
+            }
+            continue;
+        }
+        lastBlockers.erase(guid);
         actionCooldowns[guid] = now;
         CharacterDatabase.PExecute(
             "UPDATE organic_economy_goal SET state='completed',failure_reason='' WHERE character_guid='%u' AND capability_ref='%s' AND state='active'",
@@ -620,6 +721,8 @@ void PlayerbotOrganicEconomy::ApplyPlans(const std::string& response, const Poli
         profile.currentGoalType = goalType;
         profile.currentGoalState = currentPolicy.mode == "active" ? "active" : "proposed";
         retryCooldowns.erase(guid);
+        lastBlockers.erase(guid);
+        craftAttempts.erase(guid);
     }
 }
 

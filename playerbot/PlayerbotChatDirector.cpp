@@ -4077,6 +4077,42 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
 
 namespace {
 livingguild::GuildPlanLeases& GuildEventPlanLeases() {static livingguild::GuildPlanLeases leases;return leases;}
+
+// The planner and executor must agree on a concrete objective, not just guild
+// average level or a tank/healer somewhere in its roster.
+static uint32 ConcreteGuildObjective(const std::vector<Player*>& eligible, bool dungeon)
+{
+    uint32 target = 0, best = dungeon ? 4 : 1;
+    if (!dungeon)
+    {
+        std::map<uint32, uint32> shared;
+        for (Player* bot : eligible)
+            for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+            {
+                uint32 quest = bot->GetQuestSlotQuestId(slot);
+                if (quest && bot->GetQuestStatus(quest) == QUEST_STATUS_INCOMPLETE &&
+                    !bot->GetQuestRewardStatus(quest) && sObjectMgr.GetQuestTemplate(quest)) ++shared[quest];
+            }
+        for (const auto& quest : shared)
+            if (quest.second > best) { best = quest.second; target = quest.first; }
+        return target;
+    }
+    for (uint32 map = 0; map < sMapStore.GetNumRows(); ++map)
+    {
+        if (!PlayerbotGuildEventExecutor::DungeonSupported(map)) continue;
+        uint32 tanks = 0, healers = 0, damage = 0;
+        for (Player* bot : eligible)
+        {
+            if (!PlayerbotGuildEventExecutor::DungeonParticipantReady(bot, map)) continue;
+            if (PlayerbotAI::IsTank(bot, false)) ++tanks;
+            else if (PlayerbotAI::IsHeal(bot, false)) ++healers;
+            else ++damage;
+        }
+        const uint32 fit = tanks + healers + damage;
+        if (tanks && healers && damage >= 3 && fit > best) { best = fit; target = map; }
+    }
+    return target;
+}
 }
 void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
     std::chrono::steady_clock::time_point /*now*/)
@@ -4170,48 +4206,16 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
             }
             std::sort(eligible.begin(), eligible.end(), [](Player* a, Player* b) { return a->GetGUIDLow() < b->GetGUIDLow(); });
             eventType = decisionType == "schedule_dungeon" ? "dungeon" : "quest";
+            eventTarget = ConcreteGuildObjective(eligible, eventType == "dungeon");
             if (eventType == "quest")
             {
                 // A leveling proposal becomes a named shared quest, never an
                 // unlabeled generic grind or an invented completion timer.
-                std::map<uint32, uint32> shared;
-                for (Player* bot : eligible)
-                    for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
-                    {
-                        const uint32 quest = bot->GetQuestSlotQuestId(slot);
-                        if (quest && bot->GetQuestStatus(quest) == QUEST_STATUS_INCOMPLETE &&
-                            !bot->GetQuestRewardStatus(quest) && sObjectMgr.GetQuestTemplate(quest))
-                            ++shared[quest];
-                    }
-                uint32 best = 1;
-                for (const auto& quest : shared)
-                    if (quest.second > best) { best = quest.second; eventTarget = quest.first; }
                 title = "Guild shared quest";
                 if (eventTarget) title += ": " + std::string(sObjectMgr.GetQuestTemplate(eventTarget)->GetTitle());
             }
             else
             {
-                uint32 bestFit = 0;
-                for (uint32 mapId = 0; mapId < sMapStore.GetNumRows(); ++mapId)
-                {
-                    if (!PlayerbotGuildEventExecutor::DungeonSupported(mapId)) continue;
-                    uint32 level = 0;
-                    auto encounters = sObjectMgr.GetDungeonEncounterBoundsByMap(mapId);
-                    for (auto it = encounters.first; it != encounters.second; ++it)
-                        if (it->second.dbcEntry && it->second.dbcEntry->Difficulty == 0)
-                            if (const auto* creature = sObjectMgr.GetCreatureTemplate(it->second.creditEntry))
-                                level = std::max(level, uint32(creature->MaxLevel));
-                    uint32 tanks = 0, healers = 0, damage = 0;
-                    for (Player* bot : eligible)
-                    {
-                        if (bot->GetLevel() + 3 < level || bot->GetLevel() > level + 8) continue;
-                        if (PlayerbotAI::IsTank(bot, false)) ++tanks;
-                        else if (PlayerbotAI::IsHeal(bot, false)) ++healers;
-                        else ++damage;
-                    }
-                    const uint32 fit = tanks + healers + damage;
-                    if (tanks && healers && damage >= 3 && fit > bestFit) { bestFit = fit; eventTarget = mapId; }
-                }
                 title = "Guild dungeon";
                 if (eventTarget) title += ": " + std::string(sMapStore.LookupEntry(eventTarget)->name[0]);
             }
@@ -4457,8 +4461,18 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
         const uint32 target = members <= 20 ? 10 + guildId % 11 : members <= 45 ? 21 + guildId % 25 : 46 + guildId % 35;
         const uint32 online = onlineMembers[guildId];
         const uint32 averageLevel = online ? totalLevels[guildId] / online : 0;
-        const bool dungeonEligible = dungeonReady[guildId] >= 5 &&
-            tankCandidates[guildId] > 0 && healerCandidates[guildId] > 0;
+        std::vector<Player*> eventCandidates;
+        for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
+        {
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
+            if (SafeGuildEventParticipant(bot, guildId) &&
+                !sPlayerbotSocialActionBroker.ReservedForPlayer(guid)) eventCandidates.push_back(bot);
+        }
+        const bool eventWindowOpen = !CharacterDatabase.PQuery(
+            "SELECT event_id FROM guild_society_event WHERE guild_id=%u AND ((origin IN ('legacy','spontaneous') AND created_at>%u) OR state IN ('announced','forming','traveling','active')) LIMIT 1",
+            guildId, nowEpoch > 14400 ? nowEpoch - 14400 : 0);
+        const bool questEligible = eventWindowOpen && ConcreteGuildObjective(eventCandidates, false);
+        const bool dungeonEligible = eventWindowOpen && ConcreteGuildObjective(eventCandidates, true);
         const uint32 recruitmentGap = target > members ? target - members : 0;
         uint32 activeOfficers = 0;
         if (auto officerRows = CharacterDatabase.PQuery(
@@ -4506,7 +4520,7 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
         const std::string questRef="quest:"+std::to_string(guildId)+":"+std::to_string(averageLevel)+":"+std::to_string(nowEpoch);
         const std::string levelingRef="leveling:"+std::to_string(guildId)+":"+std::to_string(averageLevel)+":"+std::to_string(nowEpoch);
         const std::string dungeonRef="dungeon:"+std::to_string(guildId)+":"+std::to_string(dungeonReady[guildId])+":"+std::to_string(nowEpoch);
-        if(online>=2) {
+        if(questEligible) {
             GuildEventPlanLeases().Publish(questRef,guildId,"schedule_quest_group",authority.revision,authority.leader,nowEpoch);
             GuildEventPlanLeases().Publish(levelingRef,guildId,"schedule_leveling_group",authority.revision,authority.leader,nowEpoch);
         }
@@ -4524,10 +4538,10 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             << ",\"damage_candidates\":" << damageCandidates[guildId]
             << ",\"candidate_decisions\":[{\"candidate_id\":\"" << questRef
             << "\",\"type\":\"schedule_quest_group\",\"utility\":20,"
-               "\"eligible\":" << (online >= 2 ? "true" : "false") << "}"
+               "\"eligible\":" << (questEligible ? "true" : "false") << "}"
             << ",{\"candidate_id\":\"" << levelingRef
             << "\",\"type\":\"schedule_leveling_group\",\"utility\":" << (averageLevel < 15 ? 24 : 16)
-            << ",\"eligible\":" << (online >= 2 ? "true" : "false") << "}"
+            << ",\"eligible\":" << (questEligible ? "true" : "false") << "}"
             << ",{\"candidate_id\":\"" << dungeonRef
             << "\",\"type\":\"schedule_dungeon\",\"utility\":25,\"eligible\":"
             << (dungeonEligible ? "true" : "false") << "}"

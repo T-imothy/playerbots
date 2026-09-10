@@ -45,6 +45,15 @@ private:
         std::string currentGoalState;
     };
 
+    struct CraftAttempt
+    {
+        std::string goal;
+        uint32 spell = 0, skill = 0, beforeSkill = 0;
+        uint32 output = 0, beforeOutput = 0, started = 0;
+    };
+    std::map<uint32, CraftAttempt> craftAttempts;
+    std::map<uint32, std::string> lastBlockers;
+
     PlayerbotOrganicEconomy() = default;
     Policy LoadPolicy();
     std::map<uint32, Profile> LoadProfiles();
