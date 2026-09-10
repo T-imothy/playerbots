@@ -10,6 +10,7 @@
 #include "PlayerbotRendezvousManager.h"
 #include "LootObjectStack.h"
 #include "RandomPlayerbotMgr.h"
+#include "ServerFacade.h"
 #include "TravelMgr.h"
 #include "strategy/values/TravelValues.h"
 
@@ -31,6 +32,7 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
         type == "request_leader_invite" || type == "accept_group_invite" ||
         type == "pass_leadership" || type == "leave_group" ||
         type == "leave_ai_party_for_player" ||
+        type == "solicit_petition_signatures" ||
         type == "share_quest" || type == "accept_party_quest_plan" || type == "meet_player" ||
         type == "vendor_bags" || type == "gather_node" || type == "decline_gather_node" ||
         type == "open_chest" || type == "decline_chest" ||
@@ -641,6 +643,56 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living party quest plan", std::to_string(questId), player), true);
         }
     }
+    else if (proposal.type == "solicit_petition_signatures" &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(guild:petition-solicit:([0-9]+):([0-9]+):([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow())
+    {
+        uint32 groupId = (uint32)std::stoul(match[3].str());
+        uint32 petitionGuid = (uint32)std::stoul(match[4].str());
+        Group* group = bot->GetGroup();
+        Item* petition = bot->GetItemByEntry(5863);
+        action.groupId = groupId;
+        action.questId = petitionGuid;
+        uint32 required = sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS);
+        auto signatures = CharacterDatabase.PQuery(
+            "SELECT playerguid FROM petition_sign WHERE petitionguid = '%u'", petitionGuid);
+        uint32 signatureCount = signatures ? signatures->GetRowCount() : 0;
+        if (group && group == player->GetGroup() && group->GetId() == groupId && petition &&
+            petition->GetObjectGuid().GetCounter() == petitionGuid && !bot->GetGuildId() &&
+            !bot->GetGuildIdInvited() && signatureCount < required)
+        {
+            uint32 offered = 0;
+            uint32 slots = required - signatureCount;
+            for (GroupReference* reference = group->GetFirstMember(); reference && offered < slots;
+                reference = reference->next())
+            {
+                Player* member = reference->getSource();
+                if (!member || member == bot || !member->IsInWorld() || !member->GetSession() ||
+                    member->GetGuildId() || member->GetGuildIdInvited() ||
+                    member->GetMapId() != bot->GetMapId() ||
+                    sServerFacade.GetDistance2d(bot, member) > sPlayerbotAIConfig.spellDistance)
+                    continue;
+                auto signedAlready = CharacterDatabase.PQuery(
+                    "SELECT playerguid FROM petition_sign WHERE player_account = '%u' AND petitionguid = '%u'",
+                    member->GetSession()->GetAccountId(), petitionGuid);
+                if (signedAlready)
+                    continue;
+                if (bot->GetPlayerbotAI()->DoSpecificAction("offer petition",
+                    Event("living charter solicitation", member->GetObjectGuid(), player), true))
+                    ++offered;
+            }
+            completed = offered > 0;
+            if (completed)
+                sLog.outString("Living WoW charter solicitation owner=%u requester=%u group=%u petition=%u offered=%u",
+                    bot->GetGUIDLow(), player->GetGUIDLow(), groupId, petitionGuid, offered);
+            else
+                action.failureReason = "no eligible unsigned party member is currently close enough";
+        }
+        else
+            action.failureReason = "the charter, party, or signature state changed before solicitation";
+    }
     else if (proposal.type == "vendor_bags" &&
         std::regex_match(proposal.capabilityRef, match, std::regex(R"(vendor:([0-9]+):([0-9]+))")) &&
         (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
@@ -775,7 +827,7 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
     }
 
     action.state = completed ? "completed" : "rejected";
-    if (!completed)
+    if (!completed && action.failureReason.empty())
         action.failureReason = "authoritative group or quest state no longer permits the action";
     actions[action.actionId] = action;
     Report(actions[action.actionId]);

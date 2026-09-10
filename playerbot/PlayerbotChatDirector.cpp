@@ -229,6 +229,31 @@ static void AddSocialCapability(ChatDirectorCandidate& candidate, const std::str
     candidate.actionCapabilities.push_back(std::move(capability));
 }
 
+static void PopulatePartyPetitionMembers(Player* bot, Group* group, uint32 petitionGuid,
+    ChatDirectorCandidate& candidate)
+{
+    if (!bot || !group || !petitionGuid)
+        return;
+    for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
+    {
+        Player* member = reference->getSource();
+        if (!member || member == bot || !member->IsInWorld() || !member->GetSession())
+            continue;
+        auto signedAlready = CharacterDatabase.PQuery(
+            "SELECT playerguid FROM petition_sign WHERE player_account = '%u' AND petitionguid = '%u'",
+            member->GetSession()->GetAccountId(), petitionGuid);
+        if (signedAlready)
+        {
+            candidate.signedPartyMembers.push_back(member->GetName());
+            continue;
+        }
+        if (!member->GetGuildId() && !member->GetGuildIdInvited() &&
+            member->GetMapId() == bot->GetMapId() &&
+            sServerFacade.GetDistance2d(bot, member) <= sPlayerbotAIConfig.spellDistance)
+            candidate.eligiblePetitionPartyMembers.push_back(member->GetName());
+    }
+}
+
 static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandidate& candidate)
 {
     if (!sPlayerbotAIConfig.chatDirectorSocialActions || !bot || !speaker)
@@ -328,6 +353,47 @@ static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandid
 
     if (speaker->GetGroup() == group)
     {
+        Item* petition = (!bot->GetGuildId() && !bot->GetGuildIdInvited()) ?
+            bot->GetItemByEntry(5863) : nullptr;
+        if (petition)
+        {
+            uint32 petitionGuid = petition->GetObjectGuid().GetCounter();
+            auto petitionRow = CharacterDatabase.PQuery(
+                "SELECT name FROM petition WHERE petitionguid = '%u' AND ownerguid = '%u'",
+                petitionGuid, bot->GetGUIDLow());
+            if (!petitionRow)
+                petition = nullptr;
+            else
+            {
+                candidate.hasPetition = true;
+                candidate.petitionName = petitionRow->Fetch()[0].GetString();
+            }
+        }
+        if (petition)
+        {
+            uint32 petitionGuid = petition->GetObjectGuid().GetCounter();
+            auto signatures = CharacterDatabase.PQuery(
+                "SELECT playerguid FROM petition_sign WHERE petitionguid = '%u'", petitionGuid);
+            uint32 signatureCount = signatures ? signatures->GetRowCount() : 0;
+            uint32 required = sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS);
+            candidate.petitionSignatures = signatureCount;
+            candidate.petitionRequired = required;
+            PopulatePartyPetitionMembers(bot, group, petitionGuid, candidate);
+            uint32 eligible = candidate.eligiblePetitionPartyMembers.size();
+            if (eligible)
+            {
+                std::ostringstream petitionRef;
+                petitionRef << "guild:petition-solicit:" << bot->GetGUIDLow() << ':'
+                    << speaker->GetGUIDLow() << ':' << state.groupId << ':' << petitionGuid;
+                std::ostringstream description;
+                description << "Ask up to " << std::min<uint32>(eligible, required - signatureCount)
+                    << " eligible, nearby, unsigned members of this party to sign this bot's existing guild charter. "
+                    << "The requesting player may already have signed; solicit the other eligible party members.";
+                AddSocialCapability(candidate, petitionRef.str(), "solicit_petition_signatures",
+                    state.groupId, bot->GetGUIDLow(), 0, description.str());
+            }
+        }
+
         for (ChatDirectorQuest& quest : candidate.quests)
         {
             std::ostringstream planRef;
@@ -2149,6 +2215,22 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
             if (humanIndex) json << ',';
             json << "\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.groupState.humanMembers[humanIndex]) << "\"";
         }
+        json << "]},\"petition_state\":{\"has_charter\":" << (candidate.hasPetition ? "true" : "false")
+             << ",\"name\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.petitionName)
+             << "\",\"signatures\":" << candidate.petitionSignatures
+             << ",\"required_signatures\":" << candidate.petitionRequired
+             << ",\"signed_party_members\":[";
+        for (size_t signerIndex = 0; signerIndex < candidate.signedPartyMembers.size(); ++signerIndex)
+        {
+            if (signerIndex) json << ',';
+            json << "\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.signedPartyMembers[signerIndex]) << "\"";
+        }
+        json << "],\"eligible_party_members\":[";
+        for (size_t signerIndex = 0; signerIndex < candidate.eligiblePetitionPartyMembers.size(); ++signerIndex)
+        {
+            if (signerIndex) json << ',';
+            json << "\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.eligiblePetitionPartyMembers[signerIndex]) << "\"";
+        }
         json << "]},\"quests\":[";
         for (size_t questIndex = 0; questIndex < candidate.quests.size(); ++questIndex)
         {
@@ -2167,7 +2249,8 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
              << ",\"available\":" << (candidate.available ? "true" : "false");
         uint32 stateRevision = candidate.groupState.groupId ^ (candidate.groupState.leaderGuid << 1) ^
             (candidate.groupState.memberCount << 24) ^ (candidate.inCombat ? 0x40000000 : 0) ^
-            (uint32)candidate.actionCapabilities.size();
+            (uint32)candidate.actionCapabilities.size() ^ (candidate.petitionSignatures << 8) ^
+            (uint32)candidate.eligiblePetitionPartyMembers.size();
         json << ",\"state_revision\":" << stateRevision << ",\"action_capabilities\":[";
         bool firstCapability = true;
         for (const ChatDirectorCapability& capability : candidate.actionCapabilities)
@@ -2182,6 +2265,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
                 capability.type == "return_to_activity" || capability.type == "resume_party_assist" ||
                 capability.type == "grant_party_free_time") family = "travel";
             else if (capability.type.find("group") != std::string::npos || capability.type == "pass_leadership" ||
+                capability.type == "solicit_petition_signatures" ||
                 capability.type == "set_party_role" || capability.type == "clear_party_role" ||
                 capability.type == "set_puller" || capability.type == "hold_attacks" ||
                 capability.type == "resume_assist") family = "grouping";

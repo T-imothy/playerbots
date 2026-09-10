@@ -120,6 +120,12 @@ struct ChatDirectorCandidate
     std::string partyAssistReason;
     uint32 deadRecoveryAttempts = 0;
     uint32 deadRecoverySeconds = 0;
+    bool hasPetition = false;
+    std::string petitionName;
+    uint32 petitionSignatures = 0;
+    uint32 petitionRequired = 0;
+    std::vector<std::string> signedPartyMembers;
+    std::vector<std::string> eligiblePetitionPartyMembers;
     std::vector<ChatDirectorCapability> actionCapabilities;
 };
 
