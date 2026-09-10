@@ -22,6 +22,9 @@ namespace LivingActivity {
         WorldContext current;
         uint32_t safety = 0, effects = 0;
         Task root;
+        // One world-approved finite child step. Merely knowing a root lease
+        // must not let a stale/unregistered child impersonate its preparation.
+        Task step;
         ActivityLease lease;
         uint64_t expires = 0;
         std::string operation;
@@ -38,6 +41,7 @@ namespace LivingActivity {
         AuthorityResult Observe(const WorldContext& current, uint32_t safety);
         AuthorityResult Acquire(const Task& root, uint32_t effects, uint64_t now, uint64_t duration);
         AuthorityResult Release(const ActivityLease& lease);
+        AuthorityCode SelectStep(const ActivityLease& lease, const Task* step);
         AuthorityResult Forget(uint32_t actor);
         AuthorityResult BeginAtomic(const ActivityLease& lease, const std::string& operation, uint64_t now);
         AuthorityResult FinishAtomic(const ActivityLease& lease, const std::string& operation);
@@ -55,6 +59,7 @@ namespace LivingActivity {
         static bool ContextValid(const WorldContext& context);
         static bool Matches(const ActivityLease& left, const ActivityLease& right);
         static bool Executable(const Task& task);
+        static bool SameDefinition(const Task& left, const Task& right);
         static uint32_t LaneEffects(Lane lane);
         static AuthorityResult Drop(Actor& actor, AuthorityCode code);
         std::map<uint32_t, Actor> actors;

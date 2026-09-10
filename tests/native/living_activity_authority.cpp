@@ -44,6 +44,9 @@ int main() {
     assert(renew.code == AuthorityCode::Renewed && renew.lease.generation == first.lease.generation);
     auto changed = t; changed.priority = Priority::Human;
     assert(authority.Acquire(changed, Movement, 1100, 5000).code == AuthorityCode::StaleRevision);
+    changed = t; changed.checkpoint.data = "{\"recipe\":2881}";
+    assert(authority.Acquire(changed, Movement, 1100, 5000).code == AuthorityCode::StaleRevision);
+    assert(authority.Authorize(move, current, 1100, &changed, &a) == AuthorityCode::StaleRevision);
     auto optional = Root(B, Priority::Optional);
     assert(authority.Acquire(optional, Movement, 1100, 5000).code == AuthorityCode::PriorityDenied);
     auto human = Root(B, Priority::Human);
@@ -67,7 +70,17 @@ int main() {
     auto child = Root(C, Priority::Preparation); child.root = human.id; child.parent = human.id;
     auto childAction = Action(child, second.lease);
     assert(authority.Acquire(child, Movement, 1300, 5000).code == AuthorityCode::InvalidRequest);
+    assert(authority.Authorize(move, current, 1300, &child, &childAction) == AuthorityCode::StaleRevision);
+    assert(authority.SelectStep(second.lease, &child) == AuthorityCode::Allowed);
     assert(authority.Authorize(move, current, 1300, &child, &childAction) == AuthorityCode::Allowed);
+    auto nextChild = child; ++nextChild.revision; nextChild.checkpoint.step = "collect_mail";
+    assert(authority.SelectStep(second.lease, &nextChild) == AuthorityCode::Allowed);
+    assert(authority.Authorize(move, current, 1300, &child, &childAction) == AuthorityCode::StaleRevision);
+    assert(authority.SelectStep(second.lease, &child) == AuthorityCode::StaleRevision);
+    child = nextChild; childAction = Action(child, second.lease);
+    assert(authority.Authorize(move, current, 1300, &child, &childAction) == AuthorityCode::Allowed);
+    assert(authority.SelectStep(second.lease, nullptr) == AuthorityCode::Allowed);
+    assert(authority.Authorize(move, current, 1300, &child, &childAction) == AuthorityCode::StaleRevision);
     child.phase = Phase::WaitingExternal;
     assert(authority.Authorize(move, current, 1300, &child, &childAction) == AuthorityCode::StaleLease);
     assert(authority.Release(second.lease).code == AuthorityCode::Released);
@@ -76,6 +89,7 @@ int main() {
     first = authority.Acquire(t, Movement, 2000, 1000);
     assert(first.Granted());
     assert(authority.BeginAtomic(first.lease, C, 2100).code == AuthorityCode::Allowed);
+    assert(authority.SelectStep(first.lease, nullptr) == AuthorityCode::AtomicPending);
     assert(authority.BeginAtomic(first.lease, C, 2100).code == AuthorityCode::AtomicPending);
     assert(authority.Acquire(human, Movement, 4000, 1000).code == AuthorityCode::AtomicPending);
     assert(authority.Release(first.lease).code == AuthorityCode::AtomicPending);

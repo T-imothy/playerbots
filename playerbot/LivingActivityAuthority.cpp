@@ -29,13 +29,23 @@ namespace LivingActivity {
         return t.mode == Mode::Active && (t.phase == Phase::Preparing || t.phase == Phase::Traveling ||
             t.phase == Phase::Executing);
     }
+    bool ExecutionAuthority::SameDefinition(const Task& a, const Task& b) {
+        // Ephemeral lease generation and elapsed diagnostic time are not a task
+        // definition. Changing an objective/step/effectful checkpoint is.
+        return a.id == b.id && a.actor == b.actor && a.root == b.root && a.parent == b.parent &&
+            a.source == b.source && a.sourceKey == b.sourceKey && a.kind == b.kind && a.mode == b.mode &&
+            a.phase == b.phase && a.priority == b.priority && a.accepted == b.accepted &&
+            a.dueAtMs == b.dueAtMs && a.createdAtMs == b.createdAtMs && a.context == b.context &&
+            a.checkpoint.version == b.checkpoint.version && a.checkpoint.step == b.checkpoint.step &&
+            a.checkpoint.data == b.checkpoint.data;
+    }
     bool ExecutionAuthority::Matches(const ActivityLease& a, const ActivityLease& b) {
         return a.actor && a.generation && a.actor == b.actor && a.rootTask == b.rootTask &&
             a.generation == b.generation && a.context == b.context;
     }
     AuthorityResult ExecutionAuthority::Drop(Actor& a, AuthorityCode code) {
         AuthorityResult result; result.code = code; result.displaced = a.lease;
-        a.lease = {}; a.root = {}; a.expires = 0; a.effects = 0; a.operation.clear(); a.invalidated = false;
+        a.lease = {}; a.root = {}; a.step = {}; a.expires = 0; a.effects = 0; a.operation.clear(); a.invalidated = false;
         return result;
     }
     AuthorityResult ExecutionAuthority::Observe(const WorldContext& current, uint32_t safety) {
@@ -76,8 +86,7 @@ namespace LivingActivity {
             return {AuthorityCode::StaleRevision, a.lease, {}};
         if (held && root.id == a.root.id && root.revision == a.root.revision) {
             // An existing revision cannot silently change its authority/priority.
-            if (effects != a.effects || root.priority != a.root.priority || root.accepted != a.root.accepted ||
-                root.dueAtMs != a.root.dueAtMs || root.createdAtMs != a.root.createdAtMs || root.phase != a.root.phase)
+            if (effects != a.effects || !SameDefinition(root, a.root))
                 return {AuthorityCode::StaleRevision, a.lease, {}};
             if (now < a.expires) {
                 a.expires = now + duration;
@@ -91,7 +100,7 @@ namespace LivingActivity {
         if (generation == std::numeric_limits<uint64_t>::max())
             return {AuthorityCode::GenerationExhausted, a.lease, {}};
         AuthorityResult result; result.displaced = a.lease;
-        a.root = root; a.effects = effects; a.expires = now + duration;
+        a.root = root; a.step = {}; a.effects = effects; a.expires = now + duration;
         a.lease = {root.actor, root.id, ++generation, root.context};
         result.lease = a.lease; result.code = held ? AuthorityCode::Preempted : AuthorityCode::Granted;
         return result;
@@ -102,6 +111,24 @@ namespace LivingActivity {
             return {AuthorityCode::StaleLease, {}, {}};
         if (!found->second.operation.empty()) return {AuthorityCode::AtomicPending, found->second.lease, {}};
         return Drop(found->second, AuthorityCode::Released);
+    }
+    AuthorityCode ExecutionAuthority::SelectStep(const ActivityLease& lease, const Task* step) {
+        const auto found = actors.find(lease.actor);
+        if (found == actors.end() || !Matches(found->second.lease, lease)) return AuthorityCode::StaleLease;
+        auto& actor = found->second;
+        if (actor.invalidated || !(actor.current == lease.context)) return AuthorityCode::StaleContext;
+        if (!actor.operation.empty()) return AuthorityCode::AtomicPending;
+        if (step) {
+            std::string error;
+            if (!Validate(*step, error) || !Executable(*step) || step->actor != lease.actor ||
+                step->id == lease.rootTask || step->root != lease.rootTask || step->parent != lease.rootTask ||
+                !(step->context == lease.context)) return AuthorityCode::InvalidRequest;
+            if (step->id == actor.step.id && step->revision < actor.step.revision) return AuthorityCode::StaleRevision;
+            if (step->id == actor.step.id && step->revision == actor.step.revision && !SameDefinition(*step, actor.step))
+                return AuthorityCode::StaleRevision;
+            actor.step = *step;
+        } else actor.step = {};
+        return AuthorityCode::Allowed;
     }
     AuthorityResult ExecutionAuthority::Forget(uint32_t actor) {
         const auto found = actors.find(actor);
@@ -195,8 +222,10 @@ namespace LivingActivity {
             return AuthorityCode::StaleLease;
         if (!IsToken(action->origin, 64) || (action->permittedEffects & ~a.effects) ||
             (effects.mask & ~action->permittedEffects)) return AuthorityCode::EffectsDenied;
-        if (task->id != task->root && task->parent.empty()) return AuthorityCode::InvalidRequest;
-        if (task->id == a.root.id && task->revision != a.root.revision) return AuthorityCode::StaleRevision;
+        if (task->id != task->root && (task->revision != a.step.revision || !SameDefinition(*task, a.step)))
+            return AuthorityCode::StaleRevision;
+        if (task->id == a.root.id && (task->revision != a.root.revision || !SameDefinition(*task, a.root)))
+            return AuthorityCode::StaleRevision;
         return AuthorityCode::Allowed;
     }
 }
