@@ -97,11 +97,16 @@ namespace
             AI_VALUE(bool, "can sell") ? "" : "no_vendor_classified_items");
         Observe(bot, "auction_post", AI_VALUE(bool, "should ah sell"), AI_VALUE(bool, "can ah sell") ? "" : "auction_strategy_items_or_budget_unavailable");
         const std::string bankUsage = "usage " + std::to_string(uint8(ItemUsage::ITEM_USAGE_BANK));
-        const uint32 bankItems = AI_VALUE2(uint32, "bank item count", "all");
-        const uint32 keepBanked = AI_VALUE2(uint32, "bank item count", bankUsage);
+        bool needsWithdrawal = false;
+        for (Item* item : ai->InventoryParseItems("all", IterateItemsMask::ITERATE_ITEMS_IN_BANK))
+            if (ItemUsageValue::ForBankWithdrawal(ai, item) != ItemUsage::ITEM_USAGE_BANK)
+            {
+                needsWithdrawal = true;
+                break;
+            }
         Observe(bot, "bank_deposit", AI_VALUE2(uint32, "item count", bankUsage) > 0,
             AI_VALUE(uint8, "bank space") > 80 ? "bank_space_low" : "");
-        Observe(bot, "bank_withdraw", bankItems > keepBanked, AI_VALUE(uint8, "bag space") > 80 ? "bag_space_low" : "");
+        Observe(bot, "bank_withdraw", needsWithdrawal, AI_VALUE(uint8, "bag space") > 80 ? "bag_space_low" : "");
         bool mailWaiting = false;
         for (auto it = bot->GetMailBegin(); it != bot->GetMailEnd(); ++it)
             if (*it && (*it)->state != MAIL_STATE_DELETED && (*it)->deliver_time <= time(nullptr) && ((*it)->money || (*it)->has_items))
