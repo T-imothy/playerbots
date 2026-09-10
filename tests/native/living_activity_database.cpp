@@ -1,6 +1,7 @@
 // Actual journal SQL, exercised against a separate MariaDB fixture database.
 // Not linked into the game. No test controls enter the production executable.
 #include "LivingActivity.h"
+#include "LivingActivityCodec.h"
 #include <mysql.h>
 #include <cassert>
 #include <cstdlib>
@@ -84,6 +85,13 @@ int main() {
     assert(envelope.get<std::string>("checkpoint") == task.checkpoint.data);
     assert(envelope.get<uint64_t>("revision") == task.revision);
     assert(envelope.get<uint32_t>("actor") == task.actor);
+    Task decoded; std::string decodeError;
+    assert(DecodeTaskProjection(payload, decoded, decodeError));
+    assert(decoded.id == task.id && decoded.context.actor == task.actor && decoded.checkpoint.data == task.checkpoint.data);
+    assert(db.Execute("UPDATE living_activity_task SET checkpoint_version=99"));
+    assert(!DecodeTaskProjection(db.Scalar("SELECT " + PersistedTaskProjection() + " FROM living_activity_task"), decoded, decodeError));
+    assert(decodeError == "unsupported_checkpoint");
+    assert(db.Execute("UPDATE living_activity_task SET checkpoint_version=1"));
     auto recovered = AfterRestart(task, 600000);
     auto update = TaskWrite(recovered, task.revision, Receipt2, "restart_revalidation");
     assert(!db.Write(update, true));

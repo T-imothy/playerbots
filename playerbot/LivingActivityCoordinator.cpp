@@ -3,6 +3,7 @@
 #include "LivingActivityCoordinator.h"
 #include "LivingActivity.h"
 #include "LivingActivityAdmission.h"
+#include "LivingActivityCodec.h"
 #include "PlayerbotRendezvousManager.h"
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -32,34 +33,6 @@ namespace {
     }
     std::string Json(const boost::property_tree::ptree& value) {
         std::ostringstream out; boost::property_tree::write_json(out, value, false); return out.str();
-    }
-    bool ReadTask(const std::string& payload, Task& task) {
-        try {
-            boost::property_tree::ptree p; std::istringstream in(payload);
-            boost::property_tree::read_json(in, p);
-            task.id = p.get<std::string>("id"); task.actor = p.get<uint32_t>("actor");
-            task.context.actor = task.actor;
-            task.source = p.get<std::string>("source"); task.sourceKey = p.get<std::string>("source_key");
-            task.root = p.get<std::string>("root"); task.parent = p.get<std::string>("parent");
-            if (!ParseKind(p.get<std::string>("kind"), task.kind) ||
-                !ParsePhase(p.get<std::string>("phase"), task.phase)) return false;
-            const std::string mode = p.get<std::string>("mode");
-            if (mode != "observe" && mode != "active") return false;
-            task.mode = mode == "observe" ? Mode::Observe : Mode::Active;
-            task.priority = Priority(p.get<unsigned>("priority")); task.accepted = p.get<unsigned>("accepted") != 0;
-            task.revision = p.get<uint64_t>("revision"); task.ownerGeneration = p.get<uint64_t>("generation");
-            task.context.session = p.get<std::string>("session"); task.context.sessionRevision = p.get<uint64_t>("session_revision");
-            task.context.policyRevision = p.get<uint64_t>("policy_revision");
-            task.context.map = p.get<uint32_t>("map"); task.context.instance = p.get<uint32_t>("instance");
-            task.checkpoint.version = p.get<uint32_t>("checkpoint_version");
-            task.checkpoint.step = p.get<std::string>("step"); task.checkpoint.data = p.get<std::string>("checkpoint");
-            task.checkpoint.blocker = p.get<std::string>("blocker");
-            task.checkpoint.activeElapsedMs = p.get<uint64_t>("active_ms");
-            task.checkpoint.lastProgressAtMs = p.get<uint64_t>("progress_at");
-            task.dueAtMs = p.get<uint64_t>("due_at"); task.retryAtMs = p.get<uint64_t>("retry_at");
-            task.createdAtMs = p.get<uint64_t>("created_at"); task.updatedAtMs = p.get<uint64_t>("updated_at");
-            std::string error; return Validate(task, error);
-        } catch (const std::exception&) { return false; }
     }
     // Only identifiers and typed source facts enter checkpoints. Do not import
     // arbitrary legacy payloads, user event descriptions or private dialogue.
@@ -280,8 +253,9 @@ struct LivingActivityCoordinator::State {
             }
             const auto& row = incoming.front(); Task task;
             if (row.restored) {
-                if (!ReadTask(row.payload, task)) {
-                    QuarantineIncoming("invalid_persisted_task"); continue;
+                std::string error;
+                if (!DecodeTaskProjection(row.payload, task, error)) {
+                    QuarantineIncoming(error); continue;
                 }
                 // Active tasks are never downgraded or executed by this observer.
                 if (task.mode == Mode::Active) { Remember(task); blocker = "active_task_requires_executor"; }
