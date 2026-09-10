@@ -17,6 +17,8 @@
 
 #include <algorithm>
 #include <boost/algorithm/string.hpp>
+#include <fstream>
+#include <functional>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -423,6 +425,34 @@ static uint32 BuyerDemandScore(ai::ItemUsage usage, ItemPrototype const* proto, 
     }
 }
 
+static bool CraftCommissionsEnabled()
+{
+    static bool enabled = false;
+    static std::chrono::steady_clock::time_point loaded;
+    std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+    if (loaded.time_since_epoch().count() && now - loaded < std::chrono::seconds(60))
+        return enabled;
+    loaded = now;
+    enabled = false;
+    std::ifstream input("/srv/living-wow/config/economy.json");
+    if (!input) return false;
+    std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    std::smatch mode, flag;
+    if (!std::regex_search(source, mode, std::regex("\\\"mode\\\"\\s*:\\s*\\\"(off|observe|active)\\\"")) ||
+        mode[1].str() != "active" ||
+        !std::regex_search(source, flag, std::regex("\\\"craftingCommissions\\\"\\s*:\\s*(true|false)")) ||
+        flag[1].str() != "true")
+        return false;
+    size_t start = source.find("\"commissions\"");
+    size_t end = source.find("\"advertising\"", start == std::string::npos ? 0 : start);
+    if (start == std::string::npos) return false;
+    std::string section = source.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    std::smatch detail;
+    enabled = std::regex_search(section, detail, std::regex("\\\"enabled\\\"\\s*:\\s*(true|false)")) &&
+        detail[1].str() == "true";
+    return enabled;
+}
+
 static void PopulateGrounding(Player* bot, Player* speaker, const std::string& message, ChatDirectorCandidate& candidate)
 {
     candidate.subzone = sServerFacade.GetAreaId(bot);
@@ -621,6 +651,62 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             if (direct) capability.deliveries.push_back("direct");
             capability.deliveries.push_back("meeting");
             candidate.actionCapabilities.push_back(std::move(capability));
+        }
+    }
+
+    if (sameZone && CraftCommissionsEnabled())
+    {
+        std::string lowered = boost::algorithm::to_lower_copy(message);
+        bool craftRequest = lowered.find("craft") != std::string::npos || lowered.find("make") != std::string::npos ||
+            lowered.find("forge") != std::string::npos || lowered.find("sew") != std::string::npos ||
+            lowered.find("brew") != std::string::npos || lowered.find("commission") != std::string::npos;
+        if (craftRequest)
+        {
+            const std::set<std::string> requested = InventorySearchTerms(message);
+            uint32 reportedRecipes = 0;
+            for (const auto& spellPair : bot->GetSpellMap())
+            {
+                uint32 spellId = spellPair.first;
+                SpellEntry const* spell = sServerFacade.LookupSpellInfo(spellId);
+                if (!spell || spellPair.second.state == PLAYERSPELL_REMOVED || spellPair.second.disabled)
+                    continue;
+                for (uint32 effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+                {
+                    if (spell->Effect[effect] != SPELL_EFFECT_CREATE_ITEM || !spell->EffectItemType[effect])
+                        continue;
+                    uint32 itemEntry = spell->EffectItemType[effect];
+                    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemEntry);
+                    if (!proto) continue;
+                    std::set<std::string> itemTerms = InventorySearchTerms(proto->Name1);
+                    bool namedMatch = false;
+                    for (const std::string& term : requested)
+                        if (itemTerms.find(term) != itemTerms.end()) { namedMatch = true; break; }
+                    if (!namedMatch && requested.size() > 1) continue;
+                    bool canCraft = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<bool>(
+                        "can craft spell", std::to_string(spellId))->Get();
+                    uint32 craftCount = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint32>(
+                        "has reagents for", std::to_string(spellId))->Get();
+                    if (!canCraft || !craftCount) continue;
+                    ChatDirectorCapability capability;
+                    capability.capabilityRef = "spell:craft:" + std::to_string(spellId) + ':' + std::to_string(itemEntry);
+                    capability.type = "craft_commission";
+                    capability.itemId = itemEntry;
+                    capability.itemName = proto->Name1;
+                    capability.itemKind = "crafted_item";
+                    capability.itemUsage = "commission";
+                    capability.quantity = 1;
+                    capability.minQuantity = 1;
+                    capability.maxQuantity = 1;
+                    capability.priceCopper = ai::ItemUsageValue::GetCraftingFee(proto);
+                    capability.description = "Known recipe; bot-owned materials and required station are ready.";
+                    if (direct) capability.deliveries.push_back("direct");
+                    capability.deliveries.push_back("meeting");
+                    if (!(proto->Flags & ITEM_FLAG_CONJURED)) capability.deliveries.push_back("mail");
+                    candidate.actionCapabilities.push_back(std::move(capability));
+                    if (++reportedRecipes >= 6) break;
+                }
+                if (reportedRecipes >= 6) break;
+            }
         }
     }
 

@@ -11,6 +11,7 @@
 #include "strategy/ItemVisitors.h"
 #include "strategy/actions/MailAction.h"
 #include "strategy/values/BudgetValues.h"
+#include "strategy/values/CraftValues.h"
 #include "strategy/values/ItemUsageValue.h"
 
 #include <future>
@@ -235,6 +236,7 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
 
     std::smatch match;
     bool conjure = proposal.type == "conjure_water";
+    bool crafting = proposal.type == "craft_commission";
     bool buying = proposal.type == "buy_item" || proposal.type == "accept_player_gift";
     uint32 itemEntry = 0, itemGuid = 0, spellId = 0;
     if (buying)
@@ -249,6 +251,14 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
         if (proposal.delivery == "mail" || !std::regex_match(proposal.capabilityRef, match,
             std::regex(R"(spell:conjure_water:([0-9]+):([0-9]+))")))
             return reject("invalid_capability_ref", "That conjuring offer is invalid.");
+        spellId = (uint32)std::stoul(match[1].str());
+        itemEntry = (uint32)std::stoul(match[2].str());
+    }
+    else if (crafting)
+    {
+        if (!std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(spell:craft:([0-9]+):([0-9]+))")))
+            return reject("invalid_capability_ref", "That crafting offer is invalid.");
         spellId = (uint32)std::stoul(match[1].str());
         itemEntry = (uint32)std::stoul(match[2].str());
     }
@@ -290,6 +300,23 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
     if (conjure && (bot->getClass() != CLASS_MAGE || proposal.quantity > 5 ||
         !bot->GetPlayerbotAI()->CanCastSpell(spellId, bot, 0)))
         return reject("ability_unavailable", "I can't conjure that right now.");
+    if (crafting)
+    {
+        SpellEntry const* recipe = sServerFacade.LookupSpellInfo(spellId);
+        bool createsItem = false;
+        if (recipe && bot->HasSpell(spellId))
+            for (uint32 effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+                if (recipe->Effect[effect] == SPELL_EFFECT_CREATE_ITEM && recipe->EffectItemType[effect] == itemEntry)
+                    createsItem = true;
+        bool canCraft = createsItem && bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<bool>(
+            "can craft spell", std::to_string(spellId))->Get();
+        uint32 craftCount = canCraft ? bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint32>(
+            "has reagents for", std::to_string(spellId))->Get() : 0;
+        if (proposal.quantity != 1 || !craftCount)
+            return reject("craft_resources_changed", "I no longer have everything needed to make that.");
+        if (proposal.delivery == "mail" && (sObjectMgr.GetItemPrototype(itemEntry)->Flags & ITEM_FLAG_CONJURED))
+            return reject("conjured_item_mail_restricted", "That crafted item can't be mailed.");
+    }
 
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemEntry);
     if (!proto) return reject("unknown_item", "That item is no longer valid.");
@@ -337,6 +364,13 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
         if (!negotiated || negotiated < minimum || negotiated > maximum || negotiated > UINT32_MAX)
             return reject("invalid_price", "That price is outside the valid offer.");
         price = (uint32)negotiated;
+    }
+    else if (crafting)
+    {
+        uint32 authoritativeFee = offeredCapability ? offeredCapability->priceCopper : 0;
+        if (proposal.priceCopper && proposal.priceCopper != authoritativeFee)
+            return reject("craft_fee_changed", "That crafting fee no longer matches the offer.");
+        price = authoritativeFee;
     }
     else if (proposal.type == "sell_item")
     {
@@ -426,6 +460,13 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
 
     if (conjure)
         bot->GetPlayerbotAI()->DoSpecificAction("conjure water", Event("chat action conjure", "", player), true);
+    else if (crafting && !bot->GetPlayerbotAI()->CastSpell(spellId, bot))
+    {
+        Transaction& active = transactions[transaction.transactionId];
+        active.state = "failed";
+        active.failureReason = "craft cast could not start";
+        Report(active);
+    }
     else if (proposal.delivery == "direct")
     {
         bot->GetPlayerbotAI()->StopMoving();
@@ -708,6 +749,7 @@ void PlayerbotActionBroker::Update()
         }
         if (transaction.state == "preparing")
         {
+            bool crafting = transaction.type == "craft_commission";
             Item* created = FindBrokerItemStack(bot, transaction.itemEntry, transaction.quantity);
             if (created)
             {
@@ -733,6 +775,14 @@ void PlayerbotActionBroker::Update()
                         transaction.lastMeetingMove = now;
                         bot->Whisper(crafting ? "It's ready. I'm heading to you." : "Water is ready. I'm heading to you.", LANG_UNIVERSAL, player->GetObjectGuid());
                     }
+                else if (transaction.delivery == "mail")
+                {
+                    transaction.state = "mail_travel";
+                    std::ostringstream action;
+                    action << "request travel target::" << (uint32)TravelDestinationPurpose::Mail;
+                    bot->GetPlayerbotAI()->DoSpecificAction(action.str(), Event("chat action commission mail", "", player), true);
+                    bot->Whisper("It's ready. I'll mail it once I reach a mailbox.", LANG_UNIVERSAL, player->GetObjectGuid());
+                }
                     else
                         bot->Whisper(crafting ? "It's ready, but I can't head over right now." : "Water is ready, but I can't head over right now.", LANG_UNIVERSAL, player->GetObjectGuid());
                 }
@@ -874,4 +924,29 @@ void PlayerbotActionBroker::Report(const Transaction& transaction) const
         std::vector<std::string> debug;
         PlayerbotLLMInterface::Generate(payload, 3, 2, debug, true, "/v2/action-status");
     }).detach();
+    if (transaction.type == "craft_commission" && !transaction.commissionId.empty())
+    {
+        std::string commissionState = transaction.state;
+        if (commissionState == "preparing") commissionState = "crafting";
+        else if (commissionState == "meeting" || commissionState == "mail_travel") commissionState = "traveling";
+        else if (commissionState == "offered" || commissionState == "trading") commissionState = "ready";
+        CharacterDatabase.PExecute(
+            "UPDATE organic_economy_commission SET state='%s',failure_reason='' WHERE commission_id='%s'",
+            commissionState.c_str(), transaction.commissionId.c_str());
+        std::ostringstream commission;
+        commission << "{\"events\":[{\"event_id\":\"commission-"
+            << PlayerbotLLMInterface::SanitizeForJson(transaction.commissionId + '-' + commissionState)
+            << "\",\"type\":\"commission\",\"commission_id\":\""
+            << PlayerbotLLMInterface::SanitizeForJson(transaction.commissionId)
+            << "\",\"bot_guid\":" << transaction.botGuid << ",\"player_guid\":" << transaction.playerGuid
+            << ",\"recipe_id\":" << transaction.spellId << ",\"output_item\":" << transaction.itemEntry
+            << ",\"output_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(proto ? proto->Name1 : "")
+            << "\",\"quantity\":" << transaction.quantity << ",\"fee_copper\":" << transaction.priceCopper
+            << ",\"materials_source\":\"bot\",\"state\":\"" << commissionState
+            << "\",\"failure_reason\":\"" << PlayerbotLLMInterface::SanitizeForJson(transaction.failureReason)
+            << "\",\"expires_at\":" << (uint32(time(nullptr)) + 1800) << "}]}";
+        std::string commissionPayload = commission.str();
+        std::thread([commissionPayload]() { std::vector<std::string> debug;
+            PlayerbotLLMInterface::Generate(commissionPayload, 3, 2, debug, true, "/v2/economy-events"); }).detach();
+    }
 }

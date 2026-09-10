@@ -67,6 +67,7 @@ private:
     struct Transaction
     {
         std::string transactionId;
+        std::string commissionId;
         std::string eventId;
         std::string proposalId;
         uint32 botGuid = 0;
