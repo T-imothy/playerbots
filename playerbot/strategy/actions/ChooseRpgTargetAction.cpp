@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "ChooseRpgTargetAction.h"
+#include "playerbot/PlayerbotTraining.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/values/PossibleRpgTargetsValue.h"
 #include "playerbot/TravelMgr.h"
@@ -358,10 +359,31 @@ float ChooseRpgTargetAction::getMaxRelevance(GuidPosition guidP)
     return floor((maxRelevance - 1.0) * 1000.0f);
 }
 
+// Once an autonomous solo bot has arrived for a class lesson, finish that
+// visit before optional local RPG interactions. GetTargets has already applied
+// movement, availability and relevance checks; never manufacture a candidate.
+static void LivingPrioritizeArrivedClassTrainer(PlayerbotAI* ai, TravelTarget* travelTarget,
+    std::unordered_map<ObjectGuid, float>& targets)
+{
+    Player* bot = ai->GetBot();
+    if (ai->HasRealPlayerMaster() || bot->GetGroup() || !travelTarget ||
+        !travelTarget->GetDestination() ||
+        travelTarget->GetDestination()->GetPurpose() != TravelDestinationPurpose::Trainer ||
+        travelTarget->GetStatus() != TravelStatus::TRAVEL_STATUS_WORK ||
+        travelTarget->GetTimeLeft() <= 0 || !travelTarget->IsConditionsActive() ||
+        !LivingWowHasClassTraining(bot, travelTarget->GetEntry())) return;
+    std::unordered_map<ObjectGuid, float> trainers;
+    for (const auto& candidate : targets)
+        if (candidate.first.IsCreature() && candidate.first.GetEntry() == uint32(travelTarget->GetEntry()) && candidate.second > 0)
+            trainers.insert(candidate);
+    if (!trainers.empty()) targets.swap(trainers);
+}
+
 bool ChooseRpgTargetAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     std::unordered_map<ObjectGuid, float> targets = GetTargets(requester);
+    LivingPrioritizeArrivedClassTrainer(ai, AI_VALUE(TravelTarget*, "travel target"), targets);
 
     if (targets.empty())
         return false;
