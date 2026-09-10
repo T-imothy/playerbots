@@ -736,12 +736,25 @@ void PlayerbotRendezvousManager::Update()
             {
                 if (!session.returnAfter)
                 {
-                    // A one-way rendezvous hands movement back to ordinary
-                    // group AI as soon as the member reaches the organizer.
-                    // Keeping an arrived trade-style session would freeze the
-                    // member beside the organizer indefinitely.
-                    LogEvent(session, "arrival_handed_off");
-                    erase = true;
+                    if (session.actionId.find("guild-event:") == 0)
+                    {
+                        // Guild formation is a barrier, not a collection of
+                        // independent arrivals. Keep early members beside the
+                        // stationary organizer until the lifecycle confirms
+                        // the complete online roster; otherwise autonomous AI
+                        // can wander away while later members are arriving.
+                        session.state = "assembled";
+                        session.stateSince = now;
+                        bot->GetPlayerbotAI()->StopMoving();
+                        LogEvent(session, "assembly_held");
+                    }
+                    else
+                    {
+                        // Other one-way rendezvous operations hand movement
+                        // back to their owning workflow immediately.
+                        LogEvent(session, "arrival_handed_off");
+                        erase = true;
+                    }
                 }
                 else
                 {
@@ -755,6 +768,25 @@ void PlayerbotRendezvousManager::Update()
                 bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
                 session.stateSince = now;
             }
+        }
+        else if (session.state == "assembled")
+        {
+            if (!player || !player->IsInWorld() || !player->GetGroup() ||
+                bot->GetGroup() != player->GetGroup())
+            {
+                LogEvent(session, "assembly_cancelled");
+                erase = true;
+            }
+            else if (!bot->IsInCombat() &&
+                !bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
+            {
+                session.state = "approaching";
+                session.stateSince = now;
+                bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
+                LogEvent(session, "assembly_rejoin");
+            }
+            else if (!bot->IsInCombat() && sServerFacade.isMoving(bot))
+                bot->GetPlayerbotAI()->StopMoving();
         }
         else if (session.state == "arrived")
         {

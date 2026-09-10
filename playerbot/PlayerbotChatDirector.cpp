@@ -3673,6 +3673,18 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
         // can keep an otherwise valid party scattered indefinitely.
         if (nextState == "active" && organizer && organizer->GetPlayerbotAI())
         {
+            for (GroupReference* reference = organizer->GetGroup()->GetFirstMember();
+                reference; reference = reference->next())
+            {
+                Player* member = reference->getSource();
+                if (!member || member == organizer)
+                    continue;
+                sPlayerbotRendezvousManager.Cancel(
+                    member->GetGUIDLow(), organizer->GetGUIDLow(), "guild_event_started");
+                if (!member->IsInCombat())
+                    member->GetMotionMaster()->MoveFollow(
+                        organizer, 2.0f, member->GetAngle(organizer), true, false);
+            }
             const char* activityAction = eventType == "leveling" ?
                 "request progression grind travel target" :
                 "request progression quest travel target";
