@@ -130,6 +130,9 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
     auto candidate = event.candidates.find(proposal.botGuid);
     if (candidate == event.candidates.end())
         return false;
+    bool negotiatedProposal = proposal.priceCopper != 0 && proposal.proposalId.compare(0, 11, "negotiated-") == 0 &&
+        (proposal.type == "sell_item" || proposal.type == "buy_item");
+
     for (const ChatDirectorCapability& capability : candidate->second.actionCapabilities)
     {
         if (capability.capabilityRef == proposal.capabilityRef)
@@ -138,13 +141,20 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
             break;
         }
     }
-    if (!offeredCapability || proposal.quantity < offeredCapability->minQuantity ||
-        proposal.quantity > offeredCapability->maxQuantity)
+    if (!offeredCapability && !negotiatedProposal)
         return false;
-    bool giftedSaleCapability = proposal.type == "give_item" && offeredCapability->type == "sell_item" &&
-        offeredCapability->giftEligible;
-    if (proposal.type != offeredCapability->type && !giftedSaleCapability)
+    if (offeredCapability && (proposal.quantity < offeredCapability->minQuantity ||
+        proposal.quantity > offeredCapability->maxQuantity))
         return false;
+    if (offeredCapability)
+    {
+        bool giftedSaleCapability = proposal.type == "give_item" && offeredCapability->type == "sell_item" &&
+            offeredCapability->giftEligible;
+        bool negotiatedEconomicType = negotiatedProposal &&
+            (offeredCapability->type == "give_item" || offeredCapability->type == "sell_item" || offeredCapability->type == "buy_item");
+        if (proposal.type != offeredCapability->type && !giftedSaleCapability && !negotiatedEconomicType)
+            return false;
+    }
 
     std::smatch match;
     bool conjure = proposal.type == "conjure_water";
@@ -193,11 +203,32 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemEntry);
     if (!proto) return false;
     uint32 value = (conjure || buying) ? 0 : proposal.quantity * ItemUsageValue::GetBotSellPrice(proto, bot);
+    uint32 minimumUnitPrice = 0, maximumUnitPrice = 0;
+    if (offeredCapability)
+    {
+        minimumUnitPrice = offeredCapability->minimumUnitPriceCopper;
+        maximumUnitPrice = offeredCapability->maximumUnitPriceCopper;
+    }
+    else if (buying)
+    {
+        uint32 unitPrice = ItemUsageValue::GetBotBuyPrice(proto, bot);
+        minimumUnitPrice = std::max<uint32>(1, unitPrice / 2);
+        maximumUnitPrice = unitPrice;
+    }
+    else
+    {
+        uint32 unitPrice = ItemUsageValue::GetBotSellPrice(proto, bot);
+        uint32 marketPrice = ItemUsageValue::GetAHMedianBuyoutPricePerItem(proto);
+        uint32 vendorPrice = proto->SellPrice;
+        minimumUnitPrice = std::max<uint32>(vendorPrice + std::max<uint32>(1, vendorPrice / 10),
+            std::max<uint32>(1, unitPrice * 35 / 100));
+        maximumUnitPrice = std::max<uint32>(unitPrice * 5, marketPrice * 2);
+    }
     uint32 price = 0;
     if (buying)
     {
-        uint64 minimum = uint64(offeredCapability->minimumUnitPriceCopper) * proposal.quantity;
-        uint64 maximum = uint64(offeredCapability->maximumUnitPriceCopper) * proposal.quantity;
+        uint64 minimum = uint64(minimumUnitPrice) * proposal.quantity;
+        uint64 maximum = uint64(maximumUnitPrice) * proposal.quantity;
         uint64 negotiated = proposal.priceCopper ? proposal.priceCopper :
             uint64(proposal.quantity) * ItemUsageValue::GetBotBuyPrice(proto, bot);
         if (!negotiated || negotiated < minimum || negotiated > maximum || negotiated > UINT32_MAX)
@@ -206,8 +237,8 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
     }
     else if (proposal.type == "sell_item")
     {
-        uint64 minimum = uint64(offeredCapability->minimumUnitPriceCopper) * proposal.quantity;
-        uint64 maximum = uint64(offeredCapability->maximumUnitPriceCopper) * proposal.quantity;
+        uint64 minimum = uint64(minimumUnitPrice) * proposal.quantity;
+        uint64 maximum = uint64(maximumUnitPrice) * proposal.quantity;
         uint64 negotiated = proposal.priceCopper ? proposal.priceCopper : value;
         if (!negotiated || negotiated < minimum || negotiated > maximum || negotiated > UINT32_MAX)
             return false;

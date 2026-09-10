@@ -384,14 +384,12 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
         uint32 marketSamples = (uint32)sRandomPlayerbotMgr.GetAhPrices(proto->ItemId).size();
         uint32 vendorPrice = proto->SellPrice;
         uint32 botBuyPrice = ai::ItemUsageValue::GetBotBuyPrice(proto, bot);
-        bool legacyGift = proto->Quality <= ITEM_QUALITY_NORMAL && unitPrice <= 100 &&
-            (proto->Class == ITEM_CLASS_CONSUMABLE || proto->Class == ITEM_CLASS_TRADE_GOODS);
         bool giftEligible = !IsProtectedEconomicUsage(usage);
         ChatDirectorCapability capability;
         std::ostringstream ref;
         ref << "item:" << proto->ItemId << ':' << item->GetGUIDLow();
         capability.capabilityRef = ref.str();
-        capability.type = legacyGift ? "give_item" : "sell_item";
+        capability.type = "sell_item";
         capability.itemName = proto->Name1;
         capability.itemUsage = ItemUsageName(usage);
         capability.economicVersion = 1;
@@ -406,7 +404,7 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
         capability.totalQuantity = total;
         capability.reserveQuantity = retained;
         capability.disposableQuantity = available;
-        capability.priceCopper = legacyGift ? 0 : maxQuantity * unitPrice;
+        capability.priceCopper = maxQuantity * unitPrice;
         capability.valueCopper = maxQuantity * unitPrice;
         capability.vendorSellCopper = vendorPrice;
         capability.playerbotSellCopper = unitPrice;
