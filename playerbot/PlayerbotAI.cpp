@@ -1782,13 +1782,18 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                     }
                 }
 
-                if (sPlayerbotAIConfig.chatDirectorV2 && isAiChat)
+                if (sPlayerbotAIConfig.chatDirectorV2)
                 {
-                    // The shared director observes real-player messages once across all
-                    // listeners. Bot-authored lines are already recorded by the gateway
-                    // and must not recursively enter the legacy per-bot LLM path.
-                    if (!isFromFreeBot && msgtype != CHAT_MSG_WHISPER)
+                    // Chat v2 owns every public real-player message, including bots
+                    // that do not currently have the legacy "ai chat" strategy. The
+                    // old isAiChat gate allowed those listeners to fan one WTS/LFG
+                    // message into many independent per-bot replies.
+                    Player* source = sObjectAccessor.FindPlayer(guid1);
+                    bool sourceIsBot = source && source->GetPlayerbotAI();
+                    if (!sourceIsBot && !isFromFreeBot && msgtype != CHAT_MSG_WHISPER)
                         sPlayerbotChatDirector.Observe(bot, msgtype, guid1.GetCounter(), name, message, chanName);
+                    // Bot-authored lines are already recorded by the gateway and must
+                    // never recursively enter either the director or legacy path.
                     return;
                 }
 
