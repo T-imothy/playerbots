@@ -181,10 +181,10 @@ void PlayerbotSocialActionBroker::CompleteGroupReservation(uint32 botGuid, uint3
         groupReservations.erase(found);
 }
 
-bool PlayerbotSocialActionBroker::ValidateCommon(Player* bot, Player* player) const
+bool PlayerbotSocialActionBroker::ValidateCommon(Player* bot, Player* player, bool requireBotAlive) const
 {
     return bot && player && bot->GetPlayerbotAI() && bot->IsInWorld() && player->IsInWorld() &&
-        bot->IsAlive() && player->IsAlive() && bot->GetTeam() == player->GetTeam() &&
+        (!requireBotAlive || bot->IsAlive()) && player->IsAlive() && bot->GetTeam() == player->GetTeam() &&
         !bot->InBattleGround() && !player->InBattleGround();
 }
 
@@ -656,7 +656,7 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
 
     Player* bot = sRandomPlayerbotMgr.GetPlayerBot(proposal.botGuid);
     Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, proposal.targetGuid));
-    if (!ValidateCommon(bot, player))
+    if (!ValidateCommon(bot, player, proposal.type != "leave_ai_party_for_player"))
         return false;
 
     if (proposal.type == "vendor_bags" && HasActiveVendorTrip(proposal.botGuid))
@@ -761,7 +761,9 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             if (completed)
             {
                 ReserveForPlayer(bot->GetGUIDLow(), player->GetGUIDLow());
-                SendSocialWhisper(bot, player, "I'm free now. You can invite me.");
+                SendSocialWhisper(bot, player, bot->IsAlive() ?
+                    "I'm free now. You can invite me." :
+                    "I'm free now, but I'm dead and recovering. You can invite me.");
             }
         }
         else
@@ -1385,7 +1387,7 @@ void PlayerbotSocialActionBroker::Update()
             Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
             Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
             Group* group = bot ? bot->GetGroup() : nullptr;
-            if (!bot || !player || !ValidateCommon(bot, player) || !group || group->GetId() != action.groupId ||
+            if (!bot || !player || !ValidateCommon(bot, player, false) || !group || group->GetId() != action.groupId ||
                 GroupHasRealHuman(group))
             {
                 action.state = "rejected";
@@ -1398,7 +1400,9 @@ void PlayerbotSocialActionBroker::Update()
                 action.state = "completed";
                 action.completedAt = now;
                 ReserveForPlayer(bot->GetGUIDLow(), player->GetGUIDLow());
-                SendSocialWhisper(bot, player, "I'm free now. You can invite me.");
+                SendSocialWhisper(bot, player, bot->IsAlive() ?
+                    "I'm free now. You can invite me." :
+                    "I'm free now, but I'm dead and recovering. You can invite me.");
                 Report(action);
             }
             else if (now >= action.expires)

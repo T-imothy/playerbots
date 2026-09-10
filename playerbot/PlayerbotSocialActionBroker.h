@@ -93,7 +93,7 @@ private:
         std::chrono::steady_clock::time_point expires;
     };
 
-    bool ValidateCommon(Player* bot, Player* player) const;
+    bool ValidateCommon(Player* bot, Player* player, bool requireBotAlive = true) const;
     bool StartVendorTrip(Player* bot, Player* player, const std::string& actionId,
         const std::string& eventId, const std::string& proposalId, bool announce);
     bool SetMaintenanceTarget(Player* bot, const std::string& maintenanceType) const;
