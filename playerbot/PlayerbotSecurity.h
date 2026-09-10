@@ -34,7 +34,7 @@ class PlayerbotSecurity
         PlayerbotSecurity(Player* const bot);
 
 	public:
-        PlayerbotSecurityLevel LevelFor(Player* from, DenyReason* reason = NULL, bool ignoreGroup = false);
+        PlayerbotSecurityLevel LevelFor(Player* from, DenyReason* reason = NULL, bool ignoreGroup = false, bool ignoreActivityQueues = false);
         bool CheckLevelFor(PlayerbotSecurityLevel level, bool silent, Player* from, bool ignoreGroup = false);
 
     private:

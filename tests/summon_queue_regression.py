@@ -22,18 +22,18 @@ struct Lfg{int state=5;void SetState(int s){state=s;}};
 struct Player{bool grouped=true,inbg=true;int queues[3]={1,2,0};Session session;Lfg lfg;ObjectGuid GetObjectGuid(){return 42;}
  void* GetGroup(){return grouped?this:nullptr;}Lfg& GetLfgData(){return lfg;}int GetBattleGroundQueueTypeId(int s){return queues[s];}
  bool InBattleGround(){return inbg;}int GetBattleGroundTypeId(){return 1;}Session* GetSession(){return &session;}};
-struct SummonAction{Player* bot;void CancelAutonomousQueues();};
+struct SummonAction{Player* bot;static void CancelAutonomousQueues(Player* bot);};
 __BODY__
-int main(){Player p;SummonAction action{&p};action.CancelAutonomousQueues();assert(sWorld.queue.removed==42&&p.grouped&&p.lfg.state==5);
+int main(){Player p;SummonAction action{&p};action.CancelAutonomousQueues(&p);assert(sWorld.queue.removed==42&&p.grouped&&p.lfg.state==5);
  assert(p.session.packets.size()==1);auto const& packet=p.session.packets[0];
 #ifdef MANGOSBOT_ZERO
  assert(packet.size()==2&&packet[0]==489&&packet[1]==0);
 #elif defined(MANGOSBOT_ONE)
  assert(sWorld.queue.leader==42);assert(packet.size()==5&&packet[0]==3&&packet[2]==2&&packet.back()==0);
 #else
- assert(packet.size()==5&&packet[0]==3&&packet[2]==2&&packet.back()==0);p.grouped=false;action.CancelAutonomousQueues();assert(p.lfg.state==0);
+ assert(packet.size()==5&&packet[0]==3&&packet[2]==2&&packet.back()==0);p.grouped=false;action.CancelAutonomousQueues(&p);assert(p.lfg.state==0);
 #endif
- p.session.packets.clear();p.queues[1]=0;action.CancelAutonomousQueues();assert(p.session.packets.empty());
+ p.session.packets.clear();p.queues[1]=0;action.CancelAutonomousQueues(&p);assert(p.session.packets.empty());
 }
 '''.replace('__BODY__',body)
 with tempfile.TemporaryDirectory(prefix='mantech-summon-queues-') as tmp:

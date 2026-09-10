@@ -57,7 +57,7 @@ struct PlayerbotAI {
 };
 struct Config {bool recruitmentRevive=true;} sPlayerbotAIConfig;
 struct Facade {bool UnitIsDead(Player* p){return !p->alive;}bool IsAlive(Player* p){return p->alive;}} sServerFacade;
-struct SummonAction {Player* bot;PlayerbotAI* ai;float GetFollowAngle(){return 0;}bool Teleport(Player*,Player*,Player*);void CancelAutonomousQueues(){};};
+struct SummonAction {Player* bot;PlayerbotAI* ai;float GetFollowAngle(){return 0;}bool Teleport(Player*,Player*,Player*);static void CancelAutonomousQueues(Player*){};};
 __TELEPORT__
 __QUEUE__
 __COMPLETE__

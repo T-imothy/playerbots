@@ -12,10 +12,10 @@ namespace ai
         bool isUsefulWhenStunned() override { return true; }
         virtual bool Execute(Event& event) override;
         bool ExecuteImmediate(Event& event);
+        static void CancelAutonomousQueues(Player* bot);
 
     protected:
         bool Teleport(Player* requester, Player *summoner, Player *player);
-        void CancelAutonomousQueues();
         bool SummonUsingGos(Player* requester, Player *summoner, Player *player);
         bool SummonUsingNpcs(Player* requester, Player *summoner, Player *player);
     };

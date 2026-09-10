@@ -11,6 +11,8 @@
 #include <chrono>
 #include <deque>
 #include <mutex>
+#include <memory>
+#include "LFG/LFGQueue.h"
 #include <set>
 #include <sstream>
 #include <cctype>
@@ -41,6 +43,7 @@ namespace
         uint64 nextAttempt = 0;
         float x = 0, y = 0, z = 0;
         std::string waitReason;
+        std::shared_ptr<bool> queuesCancelled;
     };
     struct Receipt
     {
@@ -133,18 +136,6 @@ namespace
             Player* bot = Find(request.bot);
             Tell(Find(request.owner), std::string(bot ? bot->GetName() : "Bot") + ": " + status + " (" + reason + ")");
         }
-    }
-    bool IsBusyQueue(Player* bot)
-    {
-        if (bot->InBattleGround() || bot->InBattleGroundQueue())
-            return true;
-#ifdef MANGOSBOT_ZERO
-        return sWorld.GetLFGQueue().IsPlayerInQueue(bot->GetObjectGuid());
-#elif defined(MANGOSBOT_ONE)
-        return bot->GetSession()->m_lfgInfo.queued;
-#else
-        return bot->GetLfgData().GetState() != LFG_STATE_NONE;
-#endif
     }
     std::string Identity(Player* owner, Player* bot)
     {
@@ -456,9 +447,12 @@ std::string BotRecruitment::Eligibility(Player* owner, Player* bot)
     if (group) return group == Party(owner) ? "existing" : "external_group";
     Player* master = bot->GetPlayerbotAI()->GetMaster();
     if (master && master->isRealPlayer() && master != owner) return "other_controller";
-    if (owner->InBattleGround() || IsBusyQueue(bot)) return "queued_activity";
+    if (owner->InBattleGround()) return "requester_battleground";
     if (bot->GetGroupInvite() && bot->GetGroupInvite() != InvitingGroup(owner)) return "invited_elsewhere";
-    if (!bot->GetPlayerbotAI()->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE,true,owner)) return "recruitment_policy";
+    // Queue enrollment is autonomous activity, not ownership. Keep every other
+    // permission check, then cancel personal queues only when accepting the invite.
+    if (bot->GetPlayerbotAI()->GetSecurity()->LevelFor(owner, nullptr, false, true) <
+        PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE) return "recruitment_policy";
     return "";
 }
 
@@ -574,6 +568,20 @@ void BotRecruitment::Update(uint32 diff)
         if (reason.empty() && accepted >= 8) { ++it; continue; }
         if (reason.empty())
         {
+            if (!request.queuesCancelled)
+            {
+                request.queuesCancelled = std::make_shared<bool>(false);
+                it->second.queuesCancelled = request.queuesCancelled;
+                SummonAction::CancelAutonomousQueues(bot);
+                // Drain earlier LFG matchmaking callbacks before accepting. Otherwise
+                // an already queued match could move this bot out of its new party.
+                auto ready = request.queuesCancelled;
+                sWorld.GetLFGQueue().GetMessager().AddMessage([ready](LFGQueue*)
+                {
+                    sWorld.GetMessager().AddMessage([ready](World*) { *ready = true; });
+                });
+            }
+            if (!*request.queuesCancelled) { ++it; continue; }
             ++accepted;
             if (bot->isAFK()) bot->ToggleAFK();
             WorldPacket packet; packet << uint32(0);

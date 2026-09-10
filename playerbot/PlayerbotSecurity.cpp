@@ -14,7 +14,7 @@ PlayerbotSecurity::PlayerbotSecurity(Player* const bot) : bot(bot), account(0)
     }
 }
 
-PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* reason, bool ignoreGroup)
+PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* reason, bool ignoreGroup, bool ignoreActivityQueues)
 {
 
     // Allow everything if request is from gm account
@@ -69,30 +69,34 @@ PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* rea
             }
         }
 
-        if (bot->InBattleGroundQueue())
+        if (!ignoreActivityQueues)
         {
-            if (!bot->GetGuildId() || bot->GetGuildId() != from->GetGuildId())
+            if (bot->InBattleGroundQueue())
             {
-                if (reason) *reason = DenyReason::PLAYERBOT_DENY_BG;
-                return PlayerbotSecurityLevel::PLAYERBOT_SECURITY_TALK;
+                if (!bot->GetGuildId() || bot->GetGuildId() != from->GetGuildId())
+                {
+                    if (reason) *reason = DenyReason::PLAYERBOT_DENY_BG;
+                    return PlayerbotSecurityLevel::PLAYERBOT_SECURITY_TALK;
+                }
             }
-        }
 
 #ifdef MANGOSBOT_ONE
-        if (bot->GetPlayerbotAI()->HasRealPlayerMaster() && bot->GetSession()->m_lfgInfo.queued)
+            if (bot->GetPlayerbotAI()->HasRealPlayerMaster() && bot->GetSession()->m_lfgInfo.queued)
 #endif
 #ifdef MANGOSBOT_ZERO
-        if (sWorld.GetLFGQueue().IsPlayerInQueue(bot->GetObjectGuid()))
+            if (sWorld.GetLFGQueue().IsPlayerInQueue(bot->GetObjectGuid()))
 #endif
 #ifdef MANGOSBOT_TWO
-        if (false/*sLFGMgr.GetQueueInfo(bot->GetObjectGuid())*/)
+            if (false/*sLFGMgr.GetQueueInfo(bot->GetObjectGuid())*/)
 #endif
-        {
-            if (!bot->GetGuildId() || bot->GetGuildId() != from->GetGuildId())
             {
-                if (reason) *reason = DenyReason::PLAYERBOT_DENY_LFG;
-                return PlayerbotSecurityLevel::PLAYERBOT_SECURITY_TALK;
+                if (!bot->GetGuildId() || bot->GetGuildId() != from->GetGuildId())
+                {
+                    if (reason) *reason = DenyReason::PLAYERBOT_DENY_LFG;
+                    return PlayerbotSecurityLevel::PLAYERBOT_SECURITY_TALK;
+                }
             }
+
         }
 
         /*if (sServerFacade.UnitIsDead(bot))
@@ -102,6 +106,8 @@ PlayerbotSecurityLevel PlayerbotSecurity::LevelFor(Player* from, DenyReason* rea
         }*/
 
         group = bot->GetGroup();
+        if (ignoreActivityQueues && group && group->IsBattleGroup())
+            group = bot->GetOriginalGroup();
         if (!group)
         {
             /*if (bot->GetMapId() != from->GetMapId() || bot->GetDistance(from) > sPlayerbotAIConfig.whisperDistance)

@@ -45,7 +45,7 @@ std::vector<std::string> messages;
 struct ObjectMgr {Player* GetPlayer(ObjectGuid g){auto it=players.find(g.value);return it==players.end()?nullptr:it->second;}} sObjectMgr;
 struct WorldPacket {std::string name; WorldPacket& operator<<(std::string const& s){name=s;return *this;} WorldPacket& operator<<(uint32){return *this;}};
 struct Social {bool ignored=false;bool HasIgnore(ObjectGuid){return ignored;}};
-struct Security {bool allow=true;bool CheckLevelFor(int,bool,Player*){return allow;}};
+struct Security {bool allow=true;int LevelFor(Player*,void*,bool,bool ignoreQueues){assert(ignoreQueues);return allow?1:-1;}bool CheckLevelFor(int,bool,Player*){return allow;}};
 struct AI {Player* master=nullptr; Security security; int changes=0;
  void CompleteSummonRevival(){}
  Player* GetMaster(){return master;} void SetMaster(Player* p){master=p;} Security* GetSecurity(){return &security;}
@@ -66,7 +66,7 @@ struct Player {
  uint32 id,level=43,cls=1,guild=0,team=0,mapId=1,instance=0;bool real=false,world=true,transfer=false,alive=true,combat=false,
  taxi=false,transport=false,charm=false,bg=false,bgQueue=false,afk=false,los=true;float distance=0;
  std::string name,talents="0-0-10";WorldSession session;AI ai;Social social;Group* group=nullptr;Group* invite=nullptr;
- float landingDistance=0;unsigned summons=0;WorldLocation destination;
+ float landingDistance=0;unsigned summons=0,queueCancellations=0;WorldLocation destination;
  bool IsWithinDist3d(float,float,float,float r){return landingDistance<=r;}WorldLocation const& GetTeleportDest(){return destination;}
  Map map;LfgData lfg;PlayerbotHolder holder;unsigned gear=0;int health=50,maxHealth=100,mana=5,maxMana=100,otherPower=23;
  uint32 GetMaxHealth(){return maxHealth;}void SetHealth(uint32 value){health=value;}
@@ -88,7 +88,11 @@ struct Player {
 };
 struct Config {bool allowGuildBots=false,recruitmentRevive=true;bool IsInRandomAccountList(uint32 n){return n==1000;}
  bool IsFreeAltBot(Player*){return false;}} sPlayerbotAIConfig;
-struct World {bool cross=false;struct Queue {bool IsPlayerInQueue(ObjectGuid){return false;}} queue;
+struct LFGQueue {bool IsPlayerInQueue(ObjectGuid){return false;}LFGQueue& GetMessager(){return *this;}template<class F>void AddMessage(F f){f(this);}};
+struct World {bool cross=false;using Queue=LFGQueue;Queue queue;
+ bool defer=false;std::vector<std::function<void(World*)>> callbacks;World& GetMessager(){return *this;}
+ template<class F>void AddMessage(F f){if(defer)callbacks.push_back(f);else f(this);}
+ void Drain(){auto pending=std::move(callbacks);callbacks.clear();for(auto& f:pending)f(this);}
  uint32 getConfig(int which){return which==CONFIG_UINT32_MAX_PLAYER_LEVEL?80:cross;}Queue& GetLFGQueue(){return queue;}}sWorld;
 struct RandomMgr:PlayerbotHolder {std::map<uint32,Player*>& GetAllBots(){return players;}}sRandomPlayerbotMgr;
 struct RandomItems{bool supported=true;uint32 GetPlayerSpecId(Player*){return supported?1:0;}}sRandomItemMgr;
@@ -100,7 +104,7 @@ struct EventOwner {Player* p=nullptr;ObjectGuid guid;EventOwner(Player* b=nullpt
  Player* Get()const{auto it=players.find(guid.value);return it!=players.end()&&it->second==p?p:nullptr;}};
 struct Event {Player* owner;Event(std::string,std::string,Player* p):owner(p){}};
 struct WhoAction{explicit WhoAction(AI*){}std::string QuerySpec(std::string){return "Warrior (43 lvl), 100 GS (green)";}};
-struct SummonAction{AI* ai;explicit SummonAction(AI* a):ai(a){}bool ExecuteImmediate(Event&){for(auto& x:players)if(&x.second->ai==ai){x.second->transfer=true;++x.second->summons;return true;}return false;}};
+struct SummonAction{static void CancelAutonomousQueues(Player* p){++p->queueCancellations;p->bgQueue=false;p->session.m_lfgInfo.queued=false;p->lfg.state=0;}AI* ai;explicit SummonAction(AI* a):ai(a){}bool ExecuteImmediate(Event&){for(auto& x:players)if(&x.second->ai==ai){x.second->transfer=true;++x.second->summons;return true;}return false;}};
 }
 '''
 tests=r'''
@@ -120,7 +124,7 @@ std::string PlayerbotHolder::ProcessBotCommand(std::string cmd,ObjectGuid bg,Obj
  Player* b=sObjectMgr.GetPlayer(bg);Player* o=sObjectMgr.GetPlayer(og);
  return ai::BotRecruitment::Prepare(o,b,cmd,"",[&](){++b->gear;return "random gear equipped";});
 }
-void reset(){players.clear();groups.clear();messages.clear();fakeNow+=100;
+void reset(){players.clear();groups.clear();messages.clear();fakeNow+=100;sWorld.defer=false;sWorld.callbacks.clear();
  auto& s=State();s.incoming.clear();s.invites.clear();s.managedInvites.clear();s.summons.clear();s.reservations.clear();s.receipts.clear();s.preparation.clear();s.discoveryTime.clear();s.nextDiscovery=0;s.elapsed=0;sPlayerbotAIConfig.allowGuildBots=false;sPlayerbotAIConfig.recruitmentRevive=true;sWorld.cross=false;}
 void tick(unsigned seconds=0){fakeNow+=seconds;ai::BotRecruitment::Update(250);}
 void invite(Player& p,Player& b){WorldPacket packet;packet<<b.name;p.session.HandleGroupInviteOpcode(packet);}
@@ -166,7 +170,22 @@ int main(){
  reset();{Player p(1,true),other(3,true),b(2);invite(p,b);Group external;external.leader=other.GetObjectGuid();b.group=&external;tick();assert(b.group==&external&&!b.invite);}
  reset();{Player p(1,true),human(2,true);command(p,"x summon 2");assert(!human.transfer&&has("not_available_bot"));command(p,"y prepare 2 gear");assert(!human.gear);}
  reset();{Player p(1,true),b(2);b.session.account=999;assert(ai::BotRecruitment::Eligibility(&p,&b)=="not_authorized");b.session.account=1;assert(ai::BotRecruitment::Eligibility(&p,&b).empty());b.session.account=999;p.guild=b.guild=7;sPlayerbotAIConfig.allowGuildBots=true;assert(ai::BotRecruitment::Eligibility(&p,&b).empty());}
- reset();{Player p(1,true),b(2);b.team=1;assert(ai::BotRecruitment::Eligibility(&p,&b)=="wrong_faction");sWorld.cross=true;assert(ai::BotRecruitment::Eligibility(&p,&b).empty());b.bgQueue=true;assert(ai::BotRecruitment::Eligibility(&p,&b)=="queued_activity");}
+ reset();{Player p(1,true),b(2);b.team=1;assert(ai::BotRecruitment::Eligibility(&p,&b)=="wrong_faction");sWorld.cross=true;assert(ai::BotRecruitment::Eligibility(&p,&b).empty());b.bgQueue=true;assert(ai::BotRecruitment::Eligibility(&p,&b).empty());}
+ reset();{Player p(1,true),b(2);sWorld.defer=true;b.bgQueue=true;invite(p,b);tick();
+ assert(!b.group&&b.invite&&b.queueCancellations==1);tick();assert(!b.group&&b.queueCancellations==1);
+ sWorld.Drain();tick();assert(b.group&&b.ai.master==&p);}
+ reset();{Player p(1,true),other(3,true),b(2);sWorld.defer=true;invite(p,b);tick();
+ Group external;external.leader=other.GetObjectGuid();b.group=&external;sWorld.Drain();tick();
+ assert(b.group==&external&&b.ai.master!=&p&&!b.invite);}
+ for(unsigned queue=0;queue<4;++queue){reset();Player p(1,true),b(2);
+ b.bgQueue=queue==0;b.session.m_lfgInfo.queued=queue==1;b.lfg.state=queue==2?3:0;b.bg=queue==3;
+ assert(ai::BotRecruitment::Eligibility(&p,&b).empty());assert(!b.queueCancellations);
+ invite(p,b);tick();assert(b.group==p.group&&b.group&&b.ai.master==&p);
+ assert(b.queueCancellations==1&&!b.bgQueue&&!b.session.m_lfgInfo.queued&&b.lfg.state==0);}
+ reset();{Player p(1,true),other(3,true),b(2);b.bgQueue=true;b.ai.master=&other;
+ invite(p,b);tick();assert(!b.group&&b.bgQueue&&!b.queueCancellations&&has("other_controller"));}
+ reset();{Player p(1,true),b(2);b.bgQueue=true;b.ai.security.allow=false;
+ invite(p,b);tick();assert(!b.group&&b.bgQueue&&!b.queueCancellations&&has("recruitment_policy"));}
  reset();{Player p(1,true),b(2);b.transfer=true;invite(p,b);players.erase(1);tick();assert(!b.invite&&!b.group);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;b.combat=true;p.combat=true;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(b.transfer&&!has("arrived"));assert(p.combat);b.transfer=false;b.distance=0;tick();assert(has("arrived"));assert(b.combat&&p.combat);}
  for(unsigned state=0;state<5;++state){reset();Player p(1,true),b(2);b.ai.master=&p;b.distance=100;

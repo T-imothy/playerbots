@@ -159,7 +159,7 @@ bool SummonAction::SummonUsingNpcs(Player* requester, Player *summoner, Player *
     return false;
 }
 
-void SummonAction::CancelAutonomousQueues()
+void SummonAction::CancelAutonomousQueues(Player* bot)
 {
     // Cancel only the bot's own queue entries, never the requester's group queue.
     ObjectGuid const guid = bot->GetObjectGuid();
@@ -272,7 +272,7 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
                     ai->TellPlayerNoFacing(requester, "The server refused the summon destination.");
                     return false;
                 }
-                CancelAutonomousQueues();
+                CancelAutonomousQueues(bot);
                 if (!summoner->InBattleGround())
                     ai->ChangeStrategy("-lfg,-bg", BotState::BOT_STATE_NON_COMBAT);
                 if (revive)
