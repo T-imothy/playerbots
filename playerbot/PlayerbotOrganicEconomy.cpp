@@ -27,6 +27,20 @@
 
 namespace
 {
+    std::vector<uint32> EconomyWorkOrder(std::vector<uint32> ready, const std::set<uint32>& verifying, uint32 cursor)
+    {
+        if (ready.empty()) return ready;
+        std::rotate(ready.begin(), ready.begin() + cursor % ready.size(), ready.end());
+        std::stable_partition(ready.begin(), ready.end(), [&](uint32 guid) { return verifying.count(guid) != 0; });
+        if (ready.size() > 8) ready.resize(8);
+        return ready;
+    }
+
+    bool PreserveCraftResult(const std::string& attemptGoal, const std::string& activeGoal, uint32 started, uint32 now)
+    {
+        return attemptGoal == activeGoal && now >= started && now - started < 120;
+    }
+
     bool JsonBool(const std::string& source, const std::string& key, bool fallback)
     {
         std::smatch match;
@@ -773,18 +787,30 @@ void PlayerbotOrganicEconomy::ProcessActiveGoals(const Policy& currentPolicy,
 {
     if (currentPolicy.mode != "active" || profiles.empty())
         return;
-    const uint32 budget = std::min<uint32>(8, profiles.size());
     std::vector<uint32> guids;
     guids.reserve(profiles.size());
-    for (const auto& entry : profiles) guids.push_back(entry.first);
-    for (uint32 offset = 0; offset < budget; ++offset)
+    std::set<uint32> verifying;
+    for (const auto& entry : profiles)
     {
-        uint32 guid = guids[(executionCursor + offset) % guids.size()];
+        if (entry.second.currentGoalState != "active" || entry.second.currentGoalId.empty()) continue;
+        auto retry = retryCooldowns.find(entry.first);
+        if (retry != retryCooldowns.end() && now < retry->second) continue;
+        guids.push_back(entry.first);
+        auto attempt = craftAttempts.find(entry.first);
+        if (entry.second.currentGoalType == "profession_skill_up" && attempt != craftAttempts.end() &&
+            attempt->second.goal == entry.second.currentGoalId) verifying.insert(entry.first);
+    }
+    const auto work = EconomyWorkOrder(guids, verifying, executionCursor);
+    for (uint32 guid : work)
+    {
         Profile& profile = profiles[guid];
         if (profile.currentGoalState != "active" || profile.currentGoalId.empty()) continue;
         if (retryCooldowns[guid].time_since_epoch().count() && now < retryCooldowns[guid]) continue;
         Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
-        if (!SafeForEconomy(bot)) { retryCooldowns[guid] = now + std::chrono::seconds(30); continue; }
+        // Result inspection doesn't move, respec, buy or cast. A human joining
+        // after the cast must not prevent us observing its real outcome.
+        if (!bot || !bot->IsInWorld() || (!verifying.count(guid) && !SafeForEconomy(bot)))
+        { retryCooldowns[guid] = now + std::chrono::seconds(30); continue; }
         std::string failureReason;
         bool completed = ExecuteGoal(bot, profile, currentPolicy, failureReason);
         retryCooldowns[guid] = now + std::chrono::seconds(completed ? 600 : 20);
@@ -805,7 +831,7 @@ void PlayerbotOrganicEconomy::ProcessActiveGoals(const Policy& currentPolicy,
             guid, profile.currentGoalId.c_str());
         profile.currentGoalState = "completed";
     }
-    executionCursor = (executionCursor + budget) % guids.size();
+    if (!guids.empty()) executionCursor = (executionCursor + work.size()) % guids.size();
 }
 
 void PlayerbotOrganicEconomy::ApplyPlans(const std::string& response, const Policy& currentPolicy)
@@ -825,6 +851,12 @@ void PlayerbotOrganicEconomy::ApplyPlans(const std::string& response, const Poli
         std::string goalType = child.second.get<std::string>("goal_type", "");
         std::string source = child.second.get<std::string>("source", "deterministic_fallback");
         if (!guid || planId.empty() || goalId.empty()) continue;
+        auto attempt = craftAttempts.find(guid);
+        auto active = profiles.find(guid);
+        if (currentPolicy.mode == "active" && attempt != craftAttempts.end() && active != profiles.end() &&
+            active->second.currentGoalState == "active" &&
+            PreserveCraftResult(attempt->second.goal, active->second.currentGoalId, attempt->second.started, uint32(time(nullptr))))
+            continue; // Inspect the in-flight result before replacing its goal.
         CharacterDatabase.PExecute(
             "UPDATE organic_economy_goal SET state='expired' WHERE character_guid='%u' AND state IN ('candidate','proposed','active')", guid);
         CharacterDatabase.PExecute(
