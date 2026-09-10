@@ -277,7 +277,9 @@ bool SpiritHealerAction::Execute(Event& event)
 
         sLog.outDetail("Bot #%d %s:%d <%s> revives at spirit healer", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
         PlayerbotChatHandler ch(bot);
-        bot->ResurrectPlayer(0.5f, !ai->HasCheat(BotCheatMask::repair));
+        bot->ResurrectPlayer(0.5f, livingPartyRecovery ? false : !ai->HasCheat(BotCheatMask::repair));
+        if (livingPartyRecovery)
+            bot->RemoveAurasDueToSpell(SPELL_ID_PASSIVE_RESURRECTION_SICKNESS);
         bot->DurabilityLossAll(0.25f, true);
 
         bot->SpawnCorpseBones();
@@ -313,7 +315,8 @@ bool SpiritHealerAction::Execute(Event& event)
         sLog.outString("Living WoW party dead recovery forced bot=%u dead_seconds=%lld",
             bot->GetGUIDLow(), (long long)deadTime);
         bot->GetMotionMaster()->Clear();
-        bot->ResurrectPlayer(0.5f, !ai->HasCheat(BotCheatMask::repair));
+        bot->ResurrectPlayer(0.5f, false);
+        bot->RemoveAurasDueToSpell(SPELL_ID_PASSIVE_RESURRECTION_SICKNESS);
         bot->DurabilityLossAll(0.25f, true);
         bot->SpawnCorpseBones();
         bot->TeleportTo(grave.getMapId(), grave.getX(), grave.getY(), grave.getZ(), 0);

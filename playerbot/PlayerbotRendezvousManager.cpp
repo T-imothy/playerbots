@@ -661,6 +661,18 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                 LogPartyEvent(session, "human_reconnected");
             }
 
+            // A bot in a human party may reach a spirit healer only because
+            // its automated corpse navigation failed. Do not make the human
+            // party wait through resurrection sickness for that automation
+            // failure. Keep the normal durability loss, and leave autonomous
+            // and bot-only resurrection behavior unchanged.
+            if (originalParty && human && bot->IsAlive() &&
+                bot->HasAura(SPELL_ID_PASSIVE_RESURRECTION_SICKNESS))
+            {
+                bot->RemoveAurasDueToSpell(SPELL_ID_PASSIVE_RESURRECTION_SICKNESS);
+                LogPartyEvent(session, "party_resurrection_sickness_cleared");
+            }
+
             // The normal dead strategy can be starved by a persistent
             // human-master follow goal. Preserve the party rendezvous while
             // first asking the existing corpse actions to recover normally,
