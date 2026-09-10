@@ -1145,8 +1145,11 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // more authoritative diagnosis is aging toward questStalled.
         bool movementStalled = questSnapshot.completed.empty() && expectsMovement && noActions &&
             progressSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
-        bool questStalled = stalledQuestId && noActions &&
-            progressSeconds >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds;
+        // A completed quest has its own authoritative age. Unrelated kill XP,
+        // another quest objective, or ordinary combat must not restart that
+        // clock forever. Safety exclusions below still prevent recovery during
+        // combat, transports, death, or human-directed party activity.
+        bool questStalled = stalledQuestId != 0;
         uint8 bagUsed = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
         bool inventoryBlocked = bagUsed >= 95;
         bool suspected = !excluded && (movementStalled || questStalled);
