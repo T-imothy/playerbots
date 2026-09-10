@@ -59,6 +59,8 @@ namespace ai
                     SetDuration(500);
                     const float reach = bot->GetCombinedCombatReach(target, false);
                     float minimum = 0.0f, maximum = std::max(1.0f, chaseDist + reach);
+                    if (range == 0.0f && spellName.empty() && !isFriend)
+                        maximum = std::max(1.0f, bot->GetCombinedCombatReach(target, true) - 0.5f);
                     if (!spellName.empty() && PartyCombatPositioning::SpellRanges(ai, target, spellName, minimum, maximum))
                         maximum = std::max(1.0f, maximum - sPlayerbotAIConfig.contactDistance);
                     return PartyCombatPositioning::Move(ai, target,
@@ -112,6 +114,8 @@ namespace ai
                         // Force move if not in los
                         if (bot->IsWithinLOSInMap(target, true))
                         {
+                            if (PartyCombatPositioning::Enabled(ai) && range == 0.0f && spellName.empty())
+                                return !bot->CanReachWithMeleeAttack(target);
                             // Check if the bot is already on the range required
                             return bot->GetDistance(target, true, DIST_CALC_COMBAT_REACH) > range;
                         }

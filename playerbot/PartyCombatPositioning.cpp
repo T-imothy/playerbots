@@ -47,15 +47,17 @@ struct Danger
     float radius;
 };
 
-void Report(PlayerbotAI* ai, int state, const char* result, bool retreat, unsigned pulls = 0)
+void Report(PlayerbotAI* ai, int state, const char* result, bool retreat, unsigned pulls = 0,
+    Unit* target = nullptr, unsigned pathChecks = 0, unsigned dangers = 0)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
     const char* key = retreat ? "party retreat outcome" : "party approach outcome";
     if (AI_VALUE2(int, "manual int", key) == state)
         return;
     SET_AI_VALUE2(int, "manual int", key, state);
-    sLog.outString("LivingParty positioning bot=%u name=%s movement=%s result=%s additional_enemies=%u",
-        ai->GetBot()->GetGUIDLow(), ai->GetBot()->GetName(), retreat ? "retreat" : "approach", result, pulls);
+    sLog.outString("LivingParty positioning bot=%u name=%s movement=%s result=%s additional_enemies=%u target=%u path_checks=%u nearby_dangers=%u",
+        ai->GetBot()->GetGUIDLow(), ai->GetBot()->GetName(), retreat ? "retreat" : "approach", result, pulls,
+        target ? target->GetGUIDLow() : 0, pathChecks, dangers);
 }
 
 bool MakePath(Player* bot, const Point& destination, std::vector<Point>& points)
@@ -176,7 +178,8 @@ bool PartyCombatPositioning::Move(PlayerbotAI* ai, Unit* target,
     minRange = std::max(0.0f, minRange);
     if (maxRange <= minRange)
     {
-        ai->StopMoving();
+        if (!retreat || emergency)
+            ai->StopMoving();
         Report(ai, 2, "no_usable_range", retreat);
         return false;
     }
@@ -246,21 +249,40 @@ bool PartyCombatPositioning::Move(PlayerbotAI* ai, Unit* target,
         { return preference(a, std::sqrt(DistanceSquared(a, start))) <
                  preference(b, std::sqrt(DistanceSquared(b, start))); });
 
+    // If no complete firing position is reachable, allow local progress.
+    // These waypoints are still checked against the navmesh, ground effects
+    // and every unengaged enemy. Never fall back to an unchecked chase.
+    const size_t completeCandidates = candidates.size();
+    if (!retreat && !emergency && currentRange > maxRange)
+        for (float distance : {4.0f, 8.0f, 12.0f})
+            for (float angle : {0.0f, 0.6f, -0.6f, 1.2f, -1.2f})
+                candidates.push_back({start.x - std::cos(baseAngle + angle)*distance,
+                    start.y - std::sin(baseAngle + angle)*distance, start.z});
+
     std::vector<Point> best;
     Score bestScore;
     Point destination = start;
-    unsigned pathChecks = 0, safePaths = 0;
+    unsigned pathChecks = 0, phaseChecks = 0, safePaths = 0;
+    bool partial = false;
     for (size_t index = 0; index < candidates.size(); ++index)
     {
+        if (index == completeCandidates)
+        {
+            if (!best.empty())
+                break;
+            phaseChecks = 0;
+        }
+        const bool progress = index >= completeCandidates;
         Point candidate = candidates[index];
         bot->UpdateAllowedPositionZ(candidate.x, candidate.y, candidate.z);
         const float range = std::sqrt(DistanceSquared(candidate, focus));
         const float travel = std::sqrt(DistanceSquared(candidate, start));
-        if (travel < 1.0f || travel > 40.0f || !std::isfinite(candidate.z))
+        if (travel < 0.1f || travel > 40.0f || !std::isfinite(candidate.z))
             continue;
-        if (!emergency && !FitsRange(range, minRange, maxRange, currentRange, retreat))
+        if (progress ? !UsefulApproach(range, minRange, currentRange) :
+            (!emergency && !FitsRange(range, minRange, maxRange, currentRange, retreat)))
             continue;
-        if (!emergency && !target->IsWithinLOS(candidate.x, candidate.y,
+        if (!progress && !emergency && !target->IsWithinLOS(candidate.x, candidate.y,
             candidate.z + bot->GetCollisionHeight(), true))
             continue;
         if (!emergency)
@@ -283,8 +305,10 @@ bool PartyCombatPositioning::Move(PlayerbotAI* ai, Unit* target,
             if (unsafeEndpoint)
                 continue;
         }
-        if (++pathChecks > (emergency ? 40u : 8u))
-            break;
+        if (phaseChecks >= (emergency ? 40u : 8u))
+            continue;
+        ++phaseChecks;
+        ++pathChecks;
         std::vector<Point> path;
         if (!MakePath(bot, candidate, path) || Length(path) > 60.0f)
             continue;
@@ -297,6 +321,7 @@ bool PartyCombatPositioning::Move(PlayerbotAI* ai, Unit* target,
             best = path;
             bestScore = score;
             destination = candidate;
+            partial = progress;
         }
         // Recheck a committed route against current patrol positions every time.
         if (committed && index == 0 && score.extraPulls == 0)
@@ -307,10 +332,15 @@ bool PartyCombatPositioning::Move(PlayerbotAI* ai, Unit* target,
 
     if (best.empty())
     {
-        ai->StopMoving();
-        SET_AI_VALUE2(int, "manual int", "party combat commit until", 0);
+        // A failed optional retreat must not cancel another action's approach.
+        // Existing checked steps are only four yards and finish on their own.
+        if (!retreat || emergency)
+        {
+            ai->StopMoving();
+            SET_AI_VALUE2(int, "manual int", "party combat commit until", 0);
+        }
         SET_AI_VALUE2(int, "manual int", retryKey, now + 1);
-        Report(ai, 2, "no_safe_route", retreat);
+        Report(ai, 2, "no_safe_route", retreat, 0, target, pathChecks, dangers.size());
         return false;
     }
 
@@ -343,7 +373,8 @@ bool PartyCombatPositioning::Move(PlayerbotAI* ai, Unit* target,
     SET_AI_VALUE2(int, "manual int", "party combat retreat", int(retreat));
     if (!committed)
         SET_AI_VALUE2(int, "manual int", "party combat commit until", now + 2);
-    Report(ai, bestScore.extraPulls ? 4 : 3,
-        bestScore.extraPulls ? "emergency_escape" : "safe_route", retreat, bestScore.extraPulls);
+    Report(ai, bestScore.extraPulls ? 4 : (partial ? 5 : 3),
+        bestScore.extraPulls ? "emergency_escape" : (partial ? "safe_progress" : "safe_route"),
+        retreat, bestScore.extraPulls, target, pathChecks, dangers.size());
     return true;
 }

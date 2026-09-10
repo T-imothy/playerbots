@@ -70,4 +70,9 @@ inline bool FitsRange(float distance, float minimum, float maximum,
     return distance >= minimum && distance <= maximum + 0.5f &&
         (!retreat || distance >= current + 1.0f);
 }
+
+inline bool UsefulApproach(float distance, float minimum, float current)
+{
+    return distance >= minimum && distance <= current - 1.0f;
+}
 }}
