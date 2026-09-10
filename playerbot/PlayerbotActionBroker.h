@@ -18,6 +18,7 @@ struct ChatDirectorActionProposal
     std::string type;
     std::string capabilityRef;
     uint32 quantity = 0;
+    uint32 priceCopper = 0;
     std::string delivery;
     std::string intent;
 };

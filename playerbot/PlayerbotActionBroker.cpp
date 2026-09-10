@@ -126,6 +126,26 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
     if (proposal.botGuid == 0 || proposal.targetGuid != event.speakerGuid || proposal.quantity == 0 || Find(proposal.botGuid, proposal.targetGuid))
         return false;
 
+    const ChatDirectorCapability* offeredCapability = nullptr;
+    auto candidate = event.candidates.find(proposal.botGuid);
+    if (candidate == event.candidates.end())
+        return false;
+    for (const ChatDirectorCapability& capability : candidate->second.actionCapabilities)
+    {
+        if (capability.capabilityRef == proposal.capabilityRef)
+        {
+            offeredCapability = &capability;
+            break;
+        }
+    }
+    if (!offeredCapability || proposal.quantity < offeredCapability->minQuantity ||
+        proposal.quantity > offeredCapability->maxQuantity)
+        return false;
+    bool giftedSaleCapability = proposal.type == "give_item" && offeredCapability->type == "sell_item" &&
+        offeredCapability->giftEligible;
+    if (proposal.type != offeredCapability->type && !giftedSaleCapability)
+        return false;
+
     std::smatch match;
     bool conjure = proposal.type == "conjure_water";
     bool buying = proposal.type == "buy_item";
@@ -173,7 +193,26 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemEntry);
     if (!proto) return false;
     uint32 value = (conjure || buying) ? 0 : proposal.quantity * ItemUsageValue::GetBotSellPrice(proto, bot);
-    uint32 price = buying ? proposal.quantity * ItemUsageValue::GetBotBuyPrice(proto, bot) : (proposal.type == "sell_item" ? value : 0);
+    uint32 price = 0;
+    if (buying)
+    {
+        uint64 minimum = uint64(offeredCapability->minimumUnitPriceCopper) * proposal.quantity;
+        uint64 maximum = uint64(offeredCapability->maximumUnitPriceCopper) * proposal.quantity;
+        uint64 negotiated = proposal.priceCopper ? proposal.priceCopper :
+            uint64(proposal.quantity) * ItemUsageValue::GetBotBuyPrice(proto, bot);
+        if (!negotiated || negotiated < minimum || negotiated > maximum || negotiated > UINT32_MAX)
+            return false;
+        price = (uint32)negotiated;
+    }
+    else if (proposal.type == "sell_item")
+    {
+        uint64 minimum = uint64(offeredCapability->minimumUnitPriceCopper) * proposal.quantity;
+        uint64 maximum = uint64(offeredCapability->maximumUnitPriceCopper) * proposal.quantity;
+        uint64 negotiated = proposal.priceCopper ? proposal.priceCopper : value;
+        if (!negotiated || negotiated < minimum || negotiated > maximum || negotiated > UINT32_MAX)
+            return false;
+        price = (uint32)negotiated;
+    }
     uint32 freeMoney = buying ? bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint32>(
         "free money for", std::to_string((uint32)NeedMoneyFor::anything))->Get() : 0;
     if (buying && (CountBrokerPlayerItem(player, itemEntry) < proposal.quantity || !price ||
@@ -183,7 +222,7 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
         auto& history = giftHistory[proposal.targetGuid];
         const auto cutoff = std::chrono::steady_clock::now() - std::chrono::hours(1);
         history.erase(std::remove_if(history.begin(), history.end(), [&](const auto& stamp) { return stamp < cutoff; }), history.end());
-        if (proposal.quantity > 5 || value > 100 || proto->Quality > ITEM_QUALITY_NORMAL || history.size() >= 3)
+        if (proposal.quantity > 5 || value > 100 || history.size() >= 3 || !offeredCapability->giftEligible)
             return false;
     }
 

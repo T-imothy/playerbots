@@ -117,6 +117,37 @@ public:
     }
 };
 
+static const char* ItemUsageName(ai::ItemUsage usage)
+{
+    switch (usage)
+    {
+        case ai::ItemUsage::ITEM_USAGE_EQUIP: return "equip";
+        case ai::ItemUsage::ITEM_USAGE_BAD_EQUIP: return "bad_equip";
+        case ai::ItemUsage::ITEM_USAGE_BROKEN_EQUIP: return "broken_equip";
+        case ai::ItemUsage::ITEM_USAGE_QUEST: return "quest";
+        case ai::ItemUsage::ITEM_USAGE_SKILL: return "skill";
+        case ai::ItemUsage::ITEM_USAGE_USE: return "use";
+        case ai::ItemUsage::ITEM_USAGE_GUILD_TASK: return "guild_task";
+        case ai::ItemUsage::ITEM_USAGE_DISENCHANT: return "disenchant";
+        case ai::ItemUsage::ITEM_USAGE_AH: return "auction";
+        case ai::ItemUsage::ITEM_USAGE_BROKEN_AH: return "broken_auction";
+        case ai::ItemUsage::ITEM_USAGE_KEEP: return "keep";
+        case ai::ItemUsage::ITEM_USAGE_VENDOR: return "vendor";
+        case ai::ItemUsage::ITEM_USAGE_AMMO: return "ammo";
+        case ai::ItemUsage::ITEM_USAGE_FORCE_NEED: return "force_need";
+        case ai::ItemUsage::ITEM_USAGE_FORCE_GREED: return "force_greed";
+        case ai::ItemUsage::ITEM_USAGE_BANK: return "bank";
+        default: return "none";
+    }
+}
+
+static bool IsProtectedEconomicUsage(ai::ItemUsage usage)
+{
+    return usage == ai::ItemUsage::ITEM_USAGE_EQUIP || usage == ai::ItemUsage::ITEM_USAGE_QUEST ||
+        usage == ai::ItemUsage::ITEM_USAGE_KEEP || usage == ai::ItemUsage::ITEM_USAGE_FORCE_NEED ||
+        usage == ai::ItemUsage::ITEM_USAGE_BANK;
+}
+
 static std::set<std::string> InventorySearchTerms(const std::string& text)
 {
     static const std::set<std::string> ignored = {
@@ -333,44 +364,58 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
         ItemPrototype const* proto = item->GetProto();
         if (!proto || proto->Class == ITEM_CLASS_QUEST || reported >= 16)
             continue;
+        ai::ItemUsage usage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<ai::ItemUsage>(
+            "item usage", ai::ItemQualifier(item).GetQualifier())->Get();
         uint32 total = std::max<int32>(0, countVisitor.items[proto->ItemId]);
         uint32 unitPrice = ai::ItemUsageValue::GetBotSellPrice(proto, bot);
-        bool gift = proto->Quality <= ITEM_QUALITY_NORMAL && unitPrice <= 100 &&
-            (proto->Class == ITEM_CLASS_CONSUMABLE || proto->Class == ITEM_CLASS_TRADE_GOODS);
         bool manaDrink = ai::ItemUsageValue::IsManaFoodOrDrink(proto);
         bool healthFood = ai::ItemUsageValue::IsHpFoodOrDrink(proto);
         uint32 retained = 0;
-        if (gift)
-        {
-            if (manaDrink && bot->GetPowerType() == POWER_MANA)
-                retained = std::min<uint32>(total, 2);
-            else if (healthFood)
-                retained = std::min<uint32>(total, 2);
-            else
-                retained = std::min<uint32>(total, 1);
-        }
+        if (IsProtectedEconomicUsage(usage)) retained = total;
+        else if (usage == ai::ItemUsage::ITEM_USAGE_SKILL || usage == ai::ItemUsage::ITEM_USAGE_GUILD_TASK ||
+            usage == ai::ItemUsage::ITEM_USAGE_AMMO) retained = std::min<uint32>(total, proto->GetMaxStackSize());
+        else if (usage == ai::ItemUsage::ITEM_USAGE_USE || manaDrink || healthFood)
+            retained = std::min<uint32>(total, (manaDrink || healthFood) ? 2 : 1);
         uint32 available = total > retained ? total - retained : 0;
-        uint32 maxQuantity = std::min<uint32>(item->GetCount(), gift ? std::min<uint32>(5, available) : item->GetCount());
+        uint32 maxQuantity = std::min<uint32>(item->GetCount(), available);
         if (!maxQuantity)
             continue;
-        if (gift && unitPrice && maxQuantity * unitPrice > 100)
-            maxQuantity = std::min<uint32>(maxQuantity, 100 / unitPrice);
-        if (!maxQuantity)
-            continue;
+        uint32 marketPrice = ai::ItemUsageValue::GetAHMedianBuyoutPricePerItem(proto);
+        uint32 marketSamples = (uint32)sRandomPlayerbotMgr.GetAhPrices(proto->ItemId).size();
+        uint32 vendorPrice = proto->SellPrice;
+        uint32 botBuyPrice = ai::ItemUsageValue::GetBotBuyPrice(proto, bot);
+        bool legacyGift = proto->Quality <= ITEM_QUALITY_NORMAL && unitPrice <= 100 &&
+            (proto->Class == ITEM_CLASS_CONSUMABLE || proto->Class == ITEM_CLASS_TRADE_GOODS);
+        bool giftEligible = !IsProtectedEconomicUsage(usage);
         ChatDirectorCapability capability;
         std::ostringstream ref;
         ref << "item:" << proto->ItemId << ':' << item->GetGUIDLow();
         capability.capabilityRef = ref.str();
-        capability.type = gift ? "give_item" : "sell_item";
+        capability.type = legacyGift ? "give_item" : "sell_item";
         capability.itemName = proto->Name1;
+        capability.itemUsage = ItemUsageName(usage);
+        capability.economicVersion = 1;
+        capability.itemId = proto->ItemId;
+        capability.quality = proto->Quality;
         if (manaDrink) capability.itemKind = "water";
         else if (healthFood) capability.itemKind = "food";
         else capability.itemKind = "item";
         capability.quantity = maxQuantity;
         capability.minQuantity = 1;
         capability.maxQuantity = maxQuantity;
-        capability.priceCopper = gift ? 0 : maxQuantity * unitPrice;
+        capability.totalQuantity = total;
+        capability.reserveQuantity = retained;
+        capability.disposableQuantity = available;
+        capability.priceCopper = legacyGift ? 0 : maxQuantity * unitPrice;
         capability.valueCopper = maxQuantity * unitPrice;
+        capability.vendorSellCopper = vendorPrice;
+        capability.playerbotSellCopper = unitPrice;
+        capability.playerbotBuyCopper = botBuyPrice;
+        capability.marketUnitCopper = marketPrice;
+        capability.marketSamples = marketSamples;
+        capability.minimumUnitPriceCopper = std::max<uint32>(vendorPrice + std::max<uint32>(1, vendorPrice / 10), std::max<uint32>(1, unitPrice * 35 / 100));
+        capability.maximumUnitPriceCopper = std::max<uint32>(unitPrice * 5, marketPrice * 2);
+        capability.giftEligible = giftEligible;
         if (direct) capability.deliveries.push_back("direct");
         if (sameZone) capability.deliveries.push_back("meeting");
         if (!item->IsConjuredConsumable()) capability.deliveries.push_back("mail");
@@ -413,6 +458,7 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             capability.quantity = createdCount;
             capability.minQuantity = createdCount;
             capability.maxQuantity = createdCount;
+            capability.giftEligible = true;
             if (direct) capability.deliveries.push_back("direct");
             capability.deliveries.push_back("meeting");
             candidate.actionCapabilities.push_back(std::move(capability));
@@ -440,6 +486,19 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             capability.maxQuantity = std::min<uint32>(available, bot->GetMoney() / unitPrice);
             capability.priceCopper = unitPrice;
             capability.valueCopper = unitPrice;
+            capability.economicVersion = 1;
+            capability.itemId = proto->ItemId;
+            capability.quality = proto->Quality;
+            capability.itemUsage = "player_offer";
+            capability.totalQuantity = available;
+            capability.disposableQuantity = capability.maxQuantity;
+            capability.playerbotBuyCopper = unitPrice;
+            capability.playerbotSellCopper = ai::ItemUsageValue::GetBotSellPrice(proto, bot);
+            capability.vendorSellCopper = proto->SellPrice;
+            capability.marketUnitCopper = ai::ItemUsageValue::GetAHMedianBuyoutPricePerItem(proto);
+            capability.marketSamples = (uint32)sRandomPlayerbotMgr.GetAhPrices(proto->ItemId).size();
+            capability.minimumUnitPriceCopper = std::max<uint32>(1, unitPrice / 2);
+            capability.maximumUnitPriceCopper = unitPrice;
             if (direct) capability.deliveries.push_back("direct");
             capability.deliveries.push_back("meeting");
             candidate.actionCapabilities.push_back(std::move(capability));
@@ -1098,7 +1157,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
     std::ostringstream json;
     json << "{\"event_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.eventId) << "\",";
     json << "\"event_type\":\"" << (event.ambient ? "ambient" : "message") << "\",";
-    json << "\"bridge_capabilities\":{\"reply_channel\":true},";
+    json << "\"bridge_capabilities\":{\"reply_channel\":true,\"negotiated_price\":true,\"economic_capabilities\":1},";
     json << "\"channel\":{\"type\":\"" << event.channelType << "\",\"name\":\""
          << PlayerbotLLMInterface::SanitizeForJson(event.channelName) << "\",\"zone\":" << event.zone << "},";
     json << "\"faction\":\"" << (event.team == ALLIANCE ? "alliance" : "horde") << "\",";
@@ -1182,9 +1241,23 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
             json << "{\"capability_ref\":\"" << capability.capabilityRef << "\",\"type\":\"" << capability.type
                  << "\",\"item_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(capability.itemName)
                  << "\",\"item_kind\":\"" << capability.itemKind
-                 << "\",\"min_quantity\":" << (capability.minQuantity ? capability.minQuantity : capability.quantity)
+                 << "\",\"item_usage\":\"" << capability.itemUsage
+                 << "\",\"economic_version\":" << capability.economicVersion
+                 << ",\"item_id\":" << capability.itemId << ",\"quality\":" << capability.quality
+                 << ",\"min_quantity\":" << (capability.minQuantity ? capability.minQuantity : capability.quantity)
                  << ",\"max_quantity\":" << (capability.maxQuantity ? capability.maxQuantity : capability.quantity)
+                 << ",\"total_quantity\":" << capability.totalQuantity
+                 << ",\"reserve_quantity\":" << capability.reserveQuantity
+                 << ",\"disposable_quantity\":" << capability.disposableQuantity
                  << ",\"price_copper\":" << capability.priceCopper << ",\"value_copper\":" << capability.valueCopper
+                 << ",\"vendor_sell_copper\":" << capability.vendorSellCopper
+                 << ",\"playerbot_sell_copper\":" << capability.playerbotSellCopper
+                 << ",\"playerbot_buy_copper\":" << capability.playerbotBuyCopper
+                 << ",\"market_unit_copper\":" << capability.marketUnitCopper
+                 << ",\"market_samples\":" << capability.marketSamples
+                 << ",\"minimum_unit_price_copper\":" << capability.minimumUnitPriceCopper
+                 << ",\"maximum_unit_price_copper\":" << capability.maximumUnitPriceCopper
+                 << ",\"gift_eligible\":" << (capability.giftEligible ? "true" : "false")
                  << ",\"quest_id\":" << capability.questId << ",\"group_id\":" << capability.groupId
                  << ",\"actor_guid\":" << capability.actorGuid << ",\"description\":\""
                  << PlayerbotLLMInterface::SanitizeForJson(capability.description) << "\""
@@ -1222,7 +1295,7 @@ std::vector<ChatDirectorReply> PlayerbotChatDirector::ParseReplies(const std::st
 std::vector<ChatDirectorActionProposal> PlayerbotChatDirector::ParseActionProposals(const std::string& response) const
 {
     std::vector<ChatDirectorActionProposal> proposals;
-    std::regex pattern(R"re("proposal_id"\s*:\s*"([^"\\]+)"\s*,\s*"bot_guid"\s*:\s*([0-9]+)\s*,\s*"target_guid"\s*:\s*([0-9]+)\s*,\s*"type"\s*:\s*"([^"\\]+)"\s*,\s*"capability_ref"\s*:\s*"([^"\\]+)"\s*,\s*"quantity"\s*:\s*([0-9]+)\s*,\s*"delivery"\s*:\s*"([^"\\]+)"\s*,\s*"intent"\s*:\s*"((?:\\.|[^"\\])*)")re");
+    std::regex pattern(R"re("proposal_id"\s*:\s*"([^"\\]+)"\s*,\s*"bot_guid"\s*:\s*([0-9]+)\s*,\s*"target_guid"\s*:\s*([0-9]+)\s*,\s*"type"\s*:\s*"([^"\\]+)"\s*,\s*"capability_ref"\s*:\s*"([^"\\]+)"\s*,\s*"quantity"\s*:\s*([0-9]+)\s*,\s*(?:"price_copper"\s*:\s*([0-9]+)\s*,\s*)?"delivery"\s*:\s*"([^"\\]+)"\s*,\s*"intent"\s*:\s*"((?:\\.|[^"\\])*)")re");
     for (std::sregex_iterator it(response.begin(), response.end(), pattern), end; it != end; ++it)
     {
         ChatDirectorActionProposal proposal;
@@ -1232,8 +1305,9 @@ std::vector<ChatDirectorActionProposal> PlayerbotChatDirector::ParseActionPropos
         proposal.type = (*it)[4].str();
         proposal.capabilityRef = (*it)[5].str();
         proposal.quantity = (uint32)std::stoul((*it)[6].str());
-        proposal.delivery = (*it)[7].str();
-        proposal.intent = JsonUnescape((*it)[8].str());
+        if ((*it)[7].matched) proposal.priceCopper = (uint32)std::stoul((*it)[7].str());
+        proposal.delivery = (*it)[8].str();
+        proposal.intent = JsonUnescape((*it)[9].str());
         proposals.push_back(std::move(proposal));
     }
     return proposals;
