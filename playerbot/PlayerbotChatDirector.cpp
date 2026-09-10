@@ -1904,10 +1904,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     else if (sPlayerbotAIConfig.chatDirectorRecoveryAlternateGoals &&
                         sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 7)
                     {
-                        std::string action = "request travel target::" +
-                            std::to_string((uint32)TravelDestinationPurpose::Grind);
                         alternateGoalRequested = bot->GetPlayerbotAI()->DoSpecificAction(
-                            action, Event("can move around"), true);
+                            "request progression grind travel target", Event("can move around"), true);
                         state.nearbyRerouteResult = alternateGoalRequested ?
                             "alternate_grind_requested" : "alternate_grind_rejected";
                     }

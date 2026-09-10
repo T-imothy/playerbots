@@ -101,6 +101,19 @@ namespace ai
         virtual bool isAllowed() const override { return true; }
     };
 
+    class RequestProgressionGrindTravelTargetAction : public RequestTravelTargetAction {
+    public:
+        RequestProgressionGrindTravelTargetAction(PlayerbotAI* ai,
+            std::string name = "request progression grind travel target") :
+            RequestTravelTargetAction(ai, name)
+        {
+            Qualify((int32)TravelDestinationPurpose::Grind);
+        }
+    private:
+        virtual bool isUseful() override;
+        virtual bool isAllowed() const override { return true; }
+    };
+
     class RequestProgressionVendorTravelTargetAction : public RequestTravelTargetAction {
     public:
         RequestProgressionVendorTravelTargetAction(PlayerbotAI* ai, std::string name = "request progression vendor travel target") : RequestTravelTargetAction(ai, name)

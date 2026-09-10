@@ -834,6 +834,17 @@ bool RequestProgressionVendorTravelTargetAction::isUseful()
         AI_VALUE(TravelTarget*, "travel target")->GetStatus() != TravelStatus::TRAVEL_STATUS_PREPARE;
 }
 
+bool RequestProgressionGrindTravelTargetAction::isUseful()
+{
+    // Recovery has just cleared a terminal target. The ordinary request action
+    // can observe a transient false `can move around` value in this same world
+    // tick and reject the replacement route. The outer progression recovery
+    // gate already excludes combat, groups, transports, battlegrounds, death,
+    // and human-directed activity; actual movement is still revalidated later.
+    return !bot->InBattleGround() && AI_VALUE(TravelTarget*, "travel target")->GetStatus() !=
+        TravelStatus::TRAVEL_STATUS_PREPARE;
+}
+
 bool RequestQuestTurninTargetAction::isUseful()
 {
     // This recovery-only action starts an asynchronous destination lookup; it

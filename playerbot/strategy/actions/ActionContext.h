@@ -106,6 +106,7 @@ namespace ai
             creators["request named travel target"] = [](PlayerbotAI* ai) { return new RequestNamedTravelTargetAction(ai); };
             creators["request quest travel target"] = [](PlayerbotAI* ai) { return new RequestQuestTravelTargetAction(ai); };
             creators["request progression quest travel target"] = [](PlayerbotAI* ai) { return new RequestProgressionQuestTravelTargetAction(ai); };
+            creators["request progression grind travel target"] = [](PlayerbotAI* ai) { return new RequestProgressionGrindTravelTargetAction(ai); };
             creators["request progression vendor travel target"] = [](PlayerbotAI* ai) { return new RequestProgressionVendorTravelTargetAction(ai); };
             creators["request quest turnin target"] = [](PlayerbotAI* ai) { return new RequestQuestTurninTargetAction(ai); };
             creators["reset travel target"] = [](PlayerbotAI* ai) { return new ResetTargetAction(ai); };
