@@ -795,8 +795,13 @@ bool RequestProgressionVendorTravelTargetAction::isUseful()
 
 bool RequestQuestTurninTargetAction::isUseful()
 {
-    return !bot->InBattleGround() && AI_VALUE(bool, "can move around") &&
-        AI_VALUE(TravelTarget*, "travel target")->GetStatus() != TravelStatus::TRAVEL_STATUS_PREPARE;
+    // This recovery-only action starts an asynchronous destination lookup; it
+    // does not move the bot. A same-tick target reset can transiently make
+    // "can move around" false and must not suppress the lookup. The outer
+    // world recovery gate and MoveToTravelTargetAction retain all actual
+    // combat, group, transport, path, and movement safety checks.
+    return !bot->InBattleGround() && AI_VALUE(TravelTarget*, "travel target")->GetStatus() !=
+        TravelStatus::TRAVEL_STATUS_PREPARE;
 }
 
 bool RequestTravelTargetAction::Execute(Event& event)
