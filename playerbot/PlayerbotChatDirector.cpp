@@ -1249,6 +1249,23 @@ static void AppendQuestJson(std::ostringstream& json, const ChatDirectorQuest& q
     json << "]}";
 }
 
+static uint32 QuestMessageRelevance(const std::string& message, const ChatDirectorCandidate& candidate)
+{
+    uint32 relevance = 0;
+    for (const ChatDirectorQuest& quest : candidate.quests)
+    {
+        if (quest.status == "complete")
+            continue;
+        if (!quest.title.empty() && boost::algorithm::icontains(message, quest.title))
+            relevance = std::max<uint32>(relevance, 2);
+        for (const ChatDirectorQuest::Objective& objective : quest.objectives)
+            if (!objective.name.empty() && objective.current < objective.required &&
+                boost::algorithm::icontains(message, objective.name))
+                relevance = std::max<uint32>(relevance, 1);
+    }
+    return relevance;
+}
+
 std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) const
 {
     std::vector<ChatDirectorCandidate> choices;
@@ -1260,6 +1277,9 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
         bool leftNamed = boost::algorithm::icontains(event.message, left.name);
         bool rightNamed = boost::algorithm::icontains(event.message, right.name);
         if (leftNamed != rightNamed) return leftNamed;
+        uint32 leftQuest = QuestMessageRelevance(event.message, left);
+        uint32 rightQuest = QuestMessageRelevance(event.message, right);
+        if (leftQuest != rightQuest) return leftQuest > rightQuest;
         uint32 leftInventory = InventoryRelevance(event.message, left);
         uint32 rightInventory = InventoryRelevance(event.message, right);
         if (leftInventory != rightInventory) return leftInventory > rightInventory;
