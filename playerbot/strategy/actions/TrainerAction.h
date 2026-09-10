@@ -8,6 +8,10 @@ namespace ai
 	public:
 		TrainerAction(PlayerbotAI* ai) : ChatCommandAction(ai, "trainer") {}
         virtual bool Execute(Event& event) override;
+        LivingActivity::Effects GetActivityEffects() const override {
+            using namespace LivingActivity;
+            return {Mask(Effect::Spell) | Mask(Effect::Money) | Mask(Effect::Social), Lane::Managed, true};
+        }
 
     private:
         typedef void (TrainerAction::*TrainerSpellAction)(uint32, ObjectGuid trainerGuid, uint32 spellId, TrainerSpell const*, std::ostringstream& msg);

@@ -356,7 +356,7 @@ namespace ai
 		GuidPosition GetGroupmember() { return groupMember; }
 
 		bool IsGroupCopy() const { return groupMember; }
-		void SetRelevance(uint32 rel) { relevance = rel; }
+        void SetRelevance(uint32 rel) { if (AllowActivityMutation()) relevance = rel; }
 		uint32 GetRelevance() { return relevance; }
 
 
@@ -373,25 +373,29 @@ namespace ai
 		int32 GetTimeLeft() const { return statusTime - GetExpiredTime(); }
 		int32 GetExpiredTime() const { return WorldTimer::getMSTime() - startTime; }
 
-		void SetRetry(bool isMove, uint32 newCount = 0) { if (isMove) moveRetryCount = newCount; else extendRetryCount = newCount; }
+        void SetRetry(bool isMove, uint32 newCount = 0) { if (!AllowActivityMutation()) return; if (isMove) moveRetryCount = newCount; else extendRetryCount = newCount; }
 		bool IsMaxRetry(bool isMove) { return isMove ? (moveRetryCount > 10) : (extendRetryCount >= 5); }
 
 		void SetTarget(TravelDestination* tDestination1, WorldPosition* wPosition1);
 		
-		void AddCondition(std::string condition) { travelConditions.push_back(condition); }
-		void SetConditions(std::vector<std::string> conditions) { travelConditions = conditions; }
+        void AddCondition(std::string condition) { if (AllowActivityMutation()) travelConditions.push_back(condition); }
+        void SetConditions(std::vector<std::string> conditions) { if (AllowActivityMutation()) travelConditions = conditions; }
 		std::vector<std::string> GetConditions() { return travelConditions; }
 
 		void SetStatus(TravelStatus status);
-		void SetExpireIn(uint32 expireMs) { statusTime = GetExpiredTime() + expireMs; }
-		void SetForced(bool forced1) { forced = forced1; }
-		void SetGroupCopy(GuidPosition member) { groupMember = member; }
+        void SetExpireIn(uint32 expireMs) { if (AllowActivityMutation()) statusTime = GetExpiredTime() + expireMs; }
+        void SetForced(bool forced1) { if (AllowActivityMutation()) forced = forced1; }
+        void SetGroupCopy(GuidPosition member) { if (AllowActivityMutation()) groupMember = member; }
 
-		void IncRetry(bool isMove) { if (isMove) moveRetryCount+=2; else extendRetryCount++; }
-		void DecRetry(bool isMove) { if (isMove && moveRetryCount > 0) moveRetryCount--; else if (extendRetryCount > 0) extendRetryCount--; }
+        void IncRetry(bool isMove) { if (!AllowActivityMutation()) return; if (isMove) moveRetryCount+=2; else extendRetryCount++; }
+        void DecRetry(bool isMove) { if (!AllowActivityMutation()) return; if (isMove && moveRetryCount > 0) moveRetryCount--; else if (extendRetryCount > 0) extendRetryCount--; }
 
 		void CopyTarget(TravelTarget* const target);
 	private:
+        friend class TravelTargetValue;
+        // Temporary planner candidates are values, not the bot's installed route.
+        bool activityBound = false;
+        bool AllowActivityMutation() const;
 		uint32 GetMaxTravelTime() const { return (1000.0 * Distance(bot)) / bot->GetSpeed(MOVE_RUN); }
 
 		TravelStatus m_status = TravelStatus::TRAVEL_STATUS_NONE;

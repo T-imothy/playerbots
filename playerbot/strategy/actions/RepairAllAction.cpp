@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/LivingActivityCoordinator.h"
 #include "playerbot/PlayerbotServiceTracking.h"
 #include "RepairAllAction.h"
 #include "playerbot/strategy/ItemVisitors.h"
@@ -10,6 +11,7 @@ using namespace ai;
 
 bool RepairAllAction::Execute(Event& event)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) return false;
     // Group leaders may remain here so followers can repair. That group trigger
     // does not mean the leader has damaged items of their own to repair.
     bool damaged = false;

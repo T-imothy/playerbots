@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/LivingActivityCoordinator.h"
 #include "playerbot/PlayerbotServiceTracking.h"
 #include "BuyAction.h"
 #include "AhAction.h"
@@ -274,6 +275,7 @@ bool BuyAction::Execute(Event& event)
 
 bool BuyAction::BuyItem(Player* requester, VendorItemData const* tItems, ObjectGuid vendorguid, const ItemPrototype* proto, UsageBoughtList& bought, ItemUsage usage)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) return false;
     if (usage != ItemUsage::ITEM_USAGE_NONE)
     {
         const uint32 required = sPlayerbotOrganicEconomy.RecipeMaterialQuantity(bot->GetGUIDLow(), proto->ItemId);

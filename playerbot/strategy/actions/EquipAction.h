@@ -7,6 +7,10 @@ namespace ai
     {
     public:
         EquipAction(PlayerbotAI* ai, std::string name = "equip") : ChatCommandAction(ai, name) {}
+        LivingActivity::Effects GetActivityEffects() const override {
+            using namespace LivingActivity;
+            return {Mask(Effect::Equipment) | Mask(Effect::Inventory) | Mask(Effect::Spell) | Mask(Effect::Social), Lane::Managed, true};
+        }
         virtual bool Execute(Event& event) override;
         void EquipItems(Player* requester, ItemIds ids);
         void EquipItemsToSlot(Player* requester, ItemIds ids, uint8 targetSlot);

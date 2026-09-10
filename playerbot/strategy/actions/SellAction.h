@@ -7,6 +7,10 @@ namespace ai
     {
     public:
         SellAction(PlayerbotAI* ai, std::string name = "sell") : ChatCommandAction(ai, name) {}
+        LivingActivity::Effects GetActivityEffects() const override {
+            using namespace LivingActivity;
+            return {Mask(Effect::Inventory) | Mask(Effect::Money) | Mask(Effect::Social), Lane::Managed, true};
+        }
         virtual bool Execute(Event& event) override;
 
         bool Sell(Player* requester, FindItemVisitor* visitor);

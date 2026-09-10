@@ -33,6 +33,10 @@ namespace ai
     {
     public:
         UseAction(PlayerbotAI* ai, std::string name = "use", uint32 duration = sPlayerbotAIConfig.reactDelay) : ChatCommandAction(ai, name, duration), Qualified() {}
+        LivingActivity::Effects GetActivityEffects() const override {
+            using namespace LivingActivity;
+            return {Mask(Effect::Inventory) | Mask(Effect::Spell) | Mask(Effect::Movement) | Mask(Effect::Equipment) | Mask(Effect::Social), Lane::Managed, true};
+        }
 
     public:
         // Used when this action is executed as a reaction

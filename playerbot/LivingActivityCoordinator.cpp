@@ -103,6 +103,9 @@ struct LivingActivityCoordinator::State {
     struct ActionCount { uint64_t count = 0; uint32_t exampleActor = 0; };
     BoundedMailbox<ActionObservation> actionInbox{2048};
     std::atomic<bool> observeEffects{false};
+    std::atomic<bool> enforceEffects{false}; // No configuration can enable it before Stage 3 acceptance.
+    std::atomic<uint64_t> publishedPolicyRevision{0};
+    std::atomic<uint64_t> leaseBoundaries[3][2]{};
     std::thread::id worldThread;
     std::atomic<bool> worldThreadReady{false};
     std::map<std::string, ActionCount> actionCounts;
@@ -174,6 +177,7 @@ struct LivingActivityCoordinator::State {
         // Do not invalidate a committed journal acknowledgement on config reload.
         // Its receipts still matter, but no gameplay action is ever dispatched here.
         effective = next; policyRevision = revision;
+        publishedPolicyRevision.store(revision, std::memory_order_release);
         observeEffects.store(nextObserveEffects, std::memory_order_release);
         if (effective == Mode::Off) blocker = why;
         else if (!schemaReady) blocker = "schema_verification_pending";
@@ -413,7 +417,13 @@ std::string LivingActivityCoordinator::StatusJson() const {
     p.put("action_cardinality_rejected", state->actionCardinalityRejected);
     p.put("native_views_published", state->nativeViewsPublished);
     p.put("stale_actor_observations", state->staleActorObservations);
-    p.put("execution_enforcement", false);
+    p.put("execution_enforcement", state->enforceEffects.load(std::memory_order_acquire));
+    for (unsigned boundary = 0; boundary != 3; ++boundary) {
+        const char* name = boundary == 0 ? "acquire" : boundary == 1 ? "renew" : "release";
+        for (unsigned lane = 0; lane != 2; ++lane)
+            p.put(std::string("lease_boundaries.") + name + (lane == 0 ? ".world" : ".map"),
+                state->leaseBoundaries[boundary][lane].load(std::memory_order_relaxed));
+    }
     boost::property_tree::ptree effects;
     for (const auto& entry : state->actionCounts) {
         boost::property_tree::ptree value; value.put("key", entry.first);
@@ -448,20 +458,26 @@ std::string LivingActivityCoordinator::ActorJson(uint32_t guid) const {
 }
 
 void LivingActivityCoordinator::ObserveAction(PlayerbotAI& ai, const Effects& effects, const std::string& action) {
-    if (!state->observeEffects.load(std::memory_order_acquire)) return;
+    PermitEffects(ai, effects, action);
+}
+
+bool LivingActivityCoordinator::PermitEffects(PlayerbotAI& ai, const Effects& effects, const std::string& action) {
+    const bool enforce = state->enforceEffects.load(std::memory_order_acquire);
+    if (!enforce && !state->observeEffects.load(std::memory_order_acquire)) return true;
     Player* bot = ai.GetBot();
     const uint32_t guid = bot ? bot->GetGUIDLow() : 0;
     const uint64_t actorEpoch = ai.GetActivityActorEpoch(), mapEpoch = ai.GetActivityMapEpoch();
-    if (!guid || !actorEpoch || !mapEpoch) return;
+    if (!guid || !actorEpoch || !mapEpoch) return !enforce;
     // Fixed engine action identifiers only. Never include Event text, commands,
     // player names, model output, credentials or arbitrarily qualified strings.
     std::string bounded = action.substr(0, action.find("::")); // Omit the qualifier, retain its fixed action family.
     if (bounded.empty() || bounded.size() > 64 || bounded.find_first_not_of(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-'") != std::string::npos)
         bounded = "dynamic_action_identifier";
-    AuthorityCode check = AuthorityCode::NoOwner;
+    AuthorityCode check = AuthorityCode::StaleContext;
     if (const auto view = ai.activityPermissions.Inspect()) {
-        const auto current = ReadNativeContext(*bot, view->current.policyRevision, view->current.boot);
+        const auto current = ReadNativeContext(*bot,
+            state->publishedPolicyRevision.load(std::memory_order_acquire), state->boot);
         const uint64_t monotonic = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
         check = ExecutionScope::Check(ai.activityPermissions, effects, current, monotonic, NativeSafety(bot));
@@ -469,6 +485,7 @@ void LivingActivityCoordinator::ObserveAction(PlayerbotAI& ai, const Effects& ef
     state->actionInbox.TryPush({guid, actorEpoch, mapEpoch, effects, std::move(bounded),
         state->worldThreadReady.load(std::memory_order_acquire) && state->worldThread == std::this_thread::get_id(),
         check, ExecutionScope::Origin(guid)});
+    return !enforce || check == AuthorityCode::Allowed;
 }
 
 void LivingActivityCoordinator::RefreshPermission(uint32_t guid, uint64_t actorEpoch) {
@@ -503,10 +520,14 @@ void LivingActivityCoordinator::RefreshPermission(uint32_t guid, uint64_t actorE
 
 void LivingActivityCoordinator::ObserveLeaseBoundary(uint32_t guid, LeaseBoundary boundary) {
     if (!state->observeEffects.load(std::memory_order_acquire) || !guid) return;
+    const unsigned index = static_cast<unsigned>(boundary);
+    if (index >= 3) return;
+    const bool worldThread = OnWorldThread();
+    ++state->leaseBoundaries[index][worldThread ? 0 : 1];
     const char* action = boundary == LeaseBoundary::Acquire ? "legacy lease acquire" :
         boundary == LeaseBoundary::Renew ? "legacy lease renew" : "legacy lease release";
     state->actionInbox.TryPush({guid, 0, 0, {0, Lane::Inspection, true}, action,
-        state->worldThreadReady.load(std::memory_order_acquire) && state->worldThread == std::this_thread::get_id()});
+        worldThread});
 }
 
 bool LivingActivityCoordinator::CompatibilityContext(uint32_t guid, const std::string& source,

@@ -12,6 +12,10 @@ namespace ai
     {
     public:
         BuyAction(PlayerbotAI* ai, std::string name = "buy") : ChatCommandAction(ai, name) {}
+        LivingActivity::Effects GetActivityEffects() const override {
+            using namespace LivingActivity;
+            return {Mask(Effect::Inventory) | Mask(Effect::Money) | Mask(Effect::Equipment) | Mask(Effect::Spell) | Mask(Effect::Social), Lane::Managed, true};
+        }
         virtual bool Execute(Event& event) override;
 
     private:

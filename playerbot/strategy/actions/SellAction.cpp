@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/LivingActivityCoordinator.h"
 #include "playerbot/PlayerbotServiceTracking.h"
 #include "SellAction.h"
 #include "playerbot/PlayerbotGuildSupplies.h"
@@ -85,6 +86,7 @@ bool SellAction::Sell(Player* requester, FindItemVisitor* visitor)
 
 bool SellAction::Sell(Player* requester, Item* item)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) return false;
     if (!item || sGuildSupplies.Reserved(item->GetGUIDLow()))
         return false;
     bool didSell = false;

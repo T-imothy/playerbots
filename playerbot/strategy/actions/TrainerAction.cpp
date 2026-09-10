@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/LivingActivityCoordinator.h"
 #include "playerbot/PlayerbotServiceTracking.h"
 #include "TrainerAction.h"
 #include "playerbot/PlayerbotTraining.h"
@@ -10,6 +11,7 @@ using namespace ai;
 
 void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, TrainerSpell const* tSpell, std::ostringstream& msg)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) return;
     if (!LivingWowFreeBotTraining(bot) && sPlayerbotAIConfig.autoTrainSpells != "free" && !ai->HasCheat(BotCheatMask::gold))
     {
         if (AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) < cost)

@@ -213,7 +213,7 @@ bool ReactionEngine::Update(uint32 elapsed, bool minimal, bool isStunned, bool& 
 
 bool ReactionEngine::ListenAndExecute(Action* action, Event& event)
 {
-    sLivingActivityCoordinator.ObserveAction(*ai, action->GetActivityEffects(), action->getName());
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, action->GetActivityEffects(), action->getName())) return false;
     PlayerbotAI::ScopedChatAction chatActionScope(ai, action->getName(), event);
     bool actionExecuted = false;
     if (actionExecutionListeners.Before(action, event))

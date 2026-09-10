@@ -7,6 +7,10 @@ namespace ai
     {
     public:
         GiveItemAction(PlayerbotAI* ai, std::string name, std::string item) : Action(ai, name), item(item) {}
+        LivingActivity::Effects GetActivityEffects() const override {
+            using namespace LivingActivity;
+            return {Mask(Effect::Inventory) | Mask(Effect::Spell) | Mask(Effect::Social), Lane::Managed, true};
+        }
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override { return GetTarget() && AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.lowMana; }
         virtual Unit* GetTarget() override;

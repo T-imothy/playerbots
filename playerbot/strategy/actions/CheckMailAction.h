@@ -9,6 +9,10 @@ namespace ai
     {
     public:
         CheckMailAction(PlayerbotAI* ai) : Action(ai, "check mail") {}
+        LivingActivity::Effects GetActivityEffects() const override {
+            using namespace LivingActivity;
+            return {Mask(Effect::Inventory) | Mask(Effect::Money) | Mask(Effect::Social), Lane::Managed, true};
+        }
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "check mail"; }

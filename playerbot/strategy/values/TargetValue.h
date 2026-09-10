@@ -58,6 +58,8 @@ namespace ai
     {
     public:
         RpgTargetValue(PlayerbotAI* ai, std::string name = "rpg target") : ManualSetValue<GuidPosition>(ai, GuidPosition(), name) {}
+        void Set(GuidPosition target) override;
+        void Reset() override { Set(defaultValue); }
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "rpg target"; } //Must equal iternal name
         virtual std::string GetHelpTypeName() { return "rpg"; }
@@ -74,7 +76,9 @@ namespace ai
     class TravelTargetValue : public ManualSetValue<TravelTarget*>
     {
     public:
-        TravelTargetValue(PlayerbotAI* ai, std::string name = "travel target") : ManualSetValue<TravelTarget*>(ai, new TravelTarget(ai), name) {}
+        TravelTargetValue(PlayerbotAI* ai, std::string name = "travel target") : ManualSetValue<TravelTarget*>(ai, new TravelTarget(ai), name) { value->activityBound = true; }
+        void Set(TravelTarget* target) override;
+        void Reset() override { Set(defaultValue); }
         virtual ~TravelTargetValue() override { delete value; }
     };	
 

@@ -7,6 +7,10 @@ namespace ai
     {
     public:
         TradeAction(PlayerbotAI* ai) : ChatCommandAction(ai, "trade") {}
+        LivingActivity::Effects GetActivityEffects() const override {
+            using namespace LivingActivity;
+            return {Mask(Effect::Inventory) | Mask(Effect::Money) | Mask(Effect::Social), Lane::Managed, true};
+        }
         virtual bool Execute(Event& event) override;
 
     private:

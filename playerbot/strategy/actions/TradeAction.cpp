@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/LivingActivityCoordinator.h"
 #include "TradeAction.h"
 #include "playerbot/PlayerbotActionBroker.h"
 #include "playerbot/strategy/ItemVisitors.h"
@@ -89,6 +90,7 @@ bool TradeAction::Execute(Event& event)
 
 bool TradeAction::TradeItem(const Item& item, int8 slot)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) return false;
     int8 tradeSlot = -1;
     Item* itemPtr = const_cast<Item*>(&item);
 

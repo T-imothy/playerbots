@@ -694,7 +694,7 @@ Action* Engine::InitializeAction(ActionNode* actionNode)
 
 bool Engine::ListenAndExecute(Action* action, Event& event)
 {
-    sLivingActivityCoordinator.ObserveAction(*ai, action->GetActivityEffects(), action->getName());
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, action->GetActivityEffects(), action->getName())) return false;
     if(state==BotState::BOT_STATE_NON_COMBAT &&
         !sPlayerbotOrganicEconomy.AllowsServiceAction(ai->GetBot()->GetGUIDLow(),action->getName())) return false;
     if(state==BotState::BOT_STATE_NON_COMBAT &&

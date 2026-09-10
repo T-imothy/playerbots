@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/LivingActivityCoordinator.h"
 #include "playerbot/PlayerbotServiceTracking.h"
 #include "BankAction.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
@@ -40,6 +41,7 @@ namespace
 
 bool BankAction::WithdrawForRecipe(uint32 entry, uint32 targetCount, std::string& blocker)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) { blocker = "activity_authority_wait"; return false; }
     blocker = "recipe_banker_out_of_range";
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() ||
         bot->GetTransport() || bot->IsBeingTeleported()) return false;
@@ -155,6 +157,7 @@ bool BankAction::ExecuteCommand(Player* requester, const std::string& text, Unit
 
 bool BankAction::Withdraw(Player* requester, const uint32 itemid)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) return false;
     Item* pItem = FindItemInBank(itemid);
     if (!pItem)
         return false;
@@ -197,6 +200,7 @@ bool BankAction::Withdraw(Player* requester, const uint32 itemid)
 
 bool BankAction::Deposit(Player* requester, Item* pItem)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) return false;
     std::ostringstream out;
 
     const ItemPrototype* proto = pItem ? pItem->GetProto() : nullptr;
@@ -319,6 +323,7 @@ Item* BankAction::FindItemInBank(uint32 ItemId)
 
 bool BankAction::AutoDeposit()
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) return false;
     bool deposited = false;
     ResetBankActionItemCaches(ai, "all", "all");
 
@@ -373,6 +378,7 @@ bool BankAction::AutoDeposit()
 
 bool BankAction::AutoWithdraw()
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) return false;
     bool withdrew = false;
     ResetBankActionItemCaches(ai, "all", "all");
 

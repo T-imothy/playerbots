@@ -1,6 +1,7 @@
 #include "playerbot/TravelMgr.h"
 #include "LivingTravelRegion.h"
 #include "PlayerbotRendezvousManager.h"
+#include "LivingActivityCoordinator.h"
 #include <numeric>
 #include <iomanip>
 
@@ -876,7 +877,14 @@ TravelTarget::TravelTarget(PlayerbotAI* ai) : AiObject(ai)
     SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
 }
 
+bool TravelTarget::AllowActivityMutation() const {
+    return !activityBound || sLivingActivityCoordinator.PermitEffects(*ai,
+        {LivingActivity::Mask(LivingActivity::Effect::TravelTarget), LivingActivity::Lane::Managed, true},
+        "native travel target mutation");
+}
+
 void TravelTarget::SetTarget(TravelDestination* tDestination1, WorldPosition* wPosition1) {
+    if (!AllowActivityMutation()) return;
     if (dynamic_cast<TemporaryTravelDestination*>(tDestination) && tDestination1 != tDestination)
         delete tDestination;
 
@@ -887,6 +895,7 @@ void TravelTarget::SetTarget(TravelDestination* tDestination1, WorldPosition* wP
 }
 
 void TravelTarget::CopyTarget(TravelTarget* const target) {
+    if (!AllowActivityMutation()) return;
     SetTarget(target->tDestination, target->wPosition);
     groupMember = target->groupMember;
     forced = target->forced;
@@ -895,6 +904,7 @@ void TravelTarget::CopyTarget(TravelTarget* const target) {
 }
 
 void TravelTarget::SetStatus(TravelStatus status) {
+    if (!AllowActivityMutation()) return;
     m_status = status;
     startTime = WorldTimer::getMSTime();
 

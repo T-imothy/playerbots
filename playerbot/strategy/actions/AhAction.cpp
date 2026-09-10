@@ -1,6 +1,7 @@
 #include "playerbot/LivingAuctionBid.h"
 
 #include "playerbot/playerbot.h"
+#include "playerbot/LivingActivityCoordinator.h"
 #include "playerbot/PlayerbotAuctionEligibility.h"
 #include "playerbot/PlayerbotServiceTracking.h"
 #include "AhAction.h"
@@ -186,6 +187,7 @@ bool AhBidAction::HasMaterialOffer(Player* bot, uint32 entry, uint32 maximumCoun
 
 bool AhBidAction::CollectRecipeMaterial(uint32 entry, std::string& blocker)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) { blocker = "activity_authority_wait"; return false; }
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() ||
         bot->GetTransport() || bot->IsBeingTeleported() || bot->GetMap()->IsDungeon())
     { blocker = "recipe_mail_collection_unsafe"; return false; }
@@ -226,6 +228,7 @@ bool AhBidAction::CollectRecipeMaterial(uint32 entry, std::string& blocker)
 
 bool AhBidAction::BuyRecipeMaterial(uint32 entry, uint32 requiredCount, std::string& blocker)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) { blocker = "activity_authority_wait"; return false; }
     blocker = "recipe_purchase_unsafe";
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() || bot->IsTaxiFlying() ||
         bot->GetTransport() || bot->IsBeingTeleported() || bot->GetMap()->IsDungeon()) return false;
@@ -732,6 +735,7 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
 
 bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price, Unit* auctioneer, bool isBuyout, std::string reason, bool quiet)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native service mutation")) return false;
     AuctionHouseEntry const* auctionHouseEntry = bot->GetSession()->GetCheckedAuctionHouseForAuctioneer(auctioneer->GetObjectGuid());
     if (!auctionHouseEntry)
         return false;

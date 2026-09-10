@@ -8,6 +8,7 @@
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotRendezvousManager.h"
+#include "playerbot/LivingActivityCoordinator.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/Stances.h"
@@ -1113,6 +1114,7 @@ Unit* MovementAction::GetMover(Player* bot)
 
 bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native move to")) return false;
     if (!endPos.isValid())
         return false;
 
@@ -1509,6 +1511,7 @@ void MovementAction::UpdateMovementState()
 
 bool MovementAction::Follow(Unit* target, float distance, float angle)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native follow")) return false;
     if (!ai->IsSafe(target))
         return MoveTo2(target);
 
@@ -1769,6 +1772,7 @@ WorldPosition CalculatePerpendicularPoint(const WorldPosition& A, const WorldPos
 
 bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native chase")) return false;
     if (!ai->CanMove())
     {
         return false;
@@ -2000,6 +2004,7 @@ void MovementAction::WaitForReach(const Movement::PointsArray& path)
 
 bool MovementAction::Flee(Unit *target)
 {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai, GetActivityEffects(), "native flee")) return false;
     Player* master = GetMaster();
     if (!target)
         target = master;

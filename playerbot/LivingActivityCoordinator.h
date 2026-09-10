@@ -18,6 +18,9 @@ public:
     // Map-worker entry point: bounded immutable diagnostics only. Does not read
     // the coordinator's task/lease maps and never authorizes a native effect.
     void ObserveAction(PlayerbotAI& ai, const LivingActivity::Effects& effects, const std::string& action);
+    // The same boundary serves engine calls and direct native mutations. Until
+    // the cutover gate is accepted it records decisions without rejecting work.
+    bool PermitEffects(PlayerbotAI& ai, const LivingActivity::Effects& effects, const std::string& origin);
     enum class LeaseBoundary { Acquire, Renew, Release };
     void ObserveLeaseBoundary(uint32_t guid, LeaseBoundary boundary);
     // Transitional callers keep exact job handles while their executors are

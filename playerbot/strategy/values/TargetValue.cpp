@@ -1,6 +1,8 @@
 
 #include "playerbot/playerbot.h"
 #include "TargetValue.h"
+#include "RpgValues.h"
+#include "playerbot/LivingActivityCoordinator.h"
 
 #include "playerbot/ServerFacade.h"
 #include "RtiTargetValue.h"
@@ -9,6 +11,26 @@
 #include "playerbot/strategy/values/Formations.h"
 
 using namespace ai;
+
+void NextRpgActionValue::Set(std::string next) {
+    if (sLivingActivityCoordinator.PermitEffects(*ai,
+        {LivingActivity::Mask(LivingActivity::Effect::TravelTarget), LivingActivity::Lane::Managed, true},
+        "native next rpg action mutation")) value = std::move(next);
+}
+
+void RpgTargetValue::Set(GuidPosition target) {
+    if (sLivingActivityCoordinator.PermitEffects(*ai,
+        {LivingActivity::Mask(LivingActivity::Effect::TravelTarget), LivingActivity::Lane::Managed, true},
+        "native rpg target mutation")) value = target;
+}
+
+void TravelTargetValue::Set(TravelTarget* target) {
+    if (!sLivingActivityCoordinator.PermitEffects(*ai,
+        {LivingActivity::Mask(LivingActivity::Effect::TravelTarget), LivingActivity::Lane::Managed, true},
+        "native travel target replacement")) return;
+    if (target) target->activityBound = true;
+    value = target;
+}
 
 Unit* TargetValue::FindTarget(FindTargetStrategy* strategy)
 {

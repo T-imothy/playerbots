@@ -24,6 +24,8 @@ int main() {
     action.revision = task.revision; action.ownerGeneration = lease.lease.generation;
     action.origin = "service_adapter"; action.permittedEffects = Mask(Effect::Movement);
     assert(reader.Check(movement, task.context, 200, &task, &action) == AuthorityCode::Allowed);
+    auto revokedPolicy = task.context; ++revokedPolicy.policyRevision;
+    assert(reader.Check(movement, revokedPolicy, 200, &task, &action) == AuthorityCode::StaleContext);
     assert(reader.Check(movement, task.context, 200, &task, &action, nullptr, uint32_t(Safety::Combat)) == AuthorityCode::SafetyPaused);
     assert(reader.Check(movement, task.context, 200, &task, &action, nullptr, uint32_t(Safety::Taxi)) == AuthorityCode::SafetyPaused);
     const auto heldOldView = reader.Inspect();
