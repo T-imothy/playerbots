@@ -42,6 +42,7 @@
 #include "Chat/ChannelMgr.h"
 #include "PlayerbotLLMInterface.h"
 #include "PlayerbotChatDirector.h"
+#include "PlayerbotRendezvousManager.h"
 
 #include <boost/algorithm/string.hpp>
 
@@ -2103,6 +2104,13 @@ void PlayerbotAI::DoNextAction(bool min)
         return;
     }
 
+    bool partyFreeTime = sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow());
+    if (partyFreeTime && master && master != bot)
+        SetMaster(nullptr);
+
+    // Clearing the master above must not reset the deliberately narrow
+    // settlement strategies before this action cycle executes.
+
     // if in combat but stuck with old data - clear targets
     if (currentEngine == engines[(uint8)BotState::BOT_STATE_NON_COMBAT] && sServerFacade.IsInCombat(bot))
     {
@@ -2143,8 +2151,11 @@ void PlayerbotAI::DoNextAction(bool min)
         ResetStrategies();
     }
 
+    // Party free time intentionally clears the human master so a bot can reach
+    // its scoped settlement destination. Do not immediately restore that
+    // master and its default follow/quest strategies on the next AI tick.
     // test BG master set
-    if ((!master || !HasActivePlayerMaster()) && group && !IsRealPlayer())
+    if ((!master || !HasActivePlayerMaster()) && group && !IsRealPlayer() && !partyFreeTime)
     {
         //Ideally we want to have the leader as master.
         Player* newMaster = GetGroupMaster();

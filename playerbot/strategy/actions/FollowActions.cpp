@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "FollowActions.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/PlayerbotRendezvousManager.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/Formations.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
@@ -12,6 +13,10 @@ using namespace ai;
 
 bool FollowAction::Execute(Event& event)
 {
+    // Defend against a strategy-reset race between planning and execution.
+    if (sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow()))
+        return false;
+
     bool moved = false;
     Unit* followTarget = AI_VALUE(Unit*, "follow target");
     Formation* formation = AI_VALUE(Formation*, "formation");
@@ -35,6 +40,9 @@ bool FollowAction::Execute(Event& event)
 
 bool FollowAction::isUseful()
 {
+    if (sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow()))
+        return false;
+
     if (!ai->CanMove())
         return false;
 
