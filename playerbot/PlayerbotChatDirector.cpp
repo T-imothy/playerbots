@@ -5,6 +5,7 @@
 #include "PlayerbotActionBroker.h"
 #include "PlayerbotSocialActionBroker.h"
 #include "PlayerbotAIConfig.h"
+#include "PlayerbotOrganicEconomy.h"
 #include "PlayerbotChatJson.h"
 #include "PlayerbotLLMInterface.h"
 #include "PlayerbotRendezvousManager.h"
@@ -1560,7 +1561,7 @@ void PlayerbotChatDirector::Update()
     MaybeCreateAmbientEvent(now);
     MaybeCreateProactiveGroupEvent(now);
     MaybeReportBotHealth(now);
-    MaybeReportOrganicEconomy(now);
+    sPlayerbotOrganicEconomy.Update();
     sPlayerbotActionBroker.Update();
     sPlayerbotSocialActionBroker.Update();
 
