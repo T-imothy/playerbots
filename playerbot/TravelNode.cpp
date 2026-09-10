@@ -1571,7 +1571,6 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
                     childNode->m_f = childNode->m_g + childNode->m_h;
 
                     open.push_back(childNode);
-                    std::push_heap(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
                     childNode->open = true;
                     portNodes.push_back(portNode);
                 }
@@ -1623,7 +1622,6 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
             childNode->m_f = childNode->m_g + childNode->m_h;
 
             open.push_back(childNode);
-            std::push_heap(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
             childNode->open = true;
             portNodes.push_back(portNode);
         }
@@ -1635,19 +1633,17 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
         return TravelNodeRoute();
     }
 
-    std::make_heap(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
-
     open.push_back(startStub);
-    std::push_heap(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
     startStub->open = true;
 
     while (!open.empty())
     {
-        std::sort(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
-
-        currentNode = open.front(); // pop n node from open for which f is minimal
-
-        std::pop_heap(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
+        // Costs can decrease while a node is open. Select using current costs
+        // and remove that exact node without relying on a stale heap order.
+        auto selected = std::min_element(open.begin(), open.end(),
+            [](TravelNodeStub* i, TravelNodeStub* j) { return i->m_f < j->m_f; });
+        currentNode = *selected;
+        *selected = open.back();
         open.pop_back();
         currentNode->open = false;
 
@@ -1707,7 +1703,6 @@ TravelNodeRoute TravelNodeMap::getRoute(TravelNode* start, TravelNode* goal, Uni
             if (!childNode->open)
             {
                 open.push_back(childNode);
-                std::push_heap(open.begin(), open.end(), [](TravelNodeStub* i, TravelNodeStub* j) {return i->m_f < j->m_f; });
                 childNode->open = true;
             }
         }
@@ -1901,7 +1896,8 @@ TravelPath TravelNodeMap::getFullPath(WorldPosition startPos, WorldPosition endP
     //[[Node pathfinding system]]
                 //We try to find nodes near the bot and near the end position that have a route between them.
                 //Then bot has to move towards/along the route.
-    sTravelNodeMap.m_nMapMtx.lock_shared();
+    // Failed routes and exceptions must release the map lock too.
+    std::shared_lock<std::shared_timed_mutex> routeLock(sTravelNodeMap.m_nMapMtx);
 
     //Find the route of nodes starting at a node closest to the start position and ending at a node closest to the endposition.
     //Also returns longPath: The path from the start position to the first node in the route.
@@ -1916,8 +1912,6 @@ TravelPath TravelNodeMap::getFullPath(WorldPosition startPos, WorldPosition endP
     movePath = route.buildPath(beginPath, endPath);
 
     route.cleanTempNodes();
-
-    sTravelNodeMap.m_nMapMtx.unlock_shared();
 
     return movePath;
 }
