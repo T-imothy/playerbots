@@ -3604,7 +3604,11 @@ void PlayerbotChatDirector::SendGuildAddonSnapshot(Player* source, Player* recei
     auto scheduled = CharacterDatabase.PQuery(
         "SELECT event_id,scheduled_at,state,event_type,title,minimum_members,maximum_members,tank_slots,healer_slots,damage_slots,"
         "IFNULL(ends_at,0),organizer_guid,details FROM guild_society_event WHERE guild_id=%u "
-        "AND scheduled_at BETWEEN %u AND %u ORDER BY scheduled_at LIMIT 40",
+        // Bound the snapshot without letting old terminal records starve live events.
+        "AND scheduled_at BETWEEN %u AND %u "
+        "ORDER BY state IN ('completed','cancelled','failed'), "
+        "CASE WHEN state NOT IN ('completed','cancelled','failed') THEN scheduled_at END ASC, "
+        "scheduled_at DESC,event_id LIMIT 40",
         guild->GetId(), nowEpoch > 30 * DAY ? nowEpoch - 30 * DAY : 0, nowEpoch + 370 * DAY);
     if (scheduled)
     {
@@ -3642,7 +3646,11 @@ void PlayerbotChatDirector::SendGuildAddonSnapshot(Player* source, Player* recei
     auto rsvps = CharacterDatabase.PQuery(
         "SELECT r.event_id,c.name,r.response,r.role FROM guild_society_rsvp r "
         "JOIN guild_society_event e ON e.event_id=r.event_id JOIN characters c ON c.guid=r.character_guid "
-        "WHERE e.guild_id=%u ORDER BY e.scheduled_at,r.response,c.name LIMIT 120", guild->GetId());
+        "WHERE e.guild_id=%u AND e.scheduled_at BETWEEN %u AND %u "
+        "ORDER BY e.state IN ('completed','cancelled','failed'), "
+        "CASE WHEN e.state NOT IN ('completed','cancelled','failed') THEN e.scheduled_at END ASC, "
+        "e.scheduled_at DESC,e.event_id,r.response,c.name LIMIT 200", guild->GetId(),
+        nowEpoch > 30 * DAY ? nowEpoch - 30 * DAY : 0, nowEpoch + 370 * DAY);
     if (rsvps)
     {
         do
