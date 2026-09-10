@@ -33,6 +33,7 @@ namespace LivingActivity
     const char* Name(Mode value);
     bool ParsePhase(const std::string& value, Phase& result);
     bool ParseKind(const std::string& value, Kind& result);
+    Kind LegacyEconomyKind(const std::string& goalType);
     bool IsUuid(const std::string& value);
     bool IsToken(const std::string& value, size_t limit = 64, bool empty = false);
     bool Terminal(Phase phase);

@@ -115,5 +115,13 @@ int main() {
     auto completed = finished; completed.phase = Phase::Completed; ++completed.revision;
     assert(db.Write(TaskWrite(completed, finished.revision, "ff2efbdf-f0ec-4539-b840-299847970c07", "fixture_completed")));
     assert(db.Scalar("SELECT phase FROM living_activity_task") == "completed");
+    auto mistaken = task;
+    mistaken.id = mistaken.root = "637bd562-36d2-5b01-bc01-e2d831c49f39";
+    mistaken.sourceKey = "99"; mistaken.kind = Kind::Profession;
+    assert(db.Write(TaskWrite(mistaken, 0, "ff2efbdf-f0ec-4539-b840-299847970c08", "legacy_observed")));
+    auto corrected = AfterRestart(mistaken, 800000); corrected.kind = Kind::Progression;
+    assert(!db.Write(TaskWrite(corrected, 1, "ff2efbdf-f0ec-4539-b840-299847970c09", "restart_revalidation")));
+    assert(db.Write(TaskWrite(corrected, 1, "ff2efbdf-f0ec-4539-b840-299847970c09", "observation_reclassified")));
+    assert(db.Scalar("SELECT COUNT(*) FROM living_activity_task WHERE kind='progression'") == "1");
     std::cout << "PASS: real MariaDB atomic task/outbox and intent/outcome journals, duplicate/stale requests, transaction rollback, uncertain restart, immutable receipts, shadow completion guard (fixture metadata, NOT native gameplay proof)\n";
 }

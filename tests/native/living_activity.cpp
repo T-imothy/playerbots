@@ -15,6 +15,10 @@ Task Sample() {
 int main() {
     Task task = Sample(); std::string error;
     assert(Validate(task, error));
+    assert(LegacyEconomyKind("equipment_upgrade") == Kind::Progression);
+    assert(LegacyEconomyKind("profession_skill_up") == Kind::Profession);
+    assert(LegacyEconomyKind("storage_pressure") == Kind::Maintenance);
+    assert(LegacyEconomyKind("unknown") == Kind::CollectionReconciliation);
     assert(!IsUuid("not-a-task")); assert(!IsUuid("00000000-0000-0000-0000-000000000000"));
     assert(IsUuid(Id)); assert(!IsToken("go; drop table", 64));
     assert(!CanTransition(task, Phase::Completed, {true, false, Receipt}));

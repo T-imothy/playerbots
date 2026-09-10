@@ -33,6 +33,13 @@ namespace LivingActivity
     }
     bool ParsePhase(const std::string& value, Phase& result) { return Parse(value, phases, result); }
     bool ParseKind(const std::string& value, Kind& result) { return Parse(value, kinds, result); }
+    Kind LegacyEconomyKind(const std::string& type) {
+        if (type == "profession_skill_up") return Kind::Profession;
+        if (type == "equipment_upgrade") return Kind::Progression;
+        if (type == "storage_pressure" || type == "maintain_supplies" || type == "list_surplus" ||
+            type == "profession_advertisement") return Kind::Maintenance;
+        return Kind::CollectionReconciliation;
+    }
     bool IsUuid(const std::string& value) {
         if (value.size() != 36) return false;
         for (size_t i = 0; i < value.size(); ++i) {
@@ -186,7 +193,8 @@ namespace LivingActivity
                 " AND revision=" + Number(expected) + " AND actor_guid=" + Number(task.actor) +
                 " AND source=" + SqlValue(task.source) + " AND source_key=" + SqlValue(task.sourceKey) +
                 " AND root_task_id=" + SqlValue(task.root) + " AND parent_task_id=" + SqlValue(task.parent) +
-                " AND kind=" + SqlValue(Name(task.kind)) + " AND phase NOT IN ('completed','failed','cancelled')" +
+                (code == "observation_reclassified" ? "" : " AND kind=" + SqlValue(Name(task.kind))) +
+                " AND phase NOT IN ('completed','failed','cancelled')" +
                 " AND NOT EXISTS (SELECT 1 FROM living_activity_transition WHERE transition_id=" + rid + ")");
         plan.statements.push_back("INSERT INTO living_activity_transition "
             "(transition_id,task_id,task_revision,actor_guid,phase,code,request_hash,occurred_at_ms) "
@@ -200,6 +208,13 @@ namespace LivingActivity
     }
     WritePlan TaskWrite(const Task& task, uint64_t expected, const std::string& receipt, const std::string& code) {
         auto plan = MakeTaskWrite(task, expected, receipt, code, "");
+        if (code == "observation_reclassified") {
+            if (!expected || task.mode != Mode::Observe || task.phase != Phase::Reconciling || task.source != "economy_goal")
+                throw std::invalid_argument("Only unexecuted shadow imports may be reclassified");
+            plan.statements.front() += " AND mode='observe' AND phase='reconciling' "
+                "AND NOT EXISTS (SELECT 1 FROM living_activity_operation o WHERE o.task_id=living_activity_task.task_id) "
+                "AND NOT EXISTS (SELECT 1 FROM living_activity_claim c WHERE c.task_id=living_activity_task.task_id)";
+        }
         if (expected && Terminal(task.phase)) {
             plan.statements.front() += " AND NOT EXISTS (SELECT 1 FROM living_activity_operation o "
                 "WHERE o.task_id=living_activity_task.task_id AND o.state IN ('intent','reconciling'))";

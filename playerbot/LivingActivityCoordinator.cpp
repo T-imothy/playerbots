@@ -275,7 +275,20 @@ struct LivingActivityCoordinator::State {
                 }
                 // Active tasks are never downgraded or executed by this observer.
                 if (task.mode == Mode::Active) { Remember(task); blocker = "active_task_requires_executor"; }
-                else Queue(AfterRestart(task, NowMs()), task.revision, "restart_revalidation");
+                else {
+                    auto resumed = AfterRestart(task, NowMs());
+                    std::string code = "restart_revalidation";
+                    if (task.source == "economy_goal") {
+                        boost::property_tree::ptree p; std::istringstream in(task.checkpoint.data);
+                        boost::property_tree::read_json(in, p);
+                        const Kind kind = LegacyEconomyKind(p.get<std::string>("goal_type", ""));
+                        if (kind != task.kind || task.priority != Priority::Progression) {
+                            resumed.kind = kind; resumed.priority = Priority::Progression;
+                            code = "observation_reclassified";
+                        }
+                    }
+                    Queue(std::move(resumed), task.revision, code);
+                }
                 loadCursor = row.id;
             } else {
                 task.source = row.source; task.sourceKey = row.key;
@@ -286,12 +299,10 @@ struct LivingActivityCoordinator::State {
                 if (row.family == 0) {
                     boost::property_tree::ptree p; std::istringstream in(row.payload);
                     boost::property_tree::read_json(in, p);
-                    const auto type = p.get<std::string>("goal_type", "");
-                    if (type == "profession_skill_up") task.kind = Kind::Profession;
-                    else if (type == "storage_pressure" || type == "maintain_supplies") task.kind = Kind::Maintenance;
-                    else if (type == "gear_upgrade") task.kind = Kind::Progression;
+                    task.kind = LegacyEconomyKind(p.get<std::string>("goal_type", ""));
                 }
-                task.priority = row.family == 3 ? Priority::Scheduled : Priority::Delivery;
+                task.priority = row.family == 3 ? Priority::Scheduled :
+                    row.family == 0 ? Priority::Progression : Priority::Delivery;
                 task.context.policyRevision = policyRevision;
                 task.createdAtMs = task.updatedAtMs = NowMs();
                 task.checkpoint.data = row.payload;
