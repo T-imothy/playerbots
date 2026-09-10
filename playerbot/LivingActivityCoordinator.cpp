@@ -1,4 +1,5 @@
 #include "botpch.h"
+#include "Database/DatabaseImpl.h"
 #include "LivingActivityCoordinator.h"
 #include "LivingActivity.h"
 #include "PlayerbotRendezvousManager.h"
