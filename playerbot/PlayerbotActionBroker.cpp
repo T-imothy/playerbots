@@ -226,6 +226,8 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
         WorldPacket packet(CMSG_INITIATE_TRADE);
         packet << player->GetObjectGuid();
         bot->GetSession()->HandleInitiateTradeOpcode(packet);
+        if (bot->GetTradeData() && bot->GetTrader() == player)
+            PopulateTrade(bot, player);
     }
     else if (proposal.delivery == "mail")
     {
@@ -236,14 +238,24 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
     else if (proposal.delivery == "meeting")
     {
         Transaction& active = transactions[transaction.transactionId];
-        if (MoveToMeetingPlayer(bot, player))
+        if (bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
         {
-            active.lastMeetingMove = std::chrono::steady_clock::now();
-            bot->Whisper("I'm heading to you in " + MeetingPlayerLocation(player) + ". I'll open trade when I arrive.",
-                LANG_UNIVERSAL, player->GetObjectGuid());
+            active.state = "offered";
+            WorldPacket packet(CMSG_INITIATE_TRADE);
+            packet << player->GetObjectGuid();
+            bot->GetSession()->HandleInitiateTradeOpcode(packet);
+            Report(active);
+            if (bot->GetTradeData() && bot->GetTrader() == player)
+                PopulateTrade(bot, player);
         }
         else
-            bot->Whisper("I can't head over right now. I'll hold the item for a few minutes.", LANG_UNIVERSAL, player->GetObjectGuid());
+        {
+            if (MoveToMeetingPlayer(bot, player))
+                active.lastMeetingMove = std::chrono::steady_clock::now();
+            else
+                bot->Whisper("I can't head over right now. I'll hold the item for a few minutes.",
+                    LANG_UNIVERSAL, player->GetObjectGuid());
+        }
     }
     return true;
 }
@@ -256,7 +268,7 @@ bool PlayerbotActionBroker::Authorizes(Player* bot, Player* trader) const
 bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
 {
     Transaction* transaction = bot && trader ? Find(bot->GetGUIDLow(), trader->GetGUIDLow()) : nullptr;
-    if (!transaction || !bot->GetTradeData())
+    if (!transaction || !bot->GetTradeData() || bot->GetTrader() != trader)
         return false;
     if (transaction->type == "buy_item")
     {
@@ -268,10 +280,16 @@ bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
         WorldPacket gold(CMSG_SET_TRADE_GOLD, 4);
         gold << transaction->priceCopper;
         bot->GetSession()->HandleSetTradeGoldOpcode(gold);
+        if (!bot->GetTradeData() || bot->GetTradeData()->GetMoney() != transaction->priceCopper)
+            return false;
         transaction->state = "trading";
+        transaction->failureReason.clear();
         Report(*transaction);
         return true;
     }
+    Item* offered = bot->GetTradeData()->GetItem((TradeSlots)0);
+    if (offered && offered->GetGUIDLow() == transaction->itemGuid && offered->GetCount() == transaction->quantity)
+        return true;
     Item* item = FindBrokerItem(bot, transaction->itemEntry, transaction->itemGuid);
     if (!item || item->GetCount() != transaction->quantity || !item->CanBeTraded())
     {
@@ -281,7 +299,12 @@ bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
     WorldPacket packet(CMSG_SET_TRADE_ITEM, 3);
     packet << (uint8)0 << (uint8)item->GetBagSlot() << (uint8)item->GetSlot();
     bot->GetSession()->HandleSetTradeItemOpcode(packet);
+    offered = bot->GetTradeData() ? bot->GetTradeData()->GetItem((TradeSlots)0) : nullptr;
+    if (!offered || offered->GetGUIDLow() != transaction->itemGuid || offered->GetCount() != transaction->quantity)
+        return false;
+
     transaction->state = "trading";
+    transaction->failureReason.clear();
     Report(*transaction);
     return true;
 }
@@ -482,8 +505,10 @@ void PlayerbotActionBroker::Update()
             packet << player->GetObjectGuid();
             bot->GetSession()->HandleInitiateTradeOpcode(packet);
             Report(transaction);
+            if (bot->GetTradeData() && bot->GetTrader() == player)
+                PopulateTrade(bot, player);
         }
-        if (transaction.state == "offered" && bot->GetTrader() == player && bot->GetTradeData())
+        if (transaction.state == "offered" && bot->GetTradeData() && bot->GetTrader() == player)
             PopulateTrade(bot, player);
         if ((transaction.state == "mail_travel" || transaction.state == "meeting" || transaction.state == "offered" || transaction.state == "trading") && now >= transaction.expires)
         {
