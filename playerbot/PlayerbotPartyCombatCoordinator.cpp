@@ -799,7 +799,12 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
             for (Group::MemberSlotList::const_iterator i = slots.begin(); i != slots.end(); ++i)
                 if (Player* member = sObjectAccessor.FindPlayer(i->guid))
                 {
-                    if (!member->IsAlive() || !member->GetMaxHealth()) continue;
+                    // A wounded remote member awaiting rendezvous must not
+                    // hold the healer's damage indefinitely while unreachable.
+                    if (!member->IsInWorld() || !member->IsAlive() || !member->GetMaxHealth() ||
+                        member->GetMapId() != bot->GetMapId() ||
+                        member->GetInstanceId() != bot->GetInstanceId() ||
+                        !bot->IsWithinDistInMap(member, 40.0f)) continue;
                     uint32 health = member->GetHealth() * 100 / member->GetMaxHealth();
                     emergency = emergency || health <= policy.emergencyHealthPercent;
                     const bool isTank = member->GetObjectGuid() == state->tank;
@@ -817,6 +822,11 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
                 bot->getClass() == CLASS_SHAMAN || bot->getClass() == CLASS_PRIEST;
             if (casterHealer && target && !bot->CanAssist(target))
             {
+                // Earth Shock adds substantial threat. Keep it for interrupting
+                // a cast; use Lightning Bolt for routine healer damage.
+                if (bot->getClass() == CLASS_SHAMAN && actionName == "earth shock" &&
+                    !target->IsNonMeleeSpellCasted(false))
+                    return 0.0f;
                 const uint32 maximumMana = bot->GetMaxPower(POWER_MANA);
                 const uint32 manaPercent = maximumMana ?
                     bot->GetPower(POWER_MANA) * 100 / maximumMana : 0;

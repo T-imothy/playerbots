@@ -1030,7 +1030,7 @@ void PlayerbotAI::UpdateTalentSpec(PlayerTalentSpec spec)
         }
         else
         {
-            talentsTab = AiFactory::GetPlayerSpecTab(bot);
+            talentsTab = AiFactory::GetPlayerBuildTab(bot);
         }
 
         spec = PlayerTalentSpec(((bot->getClass() * 3) - 2) + talentsTab);

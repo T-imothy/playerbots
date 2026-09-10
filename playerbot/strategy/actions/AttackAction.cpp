@@ -68,12 +68,14 @@ bool AttackRTITargetAction::Execute(Event& event)
 
 bool AttackMyTargetAction::isUseful()
 {
-    return !ai->ContainsStrategy(STRATEGY_TYPE_HEAL) || ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT);
+    return !ai->ContainsStrategy(STRATEGY_TYPE_HEAL) || ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("living party healer offdps", BotState::BOT_STATE_COMBAT);
 }
 
 bool AttackRTITargetAction::isUseful()
 {
-    return !ai->ContainsStrategy(STRATEGY_TYPE_HEAL) || ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT);
+    return !ai->ContainsStrategy(STRATEGY_TYPE_HEAL) || ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT) ||
+        ai->HasStrategy("living party healer offdps", BotState::BOT_STATE_COMBAT);
 }
 
 bool AttackAction::Attack(Player* requester, Unit* target)
@@ -202,7 +204,16 @@ bool AttackAction::Attack(Player* requester, Unit* target)
             }
 
             ai->PlayAttackEmote(1);
-            result = bot->Attack(target, !ai->IsRanged(bot) || (sServerFacade.GetDistance2d(bot, target) < 5.0f));
+            bool meleeAttack = !ai->IsRanged(bot) || (sServerFacade.GetDistance2d(bot, target) < 5.0f);
+            if (sPlayerbotPartyCombatCoordinator.IsActiveMixedParty(bot) &&
+                sPlayerbotPartyCombatCoordinator.GetPolicy().roleAwareTactics &&
+                sPlayerbotPartyCombatCoordinator.GetRole(bot).primary == LivingPartyRole::Healer &&
+                (bot->getClass() == CLASS_DRUID || bot->getClass() == CLASS_SHAMAN ||
+                    bot->getClass() == CLASS_PRIEST) && bot->GetMaxPower(POWER_MANA) &&
+                bot->GetPower(POWER_MANA) * 100 / bot->GetMaxPower(POWER_MANA) >
+                    sPlayerbotPartyCombatCoordinator.GetPolicy().manaReservePercent)
+                meleeAttack = false;
+            result = bot->Attack(target, meleeAttack);
         }
 
         if (result)

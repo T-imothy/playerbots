@@ -49,6 +49,22 @@ AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* a
     return new AiObjectContext(ai);
 }
 
+int AiFactory::GetPlayerBuildTab(Player* bot)
+{
+    // Early points in a leveling path can be in a supporting tree. Strategy
+    // selection follows the applied premade build; inspection still reports
+    // the actual spent talents through GetPlayerSpecTab/GetPlayerSpecTabs.
+    if (bot && bot->GetPlayerbotAI() && bot->GetLevel() >= 10)
+    {
+        const uint32 specNo = sRandomPlayerbotMgr.GetValue(bot->GetGUIDLow(), "specNo");
+        if (specNo)
+            for (TalentPath& path : sPlayerbotAIConfig.classSpecs[bot->getClass()].talentPath)
+                if (path.id == specNo - 1 && !path.talentSpec.empty())
+                    return path.talentSpec.back().highestTree();
+    }
+    return GetPlayerSpecTab(bot);
+}
+
 int AiFactory::GetPlayerSpecTab(const Player* bot)
 {
     std::map<uint32, int32> tabs = GetPlayerSpecTabs(bot);
@@ -291,7 +307,7 @@ BotRoles AiFactory::GetPlayerRoles(const Player* player)
 
 void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const facade, Engine* combatEngine)
 {
-    int tab = GetPlayerSpecTab(player);
+    int tab = GetPlayerBuildTab(player);
 
     combatEngine->addStrategies("mount", NULL);
     combatEngine->addStrategy("avoid mobs");
@@ -691,7 +707,7 @@ Engine* AiFactory::createCombatEngine(Player* player, PlayerbotAI* const facade,
 
 void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const facade, Engine* nonCombatEngine)
 {
-    const int tab = GetPlayerSpecTab(player);
+    const int tab = GetPlayerBuildTab(player);
     switch (player->getClass())
     {
         case CLASS_PRIEST:
@@ -1124,7 +1140,7 @@ void AiFactory::AddDefaultDeadStrategies(Player* player, PlayerbotAI* const faca
         deadEngine->removeStrategy("follow");
     }
 
-    const int tab = GetPlayerSpecTab(player);
+    const int tab = GetPlayerBuildTab(player);
     switch (player->getClass())
     {
         case CLASS_SHAMAN:
@@ -1318,7 +1334,7 @@ void AiFactory::AddDefaultReactionStrategies(Player* player, PlayerbotAI* const 
 {
     reactionEngine->addStrategies("react", "chat", "avoid aoe", "avoid specific creatures", "potions", "dungeon", NULL);
 
-    const int tab = GetPlayerSpecTab(player);
+    const int tab = GetPlayerBuildTab(player);
     switch (player->getClass())
     {
         case CLASS_SHAMAN:

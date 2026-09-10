@@ -28,6 +28,7 @@ public:
 
 public:
     static int GetPlayerSpecTab(const Player* player);
+    static int GetPlayerBuildTab(Player* player);
     static std::map<uint32, int32> GetPlayerSpecTabs(const Player* player);
     static BotRoles GetPlayerRoles(uint8 cls, uint8 specTab);
     static BotRoles GetPlayerRoles(const Player* player);
