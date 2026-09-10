@@ -95,7 +95,7 @@ namespace ai
         bool IsPathUsableForRole(Player* bot, uint32 pathId, uint32 roleMask = 0) const;
         LivingGearScores Evaluate(Player* bot, ItemPrototype const* proto);
         bool IsOffspecUpgrade(Player* bot, ItemPrototype const* proto, ItemPrototype const* comparison = NULL);
-        bool CanCarryOffspecItem(Player* bot, ItemPrototype const* proto);
+        bool CanCarryOffspecItem(Player* bot, ItemPrototype const* proto, bool acquiring = true);
         uint8 OffspecUpgradeThreshold(Player* bot);
         uint8 OffspecCarryLimit(Player* bot);
         std::vector<LivingGearDeficiency> GetGearingDeficiencies(Player* bot);

@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotBuildProfile.h"
 #include "playerbot/BuildWorldSafety.h"
+#include "playerbot/PlayerbotBankCapacity.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomItemMgr.h"
@@ -711,16 +712,23 @@ bool PlayerbotBuildProfileMgr::IsOffspecUpgrade(Player* bot, ItemPrototype const
     return !current || uint64(candidate) * 100 >= uint64(current) * (100 + OffspecUpgradeThreshold(bot));
 }
 
-bool PlayerbotBuildProfileMgr::CanCarryOffspecItem(Player* bot, ItemPrototype const* proto)
+bool PlayerbotBuildProfileMgr::CanCarryOffspecItem(Player* bot, ItemPrototype const* proto, bool acquiring)
 {
     if (!bot || !proto) return false;
     uint32 capacity = INVENTORY_SLOT_ITEM_END - INVENTORY_SLOT_ITEM_START, used = 0, offItems = 0;
+    bool carried = false;
+    auto countItem = [&](Item* item)
+    {
+        ++used;
+        carried |= item->GetEntry() == proto->ItemId;
+        // Every spare off-spec candidate uses the kit budget, including
+        // equipment that also scores well for the main spec.
+        if (IsOffspecUpgrade(bot, item->GetProto())) ++offItems;
+    };
     for (uint8 slot = INVENTORY_SLOT_ITEM_START; slot < INVENTORY_SLOT_ITEM_END; ++slot)
         if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
         {
-            ++used;
-            LivingGearScores existing = Evaluate(bot, item->GetProto());
-            if (existing.offScore > existing.mainScore) ++offItems;
+            countItem(item);
         }
     for (uint8 bag = INVENTORY_SLOT_BAG_START; bag < INVENTORY_SLOT_BAG_END; ++bag)
         if (Bag* container = (Bag*)bot->GetItemByPos(INVENTORY_SLOT_BAG_0, bag))
@@ -729,13 +737,11 @@ bool PlayerbotBuildProfileMgr::CanCarryOffspecItem(Player* bot, ItemPrototype co
             for (uint8 slot = 0; slot < container->GetBagSize(); ++slot)
                 if (Item* item = bot->GetItemByPos(bag, slot))
                 {
-                    ++used;
-                    LivingGearScores existing = Evaluate(bot, item->GetProto());
-                    if (existing.offScore > existing.mainScore) ++offItems;
+                    countItem(item);
                 }
         }
-    if (!capacity || capacity - used < minimumFreeBagSlots || used * 100 / capacity >= maximumOffspecBagUsagePercent) return false;
-    return offItems < OffspecCarryLimit(bot);
+    return PlayerbotBankCapacity::Fits(capacity, used, offItems, minimumFreeBagSlots,
+        maximumOffspecBagUsagePercent, OffspecCarryLimit(bot), acquiring || !carried);
 }
 
 std::vector<LivingGearDeficiency> PlayerbotBuildProfileMgr::GetGearingDeficiencies(Player* bot)

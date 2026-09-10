@@ -82,6 +82,7 @@ namespace ai
     public:
         ItemUsageValue(PlayerbotAI* ai, std::string name = "item usage") : CalculatedValue<ItemUsage>(ai, name), Qualified() {}
         virtual ItemUsage Calculate() override;
+        static ItemUsage ForBankWithdrawal(PlayerbotAI* ai, Item* item);
 
         static ItemUsage QueryItemUsageForEquip(ItemQualifier& itemQualifier, Player* bot);
         static uint32 GetSmallestBagSize(Player* bot);
@@ -92,6 +93,7 @@ namespace ai
         static uint32 ItemCreatedFrom(uint32 wantItemId);
         static bool IsNeededForQuest(Player* player, uint32 itemId, bool ignoreInventory = false);
     private:        
+        ItemUsage CalculateUsage(bool acquiringBankItem);
         bool IsItemNeededForSkill(ItemPrototype const* proto);
         bool IsItemUsefulForSkill(ItemPrototype const* proto);
         bool IsItemNeededForUsefullCraft(ItemPrototype const* proto, bool checkAllReagents);

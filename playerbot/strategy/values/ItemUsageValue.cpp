@@ -78,6 +78,19 @@ uint32 ItemQualifier::GemId(Item* item, uint8 gemSlot)
 
 ItemUsage ItemUsageValue::Calculate()
 {
+    return CalculateUsage(false);
+}
+
+ItemUsage ItemUsageValue::ForBankWithdrawal(PlayerbotAI* ai, Item* item)
+{
+    if (!item || !item->GetProto()) return ItemUsage::ITEM_USAGE_BANK;
+    ItemUsageValue value(ai);
+    value.Qualify(ItemQualifier(item).GetQualifier());
+    return value.CalculateUsage(true);
+}
+
+ItemUsage ItemUsageValue::CalculateUsage(bool acquiringBankItem)
+{
     ItemQualifier itemQualifier(qualifier, false);
     uint32 itemId = itemQualifier.GetId();
     if (!itemId)
@@ -313,7 +326,7 @@ ItemUsage ItemUsageValue::Calculate()
     // build has declined the item. Bag-pressure limits prevent vendor loops.
     if (sPlayerbotBuildProfiles.IsActive() && proto->InventoryType != INVTYPE_NON_EQUIP &&
         bot->CanUseItem(proto) == EQUIP_ERR_OK && sPlayerbotBuildProfiles.IsOffspecUpgrade(bot, proto))
-        return sPlayerbotBuildProfiles.CanCarryOffspecItem(bot, proto) ?
+        return sPlayerbotBuildProfiles.CanCarryOffspecItem(bot, proto, acquiringBankItem) ?
             ItemUsage::ITEM_USAGE_KEEP : ItemUsage::ITEM_USAGE_BANK;
 
 #ifdef MANGOSBOT_TWO

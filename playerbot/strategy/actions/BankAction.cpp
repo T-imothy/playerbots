@@ -20,16 +20,17 @@ namespace
         if (!context)
             return;
 
-        RESET_AI_VALUE(uint8,"bag space");
-        RESET_AI_VALUE2(uint32,"item count", itemId);
-        RESET_AI_VALUE2(uint32,"bank item count", itemId);
-        RESET_AI_VALUE2(ItemUsage,"item usage", itemQualifier);
-        RESET_AI_VALUE2(std::list<Item*>, "inventory items", itemQualifier);
-
-        if (!usageQualifier.empty())
+        // A move changes stock, usage classifications and pointer lists under
+        // many qualifiers (item links, IDs, ammo, food, usage BANK, etc.).
+        // Reset existing values without deleting values held by callers.
+        for (const std::string& name : context->GetValues())
         {
-            RESET_AI_VALUE2(uint32,"item count", usageQualifier);
-            RESET_AI_VALUE2(std::list<Item*>, "inventory items", usageQualifier);
+            const std::string base = name.substr(0, name.find("::"));
+            if (base == "bag space" || base == "bank space" || base == "item usage" ||
+                base == "item count" || base == "bank item count" ||
+                base == "inventory items" || base == "inventory item ids" || base == "bank items" ||
+                base == "should bank deposit" || base == "should bank withdraw")
+                if (UntypedValue* value = context->GetUntypedValue(name)) value->Reset();
         }
     }
 }
@@ -272,12 +273,16 @@ Item* BankAction::FindItemInBank(uint32 ItemId)
 bool BankAction::AutoDeposit()
 {
     bool deposited = false;
+    ResetBankActionItemCaches(ai, "all", "all");
 
     std::string itemusageQualifier = "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_BANK);
 
-    std::list<Item*> items = AI_VALUE2(std::list<Item*>, "inventory items", itemusageQualifier);
-    for (auto item : items)
+    std::vector<ObjectGuid> items;
+    for (Item* item : ai->InventoryParseItems("all", IterateItemsMask::ITERATE_ITEMS_IN_BAGS))
+        if (item) items.push_back(item->GetObjectGuid());
+    for (const ObjectGuid& guid : items)
     {
+        Item* item = bot->GetItemByGuid(guid);
         if (!item)
             continue;
 
@@ -288,11 +293,11 @@ bool BankAction::AutoDeposit()
         const std::string itemId = std::to_string(proto->ItemId);
         const std::string itemQualifier = ItemQualifier(item).GetQualifier();
 
-        // Don't bank items needed for guild orders
+        // Re-evaluate after every transfer; the original list is only a snapshot.
         ItemQualifier qualifier(item);
         std::string qualStr = qualifier.GetQualifier();
         ItemUsage currentUsage = AI_VALUE2(ItemUsage, "item usage", qualStr);
-        if (currentUsage == ItemUsage::ITEM_USAGE_GUILD_TASK)
+        if (currentUsage != ItemUsage::ITEM_USAGE_BANK)
             continue;
 
         ItemPosCountVec dest;
@@ -321,6 +326,7 @@ bool BankAction::AutoDeposit()
 bool BankAction::AutoWithdraw()
 {
     bool withdrew = false;
+    ResetBankActionItemCaches(ai, "all", "all");
 
     if (AI_VALUE(uint8, "bag space") > 80)
         return false;
@@ -337,7 +343,8 @@ bool BankAction::AutoWithdraw()
         const std::string itemId = std::to_string(proto->ItemId);
         const std::string itemQualifier = ItemQualifier(pItem).GetQualifier();
 
-        ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", itemId);
+        if (AI_VALUE(uint8, "bag space") > 80) return false;
+        ItemUsage usage = ItemUsageValue::ForBankWithdrawal(ai, pItem);
         if (usage == ItemUsage::ITEM_USAGE_BANK)
             return false;        
 
@@ -361,9 +368,12 @@ bool BankAction::AutoWithdraw()
         return verified;
     };
 
-    for (auto& item : AI_VALUE2(std::list<Item*>, "bank items", "all"))
+    std::vector<ObjectGuid> items;
+    for (Item* item : ai->InventoryParseItems("all", IterateItemsMask::ITERATE_ITEMS_IN_BANK))
+        if (item) items.push_back(item->GetObjectGuid());
+    for (const ObjectGuid& guid : items)
     {
-        if (checkAndWithdraw(item))
+        if (checkAndWithdraw(bot->GetItemByGuid(guid)))
             withdrew = true;
     }    
 

@@ -27,13 +27,12 @@ bool ShouldBankWithdrawValue::Calculate()
     if (AI_VALUE(uint8, "bag space") > 80)
         return false;
 
-    uint32 inBankCount = AI_VALUE2(uint32, "bank item count", "all");
-    uint32 stayInBankCount = AI_VALUE2(uint32, "bank item count", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_BANK));
-
-    if (inBankCount == stayInBankCount)
-        return false;    
-
-    return true;
+    // Use the same prospective decision as the action. An item already in
+    // the bags fitting the kit does not imply another copy will fit.
+    for (Item* item : ai->InventoryParseItems("all", IterateItemsMask::ITERATE_ITEMS_IN_BANK))
+        if (ItemUsageValue::ForBankWithdrawal(ai, item) != ItemUsage::ITEM_USAGE_BANK)
+            return true;
+    return false;
 }
 
 #ifndef MANGOSBOT_ZERO
