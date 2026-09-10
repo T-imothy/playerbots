@@ -278,6 +278,37 @@ std::string PlayerbotPartyCombatCoordinator::ApplyRoleTalents(Player* member, Li
     return freePoints == 0 ? "completed" : "talent_assignment_incomplete";
 }
 
+std::string PlayerbotPartyCombatCoordinator::ApplySpecialization(Player* member,
+    const std::string& specialization) const
+{
+    if (!member || !member->GetPlayerbotAI()) return "bot_required";
+    if (member->GetLevel() < 10) return "specialization_not_available_yet";
+    if (member->IsInCombat() || !member->IsAlive() || member->IsTaxiFlying() || member->InBattleGround() ||
+        (member->GetMap() && member->GetMap()->IsDungeon()))
+        return "respec_unsafe_now";
+
+    std::vector<std::string> available = ChangeTalentsAction::GetPremadeSpecializations(member->getClass());
+    if (std::find(available.begin(), available.end(), specialization) == available.end())
+        return "specialization_not_supported_by_class";
+
+    std::ostringstream details;
+    if (!ChangeTalentsAction::ApplyPremadeSpecialization(member, specialization, &details))
+        return "talent_assignment_incomplete";
+
+    PlayerbotAI* memberAi = member->GetPlayerbotAI();
+    memberAi->DoSpecificAction("auto learn spell");
+    memberAi->UpdateTalentSpec();
+    if (policy.roleStrategySync) memberAi->RequestStrategyReset(false);
+
+    // The stored premade specialization is now the durable gearing identity.
+    // RandomItemMgr derives item weights from this preference, while the role
+    // overlay follows the actual tree that was just applied.
+    const BotRoles roles = AiFactory::GetPlayerRoles(member);
+    sLog.outString("Living WoW exact specialization bot=%u name=%s specialization=%s roles=%u",
+        member->GetGUIDLow(), member->GetName(), specialization.c_str(), (uint32)roles);
+    return "completed";
+}
+
 bool PlayerbotPartyCombatCoordinator::RoleMatchesTalents(Player* member, LivingPartyRole role) const
 {
     if (!member || member->GetLevel() < 10 || role == LivingPartyRole::Auto) return true;
@@ -1003,7 +1034,8 @@ bool PlayerbotPartyCombatCoordinator::HandleAddonMessage(Player* receiverBot, Pl
 
 bool PlayerbotPartyCombatCoordinator::SupportsProposal(const std::string& type) const
 {
-    return type == "set_party_role" || type == "clear_party_role" || type == "set_puller" ||
+    return type == "set_party_role" || type == "set_party_specialization" ||
+        type == "clear_party_role" || type == "set_puller" ||
         type == "hold_attacks" || type == "resume_assist" || type == "set_tactical_rule" ||
         type == "assign_marker_manager" || type == "clear_tactical_rule";
 }
@@ -1044,7 +1076,7 @@ std::string PlayerbotPartyCombatCoordinator::ExecuteProposal(Player* bot, Player
         Player* p = FindMember(bot->GetGroup(), ObjectGuid(HIGHGUID_PLAYER, guid)); if (!p) return "member_not_found";
         for (std::vector<LivingPartyTacticalRule>::iterator rule = state->rules.begin(); rule != state->rules.end(); ++rule) rule->assignee = p->GetObjectGuid();
     }
-    else if (type == "set_party_role" || type == "clear_party_role")
+    else if (type == "set_party_role" || type == "clear_party_role" || type == "set_party_specialization")
     {
         std::vector<std::string> fields = Fields(std::string(capabilityRef.begin(), capabilityRef.end()));
         size_t first = capabilityRef.find(':'); size_t second = first == std::string::npos ? first : capabilityRef.find(':', first + 1);
@@ -1052,6 +1084,16 @@ std::string PlayerbotPartyCombatCoordinator::ExecuteProposal(Player* bot, Player
         uint32 guid = second == std::string::npos ? 0 : std::strtoul(capabilityRef.c_str() + second + 1, NULL, 10);
         Player* p = FindMember(bot->GetGroup(), ObjectGuid(HIGHGUID_PLAYER, guid)); if (!p) return "member_not_found";
         if (type == "clear_party_role") state->overrides.erase(p->GetObjectGuid());
+        else if (type == "set_party_specialization")
+        {
+            std::string specialization = third == std::string::npos ? "" : capabilityRef.substr(third + 1);
+            std::string outcome = ApplySpecialization(p, specialization);
+            if (outcome != "completed") return outcome;
+            BotRoles roles = AiFactory::GetPlayerRoles(p);
+            LivingPartyRole role = (roles & BOT_ROLE_TANK) ? LivingPartyRole::Tank :
+                (roles & BOT_ROLE_HEALER) ? LivingPartyRole::Healer : LivingPartyRole::Damage;
+            state->overrides[p->GetObjectGuid()] = role;
+        }
         else
         {
             std::string named = third == std::string::npos ? "damage" : capabilityRef.substr(third + 1);
@@ -1087,6 +1129,14 @@ std::string PlayerbotPartyCombatCoordinator::GetCandidateJson(Player* bot, Playe
                 const char* roles[] = {"tank", "healer", "damage"};
                 for (uint8 r = 0; r < 3; ++r) out << ",{\"type\":\"set_party_role\",\"capability_ref\":\"party:role:"
                     << member->GetGUIDLow() << ':' << roles[r] << "\",\"member\":\"" << Escape(member->GetName()) << "\"}";
+                if (member->GetPlayerbotAI() && member->GetLevel() >= 10)
+                {
+                    std::vector<std::string> specs = ChangeTalentsAction::GetPremadeSpecializations(member->getClass());
+                    for (const std::string& spec : specs)
+                        out << ",{\"type\":\"set_party_specialization\",\"capability_ref\":\"party:spec:"
+                            << member->GetGUIDLow() << ':' << spec << "\",\"member\":\""
+                            << Escape(member->GetName()) << "\",\"specialization\":\"" << spec << "\"}";
+                }
                 out << ",{\"type\":\"clear_party_role\",\"capability_ref\":\"party:role:" << member->GetGUIDLow()
                     << ":auto\",\"member\":\"" << Escape(member->GetName()) << "\"}"
                     << ",{\"type\":\"set_puller\",\"capability_ref\":\"party:puller:" << member->GetGUIDLow()

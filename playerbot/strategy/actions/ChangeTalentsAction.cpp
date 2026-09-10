@@ -181,6 +181,101 @@ bool ChangeTalentsAction::HasPremadeRole(uint8 cls, BotRoles role)
     return !getPremadePaths(cls, "", role).empty();
 }
 
+namespace
+{
+    std::vector<std::string> CanonicalSpecializations(uint8 cls)
+    {
+        switch (cls)
+        {
+            case CLASS_WARRIOR: return {"arms", "fury", "protection"};
+            case CLASS_PALADIN: return {"holy", "protection", "retribution"};
+            case CLASS_HUNTER: return {"beast_mastery", "marksmanship", "survival"};
+            case CLASS_ROGUE: return {"assassination", "combat", "subtlety"};
+            case CLASS_PRIEST: return {"discipline", "holy", "shadow"};
+            case CLASS_SHAMAN: return {"elemental", "enhancement", "restoration"};
+            case CLASS_MAGE: return {"arcane", "fire", "frost"};
+            case CLASS_WARLOCK: return {"affliction", "demonology", "destruction"};
+            case CLASS_DRUID: return {"balance", "feral", "restoration"};
+#ifdef MANGOSBOT_TWO
+            case CLASS_DEATH_KNIGHT: return {"blood", "frost", "unholy"};
+#endif
+            default: return {};
+        }
+    }
+
+    std::string NormalizeSpecialization(std::string name)
+    {
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+        std::replace(name.begin(), name.end(), ' ', '_');
+        if (name == "prot") return "protection";
+        if (name == "ret") return "retribution";
+        if (name == "bm" || name == "beast") return "beast_mastery";
+        if (name == "marks") return "marksmanship";
+        if (name == "surv") return "survival";
+        if (name == "assass") return "assassination";
+        if (name == "sub") return "subtlety";
+        if (name == "disc") return "discipline";
+        if (name == "elem") return "elemental";
+        if (name == "enhance") return "enhancement";
+        if (name == "resto") return "restoration";
+        if (name == "afflic") return "affliction";
+        if (name == "demo") return "demonology";
+        if (name == "destro") return "destruction";
+        return name;
+    }
+}
+
+std::vector<std::string> ChangeTalentsAction::GetPremadeSpecializations(uint8 cls)
+{
+    std::vector<std::string> result;
+    std::vector<std::string> names = CanonicalSpecializations(cls);
+    for (uint8 tree = 0; tree < names.size(); ++tree)
+        for (TalentPath& path : sPlayerbotAIConfig.classSpecs[cls].talentPath)
+            if (!path.talentSpec.empty() && path.talentSpec.back().highestTree() == tree)
+            {
+                result.push_back(names[tree]);
+                break;
+            }
+    return result;
+}
+
+bool ChangeTalentsAction::ApplyPremadeSpecialization(Player* bot, const std::string& specialization,
+    std::ostringstream* out)
+{
+    if (!bot || bot->GetLevel() < 10) return false;
+    std::vector<std::string> names = CanonicalSpecializations(bot->getClass());
+    std::string requested = NormalizeSpecialization(specialization);
+    int requestedTree = -1;
+    for (uint8 tree = 0; tree < names.size(); ++tree)
+        if (names[tree] == requested) requestedTree = tree;
+    if (requestedTree < 0) return false;
+
+    TalentPath* selected = NULL;
+    for (TalentPath& path : sPlayerbotAIConfig.classSpecs[bot->getClass()].talentPath)
+    {
+        if (path.talentSpec.empty() || path.talentSpec.back().highestTree() != requestedTree) continue;
+        if (!selected) selected = &path;
+        std::string pathName = path.name;
+        std::transform(pathName.begin(), pathName.end(), pathName.begin(), ::tolower);
+        if (pathName.find("pve") != std::string::npos)
+        {
+            selected = &path;
+            break;
+        }
+    }
+    if (!selected) return false;
+
+    bot->resetTalents(true);
+    TalentSpec newSpec = *GetBestPremadeSpec(bot, selected->id);
+    newSpec.CropTalents(bot);
+    newSpec.ApplyTalents(bot, out);
+    const int32 persistentSpecSeconds = 10 * 365 * 24 * 60 * 60;
+    sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specNo", selected->id + 1, "", persistentSpecSeconds);
+    sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 0, "", persistentSpecSeconds);
+    if (bot->GetPlayerbotAI()) bot->GetPlayerbotAI()->UpdateTalentSpec();
+    return bot->GetFreeTalentPoints() == 0;
+}
+
 std::string ChangeTalentsAction::GetPremadeSpecName(Player* bot)
 {
     if (!bot) return "";

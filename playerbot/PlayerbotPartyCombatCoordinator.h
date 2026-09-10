@@ -162,6 +162,7 @@ namespace ai
         void SendSnapshot(Group* group, GroupState& state) const;
         void SendAddon(Player* source, Player* target, const std::string& payload) const;
         std::string ApplyRoleTalents(Player* member, LivingPartyRole role) const;
+        std::string ApplySpecialization(Player* member, const std::string& specialization) const;
         bool RoleMatchesTalents(Player* member, LivingPartyRole role) const;
         void SynchronizeAutomaticRole(Player* bot, GroupState& state) const;
         void SynchronizeRoleCombatStrategy(Player* bot, const GroupState& state) const;

@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/RandomPlayerbotMgr.h"
 #include "RandomItemMgr.h"
 #include "playerbot/PlayerbotAI.h"
 
@@ -2611,6 +2612,18 @@ std::string RandomItemMgr::GetPlayerSpecName(Player* player)
 {
     std::string specName;
     int tab = AiFactory::GetPlayerSpecTab(player);
+    // A premade spec is a persistent character preference, not merely a
+    // snapshot of currently spent points. Use that preference for equipment,
+    // upgrade, vendor, and auction valuation so a bot continues gearing for
+    // the build it chose (or its party leader explicitly requested).
+    uint32 specNo = sRandomPlayerbotMgr.GetValue(player->GetGUIDLow(), "specNo");
+    if (specNo)
+        for (TalentPath& path : sPlayerbotAIConfig.classSpecs[player->getClass()].talentPath)
+            if (path.id + 1 == specNo && !path.talentSpec.empty())
+            {
+                tab = path.talentSpec.back().highestTree();
+                break;
+            }
     switch (player->getClass())
     {
     case CLASS_PRIEST:

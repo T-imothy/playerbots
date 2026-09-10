@@ -3211,7 +3211,8 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
                 capability.type == "solicit_petition_signatures" ||
                 capability.type == "perform_emote") family = "socialGovernance";
             else if (capability.type.find("group") != std::string::npos || capability.type == "pass_leadership" ||
-                capability.type == "set_party_role" || capability.type == "clear_party_role" ||
+                capability.type == "set_party_role" || capability.type == "set_party_specialization" ||
+                capability.type == "clear_party_role" ||
                 capability.type == "set_puller" || capability.type == "hold_attacks" ||
                 capability.type == "resume_assist") family = "grouping";
             else if (capability.type.find("quest") != std::string::npos) family = "quests";
