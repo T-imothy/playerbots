@@ -1039,7 +1039,12 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
 {
     if (nextHealthSample.time_since_epoch().count() != 0 && now < nextHealthSample)
         return;
-    nextHealthSample = now + std::chrono::seconds(std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorHealthSampleSeconds));
+    const uint32 fullSampleSeconds = std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorHealthSampleSeconds);
+    const bool canarySampling = !sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.empty();
+    nextHealthSample = now + std::chrono::seconds(canarySampling ? std::min<uint32>(60, fullSampleSeconds) : fullSampleSeconds);
+    static std::chrono::steady_clock::time_point nextFullHealthSample;
+    const bool fullSample = nextFullHealthSample.time_since_epoch().count() == 0 || now >= nextFullHealthSample;
+    if (fullSample) nextFullHealthSample = now + std::chrono::seconds(fullSampleSeconds);
 
     std::vector<std::string> samples;
     for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
@@ -1047,6 +1052,10 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
         if (!bot || !bot->GetPlayerbotAI() || !bot->IsInWorld())
             continue;
+        const bool recoveryCanary = std::find(sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.begin(),
+            sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.end(), guid) !=
+            sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.end();
+        if (!fullSample && !recoveryCanary) continue;
         BotHealthState& state = botHealth[guid];
         if (state.lastMeaningfulProgress.time_since_epoch().count() == 0)
             state.lastMeaningfulProgress = now;
@@ -1097,8 +1106,16 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             bot->IsNonMeleeSpellCasted(false) || bot->GetTransport() || playerStay || airborne;
         bool expectsMovement = lowered.find("move") != std::string::npos || lowered.find("travel") != std::string::npos ||
             lowered.find("quest") != std::string::npos || lowered.find("rpg") != std::string::npos;
-        if (levelChanged || xpChanged || questProgressChanged || (movedThisSample && expectsMovement))
+        // Position changes alone are not meaningful progression. Bots that
+        // shuffle a few yards while repeatedly producing no action must remain
+        // eligible for recovery.
+        if (levelChanged || xpChanged || questProgressChanged)
+        {
             state.lastMeaningfulProgress = now;
+            state.recoveryStep = 0;
+            state.recoveryQuestId = 0;
+            state.recoveryResult.clear();
+        }
         long stillSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMoved).count();
         long progressSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMeaningfulProgress).count();
         uint32 stalledQuestId = 0;
@@ -1111,10 +1128,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         }
         bool noActions = lowered.find("no actions executed") != std::string::npos;
         bool movementStalled = expectsMovement && noActions &&
-            stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds &&
             progressSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
         bool questStalled = stalledQuestId && noActions &&
-            stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds &&
             progressSeconds >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds;
         uint8 bagUsed = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
         bool inventoryBlocked = bagUsed >= 95;
@@ -1133,9 +1148,6 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // recovery step on the world thread. Resetting the travel target makes
         // normal quest/travel strategies choose again without teleporting or
         // modifying authoritative quest state.
-        bool recoveryCanary = std::find(sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.begin(),
-            sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.end(), guid) !=
-            sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.end();
         bool recoveryAllowed = sPlayerbotAIConfig.chatDirectorBotRecoveryMode >= 2 ||
             (sPlayerbotAIConfig.chatDirectorBotRecoveryMode == 1 && recoveryCanary);
         if (suspected && recoveryAllowed)
@@ -1167,7 +1179,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     state.recoveryQuestId = stalledQuestId;
                     state.recoveryStep = 3;
                 }
-                else if (sPlayerbotAIConfig.chatDirectorQuestInteraction &&
+                else if (state.recoveryStep >= 2 && sPlayerbotAIConfig.chatDirectorQuestInteraction &&
                     lowered.find("quest") != std::string::npos && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 6)
                 {
                     recovered = bot->GetPlayerbotAI()->DoSpecificAction("use random quest item", Event("living progression quest item recovery"), true);
