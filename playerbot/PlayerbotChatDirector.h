@@ -168,6 +168,7 @@ private:
     void MaybeCreateAmbientEvent(std::chrono::steady_clock::time_point now);
     void MaybeCreateProactiveGroupEvent(std::chrono::steady_clock::time_point now);
     void MaybeReportBotHealth(std::chrono::steady_clock::time_point now);
+    void MaybeReportOrganicEconomy(std::chrono::steady_clock::time_point now);
 
     struct BotHealthState
     {
@@ -189,6 +190,7 @@ private:
     uint64 sequence = 0;
     std::chrono::steady_clock::time_point nextAmbient;
     std::chrono::steady_clock::time_point lastConversation;
+    std::chrono::steady_clock::time_point nextEconomySample;
     std::chrono::steady_clock::time_point nextHealthSample;
     std::map<uint32, BotHealthState> botHealth;
     std::map<std::string, std::chrono::steady_clock::time_point> questPlanCooldowns;

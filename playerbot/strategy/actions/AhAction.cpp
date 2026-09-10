@@ -205,7 +205,12 @@ bool AhAction::ExecuteCommand(Player* requester, std::string text, Unit* auction
                 pricePerItemCache[proto->ItemId] = pricePerItem;
             }
 
-            bool didPost = PostItem(requester, item, pricePerItemCache[proto->ItemId] * item->GetCount(), auctioneer, time);
+            uint32 listingTime = time;
+            if (proto->Quality >= ITEM_QUALITY_RARE)
+                listingTime = 48 * 60;
+            else if (proto->InventoryType != INVTYPE_NON_EQUIP)
+                listingTime = 24 * 60;
+            bool didPost = PostItem(requester, item, pricePerItemCache[proto->ItemId] * item->GetCount(), auctioneer, listingTime);
 
             if (didPost)
             {

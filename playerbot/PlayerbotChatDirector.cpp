@@ -1498,6 +1498,60 @@ void PlayerbotChatDirector::Dispatch(const ScheduledReply& scheduledReply)
     else ai->SayToGeneral(text);
 }
 
+void PlayerbotChatDirector::MaybeReportOrganicEconomy(std::chrono::steady_clock::time_point now)
+{
+    if (nextEconomySample.time_since_epoch().count() && now < nextEconomySample)
+        return;
+    nextEconomySample = now + std::chrono::minutes(10);
+    std::ostringstream events, plans;
+    events << "{\"events\":[";
+    plans << "{\"bots\":[";
+    bool firstEvent = true, firstBot = true;
+    for (const auto& entry : sRandomPlayerbotMgr.GetPlayers())
+    {
+        Player* bot = entry.second;
+        if (!bot || !bot->IsInWorld() || !sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()))
+            continue;
+        uint32 guid = bot->GetGUIDLow(), account = bot->GetSession()->GetAccountId();
+        bool career = ((uint64(guid) * 1103515245ULL + uint64(account) * 12345ULL) % 100ULL) < 80ULL;
+        const uint32 professions[] = {164,165,171,182,186,197,202,333,393,755};
+        uint32 firstProfession = 0, secondProfession = 0, firstSkill = 0, secondSkill = 0;
+        for (uint32 skillId : professions)
+        {
+            uint32 value = bot->GetSkillValue(skillId);
+            if (!value) continue;
+            if (!firstProfession) { firstProfession = skillId; firstSkill = value; }
+            else if (!secondProfession) { secondProfession = skillId; secondSkill = value; break; }
+        }
+        if (!firstEvent) events << ',';
+        firstEvent = false;
+        events << "{\"event_id\":\"profile-" << guid << '-' << time(nullptr)
+            << "\",\"type\":\"profile_snapshot\",\"character_guid\":" << guid
+            << ",\"character_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(bot->GetName())
+            << "\",\"account_id\":" << account << ",\"career_participant\":" << (career ? "true" : "false")
+            << ",\"profession_one\":" << firstProfession << ",\"profession_two\":" << secondProfession
+            << ",\"profession_one_skill\":" << firstSkill << ",\"profession_two_skill\":" << secondSkill << '}';
+        if (!career) continue;
+        if (!firstBot) plans << ',';
+        firstBot = false;
+        plans << "{\"character_guid\":" << guid << ",\"candidate_goals\":["
+            << "{\"goal_id\":\"supplies:" << guid
+            << "\",\"type\":\"maintain_supplies\",\"utility\":10,\"eligible\":true,\"duration_seconds\":3600}";
+        if (firstProfession)
+            plans << ",{\"goal_id\":\"profession:" << guid << ':' << firstProfession
+                << "\",\"type\":\"profession_skill_up\",\"utility\":25,\"eligible\":true,\"duration_seconds\":5400}";
+        plans << "]}";
+    }
+    events << "]}"; plans << "]}";
+    const std::string eventBody = events.str(), planBody = plans.str();
+    std::thread([eventBody, planBody]()
+    {
+        std::vector<std::string> debug;
+        PlayerbotLLMInterface::Generate(eventBody, 9, sPlayerbotAIConfig.llmMaxSimultaniousGenerations, debug, true, "/v2/economy-events");
+        PlayerbotLLMInterface::Generate(planBody, 9, sPlayerbotAIConfig.llmMaxSimultaniousGenerations, debug, true, "/v2/economy-plans");
+    }).detach();
+}
+
 void PlayerbotChatDirector::Update()
 {
     if (!sPlayerbotAIConfig.chatDirectorV2)
@@ -1506,6 +1560,7 @@ void PlayerbotChatDirector::Update()
     MaybeCreateAmbientEvent(now);
     MaybeCreateProactiveGroupEvent(now);
     MaybeReportBotHealth(now);
+    MaybeReportOrganicEconomy(now);
     sPlayerbotActionBroker.Update();
     sPlayerbotSocialActionBroker.Update();
 
