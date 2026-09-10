@@ -204,14 +204,32 @@ void PlayerbotRendezvousManager::Update()
             {
                 session.state = "departing"; session.reason = "player_unavailable"; session.stateSince = now;
             }
+            else if (bot->IsInCombat())
+            {
+                if (!session.combatPaused)
+                {
+                    // Release the rendezvous follow generator once, then let
+                    // ordinary Playerbots combat movement and targeting win.
+                    bot->GetMotionMaster()->Clear(false, true);
+                    session.combatPaused = true;
+                    session.stateSince = now;
+                    LogEvent(session, "combat_paused");
+                }
+            }
+            else if (session.combatPaused)
+            {
+                session.combatPaused = false;
+                session.stateSince = now;
+                bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
+                LogEvent(session, "combat_resumed");
+            }
             else if (bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
             {
                 session.state = "arrived";
                 session.stateSince = now;
                 LogEvent(session, "arrived");
             }
-            else if (!bot->IsInCombat() &&
-                std::chrono::duration_cast<std::chrono::seconds>(now - session.stateSince).count() >= 2)
+            else if (std::chrono::duration_cast<std::chrono::seconds>(now - session.stateSince).count() >= 2)
             {
                 bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
                 session.stateSince = now;

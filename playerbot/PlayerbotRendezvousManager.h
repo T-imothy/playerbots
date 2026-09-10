@@ -37,6 +37,7 @@ private:
         std::string reason;
         bool returnAfter = true;
         bool relocated = false;
+        bool combatPaused = false;
         std::chrono::steady_clock::time_point started;
         std::chrono::steady_clock::time_point stateSince;
     };

@@ -204,6 +204,8 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
     if (proposal.delivery != "mail" && !sameZone) return reject("incompatible_zone", "We're no longer in the same area.");
     if (proposal.delivery == "direct" && !bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
         return reject("out_of_range", "You're too far away to trade directly.");
+    if (proposal.delivery == "direct" && (bot->IsInCombat() || player->IsInCombat()))
+        return reject("participant_in_combat", "We can't open a trade while one of us is fighting.");
     if (!conjure && !crafting && !buying && !item) return reject("item_missing", "I no longer have that item.");
     if (!conjure && !crafting && !buying && item->GetCount() < proposal.quantity)
         return reject("quantity_changed", "I no longer have that many.");
@@ -695,7 +697,8 @@ void PlayerbotActionBroker::Update()
                     transaction.lastMeetingMove = now;
             }
         }
-        if (transaction.state == "meeting" && bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
+        if (transaction.state == "meeting" && !bot->IsInCombat() && !player->IsInCombat() &&
+            bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
         {
             transaction.state = "offered";
             bot->GetPlayerbotAI()->StopMoving();
