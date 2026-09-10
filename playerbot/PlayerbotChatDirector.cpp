@@ -3967,6 +3967,15 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
         const bool dungeonEligible = dungeonReady[guildId] >= 5 &&
             tankCandidates[guildId] > 0 && healerCandidates[guildId] > 0;
         const uint32 recruitmentGap = target > members ? target - members : 0;
+        uint32 activeOfficers = 0;
+        if (auto officerCount = CharacterDatabase.PQuery(
+                "SELECT COUNT(*) FROM guild_society_officer WHERE guild_id=%u AND state='active'", guildId))
+            activeOfficers = officerCount->Fetch()[0].GetUInt32();
+        const uint32 desiredOfficers = std::min<uint32>(3, members > 0 ? members - 1 : 0);
+        const bool officerCoverageNeeded = activeOfficers < desiredOfficers;
+        const bool activeSupplyGoal = CharacterDatabase.PQuery(
+            "SELECT goal_id FROM guild_society_supply_goal WHERE guild_id=%u "
+            "AND state IN ('proposed','active') LIMIT 1", guildId) != nullptr;
         const bool executionEnabled = GuildExecutionEnabled(
             guildPolicyMode, guildRolloutScope, guildCanaryIds, guildId);
         const std::string primary = GuildFocus(guildId, 0), secondary = GuildFocus(guildId, 1);
@@ -4008,12 +4017,12 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             << "\",\"type\":\"recruit_members\",\"utility\":" << (18 + std::min<uint32>(20, recruitmentGap))
             << ",\"eligible\":" << (recruitmentGap ? "true" : "false") << "}"
             << ",{\"candidate_id\":\"officers:" << guildId << ":" << members
-            << "\",\"type\":\"review_officer_coverage\",\"utility\":12,\"eligible\":"
-            << (members >= 2 ? "true" : "false") << "}"
+            << "\",\"type\":\"review_officer_coverage\",\"utility\":40,\"eligible\":"
+            << (officerCoverageNeeded ? "true" : "false") << "}"
             << ",{\"candidate_id\":\"supply:" << guildId << ':' << (guildId % 2 ? 117 : 159)
             << ':' << std::max<uint32>(10, online * 2)
-            << "\",\"type\":\"stock_guild_supplies\",\"utility\":14,\"eligible\":"
-            << (online >= 2 ? "true" : "false") << "}]}";
+            << "\",\"type\":\"stock_guild_supplies\",\"utility\":30,\"eligible\":"
+            << (online >= 2 && !activeSupplyGoal ? "true" : "false") << "}]}";
         events << "{\"event_id\":\"snapshot-" << guildId << '-' << nowEpoch
             << "\",\"type\":\"guild_snapshot\",\"guild_id\":" << guildId << ",\"guild_name\":\"" << name
             << "\",\"bot_led\":" << (botLed ? "true" : "false") << ",\"faction\":\"" << faction
