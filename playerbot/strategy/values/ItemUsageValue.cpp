@@ -185,6 +185,14 @@ ItemUsage ItemUsageValue::CalculateUsage(bool acquiringBankItem)
     if (bot->getClass() == CLASS_WARLOCK && proto->ItemId == 6265 && CurrentStacks(ai, proto) <= 10)
         return ItemUsage::ITEM_USAGE_KEEP;
 
+    // Reserve active quest requirements before profession or equipment stock limits.
+    if (!ai->GetMaster() || !sPlayerbotAIConfig.syncQuestWithPlayer || !IsNeededForQuest(ai->GetMaster(), itemId))
+    {
+        const ItemUsage questUsage = QuestStockUsage(bot->GetItemCount(itemId, false),
+            QuestItemReserve(bot, itemId), proto->GetMaxStackSize(), acquiringBankItem);
+        if (questUsage != ItemUsage::ITEM_USAGE_NONE) return questUsage;
+    }
+
     //SKILL
     if (ai->HasActivePlayerMaster())
     {
@@ -374,14 +382,6 @@ ItemUsage ItemUsageValue::CalculateUsage(bool acquiringBankItem)
             }
 #endif
         }
-    }
-
-    //QUEST
-    if (!ai->GetMaster() || !sPlayerbotAIConfig.syncQuestWithPlayer || !IsNeededForQuest(ai->GetMaster(), itemId))
-    {
-        const ItemUsage questUsage = QuestStockUsage(bot->GetItemCount(itemId, false),
-            QuestItemReserve(bot, itemId), proto->GetMaxStackSize(), acquiringBankItem);
-        if (questUsage != ItemUsage::ITEM_USAGE_NONE) return questUsage;
     }
 
     // AMMO
