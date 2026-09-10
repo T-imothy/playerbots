@@ -810,7 +810,7 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             capability.deliveries.push_back("immediate");
             capability.description = "Inventory is " + std::to_string((uint32)bagUsage) +
                 " percent full; quick maintenance has " + std::to_string(pressure.vendorStacks) +
-                " vendor stacks and " + std::to_string(pressure.bankStacks) + " bank stacks.";
+                " vendor stacks and " + std::to_string(pressure.StorableStacks()) + " storable stacks.";
             candidate.actionCapabilities.push_back(std::move(capability));
         }
         sPlayerbotSocialActionBroker.AddSharedObjectCapabilities(bot, speaker, candidate);

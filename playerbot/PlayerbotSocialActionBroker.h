@@ -36,6 +36,7 @@ private:
         uint32 groupId = 0;
         uint32 questId = 0;
         uint8 initialBagUsage = 0;
+        uint8 bestBagUsage = 100;
         uint8 sellAttempts = 0;
         std::string maintenanceType;
         bool outboundRelocated = false;
@@ -68,6 +69,7 @@ private:
     bool StartVendorTrip(Player* bot, Player* player, const std::string& actionId,
         const std::string& eventId, const std::string& proposalId, bool announce);
     bool SetMaintenanceTarget(Player* bot, const std::string& maintenanceType) const;
+    bool ContinueAtBank(Action& action, Player* bot);
     void QueuePartyReturn(Action& action, Player* bot, Player* player,
         const std::string& reason, bool success);
     void Report(const Action& action) const;

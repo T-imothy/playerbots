@@ -28,9 +28,19 @@ struct LivingWowInventoryPressureSummary
     uint8 bagUsage = 0;
     uint8 bankUsage = 100;
 
+    uint32 StorableStacks() const
+    {
+        return bankStacks + craftStacks + auctionStacks;
+    }
+
+    bool HasBankableStorage() const
+    {
+        return bankUsage < 100 && StorableStacks();
+    }
+
     bool HasQuickMaintenance() const
     {
-        return vendorStacks || (bankStacks && bankUsage < 80);
+        return vendorStacks || HasBankableStorage();
     }
 };
 

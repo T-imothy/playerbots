@@ -13,6 +13,7 @@
 #include "TravelMgr.h"
 #include "strategy/values/TravelValues.h"
 
+#include <algorithm>
 #include <regex>
 #include <limits>
 #include <sstream>
@@ -96,11 +97,11 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     std::string maintenanceType;
     if (pressure.vendorStacks)
         maintenanceType = "vendor";
-    else if (pressure.bankStacks && pressure.bankUsage < 80)
+    else if (pressure.HasBankableStorage())
         maintenanceType = "bank";
     else
     {
-        std::string reason = pressure.bankStacks && pressure.bankUsage >= 80 ?
+        std::string reason = pressure.StorableStacks() && pressure.bankUsage >= 100 ?
             "bank_full" : "no_quick_disposition";
         sPlayerbotInventoryPressure.Defer(bot, pressure, reason);
         if (announce)
@@ -136,6 +137,7 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     action.playerGuid = player->GetGUIDLow();
     action.groupId = bot->GetGroup()->GetId();
     action.initialBagUsage = bagUsage;
+    action.bestBagUsage = bagUsage;
     action.maintenanceType = maintenanceType;
     action.state = "vendor_travel";
     action.stateSince = std::chrono::steady_clock::now();
@@ -192,6 +194,8 @@ bool PlayerbotSocialActionBroker::CanUseSharedObject(Player* bot, Player* player
         !sObjectMgr.IsGameObjectForQuests(guid.GetEntry()) && !gatheringNode;
     if (!gatheringNode && !ordinaryChest)
         return true;
+    if (ordinaryChest && !loot.IsLootPossible(bot))
+        return true;
 
     uint32 required = gatheringNode ? std::max<uint32>(1, loot.reqSkillValue) : 0;
     if (gatheringNode)
@@ -228,6 +232,10 @@ bool PlayerbotSocialActionBroker::CanUseSharedObject(Player* bot, Player* player
     offer.skillId = loot.skillId;
     offer.requiredSkill = required;
     offer.nodeName = node->GetName();
+    if (offer.nodeName.empty() && node->GetGOInfo())
+        offer.nodeName = node->GetGOInfo()->name;
+    if (offer.nodeName.empty())
+        offer.nodeName = ordinaryChest ? "a chest" : "a resource node";
     offer.objectKind = ordinaryChest ? "chest" : "gathering_node";
     offer.state = "pending";
     offer.expires = now + std::chrono::seconds(90);
@@ -285,6 +293,25 @@ bool PlayerbotSocialActionBroker::SetMaintenanceTarget(Player* bot, const std::s
     sLog.outString("Living WoW vendor maintenance bot=%u result=target_selected kind=%s map=%u area=%s distance=%.1f",
         bot->GetGUIDLow(), maintenanceType.c_str(), bestPosition->getMapId(),
         bestPosition->getAreaName().c_str(), bestDistance);
+    return true;
+}
+
+bool PlayerbotSocialActionBroker::ContinueAtBank(Action& action, Player* bot)
+{
+    if (!bot || action.maintenanceType == "bank")
+        return false;
+    LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
+    if (!pressure.HasBankableStorage())
+        return false;
+    if (!SetMaintenanceTarget(bot, "bank"))
+        return false;
+    action.maintenanceType = "bank";
+    action.sellAttempts = 0;
+    action.lastSellAttempt = std::chrono::steady_clock::time_point();
+    action.stateSince = std::chrono::steady_clock::now();
+    bot->GetPlayerbotAI()->SayToParty(
+        "I sold what I could. I'm putting the materials and other things I need to keep in the bank too.", true);
+    Report(action);
     return true;
 }
 
@@ -717,9 +744,12 @@ void PlayerbotSocialActionBroker::Update()
                                 destination->getZ(), destination->getO());
                         action.outboundRelocated = relocated;
                         if (relocated)
+                        {
+                            bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("nearest npcs");
                             sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=relocated map=%u area=%s",
                                 bot->GetGUIDLow(), bot->GetName(), destination->getMapId(),
                                 destination->getAreaName().c_str());
+                        }
                     }
                 }
 
@@ -734,15 +764,20 @@ void PlayerbotSocialActionBroker::Update()
                     {
                         action.lastSellAttempt = now;
                         ++action.sellAttempts;
+                        // Relocation invalidates the cached nearby-NPC list.
+                        // Refresh it before the vendor/banker interaction so
+                        // preflight and execution see the same destination.
+                        bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("nearest npcs");
                         bool sold = action.maintenanceType == "bank" ?
                             bot->GetPlayerbotAI()->DoSpecificAction("bank",
-                                Event("rpg action", "usage 16", nullptr), true) :
+                                Event("rpg action", "living-wow-safe-storage", nullptr), true) :
                             bot->GetPlayerbotAI()->DoSpecificAction("sell",
                                 Event("rpg action", "living-wow-safe-vendor", player), true);
                         // Bag-space is a cached Playerbots value. Invalidate it
                         // after each real sell attempt so completion observes
                         // the changed inventory instead of the pre-trip value.
                         bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("bag space");
+                        bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("bank space");
                         sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=%s attempt=%u distance=%.1f",
                             bot->GetGUIDLow(), bot->GetName(), sold ?
                                 (action.maintenanceType == "bank" ? "bank_action" : "sell_action") :
@@ -751,7 +786,10 @@ void PlayerbotSocialActionBroker::Update()
                     }
                 }
                 uint8 usage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
-                if (usage < action.initialBagUsage)
+                action.bestBagUsage = std::min(action.bestBagUsage, usage);
+                LivingWowInventoryPressureSummary remaining = sPlayerbotInventoryPressure.Analyze(bot);
+                if (usage < 80 || (!remaining.vendorStacks && !remaining.HasBankableStorage() &&
+                    usage < action.initialBagUsage))
                 {
                     bot->GetPlayerbotAI()->SayToParty(action.maintenanceType == "bank" ?
                         "I put the things I need to keep in the bank. Heading back now." :
@@ -760,12 +798,16 @@ void PlayerbotSocialActionBroker::Update()
                 }
                 else if (action.sellAttempts >= 5)
                 {
-                    action.failureReason = "no additional safe vendor items freed a bag slot";
-                    LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
-                    sPlayerbotInventoryPressure.Defer(bot, pressure, "quick_maintenance_freed_no_slot");
-                    bot->GetPlayerbotAI()->SayToParty(
-                        "I couldn't free another slot without using something I need. I'm coming back and I'll sort the rest out later.", true);
-                    QueuePartyReturn(action, bot, player, "vendor_trip_no_space_freed", false);
+                    if (!ContinueAtBank(action, bot))
+                    {
+                        action.failureReason = "no additional safe maintenance items freed a bag slot";
+                        sPlayerbotInventoryPressure.Defer(bot, remaining, "quick_maintenance_freed_no_slot");
+                        bot->GetPlayerbotAI()->SayToParty(action.bestBagUsage < action.initialBagUsage ?
+                            "I freed what I safely could. The rest is quest gear or other protected supplies, so I'm heading back." :
+                            "I couldn't free a slot without losing quest items or other protected supplies. I'm heading back.", true);
+                        QueuePartyReturn(action, bot, player, "vendor_trip_no_space_freed",
+                            action.bestBagUsage < action.initialBagUsage);
+                    }
                 }
                 else if (now >= action.expires)
                 {

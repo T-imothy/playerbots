@@ -35,7 +35,8 @@ LivingWowItemDisposition PlayerbotInventoryPressure::Classify(Player* bot, Item*
     case ItemUsage::ITEM_USAGE_VENDOR:
     case ItemUsage::ITEM_USAGE_BAD_EQUIP:
     case ItemUsage::ITEM_USAGE_FORCE_GREED:
-        return LivingWowItemDisposition::Vendor;
+        return item->GetProto() && item->GetProto()->SellPrice ?
+            LivingWowItemDisposition::Vendor : LivingWowItemDisposition::Keep;
     case ItemUsage::ITEM_USAGE_AH:
     case ItemUsage::ITEM_USAGE_BROKEN_AH:
         return LivingWowItemDisposition::Auction;

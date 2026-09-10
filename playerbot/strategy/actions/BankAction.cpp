@@ -3,6 +3,7 @@
 #include "BankAction.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
+#include "playerbot/PlayerbotInventoryPressure.h"
 
 using namespace ai;
 
@@ -73,7 +74,9 @@ bool BankAction::ExecuteCommand(Player* requester, const std::string& text, Unit
     }
     else
     {
-        std::list<Item*> found = ai->InventoryParseItems(text, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+        bool safeStorage = text == "living-wow-safe-storage";
+        std::list<Item*> found = ai->InventoryParseItems(
+            safeStorage ? "inventory" : text, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
         if (found.empty())
             return false;
 
@@ -82,6 +85,15 @@ bool BankAction::ExecuteCommand(Player* requester, const std::string& text, Unit
             Item* item = *i;
             if (!item)
                 continue;
+
+            if (safeStorage)
+            {
+                LivingWowItemDisposition disposition = sPlayerbotInventoryPressure.Classify(bot, item);
+                if (disposition != LivingWowItemDisposition::Bank &&
+                    disposition != LivingWowItemDisposition::Craft &&
+                    disposition != LivingWowItemDisposition::Auction)
+                    continue;
+            }
 
             result |= Deposit(requester, item);
         }
