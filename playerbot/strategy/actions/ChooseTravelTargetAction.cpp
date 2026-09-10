@@ -1550,9 +1550,20 @@ bool RequestQuestTurninTargetAction::Execute(Event& event)
     *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async,
         [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, questId, range]()
         {
-            return sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                (uint32)TravelDestinationPurpose::QuestTaker, { (int32)questId }, true,
-                range);
+            PartitionedTravelList list;
+            PartitionedTravelList candidates = sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                (uint32)TravelDestinationPurpose::QuestTaker, {}, false, range);
+            for (auto& [partition, points] : candidates)
+            {
+                for (auto& point : points)
+                {
+                    QuestTravelDestination* destination =
+                        dynamic_cast<QuestTravelDestination*>(std::get<TravelDestination*>(point));
+                    if (destination && destination->GetQuestId() == questId)
+                        list[partition].push_back(point);
+                }
+            }
+            return list;
         });
 
     AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
