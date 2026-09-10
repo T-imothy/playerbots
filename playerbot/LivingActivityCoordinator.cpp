@@ -2,6 +2,7 @@
 #include "Database/DatabaseImpl.h"
 #include "LivingActivityCoordinator.h"
 #include "LivingActivity.h"
+#include "LivingActivityAdmission.h"
 #include "PlayerbotRendezvousManager.h"
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -123,6 +124,21 @@ struct LivingActivityCoordinator::State {
     std::deque<Incoming> incoming;
     std::map<std::string, Task> cache;
     std::map<uint32_t, std::string> preferred;
+    std::map<std::string, std::string> quarantined;
+
+    void QuarantineIncoming(const std::string& reason) {
+        if (incoming.empty()) return;
+        const auto& row = incoming.front();
+        const std::string id = row.restored ? row.id : SourceId(row.source, row.key);
+        quarantined[id] = reason;
+        if (row.restored) loadCursor = row.id;
+        ++invalidRecords; blocker = reason;
+        sLog.outError("Living activity record quarantined: task=%s reason=%s; native journal retained",
+            id.c_str(), reason.c_str());
+        // Leave the authoritative row untouched and visible in Admin. One bad
+        // record must not prevent other bots from rebuilding valid obligations.
+        incoming.pop_front();
+    }
 
     void Policy(uint64_t now) {
         if (now < nextPolicy) return;
@@ -162,7 +178,7 @@ struct LivingActivityCoordinator::State {
         if (existing == preferred.end() || Before(task, cache.at(existing->second))) preferred[task.actor] = task.id;
     }
     void Queue(Task task, uint64_t expected, const std::string& code) {
-        if (cache.size() + pending.size() >= maxCache) { blocker = "task_cache_backpressure"; return; }
+        if (cache.size() + quarantined.size() + pending.size() >= maxCache) { blocker = "task_cache_backpressure"; return; }
         auto plan = TaskWrite(task, expected, NewId(), code);
         pending.push_back({std::move(task), std::move(plan)});
     }
@@ -252,20 +268,20 @@ struct LivingActivityCoordinator::State {
             } while (result->NextRow());
             // One domain cannot monopolize admission. A full rotation pauses
             // one minute only when there is no backlog in the observed domain.
-            importFamily = (family + 1) % 4;
+            importFamily = NextImportFamily(family);
             if (importFamily == 0 && count == 0) nextWork = NowMs() + 60000;
         }, query.c_str())) { ioPending = false; nextWork = NowMs() + 5000; }
     }
     void DecodeIncoming() {
         const auto started = std::chrono::steady_clock::now();
         do {
-            if (cache.size() + pending.size() >= maxCache) {
+            if (cache.size() + quarantined.size() + pending.size() >= maxCache) {
                 blocker = "task_cache_backpressure"; nextWork = NowMs() + 60000; return;
             }
             const auto& row = incoming.front(); Task task;
             if (row.restored) {
                 if (!ReadTask(row.payload, task)) {
-                    ++invalidRecords; blocker = "invalid_persisted_task"; nextWork = NowMs() + 60000; return;
+                    QuarantineIncoming("invalid_persisted_task"); continue;
                 }
                 // Active tasks are never downgraded or executed by this observer.
                 if (task.mode == Mode::Active) { Remember(task); blocker = "active_task_requires_executor"; }
@@ -276,8 +292,8 @@ struct LivingActivityCoordinator::State {
                         boost::property_tree::ptree p; std::istringstream in(task.checkpoint.data);
                         boost::property_tree::read_json(in, p);
                         const Kind kind = LegacyEconomyKind(p.get<std::string>("goal_type", ""));
-                        if (kind != task.kind || task.priority != Priority::Progression) {
-                            resumed.kind = kind; resumed.priority = Priority::Progression;
+                        if (kind != task.kind || task.priority != Priority::Progression || task.accepted) {
+                            resumed.kind = kind; resumed.priority = Priority::Progression; resumed.accepted = false;
                             code = "observation_reclassified";
                         }
                     }
@@ -297,6 +313,9 @@ struct LivingActivityCoordinator::State {
                 }
                 task.priority = row.family == 3 ? Priority::Scheduled :
                     row.family == 0 ? Priority::Progression : Priority::Delivery;
+                // A planner goal alone is not a paid/accepted obligation. The
+                // later reconciler imports exact purchases/commissions as such.
+                task.accepted = row.family != 0;
                 task.context.policyRevision = policyRevision;
                 task.createdAtMs = task.updatedAtMs = NowMs();
                 task.checkpoint.data = row.payload;
@@ -330,21 +349,28 @@ void LivingActivityCoordinator::Update() {
         state->nextLog = now + 60000;
         sLog.outString("Living activity shadow: %s", StatusJson().c_str());
     }
-    if (state->effective == Mode::Off || state->ioPending) return;
-    if (!state->incoming.empty()) {
-        if (now < state->nextWork) return;
+    ObservationQueue queues;
+    queues.enabled = state->effective != Mode::Off; queues.ioPending = state->ioPending;
+    queues.due = now >= state->nextWork; queues.schemaReady = state->schemaReady; queues.loaded = state->loaded;
+    queues.cached = state->cache.size() + state->quarantined.size(); queues.pending = state->pending.size(); queues.incoming = state->incoming.size();
+    queues.cacheLimit = state->maxCache; queues.retained = state->transitionCount;
+    const auto work = NextObservationWork(queues);
+    if (work == ObservationWork::Wait) return;
+    if (work == ObservationWork::Decode) {
         try { state->DecodeIncoming(); }
-        catch (const std::exception&) { ++state->invalidRecords; state->blocker = "invalid_source_record"; state->nextWork = now + 60000; }
+        catch (const std::exception&) { state->QuarantineIncoming("invalid_source_record"); state->nextWork = now + 1000; }
         return;
     }
-    if (now < state->nextWork) return;
     state->nextWork = now + 1000;
-    if (!state->schemaReady) state->Probe();
-    else if (state->transitionCount + state->pending.size() >= 200000) state->blocker = "transition_outbox_backpressure";
-    else if (!state->pending.empty()) state->Flush();
-    else if (!state->loaded) state->Load();
-    else if (state->cache.size() < state->maxCache) state->Import();
-    else state->blocker = "task_cache_backpressure";
+    switch (work) {
+        case ObservationWork::Probe: state->Probe(); break;
+        case ObservationWork::Flush: state->Flush(); break;
+        case ObservationWork::Load: state->Load(); break;
+        case ObservationWork::Import: state->Import(); break;
+        case ObservationWork::HistoryPressure: state->blocker = "transition_outbox_backpressure"; break;
+        case ObservationWork::CachePressure: state->blocker = "task_cache_backpressure"; break;
+        default: break;
+    }
 }
 std::string LivingActivityCoordinator::StatusJson() const {
     boost::property_tree::ptree p;
@@ -356,6 +382,11 @@ std::string LivingActivityCoordinator::StatusJson() const {
     p.put("pending_decode", state->incoming.size()); p.put("maximum_dispatch_us", state->maximumDispatchUs);
     p.put("over_budget_updates", state->overBudgetUpdates); p.put("next_import_family", state->importFamily);
     p.put("invalid_records", state->invalidRecords); p.put("gameplay_mutations", 0);
+    p.put("quarantined_records", state->quarantined.size());
+    if (!state->quarantined.empty()) {
+        p.put("quarantined_task", state->quarantined.begin()->first);
+        p.put("quarantined_reason", state->quarantined.begin()->second);
+    }
     p.put("snapshot_at_ms", NowMs()); return Json(p);
 }
 std::string LivingActivityCoordinator::ActorJson(uint32_t guid) const {

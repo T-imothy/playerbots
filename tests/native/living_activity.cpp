@@ -1,4 +1,5 @@
 #include "LivingActivity.h"
+#include "LivingActivityAdmission.h"
 #include <cassert>
 #include <limits>
 #include <stdexcept>
@@ -13,6 +14,30 @@ Task Sample() {
     return task;
 }
 int main() {
+    ObservationQueue queue;
+    assert(NextObservationWork(queue) == ObservationWork::Wait);
+    queue.enabled = queue.due = true;
+    assert(NextObservationWork(queue) == ObservationWork::Probe);
+    queue.schemaReady = true;
+    assert(NextObservationWork(queue) == ObservationWork::Load);
+    queue.loaded = true;
+    assert(NextObservationWork(queue) == ObservationWork::Import);
+    queue.incoming = 64;
+    assert(NextObservationWork(queue) == ObservationWork::Decode);
+    queue.pending = 32; queue.cached = queue.cacheLimit - 32;
+    assert(NextObservationWork(queue) == ObservationWork::Flush); // Pending rows cannot block themselves.
+    queue.ioPending = true;
+    assert(NextObservationWork(queue) == ObservationWork::Wait); // Only one native query/receipt in flight.
+    queue.ioPending = false; queue.retained = queue.historyLimit - 32;
+    assert(NextObservationWork(queue) == ObservationWork::Flush); // Exact capacity is allowed.
+    ++queue.retained;
+    assert(NextObservationWork(queue) == ObservationWork::HistoryPressure);
+    assert(queue.pending == 32 && queue.incoming == 64); // Backpressure never drops evidence.
+    queue.pending = queue.retained = 0; queue.cached = queue.cacheLimit;
+    assert(NextObservationWork(queue) == ObservationWork::CachePressure);
+    unsigned family = 0, seen[4] = {};
+    for (unsigned i = 0; i < 32; ++i) { ++seen[family]; family = NextImportFamily(family); }
+    for (auto count : seen) assert(count == 8); // A perpetually busy producer cannot monopolize admission.
     Task task = Sample(); std::string error;
     assert(Validate(task, error));
     assert(LegacyEconomyKind("equipment_upgrade") == Kind::Progression);
