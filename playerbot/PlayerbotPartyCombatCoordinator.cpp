@@ -369,15 +369,16 @@ void PlayerbotPartyCombatCoordinator::RefreshCombat(Group* group, GroupState& st
         if (Player* p = sObjectAccessor.FindPlayer(i->guid))
         {
             if (p->IsInCombat()) combat = true;
-            // CMSG_ATTACKSWING assigns a victim as soon as a human right-clicks
-            // a creature, before the first swing lands and before combat or
-            // threat exists.  Selection/auto-attack stance is not a pull
-            // instruction.  Approve the victim only after combat has actually
-            // begun; attackers below remain an unconditional defence signal.
+            // CMSG_ATTACKSWING assigns a victim as soon as a human right-clicks.
+            // Generic combat flags are insufficient: either participant may
+            // already be fighting something else. Approve only a direct combat
+            // relationship with this exact victim.
             if (Unit* victim = p->GetVictim())
             {
-                const bool engaged = p->IsInCombat() || victim->IsInCombat() ||
-                    !p->getAttackers().empty() || !victim->getAttackers().empty() ||
+                const bool directlyAttacking =
+                    p->getAttackers().find(victim) != p->getAttackers().end() ||
+                    victim->getAttackers().find(p) != victim->getAttackers().end();
+                const bool engaged = directlyAttacking ||
                     victim->getThreatManager().getThreat(p) > 0.0f;
                 if (engaged) state.approvedTargets.insert(victim->GetObjectGuid());
             }
@@ -447,10 +448,27 @@ void PlayerbotPartyCombatCoordinator::Update(Player* bot)
             (bot->GetMapId() == maintenanceMaster->GetMapId() &&
                 bot->GetInstanceId() == maintenanceMaster->GetInstanceId() &&
                 bot->IsWithinDistInMap(maintenanceMaster, 15.0f)));
-    const bool pendingLoot = maintenanceAi &&
+    bool pendingLoot = maintenanceAi &&
         (maintenanceAi->GetAiObjectContext()->GetValue<bool>("has available loot")->Get() ||
             !maintenanceAi->GetAiObjectContext()->GetValue<LootObject>("loot target")->Get().IsEmpty());
     uint32 now = WorldTimer::getMSTime();
+    uint32& lastLootScan = lastPartyLootScan[bot->GetGUIDLow()];
+    // Random-bot loot discovery normally runs as a low-priority "often"
+    // action. Mixed-party maintenance can starve it, leaving the human locked
+    // out of a corpse assigned to a bot. Promptly populate the normal loot
+    // stack; movement, bag checks, ownership, and actual looting remain in the
+    // standard Playerbots actions.
+    if (maintenanceAi && maintenancePositionStable && !pendingLoot && bot->IsAlive() &&
+        !bot->IsInCombat() && (!lastLootScan || WorldTimer::getMSTimeDiff(lastLootScan, now) >= 1000))
+    {
+        lastLootScan = now;
+        if (maintenanceAi->CanDoSpecificAction("add all loot", true, true) &&
+            maintenanceAi->DoSpecificAction("add all loot", Event("living mixed party loot scan"), true))
+        {
+            pendingLoot = true;
+            sLog.outDetail("LivingParty loot scan queued bot=%u name=%s", bot->GetGUIDLow(), bot->GetName());
+        }
+    }
     uint32& lastAttempt = lastQuestMaintenance[bot->GetGUIDLow()];
     // Loot/follow/combat work must win over opportunistic quest-source item
     // use.  A ten-second floor also prevents an unchanged usable item from

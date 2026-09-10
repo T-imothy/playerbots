@@ -175,6 +175,7 @@ namespace ai
         mutable LivingPartyCombatPolicy policy;
         mutable std::map<uint32, GroupState> groups;
         mutable std::map<uint32, uint32> lastQuestMaintenance;
+        mutable std::map<uint32, uint32> lastPartyLootScan;
         mutable std::map<uint32, uint32> lastAutomaticRoleTalentAttempt;
         mutable std::set<uint32> hunterGrowlSuppressed;
         mutable time_t lastPolicyLoad = 0;

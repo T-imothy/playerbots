@@ -89,6 +89,11 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
         ai->TellDebug(requester, "Add loot from " + ChatHelper::formatWorldobject(wo), "debug loot");
     }
 
+    Group* group = bot->GetGroup();
+    Creature* corpse = guid.IsCreature() ? ai->GetCreature(guid) : NULL;
+    const bool authorizedGroupCorpseLoot = group && corpse && corpse->m_loot &&
+        corpse->m_loot->CanLoot(bot);
+
     if (loot.IsEmpty())
     {
         ai->TellDebug(requester, "Loot object is empty.", "debug loot");
@@ -108,10 +113,6 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
     }
 
     float lootDistanceToUse = sPlayerbotAIConfig.lootDistance;
-
-    Group* group = bot->GetGroup();
-    const bool assignedRoundRobinLooter = group && guid.IsCreature() &&
-        group->GetCurrentLooterGuid() == bot->GetObjectGuid();
 
     bool isInGroup = group ? true : false;
     bool isInDungeon = bot->GetMap()->IsDungeon();
@@ -149,10 +150,10 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
     {
         lootDistanceToUse = sPlayerbotAIConfig.lootDistance;
     }
-    if (assignedRoundRobinLooter)
+    if (authorizedGroupCorpseLoot)
         lootDistanceToUse = std::max(lootDistanceToUse, sPlayerbotAIConfig.lootDistance);
 
-    Unit* distanceAnchor = assignedRoundRobinLooter ? static_cast<Unit*>(bot) : requester;
+    Unit* distanceAnchor = authorizedGroupCorpseLoot ? static_cast<Unit*>(bot) : requester;
     if (sServerFacade.IsDistanceGreaterThan(sServerFacade.GetDistance2d(distanceAnchor, wo), lootDistanceToUse))
     {
         ai->TellDebug(requester, "Outside of loot range: " + std::to_string(lootDistanceToUse), "debug loot");
@@ -161,7 +162,7 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
 
     //check hostile units after distance checks, to avoid unnecessary calculations
 
-    if (isInGroup && !ai->IsGroupLeader() && !assignedRoundRobinLooter)
+    if (isInGroup && !ai->IsGroupLeader() && !authorizedGroupCorpseLoot)
     {
         float MOB_AGGRO_DISTANCE = 30.0f;
         std::list<Unit*> hostiles = ai->GetAllHostileNPCNonPetUnitsAroundWO(wo, MOB_AGGRO_DISTANCE);
@@ -207,7 +208,7 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
         }
     }
 
-    if (assignedRoundRobinLooter)
+    if (authorizedGroupCorpseLoot)
         sLog.outDetail("LivingParty assigned loot queued bot=%s corpse=%u", bot->GetName(),
             guid.GetCounter());
 
