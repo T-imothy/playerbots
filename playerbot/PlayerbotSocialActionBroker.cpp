@@ -169,9 +169,12 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
         uint32 leaderGuid = (uint32)std::stoul(match[1].str());
         if (invite && invite->GetLeaderGuid().GetCounter() == leaderGuid)
         {
+            Player* inviter = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, leaderGuid));
             WorldPacket packet;
             bot->GetSession()->HandleGroupAcceptOpcode(packet);
             completed = bot->GetGroup() != nullptr;
+            if (completed && inviter && inviter->isRealPlayer())
+                sPlayerbotRendezvousManager.RegisterPartyAssist(bot, inviter);
         }
     }
     else if (proposal.type == "pass_leadership" &&

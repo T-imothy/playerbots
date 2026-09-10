@@ -1,6 +1,7 @@
 #pragma once
 
 #include "playerbot/strategy/Action.h"
+#include "playerbot/PlayerbotRendezvousManager.h"
 
 namespace ai
 {
@@ -38,6 +39,12 @@ namespace ai
 
             if (!bot->GetGroup() || !bot->GetGroup()->IsMember(inviter->GetObjectGuid()))
                 return false;
+
+            // Capture the bot's pre-assist position and activity immediately
+            // after a real player's invitation succeeds. Movement itself is
+            // deferred to the rendezvous manager's world update.
+            if (inviter->isRealPlayer())
+                sPlayerbotRendezvousManager.RegisterPartyAssist(bot, inviter);
 
             if (sRandomPlayerbotMgr.IsFreeBot(bot))
             {

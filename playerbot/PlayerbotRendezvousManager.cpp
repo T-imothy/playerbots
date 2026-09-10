@@ -24,6 +24,38 @@ PlayerbotRendezvousManager& PlayerbotRendezvousManager::instance()
     return manager;
 }
 
+bool PlayerbotRendezvousManager::RegisterPartyAssist(Player* bot, Player* inviter)
+{
+    if (!bot || !inviter || !bot->GetPlayerbotAI() || !bot->IsInWorld() || !inviter->IsInWorld() ||
+        !inviter->isRealPlayer() || bot->GetTeam() != inviter->GetTeam() || !bot->GetGroup() ||
+        bot->GetGroup() != inviter->GetGroup() || bot->InBattleGround() || inviter->InBattleGround() ||
+        bot->GetMap()->IsDungeon() || inviter->GetMap()->IsDungeon())
+        return false;
+
+    // A bot can temporarily serve only one human-created party. Existing
+    // autonomous bot groups are never registered here and are therefore never
+    // dismantled by the return lifecycle.
+    if (partySessions.find(bot->GetGUIDLow()) != partySessions.end())
+        return true;
+
+    PartySession session;
+    session.botGuid = bot->GetGUIDLow();
+    session.playerGuid = inviter->GetGUIDLow();
+    session.groupId = bot->GetGroup()->GetId();
+    session.originMapId = bot->GetMapId();
+    session.originInstanceId = bot->GetInstanceId();
+    session.originX = bot->GetPositionX();
+    session.originY = bot->GetPositionY();
+    session.originZ = bot->GetPositionZ();
+    session.originO = bot->GetOrientation();
+    session.previousActivity = bot->GetPlayerbotAI()->HandleRemoteCommand("action");
+    session.state = "pending";
+    session.stateSince = std::chrono::steady_clock::now();
+    partySessions[session.botGuid] = session;
+    LogPartyEvent(partySessions[session.botGuid], "registered");
+    return true;
+}
+
 PlayerbotRendezvousManager::Session* PlayerbotRendezvousManager::Find(uint32 botGuid, uint32 playerGuid)
 {
     auto found = sessions.find(botGuid);
@@ -38,9 +70,14 @@ const PlayerbotRendezvousManager::Session* PlayerbotRendezvousManager::Find(uint
 
 bool PlayerbotRendezvousManager::IsPointUnobserved(Player* bot, float x, float y, float z) const
 {
-    if (!bot || !bot->GetMap()) return false;
-    float visibility = bot->GetMap()->GetVisibilityDistance();
-    for (const auto& reference : bot->GetMap()->GetPlayers())
+    return bot && IsPointUnobservedOnMap(bot->GetMap(), bot, x, y, z);
+}
+
+bool PlayerbotRendezvousManager::IsPointUnobservedOnMap(Map* map, Player* bot, float x, float y, float z) const
+{
+    if (!map || !bot) return false;
+    float visibility = map->GetVisibilityDistance();
+    for (const auto& reference : map->GetPlayers())
     {
         Player* observer = reference.getSource();
         if (!IsRealObserver(observer)) continue;
@@ -52,8 +89,8 @@ bool PlayerbotRendezvousManager::IsPointUnobserved(Player* bot, float x, float y
 
 bool PlayerbotRendezvousManager::ValidPath(Player* bot, float sx, float sy, float sz, Player* player) const
 {
-    if (!bot || !player || bot->GetMapId() != player->GetMapId()) return false;
-    PathFinder path(bot->GetMapId(), bot->GetInstanceId());
+    if (!bot || !player || !player->GetMap()) return false;
+    PathFinder path(player->GetMapId(), player->GetInstanceId());
     if (!path.calculate(Vector3(sx, sy, sz), Vector3(player->GetPositionX(), player->GetPositionY(), player->GetPositionZ()), true))
         return false;
     PathType type = path.getPathType();
@@ -62,7 +99,7 @@ bool PlayerbotRendezvousManager::ValidPath(Player* bot, float sx, float sy, floa
 
 bool PlayerbotRendezvousManager::FindStagingPoint(Player* bot, Player* player, float& x, float& y, float& z) const
 {
-    if (!bot || !player || bot->GetMapId() != player->GetMapId()) return false;
+    if (!bot || !player || !player->GetMap()) return false;
     uint32 targetSeconds = std::max<uint32>(5, std::min<uint32>(30, sPlayerbotAIConfig.chatDirectorRendezvousTargetSeconds));
     uint32 maximumSeconds = std::max<uint32>(targetSeconds,
         std::min<uint32>(60, sPlayerbotAIConfig.chatDirectorRendezvousMaximumSeconds));
@@ -76,8 +113,9 @@ bool PlayerbotRendezvousManager::FindStagingPoint(Player* bot, Player* player, f
             float angle = float(step) * float(M_PI) / 8.0f;
             float cx = player->GetPositionX() + std::cos(angle) * radius;
             float cy = player->GetPositionY() + std::sin(angle) * radius;
-            float cz = bot->GetMap()->GetHeight(cx, cy, player->GetPositionZ() + 25.0f);
-            if (cz < -100000.0f || !IsPointUnobserved(bot, cx, cy, cz) || !ValidPath(bot, cx, cy, cz, player))
+            float cz = player->GetMap()->GetHeight(cx, cy, player->GetPositionZ() + 25.0f);
+            if (cz < -100000.0f || !IsPointUnobservedOnMap(player->GetMap(), bot, cx, cy, cz) ||
+                !ValidPath(bot, cx, cy, cz, player))
                 continue;
             x = cx; y = cy; z = cz + 0.1f;
             return true;
@@ -190,6 +228,7 @@ void PlayerbotRendezvousManager::Cancel(uint32 botGuid, uint32 playerGuid, const
 
 void PlayerbotRendezvousManager::Update()
 {
+    UpdatePartyAssists();
     const auto now = std::chrono::steady_clock::now();
     for (auto iterator = sessions.begin(); iterator != sessions.end(); )
     {
@@ -270,6 +309,199 @@ void PlayerbotRendezvousManager::Update()
         }
         if (erase) iterator = sessions.erase(iterator); else ++iterator;
     }
+}
+
+Player* PlayerbotRendezvousManager::FindPartyHuman(Player* bot) const
+{
+    if (!bot || !bot->GetGroup()) return nullptr;
+    for (GroupReference* reference = bot->GetGroup()->GetFirstMember(); reference; reference = reference->next())
+    {
+        Player* member = reference->getSource();
+        if (member && member->IsInWorld() && member->isRealPlayer())
+            return member;
+    }
+    return nullptr;
+}
+
+bool PlayerbotRendezvousManager::PartyHasHuman(Player* bot) const
+{
+    return FindPartyHuman(bot) != nullptr;
+}
+
+bool PlayerbotRendezvousManager::PartySafeToRelease(Player* bot) const
+{
+    return bot && bot->IsInWorld() && bot->IsAlive() && !bot->IsInCombat() && !bot->GetTransport() &&
+        !bot->IsTaxiFlying() && !bot->InBattleGround() && !bot->GetMap()->IsDungeon();
+}
+
+bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Player* bot, Player* player)
+{
+    if (!bot || !player || !PartySafeToRelease(bot) || !player->IsAlive() || player->InBattleGround() ||
+        player->GetMap()->IsDungeon())
+        return false;
+
+    const auto now = std::chrono::steady_clock::now();
+    bool sameMap = bot->GetMapId() == player->GetMapId() && bot->GetInstanceId() == player->GetInstanceId();
+    float distance = sameMap ? bot->GetDistance(player) : 100000.0f;
+    uint32 triggerSeconds = std::max<uint32>(10, std::min<uint32>(300,
+        sPlayerbotAIConfig.chatDirectorRendezvousTriggerSeconds));
+    bool needsCatchup = !sameMap || distance > kRunSpeedYardsPerSecond * triggerSeconds;
+
+    if (needsCatchup)
+    {
+        if (!sPlayerbotAIConfig.chatDirectorRendezvousCatchup ||
+            !IsPointUnobserved(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+            return false;
+        auto cooldown = lastRelocation.find(bot->GetGUIDLow());
+        if (cooldown != lastRelocation.end() &&
+            std::chrono::duration_cast<std::chrono::seconds>(now - cooldown->second).count() <
+                std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorRendezvousCooldownSeconds))
+            return false;
+
+        // FindStagingPoint uses the target player's map and authoritative path
+        // data. This also permits a /who invite from another outdoor zone.
+        float stageX = 0.0f, stageY = 0.0f, stageZ = 0.0f;
+        if (!FindStagingPoint(bot, player, stageX, stageY, stageZ))
+            return false;
+        bot->GetPlayerbotAI()->StopMoving();
+        if (sameMap)
+            bot->NearTeleportTo(stageX, stageY, stageZ, bot->GetAngle(player));
+        else if (!bot->TeleportTo(player->GetMapId(), stageX, stageY, stageZ, player->GetOrientation()))
+            return false;
+        session.relocated = true;
+        lastRelocation[bot->GetGUIDLow()] = now;
+        LogPartyEvent(session, "relocated_for_arrival");
+    }
+    else
+        LogPartyEvent(session, "ordinary_arrival");
+
+    session.state = "approaching";
+    session.stateSince = now;
+    return true;
+}
+
+bool PlayerbotRendezvousManager::ReturnPartyToActivity(PartySession& session, Player* bot)
+{
+    if (!bot || !bot->IsInWorld()) return false;
+    if (session.relocated && IsPointUnobserved(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+    {
+        Map* originMap = sMapMgr.FindMap(session.originMapId, session.originInstanceId);
+        if (originMap)
+        {
+            bool originHidden = true;
+            float visibility = originMap->GetVisibilityDistance();
+            for (const auto& reference : originMap->GetPlayers())
+            {
+                Player* observer = reference.getSource();
+                if (IsRealObserver(observer) && observer->IsWithinDist3d(session.originX, session.originY,
+                    session.originZ, visibility) && observer->IsWithinLOS(session.originX, session.originY,
+                    session.originZ + bot->GetCollisionHeight(), false))
+                {
+                    originHidden = false;
+                    break;
+                }
+            }
+            if (originHidden)
+                bot->TeleportTo(session.originMapId, session.originX, session.originY, session.originZ, session.originO);
+        }
+    }
+    bot->GetPlayerbotAI()->SetMaster(nullptr);
+    bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living party assist resume"), true);
+    return true;
+}
+
+void PlayerbotRendezvousManager::UpdatePartyAssists()
+{
+    const auto now = std::chrono::steady_clock::now();
+    for (auto iterator = partySessions.begin(); iterator != partySessions.end(); )
+    {
+        PartySession& session = iterator->second;
+        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(session.botGuid);
+        bool erase = false;
+        if (!bot || !bot->IsInWorld())
+            erase = true;
+        else
+        {
+            Group* group = bot->GetGroup();
+            bool originalParty = group && group->GetId() == session.groupId;
+            Player* human = originalParty ? FindPartyHuman(bot) : nullptr;
+
+            if (session.state == "departing")
+            {
+                if (PartySafeToRelease(bot))
+                {
+                    long elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - session.stateSince).count();
+                    bool hidden = IsPointUnobserved(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
+                    if (hidden || elapsed >= std::max<uint32>(15,
+                        std::min<uint32>(300, sPlayerbotAIConfig.chatDirectorRendezvousDepartureSeconds)))
+                    {
+                        ReturnPartyToActivity(session, bot);
+                        LogPartyEvent(session, hidden ? "activity_restored" : "natural_resume_no_visible_teleport");
+                        erase = true;
+                    }
+                }
+            }
+            else if (!originalParty || !human)
+            {
+                if (session.state != "departing" && PartySafeToRelease(bot))
+                {
+                    if (group && group->GetId() == session.groupId && !PartyHasHuman(bot))
+                    {
+                        WorldPacket packet;
+                        packet << uint32(PARTY_OP_LEAVE) << bot->GetName() << uint32(0);
+                        bot->GetSession()->HandleGroupDisbandOpcode(packet);
+                    }
+                    session.state = "departing";
+                    session.reason = originalParty ? "last_human_left" : "party_ended";
+                    session.stateSince = now;
+                    // Walk away naturally first; the hidden return occurs only
+                    // after no real player can observe either endpoint.
+                    float angle = bot->GetOrientation();
+                    float x = bot->GetPositionX() + std::cos(angle) * 45.0f;
+                    float y = bot->GetPositionY() + std::sin(angle) * 45.0f;
+                    float z = bot->GetMap()->GetHeight(x, y, bot->GetPositionZ() + 10.0f);
+                    if (z > -100000.0f)
+                        bot->GetMotionMaster()->MovePoint(bot->GetMapId(), x, y, z, FORCED_MOVEMENT_RUN);
+                    LogPartyEvent(session, "departure_started");
+                }
+            }
+            else if (session.state == "pending")
+            {
+                session.playerGuid = human->GetGUIDLow();
+                if (!StartPartyApproach(session, bot, human) &&
+                    std::chrono::duration_cast<std::chrono::seconds>(now - session.stateSince).count() >= 30)
+                {
+                    // If a safe hidden catch-up is not available, ordinary
+                    // Playerbots party travel remains in control.
+                    session.state = "active";
+                    session.stateSince = now;
+                    LogPartyEvent(session, "ordinary_party_travel_fallback");
+                }
+            }
+            else if (session.state == "approaching")
+            {
+                if (bot->GetMapId() == human->GetMapId() && bot->GetInstanceId() == human->GetInstanceId())
+                {
+                    if (bot->IsWithinDistInMap(human, 12.0f))
+                    {
+                        session.state = "active";
+                        session.stateSince = now;
+                        LogPartyEvent(session, "arrived");
+                    }
+                    else if (!bot->IsInCombat() && !bot->IsBeingTeleported())
+                        bot->GetMotionMaster()->MoveFollow(human, 2.0f, 0.0f, true, false);
+                }
+            }
+        }
+        if (erase) iterator = partySessions.erase(iterator); else ++iterator;
+    }
+}
+
+void PlayerbotRendezvousManager::LogPartyEvent(const PartySession& session, const char* event) const
+{
+    sLog.outString("Living WoW party rendezvous event=%s bot=%u player=%u group=%u state=%s relocated=%u prior_activity=%s reason=%s",
+        event, session.botGuid, session.playerGuid, session.groupId, session.state.c_str(), session.relocated ? 1 : 0,
+        session.previousActivity.c_str(), session.reason.c_str());
 }
 
 bool PlayerbotRendezvousManager::IsActive(uint32 botGuid, uint32 playerGuid) const
