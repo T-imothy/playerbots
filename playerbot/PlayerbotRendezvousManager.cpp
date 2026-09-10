@@ -519,11 +519,38 @@ bool PlayerbotRendezvousManager::FindStagingPoint(Player* bot, Player* player, f
 PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
     Player* bot, Player* player, const std::string& actionId, bool returnAfter)
 {
+    const bool guildEvent = actionId.find("guild-event:") == 0;
+    auto finishRequest = [&](RequestResult result, const char* reason)
+    {
+        if (guildEvent)
+        {
+            const char* outcome = result == RequestResult::accepted ? "accepted" :
+                result == RequestResult::ordinary_travel ? "ordinary_travel" :
+                result == RequestResult::unsafe ? "unsafe" : "unavailable";
+            sLog.outString(
+                "Living WoW guild rendezvous request action=%s bot=%u organizer=%u outcome=%s reason=%s",
+                actionId.c_str(), bot ? bot->GetGUIDLow() : 0,
+                player ? player->GetGUIDLow() : 0, outcome, reason);
+        }
+        return result;
+    };
     if (!bot || !player || !bot->IsInWorld() || !player->IsInWorld() ||
         bot->IsInCombat() || !bot->IsAlive() || !player->IsAlive() || bot->IsTaxiFlying())
-        return RequestResult::unavailable;
-    if (sessions.find(bot->GetGUIDLow()) != sessions.end())
-        return Find(bot->GetGUIDLow(), player->GetGUIDLow()) ? RequestResult::accepted : RequestResult::unavailable;
+        return finishRequest(RequestResult::unavailable, "participant_unavailable");
+    auto existing = sessions.find(bot->GetGUIDLow());
+    if (existing != sessions.end())
+    {
+        if (existing->second.playerGuid == player->GetGUIDLow())
+        {
+            // ApplyGuildPlans starts the rendezvous with its candidate ID and
+            // the lifecycle subsequently knows the persisted event ID. Adopt
+            // that authoritative ID without replacing the active session.
+            if (guildEvent && existing->second.actionId.find("guild-event:") == 0)
+                existing->second.actionId = actionId;
+            return RequestResult::accepted;
+        }
+        return finishRequest(RequestResult::unavailable, "different_active_session");
+    }
 
     const bool sameMap = bot->GetMapId() == player->GetMapId() &&
         bot->GetInstanceId() == player->GetInstanceId();
@@ -532,9 +559,9 @@ PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
     // return to the original activity keep their existing same-map contract.
     if (!sameMap && (returnAfter || bot->InBattleGround() || player->InBattleGround() ||
         bot->GetMap()->IsDungeon() || player->GetMap()->IsDungeon()))
-        return RequestResult::unavailable;
+        return finishRequest(RequestResult::unavailable, "restricted_cross_map");
     if (sameMap && bot->GetTransport())
-        return RequestResult::unavailable;
+        return finishRequest(RequestResult::unavailable, "transport_active");
 
     const auto now = std::chrono::steady_clock::now();
     bool deferredCrossMapArrival = false;
@@ -558,27 +585,26 @@ PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
     // then let the existing visibility and safety checks decide whether a
     // catch-up relocation is allowed. Player trades and party errands retain
     // the configured threshold and return-trip behavior.
-    const bool guildEvent = actionId.find("guild-event:") == 0;
     uint32 triggerSeconds = guildEvent ? 10 : std::max<uint32>(10, std::min<uint32>(300,
         sPlayerbotAIConfig.chatDirectorRendezvousTriggerSeconds));
     bool needsCatchup = distance > kRunSpeedYardsPerSecond * triggerSeconds;
     if (needsCatchup)
     {
         if (!sPlayerbotAIConfig.chatDirectorRendezvousCatchup)
-            return RequestResult::unavailable;
+            return finishRequest(RequestResult::unavailable, "catchup_disabled");
         auto cooldown = lastRelocation.find(bot->GetGUIDLow());
         if (cooldown != lastRelocation.end() &&
             std::chrono::duration_cast<std::chrono::seconds>(now - cooldown->second).count() <
                 std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorRendezvousCooldownSeconds))
-            return RequestResult::unavailable;
+            return finishRequest(RequestResult::unavailable, "relocation_cooldown");
         // Never make either end of the relocation disappear in front of a real
         // observer. Camera orientation is not authoritative server data, so LOS
         // and visibility from every nearby human are the conservative boundary.
         if (!IsPointUnobserved(bot, session.originX, session.originY, session.originZ))
-            return RequestResult::unsafe;
+            return finishRequest(RequestResult::unsafe, "origin_observed");
         float stageX = 0.0f, stageY = 0.0f, stageZ = 0.0f;
         if (!FindStagingPoint(bot, player, stageX, stageY, stageZ))
-            return RequestResult::unsafe;
+            return finishRequest(RequestResult::unsafe, "no_safe_staging_point");
         GenericTransport* transport = bot->GetTransport();
         bot->GetPlayerbotAI()->StopMoving();
         if (transport)
@@ -588,7 +614,7 @@ PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
         else
         {
             if (!bot->TeleportTo(player->GetMapId(), stageX, stageY, stageZ, player->GetOrientation()))
-                return RequestResult::unavailable;
+                return finishRequest(RequestResult::unavailable, "cross_map_teleport_rejected");
             deferredCrossMapArrival = true;
         }
         session.relocated = true;
@@ -605,7 +631,9 @@ PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
     if (!deferredCrossMapArrival)
         bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
     LogEvent(sessions[session.botGuid], session.relocated ? "relocated_for_arrival" : "ordinary_arrival");
-    return session.relocated ? RequestResult::accepted : RequestResult::ordinary_travel;
+    return finishRequest(session.relocated ? RequestResult::accepted : RequestResult::ordinary_travel,
+        session.relocated ? (deferredCrossMapArrival ? "cross_map_relocation_started" : "relocated_nearby") :
+        "ordinary_approach_started");
 }
 
 void PlayerbotRendezvousManager::BeginDeparture(uint32 botGuid, uint32 playerGuid, const std::string& reason)
@@ -696,7 +724,7 @@ void PlayerbotRendezvousManager::Update()
         Player* bot = sRandomPlayerbotMgr.GetPlayerBot(session.botGuid);
         Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, session.playerGuid));
         bool erase = false;
-        if (!bot || !bot->IsInWorld()) erase = true;
+        if (!bot) erase = true;
         else if (session.state == "relocating")
         {
             if (!player || !player->IsInWorld())
@@ -704,7 +732,22 @@ void PlayerbotRendezvousManager::Update()
                 LogEvent(session, "relocation_player_unavailable");
                 erase = true;
             }
-            else if (!bot->IsBeingTeleported())
+            else if (!bot->IsInWorld() || bot->IsBeingTeleported())
+            {
+                // Player::TeleportTo temporarily detaches a far-teleporting
+                // bot from its map until PlayerbotAI handles the worldport ACK.
+                // That is expected transit, not a vanished participant. The
+                // old top-level !IsInWorld check erased the rendezvous here,
+                // so the eventual arrival had no movement owner or hold.
+                if (std::chrono::duration_cast<std::chrono::seconds>(
+                        now - session.stateSince).count() >= 45)
+                {
+                    session.reason = "worldport_ack_timeout";
+                    LogEvent(session, "relocation_ack_timeout");
+                    erase = true;
+                }
+            }
+            else
             {
                 if (bot->GetMapId() != player->GetMapId() ||
                     bot->GetInstanceId() != player->GetInstanceId())
@@ -721,6 +764,7 @@ void PlayerbotRendezvousManager::Update()
                 }
             }
         }
+        else if (!bot->IsInWorld()) erase = true;
         else if (session.state == "approaching")
         {
             if (!player || !player->IsInWorld() || player->GetMapId() != bot->GetMapId())
@@ -843,6 +887,29 @@ void PlayerbotRendezvousManager::Update()
         }
         if (erase) iterator = sessions.erase(iterator); else ++iterator;
     }
+}
+
+bool PlayerbotRendezvousManager::IsGuildEventAssemblyParticipant(uint32 botGuid) const
+{
+    auto found = sessions.find(botGuid);
+    if (found == sessions.end() || found->second.actionId.find("guild-event:") != 0)
+        return false;
+    const std::string& state = found->second.state;
+    return state == "relocating" || state == "approaching" || state == "assembled";
+}
+
+bool PlayerbotRendezvousManager::IsGuildEventAssemblyOrganizer(uint32 botGuid) const
+{
+    for (const auto& pair : sessions)
+    {
+        const Session& session = pair.second;
+        if (session.playerGuid != botGuid || session.actionId.find("guild-event:") != 0)
+            continue;
+        if (session.state == "relocating" || session.state == "approaching" ||
+            session.state == "assembled")
+            return true;
+    }
+    return false;
 }
 
 Player* PlayerbotRendezvousManager::FindPartyHuman(Player* bot) const

@@ -38,6 +38,11 @@ public:
     bool IsActive(uint32 botGuid, uint32 playerGuid) const;
     bool WasRelocated(uint32 botGuid, uint32 playerGuid) const;
     std::string State(uint32 botGuid, uint32 playerGuid) const;
+    // Guild-event assembly owns non-combat movement until the complete roster
+    // reaches its organizer. The participant/organizer split lets PlayerbotAI
+    // preserve manager-issued follow movement while holding the organizer.
+    bool IsGuildEventAssemblyParticipant(uint32 botGuid) const;
+    bool IsGuildEventAssemblyOrganizer(uint32 botGuid) const;
 
 private:
     struct PartySession
