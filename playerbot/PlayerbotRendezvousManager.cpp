@@ -1149,38 +1149,81 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                 float distance = sameMap ? bot->GetDistance(human) : 100000.0f;
                 if (sameMap && distance <= 12.0f)
                 {
+                    session.staleCombatSince = std::chrono::steady_clock::time_point();
                     session.lastHumanDistance = distance;
                     session.lastFollowProgress = now;
                     session.nextFollowRepair = now + std::chrono::seconds(6);
                 }
-                else if (!bot->IsInCombat() && !bot->IsBeingTeleported() &&
-                    !bot->IsTaxiFlying() && !bot->GetTransport())
+                else
                 {
-                    if (session.lastFollowProgress.time_since_epoch().count() == 0 ||
-                        distance + 1.5f < session.lastHumanDistance)
+                    // A stale combat flag can starve the normal follow and
+                    // rendezvous paths forever: Playerbots remains in its combat
+                    // engine, fails to select a target, and this maintenance
+                    // branch traditionally refuses to move a combat-flagged bot.
+                    // Clear only an ungrounded flag after a sustained timeout.
+                    // Real combat always has a victim, attacker, hostile threat
+                    // reference, cast, or loss-of-control state and is untouched.
+                    bool ungroundedCombat = bot->IsInCombat() && sameMap && distance > 20.0f &&
+                        !human->IsInCombat() && !bot->GetVictim() && bot->getAttackers().empty() &&
+                        !bot->getHostileRefManager().getFirst() && !bot->IsNonMeleeSpellCasted(false) &&
+                        !bot->hasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL) &&
+                        !bot->IsBeingTeleported() && !bot->IsTaxiFlying() && !bot->GetTransport() &&
+                        !bot->InBattleGround() && !bot->duel;
+                    if (ungroundedCombat)
                     {
-                        session.lastHumanDistance = distance;
-                        session.lastFollowProgress = now;
+                        if (session.staleCombatSince.time_since_epoch().count() == 0)
+                        {
+                            session.staleCombatSince = now;
+                            session.reason = "stale_combat_follow_blocked";
+                            LogPartyEvent(session, "stale_combat_follow_blocked");
+                        }
+                        long staleSeconds = std::chrono::duration_cast<std::chrono::seconds>(
+                            now - session.staleCombatSince).count();
+                        if (staleSeconds >= 12)
+                        {
+                            bot->CombatStop(true);
+                            PlayerbotAI* ai = bot->GetPlayerbotAI();
+                            ai->ChangeEngine(BotState::BOT_STATE_NON_COMBAT);
+                            session.staleCombatSince = std::chrono::steady_clock::time_point();
+                            session.lastFollowProgress = now - std::chrono::seconds(18);
+                            session.nextFollowRepair = now;
+                            session.reason = "stale_combat_cleared";
+                            LogPartyEvent(session, "stale_combat_cleared");
+                        }
                     }
-                    long stalled = std::chrono::duration_cast<std::chrono::seconds>(
-                        now - session.lastFollowProgress).count();
-                    if (sameMap && distance > 20.0f && stalled >= 6 &&
-                        (session.nextFollowRepair.time_since_epoch().count() == 0 || now >= session.nextFollowRepair))
+                    else
+                        session.staleCombatSince = std::chrono::steady_clock::time_point();
+
+                    bool followBlocked = bot->IsInCombat() || bot->IsBeingTeleported() ||
+                        bot->IsTaxiFlying() || bot->GetTransport();
+                    if (!followBlocked)
                     {
-                        bot->GetMotionMaster()->MoveFollow(human, 2.0f, 0.0f, true, false);
-                        session.nextFollowRepair = now + std::chrono::seconds(6);
-                        session.reason = "active_follow_reissued";
-                        LogPartyEvent(session, "active_follow_repaired");
-                    }
-                    if ((!sameMap || distance > 70.0f) && stalled >= 18)
-                    {
-                        session.state = "pending";
-                        session.reason = "active_follow_stalled";
-                        session.forceRelocation = true;
-                        session.approachIssued = false;
-                        session.nextApproachAttempt = std::chrono::steady_clock::time_point();
-                        session.stateSince = now;
-                        LogPartyEvent(session, "active_follow_relocation_queued");
+                        if (session.lastFollowProgress.time_since_epoch().count() == 0 ||
+                            distance + 1.5f < session.lastHumanDistance)
+                        {
+                            session.lastHumanDistance = distance;
+                            session.lastFollowProgress = now;
+                        }
+                        long stalled = std::chrono::duration_cast<std::chrono::seconds>(
+                            now - session.lastFollowProgress).count();
+                        if (sameMap && distance > 20.0f && stalled >= 6 &&
+                            (session.nextFollowRepair.time_since_epoch().count() == 0 || now >= session.nextFollowRepair))
+                        {
+                            bot->GetMotionMaster()->MoveFollow(human, 2.0f, 0.0f, true, false);
+                            session.nextFollowRepair = now + std::chrono::seconds(6);
+                            session.reason = "active_follow_reissued";
+                            LogPartyEvent(session, "active_follow_repaired");
+                        }
+                        if ((!sameMap || distance > 70.0f) && stalled >= 18)
+                        {
+                            session.state = "pending";
+                            session.reason = "active_follow_stalled";
+                            session.forceRelocation = true;
+                            session.approachIssued = false;
+                            session.nextApproachAttempt = std::chrono::steady_clock::time_point();
+                            session.stateSince = now;
+                            LogPartyEvent(session, "active_follow_relocation_queued");
+                        }
                     }
                 }
             }

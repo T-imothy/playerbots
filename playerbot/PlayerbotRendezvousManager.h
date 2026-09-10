@@ -76,6 +76,7 @@ private:
         std::chrono::steady_clock::time_point humanAbsentSince;
         std::chrono::steady_clock::time_point lastFollowProgress;
         std::chrono::steady_clock::time_point nextFollowRepair;
+        std::chrono::steady_clock::time_point staleCombatSince;
         std::chrono::steady_clock::time_point deadRecoveryStarted;
         std::chrono::steady_clock::time_point nextDeadRecoveryAttempt;
         std::chrono::steady_clock::time_point freeTimeUntil;
