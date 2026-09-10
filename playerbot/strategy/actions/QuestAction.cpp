@@ -254,7 +254,14 @@ bool QuestAction::AcceptQuest(Player* requester, Quest const* quest, uint64 ques
         }
     }
 
-    if (success || !ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
+    // Chat v2 already has every party bot's authoritative quest log. Routine
+    // acceptance and "already have it" narration is redundant and creates a
+    // chorus whenever the real player speaks to a quest giver. Keep the action
+    // result internal; explicit quest questions are answered by the director.
+    bool suppressRoutineQuestNarration = sPlayerbotAIConfig.chatDirectorV2 && requester && requester->isRealPlayer() &&
+        (success || bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE || !bot->SatisfyQuestStatus(quest, false));
+    if (!suppressRoutineQuestNarration &&
+        (success || !ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT)))
         ai->TellPlayer(requester, outputMessage, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
     return success;

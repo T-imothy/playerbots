@@ -3,6 +3,7 @@
 #include "playerbot/LootObjectStack.h"
 #include "ChooseTravelTargetAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/PlayerbotChatDirector.h"
 #include "playerbot/strategy/values/TravelValues.h"
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/strategy/values/GuildValues.h"
@@ -257,6 +258,20 @@ void ChooseTravelTargetAction::ReportTravelTarget(Player* bot, Player* requester
         out << " (retry " << newTarget->GetRetryCount(false) << "/5)";
     if (out.str().empty())
         return;
+
+    if (sPlayerbotAIConfig.chatDirectorV2 && requester && requester->isRealPlayer())
+    {
+        if (QuestTravelDestination* questDestination = dynamic_cast<QuestTravelDestination*>(destination))
+        {
+            std::string areaName;
+            if (newTarget->GetPosition())
+                areaName = newTarget->GetPosition()->getAreaName();
+            sPlayerbotChatDirector.ObservePartyQuestPlan(bot, questDestination->GetQuestId(),
+                questDestination->QuestTravelDestination::GetTitle(), destination->GetTitle(), areaName,
+                (uint32)std::max<float>(0.0f, round(newTarget->Distance(bot))));
+        }
+        return;
+    }
 
     if (!isGuildMeeting)
         ai->TellPlayerNoFacing(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_TALK, false);

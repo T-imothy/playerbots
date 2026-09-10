@@ -78,6 +78,8 @@ public:
     static PlayerbotChatDirector& instance();
     void Observe(Player* bot, uint32 msgType, uint32 speakerGuid, const std::string& speakerName,
         const std::string& message, const std::string& channelName);
+    void ObservePartyQuestPlan(Player* bot, uint32 questId, const std::string& questName,
+        const std::string& objective, const std::string& areaName, uint32 distanceYards);
     void Update();
 
 private:
@@ -124,6 +126,7 @@ private:
     std::chrono::steady_clock::time_point lastConversation;
     std::chrono::steady_clock::time_point nextHealthSample;
     std::map<uint32, BotHealthState> botHealth;
+    std::map<std::string, std::chrono::steady_clock::time_point> questPlanCooldowns;
 };
 
 #define sPlayerbotChatDirector PlayerbotChatDirector::instance()

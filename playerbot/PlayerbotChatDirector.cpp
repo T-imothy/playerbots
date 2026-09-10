@@ -551,6 +551,97 @@ void PlayerbotChatDirector::Observe(Player* bot, uint32 msgType, uint32 speakerG
     found->second.candidates[candidate.guid] = std::move(candidate);
 }
 
+void PlayerbotChatDirector::ObservePartyQuestPlan(Player* bot, uint32 questId, const std::string& questName,
+    const std::string& objective, const std::string& areaName, uint32 distanceYards)
+{
+    if (!sPlayerbotAIConfig.chatDirectorV2 || !bot || !bot->GetPlayerbotAI() || !bot->GetGroup() ||
+        !questId || questName.empty() || bot->IsInCombat())
+        return;
+
+    Player* realPlayer = nullptr;
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (member && member->IsInWorld() && member->isRealPlayer())
+        {
+            realPlayer = member;
+            break;
+        }
+    }
+    if (!realPlayer)
+        return;
+
+    const auto now = std::chrono::steady_clock::now();
+    std::ostringstream cooldownKey;
+    cooldownKey << bot->GetGUIDLow() << ':' << questId;
+    std::ostringstream groupCooldownKey;
+    groupCooldownKey << "group:" << bot->GetGroup()->GetId();
+
+    std::lock_guard<std::mutex> guard(mutex);
+    auto prior = questPlanCooldowns.find(cooldownKey.str());
+    if (prior != questPlanCooldowns.end() &&
+        std::chrono::duration_cast<std::chrono::seconds>(now - prior->second).count() < 180)
+        return;
+    auto groupPrior = questPlanCooldowns.find(groupCooldownKey.str());
+    if (groupPrior != questPlanCooldowns.end() &&
+        std::chrono::duration_cast<std::chrono::seconds>(now - groupPrior->second).count() < 90)
+        return;
+    questPlanCooldowns[cooldownKey.str()] = now;
+    questPlanCooldowns[groupCooldownKey.str()] = now;
+
+    ChatDirectorEvent event;
+    event.key = "party-quest-plan:" + cooldownKey.str();
+    event.channelType = bot->GetGroup()->IsRaidGroup() ? "raid" : "party";
+    event.channelName = event.channelType;
+    event.speakerName = "Party quest state";
+    event.speakerGuid = realPlayer->GetGUIDLow();
+    event.speakerLevel = realPlayer->GetLevel();
+    event.zone = realPlayer->GetZoneId();
+    event.team = realPlayer->GetTeam();
+    event.ambient = true;
+    event.factualGrounding = true;
+    event.firstSeen = now;
+    std::ostringstream id;
+    id << "wow-party-quest-" << time(nullptr) << '-' << ++sequence;
+    event.eventId = id.str();
+
+    std::ostringstream message;
+    message << "[authoritative party quest planning opportunity] " << bot->GetName()
+            << " selected quest " << questName;
+    if (!objective.empty()) message << "; objective: " << objective;
+    if (!areaName.empty()) message << "; destination: " << areaName;
+    message << "; approximate distance: " << distanceYards << " yards. "
+            << "Decide naturally whether this is worth discussing; compare the party quest logs. "
+            << "Do not expose distance, internal travel status, IDs, or objective counters.";
+    event.message = message.str();
+
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (!member || !member->IsInWorld() || member->isRealPlayer() || !member->GetPlayerbotAI())
+            continue;
+        ChatDirectorCandidate candidate;
+        candidate.guid = member->GetGUIDLow();
+        candidate.name = member->GetName();
+        candidate.race = member->getRace();
+        candidate.cls = member->getClass();
+        candidate.level = member->GetLevel();
+        candidate.zone = member->GetZoneId();
+        candidate.grouped = true;
+        candidate.inCombat = member->IsInCombat();
+        candidate.available = member->IsAlive() && !member->IsInCombat();
+        candidate.currentActivity = member->GetPlayerbotAI()->HandleRemoteCommand("action");
+        PopulateQuestLog(member, candidate);
+        PopulateGrounding(member, realPlayer, event.message, candidate);
+        if (PlayerbotAI::IsTank(member, false)) candidate.role = "tank";
+        else if (PlayerbotAI::IsHeal(member, false)) candidate.role = "healer";
+        else candidate.role = "damage";
+        event.candidates[candidate.guid] = std::move(candidate);
+    }
+    if (!event.candidates.empty())
+        pending[event.eventId] = std::move(event);
+}
+
 static std::string JsonUnescape(const std::string& value)
 {
     std::string output;
@@ -606,7 +697,11 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
     json << "\"faction\":\"" << (event.team == ALLIANCE ? "alliance" : "horde") << "\",";
     json << "\"speaker\":{\"guid\":" << event.speakerGuid << ",\"name\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.speakerName)
          << "\",\"kind\":\"" << (event.ambient ? "system" : "player") << "\",\"level\":" << (uint32)event.speakerLevel << "},";
-    json << "\"message\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.message) << "\",\"candidates\":[";
+    json << "\"message\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.message) << "\",";
+    json << "\"grounding_events\":[";
+    if (event.factualGrounding)
+        json << "{\"type\":\"party_quest_plan\",\"authoritative\":true}";
+    json << "],\"candidates\":[";
     bool first = true;
     for (const ChatDirectorCandidate& candidate : choices)
     {
