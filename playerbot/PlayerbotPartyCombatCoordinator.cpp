@@ -461,7 +461,8 @@ void PlayerbotPartyCombatCoordinator::Update(Player* bot)
     // a bounded cadence; ownership, distance, movement, and bag checks remain
     // inside those standard Playerbots actions.
     if (maintenanceAi && maintenancePositionStable && bot->IsAlive() &&
-        !bot->IsInCombat() && (!lastLootScan || WorldTimer::getMSTimeDiff(lastLootScan, now) >= 1000))
+        !bot->IsInCombat() && !bot->IsNonMeleeSpellCasted(false) &&
+        (!lastLootScan || WorldTimer::getMSTimeDiff(lastLootScan, now) >= 1000))
     {
         lastLootScan = now;
         if (!pendingLoot && maintenanceAi->CanDoSpecificAction("add all loot", true, true))

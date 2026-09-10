@@ -96,7 +96,7 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     // This scoped broker owns the replacement and clears it directly.
     sTravelMgr.SetNullTravelTarget(currentTarget);
     context->ClearValues("no active travel destinations");
-    if (!ai->DoSpecificAction("request travel target::512",
+    if (!ai->DoSpecificAction("request progression vendor travel target",
         Event("living vendor bags", "", player), true))
     {
         sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=request_rejected bag=%u",
