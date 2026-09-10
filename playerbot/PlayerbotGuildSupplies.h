@@ -15,9 +15,11 @@ public:
     bool OwnsMovement(uint32_t player) const;
     bool AllowsMovement(uint32_t player,const std::string& action) const;
     uint32_t InTransit(uint32_t guild,const std::string& goal,std::string& status) const;
+    bool MoneyEnabled(uint32_t guild) const;
     void RecordDeposit(uint32_t guild,uint32_t actor,uint32_t entry,uint32_t count);
     void RecordMailed(uint32_t sender,uint32_t receiver,Item* item,uint32_t mail);
     void RecordCollected(uint32_t receiver,uint32_t mail,uint32_t item,uint32_t count);
+    void RecordMoneyDeposit(uint32_t guild,uint32_t actor,uint32_t copper);
 private:
     PlayerbotGuildSupplies();
     ~PlayerbotGuildSupplies();

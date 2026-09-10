@@ -4551,24 +4551,27 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
         }
         const auto bankContents=guild->GetBankItemCounts();
         if (auto supplySnapshots = CharacterDatabase.PQuery(
-                "SELECT goal_id,item_entry,required_quantity,available_quantity,reserved_quantity,state,provenance "
+                "SELECT goal_id,item_entry,required_quantity,available_quantity,reserved_quantity,state,provenance,request_kind,purpose "
                 "FROM guild_society_supply_goal WHERE guild_id=%u", guildId))
         {
             do
             {
                 Field* fields = supplySnapshots->Fetch();
                 const uint32 itemEntry = fields[1].GetUInt32();
+                const bool moneyRequest=fields[7].GetString()=="money";
                 const ItemPrototype* item = sObjectMgr.GetItemPrototype(itemEntry);
                 const auto bankEntry=bankContents.find(itemEntry);
-                const uint32 banked=bankEntry==bankContents.end()?0:bankEntry->second;
+                const uint32 banked=moneyRequest?uint32(std::min(uint64(0xFFFFFFFF),guild->GetGuildBankMoney())):bankEntry==bankContents.end()?0:bankEntry->second;
                 const std::string goalState=fields[6].GetString()=="legacy_needs_review" &&
                     fields[5].GetString()!="cancelled" ? "needs_review" : fields[5].GetString();
                 events << ",{\"event_id\":\"supply-state-" << guildId << '-' << itemEntry
                     << "\",\"type\":\"supply_goal\",\"goal_id\":\""
                     << PlayerbotLLMInterface::SanitizeForJson(fields[0].GetString())
-                    << "\",\"guild_id\":" << guildId << ",\"goal_type\":\"event_consumables\",\"item_entry\":"
+                    << "\",\"guild_id\":" << guildId << ",\"goal_type\":\"" << (moneyRequest?"money_bank":"event_consumables") << "\",\"item_entry\":"
                     << itemEntry << ",\"item_name\":\""
-                    << PlayerbotLLMInterface::SanitizeForJson(item ? item->Name1 : "")
+                    << PlayerbotLLMInterface::SanitizeForJson(moneyRequest?"Gold (copper units)":item ? item->Name1 : "")
+                    << "\",\"request_kind\":\"" << (moneyRequest?"money":"item")
+                    << "\",\"purpose\":\"" << PlayerbotLLMInterface::SanitizeForJson(fields[8].GetString())
                     << "\",\"required_quantity\":" << fields[2].GetUInt32()
                     << ",\"available_quantity\":" << banked
                     << ",\"reserved_quantity\":" << fields[4].GetUInt32() << ",\"state\":\""

@@ -14,6 +14,7 @@
 #include "Mails/Mail.h"
 #include "Entities/Bag.h"
 #include "strategy/values/ItemUsageValue.h"
+#include "strategy/values/BudgetValues.h"
 #include <algorithm>
 #include <map>
 #include <set>
@@ -47,6 +48,21 @@ void InvalidateItems(Player* p) {
     p->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("item usage");
     p->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("inventory items");
 }
+uint32 DonationAllowance(Player* p,uint32 now) {
+    if(CharacterDatabase.PQuery("SELECT delivery_id FROM guild_society_supply_delivery WHERE donor_guid=%u AND item_entry=0 AND deposited_quantity>0 AND updated_at>%u LIMIT 1",p->GetGUIDLow(),now-86400)) return 0;
+    auto traits=CharacterDatabase.PQuery("SELECT p.generosity,p.thrift,e.joined_at FROM organic_economy_profile p JOIN guild_society_member_evidence e ON e.character_guid=p.character_guid AND e.guild_id=%u WHERE p.character_guid=%u",p->GetGuildId(),p->GetGUIDLow());
+    if(!traits) return 0;
+    auto* f=traits->Fetch();const uint32 joined=f[2].GetUInt32();
+    if(joined>now) return 0;
+    // Honor all existing personal budget categories, including professions and
+    // mounts, plus a small cash floor. Refresh at execution, never trust a quote.
+    uint64 protectedMoney=5000;
+    for(uint32 category=1;category<=11;++category)
+        protectedMoney+=p->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint32>("money needed for",std::to_string(category))->Get();
+    auto held=CharacterDatabase.PQuery("SELECT COALESCE(SUM(money_copper),0) FROM organic_economy_reservation WHERE character_guid=%u AND expires_at>NOW()",p->GetGUIDLow());
+    if(held) protectedMoney+=held->Fetch()[0].GetUInt64();
+    return SupplyDonation(p->GetMoney(),protectedMoney,f[0].GetUInt32(),f[1].GetUInt32(),(now-joined)/86400);
+}
 struct Delivery {
     uint64 id=0;uint32 guild=0,donor=0,carrier=0,item=0,entry=0,quantity=0,deposited=0,mail=0;
     std::string goal,phase,blocker;
@@ -54,7 +70,7 @@ struct Delivery {
     float distance=1e30f;uint32 service=0;
 };
 struct Service {uint32 guid=0,entry=0,map=0,type=0,zone=0;float x=0,y=0,z=0;};
-struct Goal {uint32 guild=0,required=0,reserved=0;};
+struct Goal {uint32 guild=0,required=0,reserved=0;bool money=false;};
 }
 struct PlayerbotGuildSupplies::State {
     bool ready=false;uint32 check=0,next=0,load=0,cursor=0;
@@ -63,6 +79,7 @@ struct PlayerbotGuildSupplies::State {
     std::set<uint32> protectedItems;
     std::vector<Service> services;
     std::map<uint32,bool> enabled;
+    std::set<uint32> moneyEnabled;
     std::map<std::string,Goal> goals;
     uint64 workCursor=0;
     uint64 depositing=0,mailing=0;
@@ -95,10 +112,11 @@ struct PlayerbotGuildSupplies::State {
     void Reload(uint32 now) {
         load=now+15;enabled.clear();
         goals.clear();
-        auto goalRows=CharacterDatabase.PQuery("SELECT DISTINCT g.goal_id,g.guild_id,g.required_quantity,g.reserved_quantity FROM guild_society_supply_goal g JOIN guild_society_supply_delivery d ON d.goal_id=g.goal_id AND d.guild_id=g.guild_id WHERE g.state='active' AND d.phase NOT IN ('completed','cancelled','failed') ORDER BY g.guild_id,g.goal_id LIMIT 256");
-        if(goalRows) do {auto* f=goalRows->Fetch();if(Id(f[0].GetString())) goals[f[0].GetString()]={f[1].GetUInt32(),f[2].GetUInt32(),f[3].GetUInt32()};} while(goalRows->NextRow());
-        auto settings=CharacterDatabase.PQuery("SELECT guild_id FROM guild_society_supply_execution WHERE enabled=1");
-        if(settings) do {enabled[settings->Fetch()[0].GetUInt32()]=true;} while(settings->NextRow());
+        auto goalRows=CharacterDatabase.PQuery("SELECT DISTINCT g.goal_id,g.guild_id,g.required_quantity,g.reserved_quantity,g.request_kind FROM guild_society_supply_goal g JOIN guild_society_supply_delivery d ON d.goal_id=g.goal_id AND d.guild_id=g.guild_id WHERE g.state='active' AND d.phase NOT IN ('completed','cancelled','failed') ORDER BY g.guild_id,g.goal_id LIMIT 256");
+        if(goalRows) do {auto* f=goalRows->Fetch();if(Id(f[0].GetString())) goals[f[0].GetString()]={f[1].GetUInt32(),f[2].GetUInt32(),f[3].GetUInt32(),f[4].GetString()=="money"};} while(goalRows->NextRow());
+        moneyEnabled.clear();
+        auto settings=CharacterDatabase.PQuery("SELECT guild_id,money_enabled FROM guild_society_supply_execution WHERE enabled=1");
+        if(settings) do {auto* f=settings->Fetch();enabled[f[0].GetUInt32()]=true;if(f[1].GetBool()) moneyEnabled.insert(f[0].GetUInt32());} while(settings->NextRow());
         auto rows=CharacterDatabase.PQuery("SELECT delivery_id,guild_id,goal_id,donor_guid,carrier_guid,item_guid,item_entry,quantity,deposited_quantity,mail_id,phase,blocker FROM guild_society_supply_delivery WHERE phase NOT IN ('completed','cancelled','failed') ORDER BY delivery_id LIMIT 256");
         std::map<uint64,Delivery> fresh;
         if(rows) do {
@@ -179,6 +197,7 @@ bool PlayerbotGuildSupplies::Reserved(uint32 item) const {
 bool PlayerbotGuildSupplies::OwnsMovement(uint32 guid) const {
     return state_->moving.count(guid)!=0&&sPlayerbotRendezvousManager.GetPartyActivityOwner(guid)==Owner::guild_supply;
 }
+bool PlayerbotGuildSupplies::MoneyEnabled(uint32 guild) const {return state_->ready&&state_->moneyEnabled.count(guild)!=0;}
 uint32 PlayerbotGuildSupplies::InTransit(uint32 guild,const std::string& goal,std::string& status) const {
     status="searching_for_spare_items";uint32 count=0;
     auto enabled=state_->enabled.find(guild);
@@ -205,6 +224,13 @@ void PlayerbotGuildSupplies::RecordDeposit(uint32 guild,uint32 actor,uint32 entr
     // Called INSIDE native bank transaction. Restart cannot lose the proof or
     // credit an attempt that did not commit. Donor remains distinct from courier.
     CharacterDatabase.PExecute("UPDATE guild_society_supply_delivery SET phase=IF(deposited_quantity+%u>=quantity,'completed','carried'),deposited_quantity=deposited_quantity+%u,blocker='',updated_at=%u WHERE delivery_id=%llu AND phase='carried' AND deposited_quantity=%u",count,count,uint32(time(nullptr)),(unsigned long long)d.id,d.deposited);
+}
+void PlayerbotGuildSupplies::RecordMoneyDeposit(uint32 guild,uint32 actor,uint32 copper) {
+    auto found=state_->deliveries.find(state_->depositing);if(found==state_->deliveries.end()) return;
+    const auto& d=found->second;
+    if(!copper||d.entry||d.phase!="carried"||d.guild!=guild||d.donor!=actor||d.carrier!=actor||
+        copper!=state_->depositCount||copper>d.quantity||d.deposited) return;
+    CharacterDatabase.PExecute("UPDATE guild_society_supply_delivery SET phase='completed',deposited_quantity=%u,blocker='',updated_at=%u WHERE delivery_id=%llu AND phase='carried' AND deposited_quantity=0",copper,uint32(time(nullptr)),(unsigned long long)d.id);
 }
 void PlayerbotGuildSupplies::RecordMailed(uint32 sender,uint32 receiver,Item* item,uint32 mail) {
     auto found=state_->deliveries.find(state_->mailing);if(found==state_->deliveries.end()||!item) return;
@@ -235,7 +261,7 @@ void PlayerbotGuildSupplies::Update() {
     if(!s.ready) {
         if(now<s.check) return;s.check=now+60;
         s.ready=bool(CharacterDatabase.PQuery("SHOW TABLES LIKE 'guild_society_supply_delivery'"))&&
-            bool(CharacterDatabase.PQuery("SHOW TABLES LIKE 'guild_society_supply_execution'"));
+            bool(CharacterDatabase.PQuery("SHOW COLUMNS FROM guild_society_supply_execution LIKE 'money_enabled'"));
         if(!s.ready) return;
         auto services=WorldDatabase.PQuery("SELECT g.guid,g.id,g.map,g.position_x,g.position_y,g.position_z,t.type FROM gameobject g JOIN gameobject_template t ON t.entry=g.id WHERE g.map IN (0,1,530) AND (t.type=%u OR (t.type=%u AND EXISTS (SELECT 1 FROM gameobject b JOIN gameobject_template bt ON bt.entry=b.id WHERE bt.type=%u AND b.map=g.map AND ABS(b.position_x-g.position_x)<600 AND ABS(b.position_y-g.position_y)<600))) ORDER BY t.type DESC,g.guid",uint32(GAMEOBJECT_TYPE_GUILD_BANK),uint32(GAMEOBJECT_TYPE_MAILBOX),uint32(GAMEOBJECT_TYPE_GUILD_BANK));
         if(services) do {Field* f=services->Fetch();Service p;p.guid=f[0].GetUInt32();p.entry=f[1].GetUInt32();p.map=f[2].GetUInt32();p.x=f[3].GetFloat();p.y=f[4].GetFloat();p.z=f[5].GetFloat();p.type=f[6].GetUInt32();s.services.push_back(p);} while(services->NextRow());
@@ -259,6 +285,31 @@ void PlayerbotGuildSupplies::Update() {
         d.active+=d.last?std::min(now-d.last,32u):0;d.last=now;
         auto goal=s.goals.find(d.goal);
         if(goal==s.goals.end()||goal->second.guild!=d.guild) {s.Finish(d,"cancelled","goal_cancelled_items_preserved",now);continue;}
+        if(goal->second.money) {
+            if(d.entry||d.mail||d.phase!="carried") {s.Block(d,"currency_record_requires_review",now,true);continue;}
+            if(!s.moneyEnabled.count(d.guild)) {s.Block(d,"money_donations_disabled",now);continue;}
+            if(!guild->GetPurchasedTabs()) {s.Block(d,"no_guild_bank_tabs",now,true);continue;}
+            if(guild->GetGuildBankMoney()>=goal->second.required) {
+                CharacterDatabase.PExecute("UPDATE guild_society_supply_goal SET state='completed',updated_at=%u WHERE goal_id='%s' AND guild_id=%u AND request_kind='money' AND state='active'",now,d.goal.c_str(),d.guild);
+                s.Finish(d,"cancelled","bank_funding_target_met",now);continue;
+            }
+            if(auto* bank=s.Reach(p,d,false,now)) {
+                auto current=CharacterDatabase.PQuery("SELECT required_quantity FROM guild_society_supply_goal WHERE goal_id='%s' AND guild_id=%u AND request_kind='money' AND state='active'",d.goal.c_str(),d.guild);
+                if(!current) {s.Finish(d,"cancelled","fundraiser_no_longer_active",now);continue;}
+                const uint32 target=current->Fetch()[0].GetUInt32();
+                const uint32 needed=guild->GetGuildBankMoney()>=target?0:target-uint32(guild->GetGuildBankMoney());
+                const uint32 amount=std::min(needed,std::min(d.quantity,DonationAllowance(p,now)));
+                if(!amount) {s.Finish(d,"cancelled","personal_budget_or_target_changed",now);continue;}
+                if(++d.operations>2) {s.Block(d,"bank_money_operation_blocked",now,true);continue;}
+                s.depositing=d.id;s.depositCount=amount;
+                WorldPacket packet(CMSG_GUILD_BANK_DEPOSIT_MONEY);packet<<bank->GetObjectGuid()<<amount;
+                p->GetSession()->HandleGuildBankDepositMoney(packet);
+                s.depositing=0;s.depositCount=0;s.Release(d.carrier);s.load=0;
+                if(guild->GetGuildBankMoney()>=target)
+                    CharacterDatabase.PExecute("UPDATE guild_society_supply_goal SET state='completed',updated_at=%u WHERE goal_id='%s' AND guild_id=%u AND request_kind='money' AND state='active'",now,d.goal.c_str(),d.guild);
+            }
+            continue;
+        }
         if(d.phase=="mailed") {
             Mail* mail=p->GetMail(d.mail);
             if(!mail||mail->state==MAIL_STATE_DELETED) {s.Block(d,"mail_unavailable_review",now);continue;}
@@ -357,11 +408,26 @@ void PlayerbotGuildSupplies::Update() {
     }
     if(!bot) return;
     Guild* guild=sGuildMgr.GetGuildById(bot->GetGuildId());if(!guild||!guild->GetPurchasedTabs()||!sGuildGovernance.Allows(guild,"supplies")) return;
-    auto goals=CharacterDatabase.PQuery("SELECT goal_id,item_entry,required_quantity,reserved_quantity FROM guild_society_supply_goal WHERE guild_id=%u AND state='active' AND provenance IN ('human_request','event_requirement','profession_requirement','equipment_requirement') ORDER BY priority DESC,created_at LIMIT 16",guild->GetId());
+    auto goals=CharacterDatabase.PQuery("SELECT goal_id,item_entry,required_quantity,reserved_quantity,request_kind FROM guild_society_supply_goal WHERE guild_id=%u AND state='active' AND provenance IN ('human_request','event_requirement','profession_requirement','equipment_requirement') ORDER BY priority DESC,created_at LIMIT 16",guild->GetId());
     if(!goals) return;
     const auto bank=guild->GetBankItemCounts();
     do {
         Field* f=goals->Fetch();const uint32 entry=f[1].GetUInt32();uint32 transit=0;
+        if(f[4].GetString()=="money") {
+            if(!s.moneyEnabled.count(guild->GetId())||entry) continue;
+            std::string goalId=f[0].GetString();if(!Id(goalId)) continue;
+            const uint32 target=f[2].GetUInt32();
+            if(guild->GetGuildBankMoney()>=target) {
+                CharacterDatabase.PExecute("UPDATE guild_society_supply_goal SET state='completed',updated_at=%u WHERE goal_id='%s' AND guild_id=%u AND request_kind='money' AND state='active'",now,goalId.c_str(),guild->GetId());
+                continue;
+            }
+            for(const auto& pair:s.deliveries) {const auto& d=pair.second;if(d.guild==guild->GetId()&&!d.entry&&!SupplyTerminal(d.phase)) transit+=d.quantity-d.deposited;}
+            const uint32 need=SupplyOutstanding(target,uint32(guild->GetGuildBankMoney()),0,transit);
+            if(!need) continue;
+            const uint32 amount=std::min(need,DonationAllowance(bot,now));if(!amount) continue;
+            if(!CharacterDatabase.DirectPExecute("INSERT INTO guild_society_supply_delivery (guild_id,goal_id,donor_guid,carrier_guid,item_guid,item_entry,quantity,created_at,updated_at) VALUES (%u,'%s',%u,%u,0,0,%u,%u,%u)",guild->GetId(),goalId.c_str(),guid,guid,amount,now,now)) return;
+            s.Reload(now);return;
+        }
         for(const auto& pair:s.deliveries) {const auto& d=pair.second;if(d.guild==guild->GetId()&&d.entry==entry&&!SupplyTerminal(d.phase)) transit+=d.quantity-d.deposited;}
         auto stock=bank.find(entry);const uint32 need=SupplyOutstanding(f[2].GetUInt32(),stock==bank.end()?0:stock->second,f[3].GetUInt32(),transit);
         if(!need) continue;
