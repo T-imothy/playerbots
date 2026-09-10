@@ -2,6 +2,7 @@
 #include "playerbot/strategy/Value.h"
 #include "ItemUsageValue.h"
 #include "BudgetValues.h"
+#include "playerbot/PlayerbotAuctionEligibility.h"
 
 namespace ai
 {
@@ -94,13 +95,21 @@ namespace ai
     {
     public:
         CanAHSellValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "can ah sell", 2) {}
-        virtual bool Calculate() override { return ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT) && AI_VALUE2(uint32, "item count", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_AH)) > 1 && AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::ah) > GetAuctionDeposit(); };
+        virtual bool Calculate() override
+        {
+            if (!ai->HasStrategy("rpg vendor", BotState::BOT_STATE_NON_COMBAT)) return false;
+            uint32 eligibleCount = 0;
+            for (auto item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_AH)))
+                if (LivingWowAuctionItemEligible(item)) eligibleCount += item->GetCount();
+            return eligibleCount > 1 && AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::ah) > GetAuctionDeposit();
+        };
 
         uint32 GetAuctionDeposit()
         {
             float minDeposit = 0;
             for (auto item : AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string((uint8)ItemUsage::ITEM_USAGE_AH)))
             {
+                if (!LivingWowAuctionItemEligible(item)) continue;
                 uint32 deposit = ItemUsageValue::GetAhDepositCost(item->GetProto(), item->GetCount());
 
                 if (minDeposit == 0 || deposit < minDeposit)

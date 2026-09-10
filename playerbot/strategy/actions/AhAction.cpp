@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotAuctionEligibility.h"
 #include "playerbot/PlayerbotServiceTracking.h"
 #include "AhAction.h"
 #include "playerbot/PlayerbotActionBroker.h"
@@ -168,6 +169,8 @@ bool AhAction::ExecuteCommand(Player* requester, std::string text, Unit* auction
 
         for (auto item : items)
         {
+            if (!LivingWowAuctionItemEligible(item))
+                continue;
             if (activeListings + postedItems >= listingLimit)
                 break;
             if (sPlayerbotActionBroker.IsItemReserved(item->GetGUIDLow()))
@@ -243,6 +246,9 @@ bool AhAction::ExecuteCommand(Player* requester, std::string text, Unit* auction
 
 bool AhAction::PostItem(Player* requester, Item* item, uint32 price, Unit* auctioneer, uint32 time)
 {
+    // Recheck here for explicit commands and changes since candidate evaluation.
+    // Rejected candidates are not attempted listings or completed operations.
+    if (!LivingWowAuctionItemEligible(item)) return false;
     ObjectGuid itemGuid = item->GetObjectGuid();
     ItemPrototype const* proto = item->GetProto();
 

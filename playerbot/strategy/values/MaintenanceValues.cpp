@@ -14,6 +14,7 @@ bool ShouldAHSellValue::Calculate()
 
     for (auto& item : items)
     {
+        if (!LivingWowAuctionItemEligible(item)) continue;
         if (!item->GetUInt32Value(ITEM_FIELD_DURABILITY)) //Does the item need to be repaired?
             continue;
 
