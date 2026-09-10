@@ -138,6 +138,7 @@ namespace ai
             std::set<ObjectGuid> addonClients;
             std::set<ObjectGuid> threatClients;
             std::set<ObjectGuid> approvedTargets;
+            std::set<ObjectGuid> crowdControlTargets;
             std::set<ObjectGuid> threatHeld;
             std::set<ObjectGuid> threatSoftHeld;
             std::vector<LivingPartyTacticalRule> rules;
@@ -163,6 +164,8 @@ namespace ai
         std::string ApplyRoleTalents(Player* member, LivingPartyRole role) const;
         bool RoleMatchesTalents(Player* member, LivingPartyRole role) const;
         void SynchronizeAutomaticRole(Player* bot, GroupState& state) const;
+        void SynchronizeRoleCombatStrategy(Player* bot, const GroupState& state) const;
+        void SynchronizeCrowdControlMarker(Player* bot, const GroupState& state) const;
         void SynchronizeHunterPetThreat(Player* bot, const GroupState* state) const;
         LivingPartyRoleState InferRole(Player* member, const GroupState& state) const;
         bool HasShield(Player* member) const;
@@ -172,6 +175,7 @@ namespace ai
         bool IsMixedGroup(Group* group) const;
         bool IsLeader(Player* player) const;
         bool IsApprovedTarget(const GroupState& state, Unit* target) const;
+        Unit* PreferredEngagedTarget(Player* bot, const GroupState& state) const;
         uint8 ThreatPercent(Player* member, Unit* target, Player* tank) const;
         static std::vector<std::string> Fields(const std::string& message);
         static std::string Escape(const std::string& value);

@@ -20,4 +20,12 @@ namespace ai
     private:
         void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
     };
+
+    class LivingPartyHealerOffDpsStrategy : public Strategy
+    {
+    public:
+        LivingPartyHealerOffDpsStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        std::string getName() override { return "living party healer offdps"; }
+        NextAction** GetDefaultCombatActions() override;
+    };
 }

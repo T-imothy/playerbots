@@ -310,6 +310,47 @@ void PlayerbotPartyCombatCoordinator::SynchronizeAutomaticRole(Player* bot, Grou
     }
 }
 
+void PlayerbotPartyCombatCoordinator::SynchronizeRoleCombatStrategy(Player* bot, const GroupState& state) const
+{
+    if (!bot || !bot->GetPlayerbotAI()) return;
+    std::map<ObjectGuid, LivingPartyRoleState>::const_iterator assigned = state.roles.find(bot->GetObjectGuid());
+    const bool shouldUse = policy.mode == "active" && policy.roleAwareTactics &&
+        assigned != state.roles.end() && assigned->second.primary == LivingPartyRole::Healer;
+    const bool hasStrategy = bot->GetPlayerbotAI()->HasStrategy(
+        "living party healer offdps", BotState::BOT_STATE_COMBAT);
+    if (shouldUse == hasStrategy) return;
+
+    bot->GetPlayerbotAI()->ChangeStrategy(
+        shouldUse ? "+living party healer offdps" : "-living party healer offdps",
+        BotState::BOT_STATE_COMBAT);
+    sLog.outString("LivingParty healer filler bot=%u name=%s enabled=%u",
+        bot->GetGUIDLow(), bot->GetName(), shouldUse ? 1 : 0);
+}
+
+void PlayerbotPartyCombatCoordinator::SynchronizeCrowdControlMarker(Player* bot, const GroupState& state) const
+{
+    if (!bot || !bot->GetPlayerbotAI() || policy.mode != "active" || !policy.roleAwareTactics)
+        return;
+
+    // Use the conventional TBC party marker assignments. The value feeds the
+    // existing Playerbots RTI crowd-control target selection, so the class AI
+    // still validates whether it knows and can use an appropriate CC spell.
+    const char* marker = NULL;
+    switch (bot->getClass())
+    {
+        case CLASS_MAGE: marker = "moon"; break;
+        case CLASS_HUNTER: marker = "square"; break;
+        case CLASS_ROGUE: marker = "triangle"; break;
+        case CLASS_WARLOCK:
+        case CLASS_PRIEST: marker = "diamond"; break;
+        case CLASS_DRUID: marker = "moon"; break;
+        default: break;
+    }
+    if (!marker) return;
+    if (bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<std::string>("rti cc")->Get() != marker)
+        bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<std::string>("rti cc")->Set(marker);
+}
+
 void PlayerbotPartyCombatCoordinator::SynchronizeHunterPetThreat(Player* bot, const GroupState* state) const
 {
     if (!bot || bot->getClass() != CLASS_HUNTER) return;
@@ -372,8 +413,32 @@ bool PlayerbotPartyCombatCoordinator::IsApprovedTarget(const GroupState& state, 
 void PlayerbotPartyCombatCoordinator::RefreshMarkers(Group* group, GroupState& state) const
 {
     ObjectGuid skull = group->GetTargetIcon(7), cross = group->GetTargetIcon(6);
-    if (!skull.IsEmpty()) { state.primaryTarget = skull; state.approvedTargets.insert(skull); }
-    if (!cross.IsEmpty()) { state.secondaryTarget = cross; state.approvedTargets.insert(cross); }
+    state.primaryTarget = skull;
+    state.secondaryTarget = cross;
+    state.crowdControlTargets.clear();
+    // Moon, square, diamond, and triangle are protected CC slots. Markers
+    // express priority, not permission to pull: only actual combat/threat
+    // relationships enter approvedTargets.
+    static const uint8 ccIcons[] = {4, 3, 2, 1};
+    for (uint32 i = 0; i < sizeof(ccIcons) / sizeof(ccIcons[0]); ++i)
+    {
+        ObjectGuid target = group->GetTargetIcon(ccIcons[i]);
+        if (!target.IsEmpty()) state.crowdControlTargets.insert(target);
+    }
+}
+
+Unit* PlayerbotPartyCombatCoordinator::PreferredEngagedTarget(Player* bot, const GroupState& state) const
+{
+    if (!bot) return NULL;
+    const ObjectGuid order[] = {state.primaryTarget, state.secondaryTarget};
+    for (uint32 i = 0; i < sizeof(order) / sizeof(order[0]); ++i)
+    {
+        if (order[i].IsEmpty() || state.approvedTargets.find(order[i]) == state.approvedTargets.end())
+            continue;
+        Unit* target = sObjectAccessor.GetUnit(*bot, order[i]);
+        if (target && target->IsAlive() && target->IsEnemy(bot)) return target;
+    }
+    return NULL;
 }
 
 void PlayerbotPartyCombatCoordinator::RefreshCombat(Group* group, GroupState& state) const
@@ -419,8 +484,27 @@ void PlayerbotPartyCombatCoordinator::RefreshCombat(Group* group, GroupState& st
         state.lastCombatSeen = now;
         if (old == LivingPartyPhase::Idle || old == LivingPartyPhase::Armed || old == LivingPartyPhase::Recovering)
         { state.phase = LivingPartyPhase::Stabilizing; state.phaseSince = now; state.tankControlSince = 0; }
-        else if (old == LivingPartyPhase::Stabilizing && WorldTimer::getMSTimeDiff(state.phaseSince, now) >= policy.stabilizeMilliseconds)
-            state.phase = LivingPartyPhase::Engaged;
+        else if (old == LivingPartyPhase::Stabilizing)
+        {
+            Player* tank = FindMember(group, state.tank);
+            Unit* controlTarget = tank ? PreferredEngagedTarget(tank, state) : NULL;
+            if (!controlTarget && tank && !state.approvedTargets.empty())
+                controlTarget = sObjectAccessor.GetUnit(*tank, *state.approvedTargets.begin());
+            const bool tankControls = tank && controlTarget &&
+                controlTarget->GetVictim() == tank &&
+                controlTarget->getThreatManager().getThreat(tank) > 0.0f;
+            if (tankControls)
+            {
+                if (!state.tankControlSince) state.tankControlSince = now;
+            }
+            else state.tankControlSince = 0;
+
+            const uint32 elapsed = WorldTimer::getMSTimeDiff(state.phaseSince, now);
+            const bool stable = state.tankControlSince &&
+                WorldTimer::getMSTimeDiff(state.tankControlSince, now) >= policy.stabilizeMilliseconds;
+            if (stable || elapsed >= policy.maximumHoldMilliseconds)
+                state.phase = LivingPartyPhase::Engaged;
+        }
     }
     else if (old != LivingPartyPhase::Idle)
     {
@@ -454,7 +538,22 @@ void PlayerbotPartyCombatCoordinator::Update(Player* bot)
         return;
     }
     SynchronizeAutomaticRole(bot, *state);
+    SynchronizeRoleCombatStrategy(bot, *state);
+    SynchronizeCrowdControlMarker(bot, *state);
     SynchronizeHunterPetThreat(bot, state);
+
+    // Keep every non-CC action on Skull while it is engaged, then Cross. This
+    // updates the ordinary Playerbots current-target value; spell rotations,
+    // movement, and threat calculation continue through their normal paths.
+    if (Unit* priority = PreferredEngagedTarget(bot, *state))
+    {
+        Unit* current = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        if (current != priority)
+        {
+            bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<Unit*>("current target")->Set(priority);
+            bot->SetSelectionGuid(priority->GetObjectGuid());
+        }
+    }
     // Human-led bots intentionally do not load Playerbots' broad maintenance
     // strategy. Run the narrowly grounded quest-source action explicitly from
     // the mixed-party coordinator instead of relying on a trigger that does
@@ -539,8 +638,8 @@ LivingPartyRoleState PlayerbotPartyCombatCoordinator::GetRole(Player* member) co
 
 Unit* PlayerbotPartyCombatCoordinator::GetPreferredTarget(Player* bot) const
 {
-    GroupState* state = EnsureState(bot); if (!state || state->primaryTarget.IsEmpty()) return NULL;
-    return sObjectAccessor.GetUnit(*bot, state->primaryTarget);
+    GroupState* state = EnsureState(bot);
+    return state ? PreferredEngagedTarget(bot, *state) : NULL;
 }
 
 uint8 PlayerbotPartyCombatCoordinator::ThreatPercent(Player* member, Unit* target, Player* tank) const
@@ -548,6 +647,8 @@ uint8 PlayerbotPartyCombatCoordinator::ThreatPercent(Player* member, Unit* targe
     if (!member || !target || !tank) return 0;
     float tankThreat = target->getThreatManager().getThreat(tank);
     float memberThreat = target->getThreatManager().getThreat(member);
+    if (Pet* pet = member->GetPet())
+        memberThreat += target->getThreatManager().getThreat(pet);
     return tankThreat > 0.0f ? (uint8)std::min(255.0f, memberThreat * 100.0f / tankThreat) : (member == tank && memberThreat > 0.0f ? 100 : 0);
 }
 
@@ -581,6 +682,15 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
     // similar hostile setup actions are intentionally low threat, but they
     // still must not begin an unapproved pull in a human-led party.
     if (target && !CanInitiate(bot, target)) return 0.0f;
+    const bool crowdControlAction = dynamic_cast<CastCrowdControlSpellAction*>(action) != NULL;
+    if (target && !bot->CanAssist(target))
+    {
+        if (state->crowdControlTargets.count(target->GetObjectGuid()) && !crowdControlAction)
+            return 0.0f;
+        Unit* priority = PreferredEngagedTarget(bot, *state);
+        if (priority && priority != target && !crowdControlAction)
+            return 0.0f;
+    }
     ActionThreatType threat = action->getThreatType();
     LivingPartyRoleState role = GetRole(bot);
 
@@ -591,9 +701,6 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
         // whenever the tank or another member needs authoritative healing.
         if (role.primary == LivingPartyRole::Healer)
         {
-            if (actionName == "melee" || actionName == "reach melee")
-                return 0.0f;
-
             bool healingNeeded = false;
             bool emergency = false;
             Group::MemberSlotList const& slots = bot->GetGroup()->GetMemberSlots();
@@ -607,10 +714,28 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
                     healingNeeded = healingNeeded ||
                         health <= (isTank ? policy.tankHealPercent : policy.partyHealPercent);
                 }
-            if (target && !bot->CanAssist(target) && emergency)
+            if (target && !bot->CanAssist(target) && (emergency || healingNeeded))
                 return 0.0f;
-            if (target && !bot->CanAssist(target) && healingNeeded)
-                return 0.15f;
+
+            // Druid, shaman, and priest healers cast a cheap ranged filler
+            // while the group is healthy. Once they reach the configured
+            // healing reserve they stop spending mana and may use a weapon or
+            // wand instead. Paladins retain their normal melee support style.
+            const bool casterHealer = bot->getClass() == CLASS_DRUID ||
+                bot->getClass() == CLASS_SHAMAN || bot->getClass() == CLASS_PRIEST;
+            if (casterHealer && target && !bot->CanAssist(target))
+            {
+                const uint32 maximumMana = bot->GetMaxPower(POWER_MANA);
+                const uint32 manaPercent = maximumMana ?
+                    bot->GetPower(POWER_MANA) * 100 / maximumMana : 0;
+                const bool weaponAction = actionName == "melee" || actionName == "reach melee" ||
+                    actionName == "shoot";
+                const bool offensiveSpell = dynamic_cast<CastSpellAction*>(action) != NULL;
+                if (manaPercent > policy.manaReservePercent && weaponAction)
+                    return 0.0f;
+                if (manaPercent <= policy.manaReservePercent && offensiveSpell)
+                    return 0.0f;
+            }
         }
 
         // Offensive AoE is valuable only on a real multi-target encounter and
@@ -621,6 +746,10 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
         {
             if (state->approvedTargets.size() < policy.aoeMinimumTargets)
                 return 0.0f;
+            for (std::set<ObjectGuid>::const_iterator i = state->crowdControlTargets.begin();
+                i != state->crowdControlTargets.end(); ++i)
+                if (state->approvedTargets.count(*i))
+                    return 0.0f;
             for (std::set<ObjectGuid>::const_iterator i = state->approvedTargets.begin();
                 i != state->approvedTargets.end(); ++i)
                 if (Unit* engaged = sObjectAccessor.GetUnit(*bot, *i))
@@ -631,7 +760,7 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
     if (threat == ActionThreatType::ACTION_THREAT_NONE || threat == ActionThreatType::ACTION_THREAT_LOW)
     {
         if (policy.roleAwareTactics &&
-            dynamic_cast<CastCrowdControlSpellAction*>(action) != NULL &&
+            crowdControlAction &&
             state->approvedTargets.size() >= policy.ccPriorityTargets)
             return 1.35f;
         return 1.0f;
@@ -648,26 +777,30 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
     {
         state->threatSoftHeld.erase(bot->GetObjectGuid());
         if (state->threatHeld.insert(bot->GetObjectGuid()).second)
-            sLog.outDetail("LivingParty threat hard-hold bot=%s target=%u threat=%u action=%s",
+        {
+            bot->AttackStop();
+            if (Pet* pet = bot->GetPet()) pet->AttackStop();
+            sLog.outString("LivingParty threat hard-hold bot=%s target=%u threat=%u action=%s",
                 bot->GetName(), target ? target->GetGUIDLow() : 0, pct, action->getName().c_str());
+        }
         return 0.0f;
     }
     if (state->threatHeld.count(bot->GetObjectGuid()))
     {
         if (pct > policy.resumeThreatPercent) return 0.0f;
         state->threatHeld.erase(bot->GetObjectGuid());
-        sLog.outDetail("LivingParty threat resume bot=%s target=%u threat=%u",
+        sLog.outString("LivingParty threat resume bot=%s target=%u threat=%u",
             bot->GetName(), target ? target->GetGUIDLow() : 0, pct);
     }
     if (pct >= policy.softThreatPercent)
     {
         if (state->threatSoftHeld.insert(bot->GetObjectGuid()).second)
-            sLog.outDetail("LivingParty threat soft-throttle bot=%s target=%u threat=%u action=%s",
+            sLog.outString("LivingParty threat soft-throttle bot=%s target=%u threat=%u action=%s",
                 bot->GetName(), target ? target->GetGUIDLow() : 0, pct, action->getName().c_str());
         return threat == ActionThreatType::ACTION_THREAT_AOE ? 0.0f : 0.35f;
     }
     if (state->threatSoftHeld.erase(bot->GetObjectGuid()))
-        sLog.outDetail("LivingParty threat normal bot=%s target=%u threat=%u",
+        sLog.outString("LivingParty threat normal bot=%s target=%u threat=%u",
             bot->GetName(), target ? target->GetGUIDLow() : 0, pct);
     return 1.0f;
 }

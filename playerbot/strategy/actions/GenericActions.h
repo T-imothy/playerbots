@@ -13,6 +13,7 @@ namespace ai
         MeleeAction(PlayerbotAI* ai) : AttackAction(ai, "melee") {}
         virtual std::string GetTargetName() override { return "current target"; }
         virtual bool isUseful() override;
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_SINGLE; }
     };
 
     class UseLightwellAction : public MovementAction
