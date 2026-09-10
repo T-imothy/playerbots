@@ -1580,12 +1580,17 @@ bool RequestQuestTurninTargetAction::Execute(Event& event)
             // bulk partition queue used by hundreds of ordinary travel
             // searches; calculate only these destinations while preserving
             // the normal map, level, and distance validation.
+            // Quest destinations are indexed by quest id in TravelMgr. The
+            // creature/gameobject taker entry is stored on each destination,
+            // so query the exact quest and then retain only the authoritative
+            // takers discovered for this character's completed quest.
             DestinationList destinations = sTravelMgr.GetDestinations(travelInfo,
-                (uint32)TravelDestinationPurpose::QuestTaker, questTakerEntries, false, range);
+                (uint32)TravelDestinationPurpose::QuestTaker, { (int32)questId }, false, range);
             for (TravelDestination* candidate : destinations)
             {
                 QuestTravelDestination* destination = dynamic_cast<QuestTravelDestination*>(candidate);
-                if (!destination || destination->GetQuestId() != questId)
+                if (!destination || destination->GetQuestId() != questId ||
+                    std::find(questTakerEntries.begin(), questTakerEntries.end(), destination->GetEntry()) == questTakerEntries.end())
                     continue;
                 auto pointRange = destination->GetClosestPartition(center, partitions);
                 if (!pointRange.first)
