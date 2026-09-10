@@ -162,6 +162,18 @@ namespace ai
         virtual bool isUseful() override;
     };
 
+    // A bounded recovery nudge for autonomous bots whose progression route
+    // has no usable destination. Unlike "move random", this action is not a
+    // crowd-dispersal behavior and therefore must not depend on nearby-player
+    // density. It still uses normal pathing and never teleports the bot.
+    class ProgressionMoveRandomAction : public MovementAction
+    {
+    public:
+        ProgressionMoveRandomAction(PlayerbotAI* ai) : MovementAction(ai, "progression move random") {}
+        virtual bool Execute(Event& event) override;
+        virtual bool isUseful() override;
+    };
+
     class MoveToAction : public MovementAction, public Qualified
     {
     public:

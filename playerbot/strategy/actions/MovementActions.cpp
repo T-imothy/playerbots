@@ -3430,8 +3430,35 @@ bool MoveRandomAction::Execute(Event& event)
 }
 
 bool MoveRandomAction::isUseful()
-{    
+{
     return !ai->HasRealPlayerMaster() && ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid> >("nearest friendly players")->Get().size() > urand(25, 100);
+}
+
+bool ProgressionMoveRandomAction::Execute(Event& event)
+{
+    // Ask the map for a reachable ground point rather than projecting an
+    // arbitrary point at the bot's current Z. The latter frequently produces
+    // an empty path near cliffs, buildings, and starter-zone geometry.
+    for (uint8 attempt = 0; attempt < 6; ++attempt)
+    {
+        WorldPosition destination(bot);
+        if (!destination.GetReachableRandomPointOnGround(bot, 120.0f, true))
+            continue;
+
+        if (destination.fDist(WorldPosition(bot)) < 10.0f)
+            continue;
+
+        if (MoveTo(destination.getMapId(), destination.getX(), destination.getY(), destination.getZ()))
+            return true;
+    }
+
+    return false;
+}
+
+bool ProgressionMoveRandomAction::isUseful()
+{
+    return MovementAction::isUseful() && !ai->HasRealPlayerMaster() && bot->IsAlive() &&
+        !bot->IsInCombat() && !bot->InBattleGround() && WorldPosition(bot).isOverworld();
 }
 
 bool MoveToAction::Execute(Event& event)

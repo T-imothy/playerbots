@@ -1653,7 +1653,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             state.x = bot->GetPositionX();
             state.y = bot->GetPositionY();
             state.lastMoved = now;
-            if (state.nearbyRerouteResult == "requested")
+            if (state.nearbyRerouteResult == "requested" ||
+                state.nearbyRerouteResult == "empty_grind_nearby_requested")
             {
                 state.nearbyRerouteResult = "movement_confirmed";
             }
@@ -1830,6 +1831,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             }
         }
         bool noActions = lowered.find("no actions executed") != std::string::npos;
+        ActivePiorityType activityPriority = bot->GetPlayerbotAI()->GetPriorityType();
+        bool ordinaryActivityAllowed = bot->GetPlayerbotAI()->AllowActivity(ALL_ACTIVITY);
         bool routeAdvancing = observedTravelActive &&
             state.lastTravelAdvance.time_since_epoch().count() != 0 &&
             std::chrono::duration_cast<std::chrono::seconds>(
@@ -1840,6 +1843,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // limited recovery attempt on generic objective reselection while that
         // more authoritative diagnosis is aging toward questStalled.
         bool movementStalled = questSnapshot.completed.empty() && expectsMovement && noActions &&
+            ordinaryActivityAllowed &&
             observedTravelActive && !routeAdvancing &&
             stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds &&
             progressSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
@@ -1847,7 +1851,10 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // starvation, not proof that pathfinding failed. Keeping those states
         // separate lets recovery select a fresh objective instead of repeatedly
         // clearing a target that does not exist.
+        bool scheduledIdle = questSnapshot.completed.empty() && expectsMovement && noActions &&
+            !ordinaryActivityAllowed && !botOnlyGroupFollower && !humanDirectedGroup;
         bool actionStarved = questSnapshot.completed.empty() && expectsMovement && noActions &&
+            ordinaryActivityAllowed &&
             !observedTravelActive && !botOnlyGroupFollower && !humanDirectedGroup &&
             gameplayProgressSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
         // A completed quest has its own authoritative age. Unrelated kill XP,
@@ -1869,6 +1876,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         else if (questStalled) classification = "completed_quest_awaiting_turn_in";
         else if (movementStalled) classification = "movement_stalled";
         else if (actionStarved) classification = "action_starvation";
+        else if (scheduledIdle) classification = "scheduled_idle";
         else if (!expectsMovement && stillSeconds >= 60) classification = "rpg_pause";
 
         // Recovery mode 1 observes only; mode 2 performs the least invasive
@@ -1971,7 +1979,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     else
                     {
                         bool nudged = bot->GetPlayerbotAI()->DoSpecificAction(
-                            "move random", Event("living progression nearby reroute"), true);
+                            "progression move random", Event("living progression nearby reroute"), true);
                         state.nearbyRerouteResult = nudged ? "requested" : "rejected";
                     }
                 }
@@ -2004,7 +2012,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 else
                 {
                     bool nudged = bot->GetPlayerbotAI()->DoSpecificAction(
-                        "move random", Event("living progression empty grind reroute"), true);
+                        "progression move random", Event("living progression empty grind reroute"), true);
                     state.nearbyRerouteResult = nudged ?
                         "empty_grind_nearby_requested" : "empty_grind_nearby_rejected";
                 }
@@ -2019,10 +2027,26 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 state.lastGameplayProgress >= state.recoveryStartedAt;
             if (terminalStep == 7 && !recoveryProducedGameplay)
             {
-                ++state.recoveryFailureStreak;
-                state.recoveryBackoffUntil = now + std::chrono::seconds(
-                    sPlayerbotAIConfig.chatDirectorRecoveryFailureBackoffSeconds);
-                state.recoveryResult += "_backoff";
+                const bool localRerouteStarted =
+                    state.nearbyRerouteResult == "empty_grind_nearby_requested";
+                if (localRerouteStarted)
+                {
+                    // A successfully scheduled movement is not yet gameplay
+                    // progress, but parking the bot for the full failure
+                    // backoff prevents normal targeting from using the new
+                    // position. Give the nudge a short evaluation window.
+                    uint32 retrySeconds = std::min<uint32>(120,
+                        sPlayerbotAIConfig.chatDirectorRecoveryFailureBackoffSeconds);
+                    state.recoveryBackoffUntil = now + std::chrono::seconds(retrySeconds);
+                    state.recoveryResult += "_local_reroute_pending";
+                }
+                else
+                {
+                    ++state.recoveryFailureStreak;
+                    state.recoveryBackoffUntil = now + std::chrono::seconds(
+                        sPlayerbotAIConfig.chatDirectorRecoveryFailureBackoffSeconds);
+                    state.recoveryResult += "_backoff";
+                }
             }
             // Terminal targets cannot be advanced. Keeping their recovery step
             // nonzero made hundreds of bots bypass the global sampling buckets
@@ -2433,6 +2457,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         }
         json << "],\"bag_used_percent\":" << (uint32)bagUsed << ",\"objective_counters\":" << questSnapshot.objectiveJson
              << ",\"classification\":\"" << classification << "\",\"suspected_stuck\":" << (suspected ? "true" : "false")
+             << ",\"activity_allowed\":" << (ordinaryActivityAllowed ? "true" : "false")
+             << ",\"activity_priority\":" << (uint32)activityPriority
              << ",\"current_action\":\"" << PlayerbotLLMInterface::SanitizeForJson(action)
              << "\",\"travel_advanced\":" << (state.travelAdvancedSinceReport ? "true" : "false")
              << ",\"quest_state\":\"" << (!questSnapshot.completed.empty() ? "completed_quest_pending" : "none_completed")

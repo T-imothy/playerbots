@@ -581,6 +581,9 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     CreatureInfo const* cInfo = GetCreatureInfo();
 
+    if (!cInfo)
+        return false;
+
 #ifdef MANGOSBOT_TWO
     if (cInfo->Rank == CREATURE_ELITE_NORMAL && cInfo->MinLootGold == 0 && info.GetPosition().getMapId() == 609)
         return true;
@@ -594,6 +597,14 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
 
     int32 maxLevel = std::max(botLevel * (0.5f + levelMod), botLevel - 5.0f + levelBoost);
 
+    // The old formula truncates the level-one ceiling to zero and allows only
+    // level-one creatures at levels two and three. That makes the normal grind
+    // fallback empty across much of every starter area. Low-level characters
+    // can safely consider ordinary creatures up to their own level; combat AI
+    // and the checks below still reject elites and invalid targets.
+    if (botLevel <= 5)
+        maxLevel = std::max(maxLevel, botLevel);
+
     if ((int32)cInfo->MaxLevel > maxLevel) //@lvl5 max = 3, @lvl60 max = 57
         return false;
 
@@ -602,7 +613,15 @@ bool GrindTravelDestination::IsPossible(const PlayerTravelInfo& info) const
     if ((int32)cInfo->MaxLevel < minLevel) //@lvl5 min = 3, @lvl60 max = 50
         return false;
 
-    if (cInfo->MinLootGold == 0)
+    // Coin is not the definition of a useful grind target. Most starter mobs
+    // award XP and/or drop items but have no direct copper loot. Exclude actual
+    // non-progression targets explicitly instead.
+    if (cInfo->CreatureType == CREATURE_TYPE_CRITTER ||
+        cInfo->HasFlag(CreatureStaticFlags::NO_XP) ||
+        cInfo->HasFlag(CreatureStaticFlags::UNKILLABLE) ||
+        cInfo->HasFlag(CreatureStaticFlags::IMMUNE_TO_PC) ||
+        cInfo->HasFlag(CreatureStaticFlags::UNINTERACTIBLE) ||
+        cInfo->HasFlag(CreatureStaticFlags::IGNORE_COMBAT))
         return false;
 
     if (cInfo->Rank > CREATURE_ELITE_NORMAL && !info.GetBoolValue("can fight elite"))
@@ -2623,10 +2642,28 @@ void TravelMgr::GetPartitionsLock(bool getLock)
 bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info)
 {
     bool canFightElite = info.GetBoolValue("can fight elite");
-    uint32 botLevel = info.GetLevel();
+    int32 botLevel = static_cast<int32>(info.GetLevel());
 
-    if (position.getMapId() == 530 && info.GetLevel() < 58) //Outland
-        return false;
+    if (position.getMapId() == 530 && info.GetLevel() < 58)
+    {
+        // Map 530 contains both Outland and the Blood Elf/Draenei starting
+        // continents. Treating the whole map as Outland removed every travel
+        // destination for low-level characters in those starter zones.
+        AreaTableEntry const* area = position.GetArea();
+        uint32 zoneId = area ? (area->zone ? area->zone : area->ID) : 0;
+        switch (zoneId)
+        {
+            case 3430: // Eversong Woods
+            case 3433: // Ghostlands
+            case 3487: // Silvermoon City
+            case 3524: // Azuremyst Isle
+            case 3525: // Bloodmyst Isle
+            case 3557: // The Exodar
+                break;
+            default:
+                return false;
+        }
+    }
 
     if (position.getMapId() == 571 && info.GetLevel() < 68) //Northrend
         return false;
@@ -2637,13 +2674,18 @@ bool TravelMgr::IsLocationLevelValid(const WorldPosition& position, const Player
         botLevel += 2;
     else if (!info.GetBoolValue("can fight equal"))
     {
-        botLevel -= (2 + info.GetUint32Value("death count"));
+        // Saturate the penalty. The previous unsigned subtraction wrapped a
+        // low-level bot with several deaths to a huge level and admitted
+        // destinations such as Duskwood and Booty Bay.
+        uint32 deathCount = info.GetUint32Value("death count");
+        int32 penalty = 2 + static_cast<int32>(std::min<uint32>(deathCount, info.GetLevel()));
+        botLevel = std::max<int32>(0, botLevel - penalty);
     }
 
     if (botLevel < 6)
         botLevel = 6;
 
-    uint32 areaLevel = position.getAreaLevel();
+    int32 areaLevel = static_cast<int32>(position.getAreaLevel());
 
     if (!position.isOverworld() && !canFightElite)
         areaLevel += 10;
