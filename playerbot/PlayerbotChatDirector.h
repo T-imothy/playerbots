@@ -193,6 +193,8 @@ private:
         std::vector<std::chrono::steady_clock::time_point> recoveryAttempts;
         std::string recoveryResult;
         uint8 lastLevel = 0;
+        uint32 lastXp = 0;
+        uint32 recoveryStep = 0;
     };
 
     std::mutex mutex;

@@ -680,10 +680,13 @@ bool PlayerbotAIConfig::Initialize()
     chatDirectorSharedActivityDistance = config.GetIntDefault("AiPlayerbot.ChatDirectorSharedActivityDistance", 45);
     chatDirectorMaximumLevelDifference = config.GetIntDefault("AiPlayerbot.ChatDirectorMaximumLevelDifference", 3);
     chatDirectorBotRecoveryMode = config.GetIntDefault("AiPlayerbot.ChatDirectorBotRecoveryMode", 1);
+    chatDirectorHealthSampleSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorHealthSampleSeconds", 300);
     chatDirectorMovementStuckSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorMovementStuckSeconds", 120);
     chatDirectorQuestStuckSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorQuestStuckSeconds", 180);
     chatDirectorRecoveryCooldownSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRecoveryCooldownSeconds", 600);
     chatDirectorMaxRecoveriesPerHour = config.GetIntDefault("AiPlayerbot.ChatDirectorMaxRecoveriesPerHour", 2);
+    chatDirectorRecoveryMaximumStep = config.GetIntDefault("AiPlayerbot.ChatDirectorRecoveryMaximumStep", 6);
+    chatDirectorQuestInteraction = config.GetBoolDefault("AiPlayerbot.ChatDirectorQuestInteraction", true);
     try {
         chatDirectorEndPointUrl = parseUrl(chatDirectorEndpoint);
     }

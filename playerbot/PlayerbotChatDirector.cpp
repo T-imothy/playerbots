@@ -996,11 +996,23 @@ static bool HasCompletedQuest(Player* bot)
     return false;
 }
 
+static void CountProgressionQuests(Player* bot, uint32& active, uint32& completed)
+{
+    active = completed = 0;
+    for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+    {
+        uint32 questId = bot->GetQuestSlotQuestId(slot);
+        if (!questId) continue;
+        ++active;
+        if (bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE) ++completed;
+    }
+}
+
 void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time_point now)
 {
     if (nextHealthSample.time_since_epoch().count() != 0 && now < nextHealthSample)
         return;
-    nextHealthSample = now + std::chrono::seconds(10);
+    nextHealthSample = now + std::chrono::seconds(std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorHealthSampleSeconds));
 
     std::vector<std::string> samples;
     for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
@@ -1010,7 +1022,10 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             continue;
         BotHealthState& state = botHealth[guid];
         bool levelChanged = state.lastLevel != 0 && state.lastLevel != bot->GetLevel();
+        uint32 currentXp = bot->GetUInt32Value(PLAYER_XP);
+        bool xpChanged = state.lastXp != 0 && state.lastXp != currentXp;
         state.lastLevel = bot->GetLevel();
+        state.lastXp = currentXp;
         if (state.lastMoved.time_since_epoch().count() == 0)
         {
             state.x = bot->GetPositionX();
@@ -1053,13 +1068,16 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         long completeSeconds = completedQuest ? std::chrono::duration_cast<std::chrono::seconds>(now - state.completedQuestSince).count() : 0;
         bool movementStalled = expectsMovement && stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
         bool questStalled = completedQuest && completeSeconds >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds;
+        uint8 bagUsed = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
+        bool inventoryBlocked = bagUsed >= 95;
         bool suspected = !excluded && (movementStalled || questStalled);
         std::string classification = "active";
         if (!bot->IsAlive()) classification = "dead";
         else if (bot->IsInCombat()) classification = "combat";
         else if (bot->IsTaxiFlying() || bot->GetTransport()) classification = "transport";
         else if (playerStay) classification = "group_wait";
-        else if (questStalled) classification = "quest_turn_in_stalled";
+        else if (inventoryBlocked && stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds) classification = "inventory_blocked";
+        else if (questStalled) classification = "completed_quest_awaiting_turn_in";
         else if (movementStalled) classification = "movement_stalled";
         else if (!expectsMovement && stillSeconds >= 60) classification = "rpg_pause";
 
@@ -1077,16 +1095,45 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     sPlayerbotAIConfig.chatDirectorRecoveryCooldownSeconds;
             if (cooldownReady && state.recoveryAttempts.size() < sPlayerbotAIConfig.chatDirectorMaxRecoveriesPerHour)
             {
-                bool recovered = bot->GetPlayerbotAI()->DoSpecificAction(
-                    "reset travel target", Event("living chat director recovery"), true);
+                bool recovered = false;
+                std::string recovery;
+                if (inventoryBlocked && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 5)
+                {
+                    bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living progression inventory recovery"), true);
+                    recovered = bot->GetPlayerbotAI()->DoSpecificAction("choose travel target", Event("living progression vendor recovery"), true);
+                    recovery = recovered ? "vendor_route_selected" : "vendor_route_unavailable";
+                    state.recoveryStep = 5;
+                }
+                else if (questStalled && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 3)
+                {
+                    bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living progression turnin recovery"), true);
+                    recovered = bot->GetPlayerbotAI()->DoSpecificAction("choose travel target", Event("living progression turnin recovery"), true);
+                    recovery = recovered ? "quest_turnin_route_selected" : "quest_turnin_route_unavailable";
+                    state.recoveryStep = 3;
+                }
+                else if (sPlayerbotAIConfig.chatDirectorQuestInteraction &&
+                    lowered.find("quest") != std::string::npos && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 6)
+                {
+                    recovered = bot->GetPlayerbotAI()->DoSpecificAction("use random quest item", Event("living progression quest item recovery"), true);
+                    recovery = recovered ? "quest_item_used" : "quest_item_not_usable";
+                    state.recoveryStep = 6;
+                }
+                else
+                {
+                    recovered = bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living progression objective recovery"), true);
+                    if (recovered && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 2)
+                        recovered = bot->GetPlayerbotAI()->DoSpecificAction("choose travel target", Event("living progression route recovery"), true);
+                    recovery = recovered ? "objective_route_reselected" : "objective_reselection_rejected";
+                    state.recoveryStep = std::min<uint32>(2, sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep);
+                }
                 state.lastRecovery = now;
                 state.recoveryAttempts.push_back(now);
-                state.recoveryResult = recovered ? "travel_target_reset" : "travel_target_reset_rejected";
+                state.recoveryResult = recovery;
                 if (recovered)
                 {
                     state.lastMoved = now;
                     state.completedQuestSince = completedQuest ? now : std::chrono::steady_clock::time_point();
-                    classification = "recovering_travel_target";
+                    classification = "recovering";
                     suspected = false;
                 }
             }
@@ -1106,16 +1153,23 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         bool heightFault = heightCandidate && std::chrono::duration_cast<std::chrono::seconds>(now - state.heightFaultSince).count() >= 3;
 
         uint32 areaId = sServerFacade.GetAreaId(bot);
+        uint32 activeQuests = 0, completedQuests = 0;
+        CountProgressionQuests(bot, activeQuests, completedQuests);
+        std::string pathStatus = movementStalled ? "movement_blocked" : (expectsMovement ? "route_ready" : "not_applicable");
         std::string zoneName, subzoneName;
         if (AreaTableEntry const* zone = GetAreaEntryByAreaID(bot->GetZoneId())) zoneName = zone->area_name[0];
         if (AreaTableEntry const* area = GetAreaEntryByAreaID(areaId)) subzoneName = area->area_name[0];
         std::ostringstream json;
         json << "{\"bot_guid\":" << guid << ",\"bot_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(bot->GetName())
              << "\",\"level\":" << (uint32)bot->GetLevel() << ",\"level_changed\":" << (levelChanged ? "true" : "false")
+             << ",\"xp\":" << currentXp << ",\"xp_changed\":" << (xpChanged ? "true" : "false")
+             << ",\"played_seconds\":" << bot->GetTotalPlayedTime()
+             << ",\"active_quests\":" << activeQuests << ",\"completed_turn_ins\":" << completedQuests
+             << ",\"bag_used_percent\":" << (uint32)bagUsed << ",\"objective_counters\":{}"
              << ",\"classification\":\"" << classification << "\",\"suspected_stuck\":" << (suspected ? "true" : "false")
              << ",\"current_action\":\"" << PlayerbotLLMInterface::SanitizeForJson(action)
              << "\",\"quest_state\":\"" << (completedQuest ? "completed_quest_pending" : "none_completed")
-             << "\",\"path_status\":\"not_instrumented\",\"zone_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(zoneName)
+             << "\",\"path_status\":\"" << pathStatus << "\",\"zone_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(zoneName)
              << "\",\"subzone_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(subzoneName)
              << "\",\"x\":" << bot->GetPositionX() << ",\"y\":" << bot->GetPositionY()
              << ",\"server_z\":" << bot->GetPositionZ() << ",\"terrain_z\":" << (validTerrain ? terrainZ : bot->GetPositionZ())
@@ -1125,6 +1179,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recovery_mode\":" << sPlayerbotAIConfig.chatDirectorBotRecoveryMode
              << ",\"recovery_result\":\"" << PlayerbotLLMInterface::SanitizeForJson(state.recoveryResult) << "\""
              << ",\"recoveries_last_hour\":" << state.recoveryAttempts.size()
+             << ",\"recovery_step\":" << state.recoveryStep
              << ",\"grouped\":" << (bot->GetGroup() ? "true" : "false") << "}";
         samples.push_back(json.str());
     }
@@ -1136,7 +1191,10 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
     for (size_t start = 0; start < samples.size(); start += healthBatchSize)
     {
         std::ostringstream body;
-        body << "{\"samples\":[";
+        body << "{\"effective_policy\":{\"mode\":\"" <<
+            (sPlayerbotAIConfig.chatDirectorBotRecoveryMode == 0 ? "off" : (sPlayerbotAIConfig.chatDirectorBotRecoveryMode == 1 ? "observe" : "recover")) <<
+            "\",\"sample_seconds\":" << sPlayerbotAIConfig.chatDirectorHealthSampleSeconds <<
+            ",\"maximum_recovery_step\":" << sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep << "},\"samples\":[";
         for (size_t i = start; i < samples.size() && i < start + healthBatchSize; ++i)
         {
             if (i != start) body << ',';

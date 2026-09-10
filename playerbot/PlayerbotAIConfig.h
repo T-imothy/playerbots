@@ -403,8 +403,9 @@ public:
     bool llmGlobalContext, chatDirectorV2, chatDirectorSocialActions, chatDirectorProactiveGrouping;
     bool chatDirectorSuppressLegacyOperationalChat;
     bool chatDirectorRendezvousCatchup;
-    uint32 chatDirectorBotRecoveryMode, chatDirectorMovementStuckSeconds, chatDirectorQuestStuckSeconds;
-    uint32 chatDirectorRecoveryCooldownSeconds, chatDirectorMaxRecoveriesPerHour;
+    uint32 chatDirectorBotRecoveryMode, chatDirectorHealthSampleSeconds, chatDirectorMovementStuckSeconds, chatDirectorQuestStuckSeconds;
+    uint32 chatDirectorRecoveryCooldownSeconds, chatDirectorMaxRecoveriesPerHour, chatDirectorRecoveryMaximumStep;
+    bool chatDirectorQuestInteraction;
     uint32 chatDirectorRendezvousTargetSeconds, chatDirectorRendezvousMaximumSeconds;
     uint32 chatDirectorRendezvousTriggerSeconds, chatDirectorRendezvousCooldownSeconds;
     uint32 chatDirectorRendezvousDepartureSeconds;
