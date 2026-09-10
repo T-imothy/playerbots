@@ -762,8 +762,7 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
         !bot->IsInCombat())
     {
         uint8 bagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
-        bool canSell = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<bool>("can sell")->Get();
-        if (bagUsage >= 90 && canSell)
+        if (bagUsage > 80)
         {
             ChatDirectorCapability capability;
             capability.capabilityRef = "vendor:" + std::to_string(bot->GetGUIDLow()) + ':' +

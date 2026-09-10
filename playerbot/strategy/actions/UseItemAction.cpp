@@ -1403,9 +1403,6 @@ bool UseRandomQuestItemAction::Execute(Event& event)
     GameObject* goTarget = nullptr;
 
     std::list<Item*> questItems = AI_VALUE2(std::list<Item*>, "inventory items", "quest");
-    if (questItems.empty())
-        return false;
-
     Item* item = nullptr;
 
     // Source items are not the objective item itself. Many classic quests ask
@@ -1429,21 +1426,54 @@ bool UseRandomQuestItemAction::Execute(Event& event)
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(sourceId);
             if (!proto)
                 continue;
+            Item* sourceItem = bot->GetItemByEntry(sourceId);
+            if (!sourceItem)
+                continue;
             bool hasOnUseSpell = false;
+            uint32 useSpellId = 0;
             for (uint8 spell = 0; spell < MAX_ITEM_PROTO_SPELLS; ++spell)
                 if (proto->Spells[spell].SpellId && proto->Spells[spell].SpellTrigger == ITEM_SPELLTRIGGER_ON_USE)
                 {
                     hasOnUseSpell = true;
+                    useSpellId = proto->Spells[spell].SpellId;
                     break;
                 }
             if (!hasOnUseSpell)
                 continue;
-            for (Item* questItem : questItems)
-                if (questItem && questItem->GetEntry() == sourceId)
+
+            SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(useSpellId);
+            if (spellInfo && spellInfo->RequiresSpellFocus)
+            {
+                GameObject* requiredFocus = nullptr;
+                std::list<ObjectGuid> nearbyObjects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
+                for (ObjectGuid const& guid : nearbyObjects)
                 {
-                    item = questItem;
-                    break;
+                    GameObject* gameObject = ai->GetGameObject(guid);
+                    GameObjectInfo const* info = gameObject ? gameObject->GetGOInfo() : nullptr;
+                    if (!info || info->type != GAMEOBJECT_TYPE_SPELL_FOCUS ||
+                        info->spellFocus.focusId != spellInfo->RequiresSpellFocus)
+                        continue;
+                    if (!requiredFocus || bot->GetDistance(gameObject) < bot->GetDistance(requiredFocus))
+                        requiredFocus = gameObject;
                 }
+
+                if (!requiredFocus)
+                {
+                    SetDuration(3000);
+                    return false;
+                }
+
+                if (!bot->IsWithinDistInMap(requiredFocus, INTERACTION_DISTANCE))
+                {
+                    SET_AI_VALUE(GuidPosition, "rpg target", GuidPosition(requiredFocus));
+                    bool moving = ai->DoSpecificAction("move to rpg target",
+                        Event("living quest source focus", "", requester), true);
+                    SetDuration(moving ? 1500 : 3000);
+                    return moving;
+                }
+            }
+
+            item = sourceItem;
         }
     }
 
@@ -1451,11 +1481,17 @@ bool UseRandomQuestItemAction::Execute(Event& event)
     {
         bool success = UseItem(requester, item->GetEntry(), (Unit*)nullptr);
         if (success)
+        {
+            RESET_AI_VALUE(GuidPosition, "rpg target");
             SetDuration(sPlayerbotAIConfig.globalCoolDown);
+        }
         else
             SetDuration(5000);
         return success;
     }
+
+    if (questItems.empty())
+        return false;
 
     for (uint8 i = 0; i< 5;i++)
     {

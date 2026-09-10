@@ -184,9 +184,8 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
         bot->GetGroup() && bot->GetGroup() == player->GetGroup() && !bot->IsInCombat())
     {
         action.initialBagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
-        bool canSell = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<bool>("can sell")->Get();
         bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living vendor bags", "", player), true);
-        bool requested = canSell && action.initialBagUsage >= 90 &&
+        bool requested = action.initialBagUsage > 80 &&
             bot->GetPlayerbotAI()->DoSpecificAction("request travel target::512", Event("living vendor bags", "", player), true);
         if (requested)
         {
