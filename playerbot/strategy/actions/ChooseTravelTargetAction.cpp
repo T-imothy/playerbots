@@ -1575,16 +1575,29 @@ bool RequestQuestTurninTargetAction::Execute(Event& event)
         questTakerEntries, range]()
         {
             PartitionedTravelList list;
-            PartitionedTravelList candidates = sTravelMgr.GetPartitions(center, partitions, travelInfo,
+            // This is already narrowed to the exact authoritative taker
+            // entries for one completed quest. Do not wait behind the shared
+            // bulk partition queue used by hundreds of ordinary travel
+            // searches; calculate only these destinations while preserving
+            // the normal map, level, and distance validation.
+            DestinationList destinations = sTravelMgr.GetDestinations(travelInfo,
                 (uint32)TravelDestinationPurpose::QuestTaker, questTakerEntries, false, range);
-            for (auto& [partition, points] : candidates)
+            for (TravelDestination* candidate : destinations)
             {
-                for (auto& point : points)
+                QuestTravelDestination* destination = dynamic_cast<QuestTravelDestination*>(candidate);
+                if (!destination || destination->GetQuestId() != questId)
+                    continue;
+                auto pointRange = destination->GetClosestPartition(center, partitions);
+                if (!pointRange.first)
+                    continue;
+                for (WorldPosition* position : pointRange.second)
                 {
-                    QuestTravelDestination* destination =
-                        dynamic_cast<QuestTravelDestination*>(std::get<TravelDestination*>(point));
-                    if (destination && destination->GetQuestId() == questId)
-                        list[partition].push_back(point);
+                    if (!position || !TravelMgr::IsLocationLevelValid(*position, travelInfo))
+                        continue;
+                    float distance = position->distance(center);
+                    if (distance <= 0.0f || distance > range)
+                        continue;
+                    list[pointRange.first].push_back(TravelPoint(destination, position, distance));
                 }
             }
             return list;
