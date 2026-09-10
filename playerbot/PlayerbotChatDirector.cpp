@@ -835,12 +835,15 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
                 capability.type = "resume_party_assist";
                 capability.description = "Recall this party member from personal errands and resume close party follow.";
             }
-            else if (bot->GetMapId() == speaker->GetMapId() && bot->IsWithinDistInMap(speaker, 120.0f))
+            else if ((bot->GetMapId() == speaker->GetMapId() && bot->IsWithinDistInMap(speaker, 120.0f)) ||
+                sPlayerbotSocialActionBroker.HasActiveVendorTrip(bot->GetGUIDLow()))
             {
                 capability.capabilityRef = "party:free-time:" + std::to_string(bot->GetGUIDLow()) + ':' +
                     std::to_string(speaker->GetGUIDLow()) + ':' + std::to_string(party->GetId());
                 capability.type = "grant_party_free_time";
-                capability.description = "Temporarily release this party member from close follow for safe personal vendor, mail, bank, auction, repair, trainer, and profession errands.";
+                capability.description = sPlayerbotSocialActionBroker.HasActiveVendorTrip(bot->GetGUIDLow()) ?
+                    "After the current vendor or bank trip finishes, continue with safe personal mail, auction, repair, trainer, profession, and other city errands." :
+                    "Temporarily release this party member from close follow for safe personal vendor, mail, bank, auction, repair, trainer, and profession errands.";
             }
             if (!capability.type.empty())
                 candidate.actionCapabilities.push_back(std::move(capability));

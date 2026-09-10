@@ -21,6 +21,9 @@ public:
     bool CanUseSharedObject(Player* bot, Player* player, ObjectGuid guid);
     void AddSharedObjectCapabilities(Player* bot, Player* player, ChatDirectorCandidate& candidate);
     uint32 PreferredQuest(uint32 botGuid) const;
+    // Used while grounding chat capabilities so a leader can queue broader
+    // personal free time behind an already-authorized maintenance trip.
+    bool HasActiveVendorTrip(uint32 botGuid) const;
     void Update();
 
 private:
@@ -76,7 +79,6 @@ private:
     };
 
     bool ValidateCommon(Player* bot, Player* player) const;
-    bool HasActiveVendorTrip(uint32 botGuid) const;
     bool StartVendorTrip(Player* bot, Player* player, const std::string& actionId,
         const std::string& eventId, const std::string& proposalId, bool announce);
     bool SetMaintenanceTarget(Player* bot, const std::string& maintenanceType) const;

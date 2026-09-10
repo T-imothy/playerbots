@@ -516,7 +516,8 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
     action.playerGuid = proposal.targetGuid;
     action.state = "preparing";
     action.expires = std::chrono::steady_clock::now() + std::chrono::seconds(
-        proposal.type == "vendor_bags" ? 300 : proposal.type == "leave_ai_party_for_player" ? 180 : 90);
+        proposal.type == "vendor_bags" ? 300 : proposal.type == "grant_party_free_time" ? 360 :
+        proposal.type == "leave_ai_party_for_player" ? 180 : 90);
 
     std::smatch match;
     bool completed = false;
@@ -656,9 +657,16 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
         (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
         (uint32)std::stoul(match[2].str()) == player->GetGUIDLow() &&
         bot->GetGroup() && bot->GetGroup() == player->GetGroup() &&
-        bot->GetGroup()->GetId() == (uint32)std::stoul(match[3].str()) &&
-        !HasActiveVendorTrip(bot->GetGUIDLow()))
+        bot->GetGroup()->GetId() == (uint32)std::stoul(match[3].str()))
     {
+        action.groupId = bot->GetGroup()->GetId();
+        if (HasActiveVendorTrip(bot->GetGUIDLow()))
+        {
+            action.state = "waiting_for_vendor_trip";
+            actions[action.actionId] = action;
+            Report(actions[action.actionId]);
+            return true;
+        }
         completed = sPlayerbotRendezvousManager.BeginPartyFreeTime(
             bot, player, "party_leader_granted_free_time");
     }
@@ -889,6 +897,46 @@ void PlayerbotSocialActionBroker::Update()
             {
                 action.state = "expired";
                 action.failureReason = "could not safely leave the AI-only party before the offer expired";
+                Report(action);
+            }
+        }
+        else if (action.state == "waiting_for_vendor_trip")
+        {
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
+            Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
+            Group* group = bot ? bot->GetGroup() : nullptr;
+            if (!bot || !player || !ValidateCommon(bot, player) || !group ||
+                group != player->GetGroup() || group->GetId() != action.groupId ||
+                !group->IsLeader(player->GetObjectGuid()))
+            {
+                action.state = "rejected";
+                action.failureReason = "party or leader state changed before personal errands could begin";
+                Report(action);
+            }
+            else if (!HasActiveVendorTrip(action.botGuid))
+            {
+                if (sPlayerbotRendezvousManager.IsPartyFreeTime(action.botGuid) ||
+                    sPlayerbotRendezvousManager.BeginPartyFreeTime(
+                        bot, player, "party_leader_granted_free_time_after_maintenance"))
+                {
+                    action.state = "completed";
+                    action.completedAt = now;
+                    Report(action);
+                }
+                else if (now >= action.expires)
+                {
+                    action.state = "expired";
+                    action.failureReason = "personal errands could not begin safely after maintenance";
+                    Report(action);
+                }
+                else if (!bot->IsInCombat())
+                    sPlayerbotRendezvousManager.ResumePartyAssist(
+                        bot, player, "party_free_time_waiting_for_safe_return");
+            }
+            else if (now >= action.expires)
+            {
+                action.state = "expired";
+                action.failureReason = "the existing maintenance trip did not finish before personal errands expired";
                 Report(action);
             }
         }

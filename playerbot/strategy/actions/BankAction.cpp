@@ -95,7 +95,10 @@ bool BankAction::ExecuteCommand(Player* requester, const std::string& text, Unit
                     continue;
             }
 
-            result |= Deposit(requester, item);
+            // The validated maintenance path already reports one useful
+            // summary to party chat. Keep its internal item transfers quiet;
+            // explicit player-issued bank commands retain normal feedback.
+            result |= Deposit(safeStorage ? nullptr : requester, item);
         }
     }
 
