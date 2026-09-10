@@ -224,9 +224,9 @@ struct PlayerbotGuildSupplies::State {
         }
         return nullptr;
     }
-    bool MakeCollectionRoom(Player* p,Delivery& d,uint32 now) {
+    bool MakeCollectionRoom(Player* p,Delivery& d,uint32 now,bool requireEmptySlot=false) {
         ItemPosCountVec dest;
-        if(p->CanStoreNewItem(NULL_BAG,NULL_SLOT,dest,d.entry,d.quantity-d.deposited)==EQUIP_ERR_OK) return true;
+        if(!requireEmptySlot && p->CanStoreNewItem(NULL_BAG,NULL_SLOT,dest,d.entry,d.quantity-d.deposited)==EQUIP_ERR_OK) return true;
         const auto summary=sPlayerbotInventoryPressure.Analyze(p);
         const bool vendor=summary.vendorStacks&&d.prepVendor<2;
         const bool bank=summary.HasBankableStorage()&&d.prepBank<2;
@@ -276,6 +276,7 @@ bool PlayerbotGuildSupplies::AllowsMovement(uint32 guid,const std::string& actio
     // The executor installs its own point movement. Do not suppress combat,
     // healing, rolls or validated nearby loot; only alternate route owners.
     return action.find("travel")==std::string::npos&&action.find("rpg")==std::string::npos&&
+        action.find("reach spell")==std::string::npos&&
         action.find("follow")==std::string::npos&&action.find("move random")==std::string::npos&&
         action!="go"&&action.find("grind")==std::string::npos;
 }
@@ -359,7 +360,16 @@ void PlayerbotGuildSupplies::Update() {
         if(!guild||!s.enabled[d.guild]||!sGuildGovernance.Allows(guild,"supplies")) {s.Block(d,"supply_automation_paused",now);continue;}
         if(!guild->GetMemberSlot(ObjectGuid(HIGHGUID_PLAYER,d.carrier))) {s.Block(d,"recipient_no_longer_member",now);continue;}
         const char* safety=SafetyBlocker(p);
-        if(*safety) {d.last=0;s.Block(d,safety,now);continue;}
+        if(*safety) {
+            d.last=0;
+            // A short cast pauses the trip; releasing ownership here allowed
+            // unrelated town/buff movement to repeatedly steal its route.
+            // All other safety blockers still release immediately.
+            if(std::string(safety)=="finishing_cast_or_trade" && !p->GetTradeData() && s.moving.count(d.carrier)) {
+                if(d.blocker!=safety) {d.blocker=safety;CharacterDatabase.PExecute("UPDATE guild_society_supply_delivery SET blocker='%s',updated_at=%u WHERE delivery_id=%llu",safety,now,(unsigned long long)d.id);}
+            } else s.Block(d,safety,now);
+            continue;
+        }
         if(now<d.retry) continue;
         d.active+=d.last?std::min(now-d.last,32u):0;d.last=now;
         auto goal=s.goals.find(d.goal);
@@ -452,7 +462,7 @@ void PlayerbotGuildSupplies::Update() {
             if(p->GetMoney()<30) {s.Block(d,"insufficient_postage",now,true);continue;}
             if(s.Reach(p,d,true,now)) {
                 if(!CharacterDatabase.PQuery("SELECT goal_id FROM guild_society_supply_goal WHERE goal_id='%s' AND guild_id=%u AND state='active'",d.goal.c_str(),d.guild)) {s.Finish(d,"cancelled","goal_cancelled_items_preserved",now);continue;}
-                if(++d.operations>2) {s.Block(d,"mail_send_blocked",now,true);continue;}
+                if(d.operations>=2) {s.Block(d,"mail_send_blocked",now,true);continue;}
                 if(item->GetCount()>amount) {
                     // Native stack splitting, saved with the new attachment
                     // reference before sending. Never create extra quantities.
@@ -464,7 +474,7 @@ void PlayerbotGuildSupplies::Update() {
                         for(uint8 slot=0;slot<container->GetBagSize()&&!empty;++slot)
                             if(!p->GetItemByPos(bag,slot)) empty=(uint16(bag)<<8)|slot;
                     }
-                    if(!empty) {s.Block(d,"bag_space_needed_to_split",now,true);continue;}
+                    if(!empty) {s.MakeCollectionRoom(p,d,now,true);continue;}
                     const uint32 before=item->GetCount();p->SplitItem(item->GetPos(),empty,amount);
                     Item* split=p->GetItemByPos(empty);
                     if(!split||split->GetEntry()!=d.entry||split->GetCount()!=amount||item->GetCount()!=before-amount) {s.Block(d,"stack_split_unavailable",now,true);continue;}
@@ -474,6 +484,7 @@ void PlayerbotGuildSupplies::Update() {
                     if(!CharacterDatabase.CommitTransactionDirect()) {s.Block(d,"split_persistence_requires_review",now,true);continue;}
                     d.item=split->GetGUIDLow();item=split;
                 }
+                ++d.operations;
                 s.mailing=d.id;s.mailReceiver=recipient->GetGUIDLow();s.mailRecorded=false;
                 p->MoveItemFromInventory(item->GetBagSlot(),item->GetSlot(),true);p->ModifyMoney(-30);
                 MailDraft draft("Guild supply delivery", "For the guild's "+std::string(item->GetProto()->Name1)+" supply request ("+d.goal+"). Please deposit these items in the guild bank.");

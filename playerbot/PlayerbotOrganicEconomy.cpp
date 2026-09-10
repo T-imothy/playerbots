@@ -12,11 +12,14 @@
 #include "PlayerbotRendezvousManager.h"
 #include "RandomPlayerbotMgr.h"
 #include "ServerFacade.h"
+#include "TravelMgr.h"
 #include "strategy/ItemVisitors.h"
 #include "strategy/values/ItemUsageValue.h"
 #include "strategy/values/TravelValues.h"
 #include "strategy/actions/BankAction.h"
 #include "strategy/actions/AhAction.h"
+#include "Entities/GameObject.h"
+#include "Mails/Mail.h"
 
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -194,6 +197,21 @@ namespace
         }
         return 0;
     }
+
+    uint32 PendingRecipeSpell(Player* bot)
+    {
+        // Native mailbox state survives replanning/restarts. Prioritize paid
+        // attachments even if a different ingredient's auction has disappeared.
+        for(const auto& known:bot->GetSpellMap()) {
+            if(known.second.state==PLAYERSPELL_REMOVED || known.second.disabled) continue;
+            const auto* spell=sServerFacade.LookupSpellInfo(known.first);
+            if(!spell || !spell->EffectItemType[0]) continue;
+            for(uint32 i=0;i<MAX_SPELL_REAGENTS;++i)
+                if(spell->Reagent[i]>0 && spell->ReagentCount[i] && ai::AhBidAction::HasPendingMaterial(bot,spell->Reagent[i]))
+                    return known.first;
+        }
+        return 0;
+    }
 }
 
 PlayerbotOrganicEconomy& PlayerbotOrganicEconomy::instance()
@@ -363,7 +381,9 @@ bool PlayerbotOrganicEconomy::SafeForEconomy(Player* bot) const
         return false;
     PlayerbotAI* ai = bot->GetPlayerbotAI();
     bool partyFreeTime = sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow());
-    if (!ai || sPlayerbotRendezvousManager.BlocksAutonomousPartyWork(bot->GetGUIDLow()) ||
+    if (!ai || (sPlayerbotRendezvousManager.BlocksAutonomousPartyWork(bot->GetGUIDLow()) &&
+        sPlayerbotRendezvousManager.GetPartyActivityOwner(bot->GetGUIDLow()) !=
+            PlayerbotRendezvousManager::PartyActivityOwner::economy_service) ||
         (ai->GetMaster() && !partyFreeTime))
         return false;
     Group* group = bot->GetGroup();
@@ -374,6 +394,171 @@ bool PlayerbotOrganicEconomy::SafeForEconomy(Player* bot) const
             Player* member = reference->getSource();
             if (member && !member->GetPlayerbotAI() && !partyFreeTime)
                 return false;
+        }
+    }
+    return true;
+}
+
+bool PlayerbotOrganicEconomy::AllowsServiceAction(uint32 guid, const std::string& action) const
+{
+    const auto found=serviceTrips.find(guid);
+    if(found==serviceTrips.end() || sPlayerbotRendezvousManager.GetPartyActivityOwner(guid)!=
+        PlayerbotRendezvousManager::PartyActivityOwner::economy_service) return true;
+    const auto& trip=found->second;
+    if(action.find("request travel target")==0) return trip.requesting;
+    if(action=="choose travel target") return !trip.local;
+    if(action=="travel" || action=="move to travel target") {
+        Player* bot=sRandomPlayerbotMgr.GetPlayerBot(guid);
+        auto* target=bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<ai::TravelTarget*>("travel target")->Get();
+        return !trip.local && target && target->GetDestination() &&
+            uint32(target->GetDestination()->GetPurpose())==trip.purpose;
+    }
+    // Only the owning job may choose/replace a route. Noncombat buff chasing
+    // also replaces point movement; casting a nearby heal remains available.
+    return action.find("travel")==std::string::npos && action.find("rpg")==std::string::npos &&
+        action.find("follow")==std::string::npos && action.find("reach spell")==std::string::npos &&
+        action.find("move random")==std::string::npos && action.find("grind")==std::string::npos && action!="go";
+}
+
+void PlayerbotOrganicEconomy::ReleaseRecipeService(uint32 guid, const std::string& reason)
+{
+    auto found=serviceTrips.find(guid);if(found==serviceTrips.end()) return;
+    using Owner=PlayerbotRendezvousManager::PartyActivityOwner;
+    using Phase=PlayerbotRendezvousManager::PartyActivityPhase;
+    Player* bot=sRandomPlayerbotMgr.GetPlayerBot(guid);
+    if(bot && bot->IsInWorld() && !bot->IsBeingTeleported() &&
+        sPlayerbotRendezvousManager.GetPartyActivityOwner(guid)==Owner::economy_service) {
+        auto* target=bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<ai::TravelTarget*>("travel target")->Get();
+        const bool preparing=target && target->GetStatus()==ai::TravelStatus::TRAVEL_STATUS_PREPARE &&
+            bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<std::string>("manual string","future travel purpose")->Get()==std::to_string(found->second.purpose);
+        if(target && (preparing || (target->GetDestination() && uint32(target->GetDestination()->GetPurpose())==found->second.purpose)))
+            target->SetStatus(ai::TravelStatus::TRAVEL_STATUS_EXPIRED);
+        bot->StopMoving();bot->GetMotionMaster()->MoveIdle();
+    }
+    serviceTrips.erase(found);
+    sPlayerbotRendezvousManager.ReleasePartyActivityLease(guid,Owner::economy_service,Phase::deferred,reason);
+}
+
+void PlayerbotOrganicEconomy::ReachRecipeService(Player* bot,uint32 purpose,const std::string& goal,std::string& blocker)
+{
+    using Owner=PlayerbotRendezvousManager::PartyActivityOwner;
+    using Phase=PlayerbotRendezvousManager::PartyActivityPhase;
+    const uint32 guid=bot->GetGUIDLow(), now=uint32(time(nullptr));
+    if(!SafeForEconomy(bot)) {ReleaseRecipeService(guid,"recipe_service_safety_pause");return;}
+    if(bot->IsNonMeleeSpellCasted(false)||bot->GetTradeData()) {blocker="recipe_finishing_cast_or_trade";return;}
+    if(serviceRetry[guid]>now) {blocker="recipe_service_retry_wait";return;}
+    auto* ai=bot->GetPlayerbotAI();auto* context=ai->GetAiObjectContext();
+    auto* target=context->GetValue<ai::TravelTarget*>("travel target")->Get();
+    auto old=serviceTrips.find(guid);
+    if(old!=serviceTrips.end() && (old->second.goal!=goal || old->second.purpose!=purpose))
+        ReleaseRecipeService(guid,"recipe_service_step_changed");
+    if(!serviceTrips.count(guid)) {
+        if(serviceTrips.size()>=4) {blocker="recipe_service_queue_wait";return;}
+        if(target && (target->IsForced() || target->IsGroupCopy())) {blocker="recipe_waiting_for_committed_route";return;}
+        ServiceTrip trip;trip.goal=goal;trip.purpose=purpose;trip.started=trip.progress=now;
+        serviceTrips.emplace(guid,trip);
+    }
+    auto& trip=serviceTrips.at(guid);
+    if(now-trip.started>=600) {
+        ReleaseRecipeService(guid,"recipe_service_deadline");serviceRetry[guid]=now+300;
+        blocker="recipe_service_deadline";return;
+    }
+    if(!sPlayerbotRendezvousManager.AcquirePartyActivityLease(guid,Owner::economy_service,Phase::traveling,45,"recipe_service_trip")) {
+        ReleaseRecipeService(guid,"recipe_service_preempted");blocker="recipe_service_preempted";return;
+    }
+    // Generic RPG destinations consider the neighbourhood an arrival. Finish
+    // the last metres against an actual service, not the RPG work/idle loop.
+    WorldObject* service=nullptr;float distance=1e30f;
+    const bool mail=purpose==uint32(ai::TravelDestinationPurpose::Mail);
+    const uint32 flag=purpose==uint32(ai::TravelDestinationPurpose::Bank)?UNIT_NPC_FLAG_BANKER:
+        purpose==uint32(ai::TravelDestinationPurpose::Vendor)?UNIT_NPC_FLAG_VENDOR:UNIT_NPC_FLAG_AUCTIONEER;
+    for(auto id:context->GetValue<std::list<ObjectGuid>>(mail?"nearest game objects no los":"nearest npcs no los")->Get()) {
+        WorldObject* candidate=nullptr;
+        if(mail) {auto* go=ai->GetGameObject(id);if(go && go->GetGoType()==GAMEOBJECT_TYPE_MAILBOX) candidate=go;}
+        else {auto* npc=ai->GetUnit(id);if(npc && npc->HasFlag(UNIT_NPC_FLAGS,flag) && !sServerFacade.IsHostileTo(npc,bot)) candidate=npc;}
+        if(candidate && candidate->GetMap()==bot->GetMap() && bot->GetDistance(candidate)<distance) {
+            service=candidate;distance=bot->GetDistance(candidate);
+        }
+    }
+    trip.local=service!=nullptr;
+    if(service) {
+        if(distance+1<trip.distance) {trip.distance=distance;trip.progress=now;}
+        if(now>=trip.nextMove) {
+            trip.nextMove=now+5;
+            float x=service->GetPositionX(),y=service->GetPositionY(),z=service->GetPositionZ();
+            if(bot->GetMap()->GetReachableRandomPointOnGround(x,y,z,1.0f,false))
+                bot->GetMotionMaster()->MovePoint(240,x,y,z);
+        }
+        blocker="recipe_approaching_service";
+    } else {
+        bool same=target && target->GetDestination() && uint32(target->GetDestination()->GetPurpose())==purpose && target->IsActive();
+        if(same && target->GetPosition() && target->GetPosition()->getMapId()==bot->GetMapId()) {
+            const float remaining=target->Distance(bot);
+            if(remaining+2<trip.distance) {trip.distance=remaining;trip.progress=now;}
+        }
+        if(!same && target && target->GetStatus()!=ai::TravelStatus::TRAVEL_STATUS_PREPARE && now>=trip.nextMove) {
+            trip.nextMove=now+15;
+            target->SetStatus(ai::TravelStatus::TRAVEL_STATUS_EXPIRED);
+            context->ClearValues("travel target active");context->ClearValues("no active travel destinations");
+            trip.requesting=true;
+            const bool requested=ai->DoSpecificAction("request travel target::"+std::to_string(purpose),Event("can move around","",bot),true);
+            trip.requesting=false;
+            blocker=requested?"recipe_service_route_requested":"recipe_service_route_pending";
+        } else {
+            blocker="recipe_traveling_to_service";
+            if(same && now>=trip.nextMove) {
+                trip.nextMove=now+5;
+                // The normal travel action can sit below incidental RPG work
+                // in the action queue. Execute its existing guarded movement
+                // step for this exact owned route, without a new movement path.
+                if(!ai->DoSpecificAction("move to travel target",Event("recipe_service","",bot),true))
+                    blocker="recipe_service_movement_pending";
+            }
+        }
+    }
+    if(now-trip.progress>=90) {
+        if(++trip.attempts>=2) {
+            ReleaseRecipeService(guid,"recipe_service_no_progress");serviceRetry[guid]=now+300;
+            blocker="recipe_service_no_progress";return;
+        }
+        trip.progress=now;trip.distance=1e30f;trip.nextMove=0;
+        if(target && !target->IsForced()) target->SetStatus(ai::TravelStatus::TRAVEL_STATUS_EXPIRED);
+    }
+}
+
+bool PlayerbotOrganicEconomy::PrepareRecipeMail(Player* bot,uint32 entry,const std::string& goal,std::string& blocker)
+{
+    for(auto it=bot->GetMailBegin();it!=bot->GetMailEnd();++it) {
+        auto* mail=*it;
+        if(!mail || mail->state==MAIL_STATE_DELETED || mail->COD || mail->expire_time<=time(nullptr) || mail->deliver_time>time(nullptr)) continue;
+        for(const auto& attachment:mail->items) {
+            if(attachment.item_template!=entry) continue;
+            auto* item=bot->GetMItem(attachment.item_guid);if(!item) continue;
+            ItemPosCountVec positions;
+            if(bot->CanStoreNewItem(NULL_BAG,NULL_SLOT,positions,entry,item->GetCount())==EQUIP_ERR_OK) return true;
+            const uint32 guid=bot->GetGUIDLow();
+            if(serviceRetry[guid]>uint32(time(nullptr))) {blocker="recipe_service_retry_wait";return false;}
+            const auto pressure=sPlayerbotInventoryPressure.Analyze(bot);
+            if(mailPrepAttempts[guid]>=4 || (!pressure.vendorStacks && !pressure.HasBankableStorage())) {
+                ReleaseRecipeService(guid,"recipe_bags_full_no_safe_storage");
+                serviceRetry[guid]=uint32(time(nullptr))+300;mailPrepAttempts[guid]=0;
+                blocker="recipe_bags_full_no_safe_storage";return false;
+            }
+            const bool vendor=pressure.vendorStacks && mailPrepAttempts[guid]<2;
+            const uint32 flag=vendor?UNIT_NPC_FLAG_VENDOR:UNIT_NPC_FLAG_BANKER;
+            auto* ai=bot->GetPlayerbotAI();bool nearby=false;
+            for(auto id:ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest npcs no los")->Get())
+                if(bot->GetNPCIfCanInteractWith(id,flag)) {nearby=true;break;}
+            if(!nearby) ReachRecipeService(bot,uint32(vendor?ai::TravelDestinationPurpose::Vendor:ai::TravelDestinationPurpose::Bank),goal,blocker);
+            else {
+                ++mailPrepAttempts[guid];
+                // Existing native safe maintenance preserves reserved recipe,
+                // quest, trade and guild items. Recheck capacity next sweep.
+                ai->DoSpecificAction(vendor?"sell":"bank",Event("rpg action",vendor?"living-wow-safe-vendor":"living-wow-safe-storage",nullptr),true);
+                ReleaseRecipeService(guid,"recipe_mail_capacity_recheck");
+                blocker="recipe_mail_capacity_recheck";
+            }
+            return false;
         }
     }
     return true;
@@ -415,7 +600,8 @@ bool PlayerbotOrganicEconomy::Submit(const Policy& currentPolicy)
             else if (!professionTwo) { professionTwo = skillId; skillTwo = value; break; }
         }
         std::vector<uint32> outputs = KnownCraftOutputs(bot);
-        uint32 readyRecipe = profile.career && currentPolicy.careers ? ReadyCraftSpell(bot) : 0;
+        uint32 readyRecipe = profile.career && currentPolicy.careers ? PendingRecipeSpell(bot) : 0;
+        if (!readyRecipe && profile.career && currentPolicy.careers) readyRecipe = ReadyCraftSpell(bot);
         if (!readyRecipe && profile.career && currentPolicy.careers) readyRecipe = BankCraftSpell(bot);
         if (!readyRecipe && profile.career && currentPolicy.careers && currentPolicy.buying) readyRecipe = MarketCraftSpell(bot);
         bool surplus = HasAuctionSurplus(bot);
@@ -629,6 +815,8 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
             craftAttempts.erase(pending);
             return false;
         }
+        if(bot->IsNonMeleeSpellCasted(false)||bot->GetTradeData())
+        {failureReason="recipe_finishing_cast_or_trade";return false;}
         const std::string prefix = "profession:" + std::to_string(bot->GetGUIDLow()) + ":";
         const std::string suffix = goalId.compare(0, prefix.size(), prefix) == 0 ? goalId.substr(prefix.size()) : "";
         if (suffix.empty() || suffix.size() > 9 || suffix.find_first_not_of("0123456789") != std::string::npos)
@@ -636,8 +824,23 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
         const uint32 recipe = uint32(std::stoul(suffix));
         const auto* spell = sServerFacade.LookupSpellInfo(recipe);
         const uint32 skill = CraftSkill(bot, spell);
-        if (!bot->HasSpell(recipe) || !skill)
+        if (!bot->HasSpell(recipe) || !spell)
         { failureReason = "recipe_unavailable_or_no_skill_gain"; return false; }
+        // Collect an already-paid attachment before checking whether this
+        // recipe is still useful for leveling or another reagent is available.
+        for(uint32 i=0;i<MAX_SPELL_REAGENTS;++i) {
+            if(spell->Reagent[i]<=0 || !ai::AhBidAction::HasPendingMaterial(bot,spell->Reagent[i])) continue;
+            if(bot->IsNonMeleeSpellCasted(false)||bot->GetTradeData()) {failureReason="recipe_finishing_cast_or_trade";return false;}
+            if(!PrepareRecipeMail(bot,spell->Reagent[i],goalId,failureReason)) return false;
+            ai::AhBidAction market(ai);
+            market.CollectRecipeMaterial(spell->Reagent[i],failureReason);
+            if(failureReason=="recipe_mailbox_out_of_range")
+                ReachRecipeService(bot,uint32(ai::TravelDestinationPurpose::Mail),goalId,failureReason);
+            else ReleaseRecipeService(bot->GetGUIDLow(),failureReason);
+            if(failureReason=="recipe_materials_received") mailPrepAttempts.erase(bot->GetGUIDLow());
+            return false;
+        }
+        if(!skill) {ReleaseRecipeService(bot->GetGUIDLow(),"recipe_no_longer_useful");failureReason="recipe_unavailable_or_no_skill_gain";return false;}
         if (!SafeCraftReagents(bot, spell))
         {
             if (!SafeCraftReagents(bot, spell, true, false))
@@ -659,8 +862,7 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
                         market.CollectRecipeMaterial(reagent.first, failureReason);
                         if (failureReason == "recipe_mailbox_out_of_range")
                         {
-                            std::ostringstream route; route << "request travel target::" << (uint32)TravelDestinationPurpose::Mail;
-                            ai->DoSpecificAction(route.str(), Event("can move around", "", bot), true);
+                            ReachRecipeService(bot,uint32(TravelDestinationPurpose::Mail),goalId,failureReason);
                         }
                         return false;
                     }
@@ -669,26 +871,22 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
                     if (failureReason == "recipe_auctioneer_out_of_range" &&
                         ai::AhBidAction::HasMaterialOffer(bot, reagent.first, reagent.second - bot->GetItemCount(reagent.first,true)))
                     {
-                        std::ostringstream route; route << "request travel target::" << (uint32)TravelDestinationPurpose::AH;
-                        if (ai->DoSpecificAction(route.str(), Event("can move around", "", bot), true))
-                            failureReason = "traveling_to_recipe_auction";
+                        ReachRecipeService(bot,uint32(TravelDestinationPurpose::AH),goalId,failureReason);
                     }
+                    else ReleaseRecipeService(bot->GetGUIDLow(),failureReason);
                     return false; // A paid order is not inventory or a completed craft.
                 }
                 bank.WithdrawForRecipe(reagent.first, reagent.second, failureReason);
                 if (failureReason == "recipe_banker_out_of_range")
                 {
-                    std::ostringstream route;
-                    route << "request travel target::" << (uint32)TravelDestinationPurpose::Bank;
-                    if (ai->DoSpecificAction(route.str(), Event("can move around", "", bot), true))
-                        failureReason = "traveling_to_owned_recipe_materials";
-                    else failureReason = "recipe_bank_route_pending";
+                    ReachRecipeService(bot,uint32(TravelDestinationPurpose::Bank),goalId,failureReason);
                     return false;
                 }
                 if (bot->GetItemCount(reagent.first, false) < reagent.second) return false;
             }
             if (!SafeCraftReagents(bot, spell)) return false;
         }
+        ReleaseRecipeService(bot->GetGUIDLow(),"recipe_materials_prepared");
         if (!ai->CanCastSpell(recipe, bot, 0, true))
         { failureReason = "recipe_requires_safe_local_tools_or_space"; return false; }
         CraftAttempt attempt;
@@ -800,7 +998,9 @@ void PlayerbotOrganicEconomy::ProcessActiveGoals(const Policy& currentPolicy,
         if (entry.second.currentGoalType == "profession_skill_up" && attempt != craftAttempts.end() &&
             attempt->second.goal == entry.second.currentGoalId) verifying.insert(entry.first);
     }
-    const auto work = EconomyWorkOrder(guids, verifying, executionCursor);
+    auto priority=verifying;
+    for(const auto& trip:serviceTrips) priority.insert(trip.first);
+    const auto work = EconomyWorkOrder(guids, priority, executionCursor);
     for (uint32 guid : work)
     {
         Profile& profile = profiles[guid];
@@ -810,10 +1010,10 @@ void PlayerbotOrganicEconomy::ProcessActiveGoals(const Policy& currentPolicy,
         // Result inspection doesn't move, respec, buy or cast. A human joining
         // after the cast must not prevent us observing its real outcome.
         if (!bot || !bot->IsInWorld() || (!verifying.count(guid) && !SafeForEconomy(bot)))
-        { retryCooldowns[guid] = now + std::chrono::seconds(30); continue; }
+        { ReleaseRecipeService(guid,"recipe_service_safety_pause");retryCooldowns[guid] = now + std::chrono::seconds(30); continue; }
         std::string failureReason;
         bool completed = ExecuteGoal(bot, profile, currentPolicy, failureReason);
-        retryCooldowns[guid] = now + std::chrono::seconds(completed ? 600 : 20);
+        retryCooldowns[guid] = now + std::chrono::seconds(completed ? 600 : serviceTrips.count(guid) ? 5 : 20);
         if (!completed)
         {
             if (lastBlockers[guid] != failureReason)
@@ -853,6 +1053,13 @@ void PlayerbotOrganicEconomy::ApplyPlans(const std::string& response, const Poli
         if (!guid || planId.empty() || goalId.empty()) continue;
         auto attempt = craftAttempts.find(guid);
         auto active = profiles.find(guid);
+        if(currentPolicy.mode=="active" && active!=profiles.end() && active->second.currentGoalState=="active" &&
+            active->second.currentGoalType=="profession_skill_up") {
+            Player* bot=sRandomPlayerbotMgr.GetPlayerBot(guid);
+            const uint32 pendingRecipe=bot && bot->IsInWorld()?PendingRecipeSpell(bot):0;
+            if(serviceTrips.count(guid) || (pendingRecipe && active->second.currentGoalId==
+                "profession:"+std::to_string(guid)+":"+std::to_string(pendingRecipe))) continue;
+        }
         if (currentPolicy.mode == "active" && attempt != craftAttempts.end() && active != profiles.end() &&
             active->second.currentGoalState == "active" &&
             PreserveCraftResult(attempt->second.goal, active->second.currentGoalId, attempt->second.started, uint32(time(nullptr))))
@@ -885,6 +1092,17 @@ void PlayerbotOrganicEconomy::Update()
         ApplyPlans(pendingPlans.get(), policy);
     if (!nextExecutionSweep.time_since_epoch().count() || now >= nextExecutionSweep)
     {
+        // Cancel ownership before the ordinary AI can resume after a safety
+        // interruption. Never let a paused/off policy retain a service lease.
+        std::vector<uint32> release;
+        for(const auto& trip:serviceTrips) {
+            Player* bot=sRandomPlayerbotMgr.GetPlayerBot(trip.first);
+            auto profile=profiles.find(trip.first);
+            if(policy.mode!="active" || !policy.careers || !SafeForEconomy(bot) ||
+                profile==profiles.end() || profile->second.currentGoalId!=trip.second.goal ||
+                profile->second.currentGoalState!="active") release.push_back(trip.first);
+        }
+        for(uint32 guid:release) ReleaseRecipeService(guid,"recipe_service_invalidated");
         ProcessActiveGoals(policy, now);
         nextExecutionSweep = now + std::chrono::seconds(5);
     }

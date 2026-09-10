@@ -18,6 +18,7 @@ public:
     bool CanLearnProfessionSpell(Player* bot, uint32 learnedSpell) const;
     std::string CurrentGoalType(uint32 characterGuid) const;
     uint32 RecipeMaterialQuantity(uint32 characterGuid, uint32 itemEntry) const;
+    bool AllowsServiceAction(uint32 guid, const std::string& action) const;
     bool IsAuctionPostingEnabled() const { return policy.mode == "active" && policy.posting; }
 
 private:
@@ -53,6 +54,19 @@ private:
         uint32 output = 0, beforeOutput = 0, started = 0;
     };
     std::map<uint32, CraftAttempt> craftAttempts;
+    struct ServiceTrip
+    {
+        std::string goal;
+        uint32 purpose=0, started=0, progress=0, nextMove=0, attempts=0;
+        float distance=1e30f;
+        bool requesting=false, local=false;
+    };
+    std::map<uint32, ServiceTrip> serviceTrips;
+    std::map<uint32, uint32> serviceRetry;
+    std::map<uint32, uint32> mailPrepAttempts;
+    bool PrepareRecipeMail(Player* bot, uint32 entry, const std::string& goal, std::string& blocker);
+    void ReachRecipeService(Player* bot, uint32 purpose, const std::string& goal, std::string& blocker);
+    void ReleaseRecipeService(uint32 guid, const std::string& reason);
     std::map<uint32, std::string> lastBlockers;
 
     PlayerbotOrganicEconomy() = default;

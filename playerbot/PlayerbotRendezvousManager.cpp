@@ -486,6 +486,7 @@ const char* PlayerbotRendezvousManager::PartyActivityOwnerName(PartyActivityOwne
         case PartyActivityOwner::party_errand: return "party_errand";
         case PartyActivityOwner::guild_event: return "guild_event";
         case PartyActivityOwner::guild_supply: return "guild_supply";
+        case PartyActivityOwner::economy_service: return "economy_service";
         case PartyActivityOwner::player_command: return "player_command";
         default: return "none";
     }
@@ -1039,7 +1040,8 @@ bool PlayerbotRendezvousManager::OwnsPartyMovement(uint32 botGuid) const
     PartyActivityOwner owner = GetPartyActivityOwner(botGuid);
     return owner == PartyActivityOwner::party_follow || owner == PartyActivityOwner::rendezvous ||
         owner == PartyActivityOwner::party_errand ||
-        owner == PartyActivityOwner::guild_event || owner == PartyActivityOwner::guild_supply || owner == PartyActivityOwner::player_command;
+        owner == PartyActivityOwner::guild_event || owner == PartyActivityOwner::guild_supply ||
+        owner == PartyActivityOwner::economy_service || owner == PartyActivityOwner::player_command;
 }
 
 bool PlayerbotRendezvousManager::BlocksAutonomousPartyWork(uint32 botGuid) const
@@ -1071,6 +1073,8 @@ bool PlayerbotRendezvousManager::FindSafeStagingPoint(Player* bot, Player* playe
 
 bool PlayerbotRendezvousManager::AllowsOwnedMovement(uint32 botGuid, const std::string& actionName)
 {
+    if (GetPartyActivityOwner(botGuid) == PartyActivityOwner::economy_service)
+        return sPlayerbotOrganicEconomy.AllowsServiceAction(botGuid, actionName);
     if (sGuildEventExecutor.OwnsMovement(botGuid) &&
         GetPartyActivityOwner(botGuid) == PartyActivityOwner::guild_event)
         return sGuildEventExecutor.AllowsMovement(botGuid,actionName);

@@ -22,7 +22,7 @@ public:
     enum class PartyActivityOwner
     {
         none, party_follow, combat, death_recovery, transport, rendezvous,
-        party_errand, guild_event, player_command, guild_supply
+        party_errand, guild_event, player_command, guild_supply, economy_service
     };
     enum class PartyActivityPhase
     {

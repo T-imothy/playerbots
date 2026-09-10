@@ -8,6 +8,7 @@
 #include "playerbot/PerformanceMonitor.h"
 #include "playerbot/PlayerbotGuildEventExecutor.h"
 #include "playerbot/PlayerbotGuildSupplies.h"
+#include "playerbot/PlayerbotOrganicEconomy.h"
 #include "playerbot/PlayerbotRendezvousManager.h"
 
 #ifdef BUILD_ELUNA
@@ -692,6 +693,8 @@ Action* Engine::InitializeAction(ActionNode* actionNode)
 
 bool Engine::ListenAndExecute(Action* action, Event& event)
 {
+    if(state==BotState::BOT_STATE_NON_COMBAT &&
+        !sPlayerbotOrganicEconomy.AllowsServiceAction(ai->GetBot()->GetGUIDLow(),action->getName())) return false;
     if(state==BotState::BOT_STATE_NON_COMBAT &&
         !sGuildSupplies.AllowsMovement(ai->GetBot()->GetGUIDLow(),action->getName())) return false;
     if (state == BotState::BOT_STATE_NON_COMBAT &&
