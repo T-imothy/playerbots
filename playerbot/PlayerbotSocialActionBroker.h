@@ -5,6 +5,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include "LivingActivity.h"
 
 class Player;
 class ObjectGuid;
@@ -37,6 +38,7 @@ public:
 private:
     struct Action
     {
+        LivingActivity::ActivityLease lease;
         std::string actionId;
         std::string eventId;
         std::string proposalId;

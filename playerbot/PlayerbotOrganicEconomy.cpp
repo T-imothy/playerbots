@@ -467,7 +467,9 @@ void PlayerbotOrganicEconomy::ReleaseRecipeService(uint32 guid, const std::strin
     using Owner=PlayerbotRendezvousManager::PartyActivityOwner;
     using Phase=PlayerbotRendezvousManager::PartyActivityPhase;
     Player* bot=sRandomPlayerbotMgr.GetPlayerBot(guid);
-    if(bot && bot->IsInWorld() && !bot->IsBeingTeleported() &&
+    const auto lease = found->second.lease;
+    if(bot && bot->IsInWorld() && bot->IsAlive() && !bot->IsInCombat() && !bot->IsBeingTeleported() &&
+        sPlayerbotRendezvousManager.HasPartyActivityLease(lease) &&
         sPlayerbotRendezvousManager.GetPartyActivityOwner(guid)==Owner::economy_service) {
         auto* target=bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<ai::TravelTarget*>("travel target")->Get();
         const bool preparing=target && target->GetStatus()==ai::TravelStatus::TRAVEL_STATUS_PREPARE &&
@@ -477,7 +479,7 @@ void PlayerbotOrganicEconomy::ReleaseRecipeService(uint32 guid, const std::strin
         bot->StopMoving();bot->GetMotionMaster()->MoveIdle();
     }
     serviceTrips.erase(found);
-    sPlayerbotRendezvousManager.ReleasePartyActivityLease(guid,Owner::economy_service,Phase::deferred,reason);
+    sPlayerbotRendezvousManager.ReleasePartyActivityLease(lease,Phase::deferred,reason);
 }
 
 void PlayerbotOrganicEconomy::ReachRecipeService(Player* bot,uint32 purpose,const std::string& goal,std::string& blocker)
@@ -504,7 +506,8 @@ void PlayerbotOrganicEconomy::ReachRecipeService(Player* bot,uint32 purpose,cons
         ReleaseRecipeService(guid,"recipe_service_deadline");serviceRetry[guid]=now+300;
         blocker="recipe_service_deadline";return;
     }
-    if(!sPlayerbotRendezvousManager.AcquirePartyActivityLease(guid,Owner::economy_service,Phase::traveling,45,"recipe_service_trip")) {
+    if(!sPlayerbotRendezvousManager.AcquirePartyActivityLease(guid,Owner::economy_service,Phase::traveling,45,
+        "recipe_service_trip",goal+":"+std::to_string(purpose),trip.lease)) {
         ReleaseRecipeService(guid,"recipe_service_preempted");blocker="recipe_service_preempted";return;
     }
     // Generic RPG destinations consider the neighbourhood an arrival. Finish

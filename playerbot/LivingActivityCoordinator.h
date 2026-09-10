@@ -4,6 +4,7 @@
 #include <string>
 #include <cstdint>
 #include "LivingActivityEffects.h"
+#include "LivingActivity.h"
 class PlayerbotAI;
 
 class LivingActivityCoordinator {
@@ -19,6 +20,12 @@ public:
     void ObserveAction(PlayerbotAI& ai, const LivingActivity::Effects& effects, const std::string& action);
     enum class LeaseBoundary { Acquire, Renew, Release };
     void ObserveLeaseBoundary(uint32_t guid, LeaseBoundary boundary);
+    // Transitional callers keep exact job handles while their executors are
+    // migrated. This supplies identity only, NEVER an execution permission.
+    // Native resolution is world-thread-only; map callers must defer intent.
+    bool CompatibilityContext(uint32_t guid, const std::string& source,
+        const std::string& key, LivingActivity::ActivityLease& identity) const;
+    bool OnWorldThread() const;
 private:
     LivingActivityCoordinator();
     ~LivingActivityCoordinator();

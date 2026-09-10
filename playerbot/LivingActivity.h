@@ -36,6 +36,7 @@ namespace LivingActivity
     Kind LegacyEconomyKind(const std::string& goalType);
     bool IsUuid(const std::string& value);
     bool IsToken(const std::string& value, size_t limit = 64, bool empty = false);
+    bool IsSourceKey(const std::string& value);
     bool Terminal(Phase phase);
     bool ConsumesActiveTime(Phase phase);
 
@@ -83,6 +84,11 @@ namespace LivingActivity
         uint64_t generation = 0;
         WorldContext context;
     };
+    bool SameLease(const ActivityLease& left, const ActivityLease& right);
+    // A live same-kind lease still belongs to an exact job and caller token.
+    // Expiry permits fresh admission, never renewal/release by a stale token.
+    bool MayAcquireCompatibilityLease(const ActivityLease& held, const ActivityLease& caller,
+        const ActivityLease& requested, bool unexpired);
     struct ActionContext {
         std::string task, rootTask, origin;
         uint64_t revision = 0, ownerGeneration = 0;

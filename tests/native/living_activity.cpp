@@ -14,6 +14,29 @@ Task Sample() {
     return task;
 }
 int main() {
+    assert(IsSourceKey("18010501:64"));
+    assert(IsSourceKey("chat-v2:ABC_0.1"));
+    assert(IsSourceKey("637bd562-36d2-5b01-bc01-e2d831c49f38"));
+    for(const auto& key : {"", "arbitrary player text", "../private/path", "line\nbreak", "'sql'"})
+        assert(!IsSourceKey(key));
+    assert(!IsSourceKey(std::string(161, 'a')));
+    ActivityLease held; held.actor=497; held.rootTask=Id; held.generation=1; held.context=Sample().context;
+    auto requested=held; requested.generation=0;
+    assert(MayAcquireCompatibilityLease({}, {}, requested, false));
+    assert(MayAcquireCompatibilityLease(held, held, requested, true));
+    assert(!MayAcquireCompatibilityLease(held, {}, requested, true));
+    auto stale=held; ++stale.generation;
+    assert(!SameLease(held, stale));
+    assert(!MayAcquireCompatibilityLease(held, stale, requested, true));
+    auto anotherLease=requested; anotherLease.rootTask=Receipt;
+    assert(!MayAcquireCompatibilityLease(held, held, anotherLease, true));
+    assert(MayAcquireCompatibilityLease(held, held, anotherLease, false));
+    auto reassigned=held; ++reassigned.actor;
+    assert(!SameLease(held, reassigned));
+    assert(!MayAcquireCompatibilityLease(held, held, reassigned, true));
+    auto rezoned=held; ++rezoned.context.mapGeneration;
+    assert(!SameLease(held, rezoned));
+    assert(!SameLease({}, {}));
     ObservationQueue queue;
     assert(NextObservationWork(queue) == ObservationWork::Wait);
     queue.enabled = queue.due = true;

@@ -40,8 +40,7 @@ namespace LivingActivity {
             a.checkpoint.data == b.checkpoint.data;
     }
     bool ExecutionAuthority::Matches(const ActivityLease& a, const ActivityLease& b) {
-        return a.actor && a.generation && a.actor == b.actor && a.rootTask == b.rootTask &&
-            a.generation == b.generation && a.context == b.context;
+        return SameLease(a, b);
     }
     AuthorityResult ExecutionAuthority::Drop(Actor& a, AuthorityCode code) {
         AuthorityResult result; result.code = code; result.displaced = a.lease;

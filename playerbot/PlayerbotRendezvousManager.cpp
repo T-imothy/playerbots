@@ -1110,18 +1110,26 @@ bool PlayerbotRendezvousManager::AllowsOwnedMovement(uint32 botGuid, const std::
 }
 
 bool PlayerbotRendezvousManager::AcquirePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
-    PartyActivityPhase phase, uint32 ttlSeconds, const std::string& reason)
+    PartyActivityPhase phase, uint32 ttlSeconds, const std::string& reason,
+    const std::string& jobKey, LivingActivity::ActivityLease& handle)
 {
     sLivingActivityCoordinator.ObserveLeaseBoundary(botGuid, LivingActivityCoordinator::LeaseBoundary::Acquire);
     if (!sPlayerbotAIConfig.chatDirectorPartyActivityOwnership) return true;
+    LivingActivity::ActivityLease identity;
+    if (!sLivingActivityCoordinator.CompatibilityContext(botGuid, PartyActivityOwnerName(owner),
+        jobKey, identity)) return false;
     auto now = std::chrono::steady_clock::now();
     auto found = externalLeases.find(botGuid);
-    if (found != externalLeases.end() && found->second.expires > now && found->second.owner != owner)
+    if (found != externalLeases.end() && found->second.expires > now &&
+        (found->second.owner != owner ||
+         !LivingActivity::MayAcquireCompatibilityLease(found->second.handle, handle, identity, true)))
     {
         QueueActivityTelemetry(botGuid, 0, 0, found->second.owner, found->second.phase,
             "conflict_prevented", reason);
         return false;
     }
+    // Category equality is not job identity. Even the same subsystem cannot
+    // borrow another accepted job's lease or renew it with a delayed callback.
     auto party = partySessions.find(botGuid);
     if (owner == PartyActivityOwner::player_command && party != partySessions.end() &&
         party->second.state == "free_time")
@@ -1161,35 +1169,53 @@ bool PlayerbotRendezvousManager::AcquirePartyActivityLease(uint32 botGuid, Party
             "conflict_prevented", reason);
         return false;
     }
+    if (found != externalLeases.end() && LivingActivity::SameLease(found->second.handle, handle) &&
+        found->second.handle.context == identity.context && found->second.expires > now)
+        return UpdatePartyActivityLease(handle, phase, ttlSeconds, reason);
+    if (externalLeaseGeneration == UINT64_MAX) return false;
     ExternalLease& lease = externalLeases[botGuid];
+    identity.generation = ++externalLeaseGeneration;
+    lease.handle = handle = identity;
     lease.owner = owner; lease.phase = phase; lease.reason = reason;
     lease.expires = now + std::chrono::seconds(std::max<uint32>(1, ttlSeconds));
     QueueActivityTelemetry(botGuid, 0, 0, owner, phase, "lease_acquired", reason);
     return true;
 }
 
-bool PlayerbotRendezvousManager::UpdatePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
+bool PlayerbotRendezvousManager::HasPartyActivityLease(const LivingActivity::ActivityLease& handle) const
+{
+    const auto found = externalLeases.find(handle.actor);
+    return found != externalLeases.end() && LivingActivity::SameLease(found->second.handle, handle) &&
+        found->second.expires > std::chrono::steady_clock::now();
+}
+
+bool PlayerbotRendezvousManager::UpdatePartyActivityLease(const LivingActivity::ActivityLease& handle,
     PartyActivityPhase phase, uint32 ttlSeconds, const std::string& reason)
 {
+    const uint32 botGuid = handle.actor;
     sLivingActivityCoordinator.ObserveLeaseBoundary(botGuid, LivingActivityCoordinator::LeaseBoundary::Renew);
     auto found = externalLeases.find(botGuid);
     if (!sPlayerbotAIConfig.chatDirectorPartyActivityOwnership) return true;
-    if (found == externalLeases.end() || found->second.owner != owner ||
-        found->second.expires <= std::chrono::steady_clock::now())
-        return false;
+    if (!HasPartyActivityLease(handle)) return false;
+    LivingActivity::ActivityLease current;
+    if (!sLivingActivityCoordinator.CompatibilityContext(botGuid, "lease_check", "native", current) ||
+        !(current.context == handle.context)) return false;
     found->second.phase = phase; found->second.reason = reason;
     found->second.expires = std::chrono::steady_clock::now() +
         std::chrono::seconds(std::max<uint32>(1, ttlSeconds));
-    QueueActivityTelemetry(botGuid, 0, 0, owner, phase, "lease_updated", reason);
+    QueueActivityTelemetry(botGuid, 0, 0, found->second.owner, phase, "lease_updated", reason);
     return true;
 }
 
-void PlayerbotRendezvousManager::ReleasePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
+void PlayerbotRendezvousManager::ReleasePartyActivityLease(const LivingActivity::ActivityLease& handle,
     PartyActivityPhase terminalPhase, const std::string& reason)
 {
+    const uint32 botGuid = handle.actor;
     sLivingActivityCoordinator.ObserveLeaseBoundary(botGuid, LivingActivityCoordinator::LeaseBoundary::Release);
+    if (!sLivingActivityCoordinator.OnWorldThread()) return;
     auto found = externalLeases.find(botGuid);
-    if (found == externalLeases.end() || found->second.owner != owner) return;
+    if (found == externalLeases.end() || !LivingActivity::SameLease(found->second.handle, handle)) return;
+    const PartyActivityOwner owner = found->second.owner;
     auto party = partySessions.find(botGuid);
     if (owner == PartyActivityOwner::player_command && party != partySessions.end() &&
         party->second.state == "active" &&

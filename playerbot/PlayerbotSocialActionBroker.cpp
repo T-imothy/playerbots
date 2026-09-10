@@ -228,9 +228,10 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     uint8 bagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
     if (bagUsage < 80)
         return false;
+    LivingActivity::ActivityLease lease;
     if (!sPlayerbotRendezvousManager.AcquirePartyActivityLease(bot->GetGUIDLow(),
         PlayerbotRendezvousManager::PartyActivityOwner::player_command,
-        PlayerbotRendezvousManager::PartyActivityPhase::traveling, 300, "vendor_bags"))
+        PlayerbotRendezvousManager::PartyActivityPhase::traveling, 300, "vendor_bags", actionId, lease))
         return false;
 
     LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
@@ -250,8 +251,7 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
                 PlayerbotAI::ChatMessageClass::social);
         sPlayerbotRendezvousManager.ResumePartyAssist(bot, player,
             "vendor_trip_not_started");
-        sPlayerbotRendezvousManager.ReleasePartyActivityLease(bot->GetGUIDLow(),
-            PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+        sPlayerbotRendezvousManager.ReleasePartyActivityLease(lease,
             PlayerbotRendezvousManager::PartyActivityPhase::deferred, reason);
         return false;
     }
@@ -271,14 +271,14 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
             bot->GetGUIDLow(), bot->GetName(), maintenanceType.c_str(), (uint32)bagUsage);
         sPlayerbotRendezvousManager.ResumePartyAssist(bot, player,
             "vendor_trip_target_unavailable");
-        sPlayerbotRendezvousManager.ReleasePartyActivityLease(bot->GetGUIDLow(),
-            PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+        sPlayerbotRendezvousManager.ReleasePartyActivityLease(lease,
             PlayerbotRendezvousManager::PartyActivityPhase::failed,
             "no_same_map_maintenance_destination");
         return false;
     }
 
     Action action;
+    action.lease = lease;
     action.actionId = actionId;
     action.eventId = eventId;
     action.proposalId = proposalId;
@@ -522,8 +522,7 @@ void PlayerbotSocialActionBroker::QueuePartyReturn(Action& action, Player* bot, 
         action.state = "failed";
         action.failureReason = "vendor character became unavailable before party return";
         action.completedAt = std::chrono::steady_clock::now();
-        sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
-            PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+        sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.lease,
             PlayerbotRendezvousManager::PartyActivityPhase::failed,
             "party_return_bot_unavailable");
         Report(action);
@@ -562,8 +561,7 @@ void PlayerbotSocialActionBroker::QueuePartyReturn(Action& action, Player* bot, 
         if (firstWait)
         {
             action.expires = std::chrono::steady_clock::now() + std::chrono::seconds(90);
-            sPlayerbotRendezvousManager.UpdatePartyActivityLease(bot->GetGUIDLow(),
-                PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+            sPlayerbotRendezvousManager.UpdatePartyActivityLease(action.lease,
                 PlayerbotRendezvousManager::PartyActivityPhase::returning, 90,
                 "dungeon_return_waiting_for_relocation_slot");
             Report(action);
@@ -572,8 +570,7 @@ void PlayerbotSocialActionBroker::QueuePartyReturn(Action& action, Player* bot, 
     }
     if (dungeonReturn || (player && sPlayerbotRendezvousManager.ResumePartyAssist(bot, player, reason)))
     {
-        sPlayerbotRendezvousManager.UpdatePartyActivityLease(bot->GetGUIDLow(),
-            PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+        sPlayerbotRendezvousManager.UpdatePartyActivityLease(action.lease,
             PlayerbotRendezvousManager::PartyActivityPhase::returning, 90, reason);
         action.state = "returning";
         action.expires = std::chrono::steady_clock::now() + std::chrono::seconds(90);
@@ -587,8 +584,7 @@ void PlayerbotSocialActionBroker::QueuePartyReturn(Action& action, Player* bot, 
         action.completedAt = std::chrono::steady_clock::now();
         if (action.failureReason.empty())
             action.failureReason = "party return could not be queued";
-        sPlayerbotRendezvousManager.ReleasePartyActivityLease(bot->GetGUIDLow(),
-            PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+        sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.lease,
             success ? PlayerbotRendezvousManager::PartyActivityPhase::completed :
                 PlayerbotRendezvousManager::PartyActivityPhase::failed,
             reason);
@@ -1600,8 +1596,7 @@ void PlayerbotSocialActionBroker::Update()
                 action.state = "failed";
                 action.failureReason = "vendor relocation worldport did not complete";
                 action.completedAt = now;
-                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
-                    PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.lease,
                     PlayerbotRendezvousManager::PartyActivityPhase::failed,
                     "vendor_relocation_ack_timeout");
                 Report(action);
@@ -1634,8 +1629,7 @@ void PlayerbotSocialActionBroker::Update()
                 }
                 action.restoreFollow = false;
                 action.completedAt = now;
-                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
-                    PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.lease,
                     PlayerbotRendezvousManager::PartyActivityPhase::failed,
                     "vendor_trip_participant_unavailable");
                 Report(action);
@@ -1817,8 +1811,7 @@ void PlayerbotSocialActionBroker::Update()
                 action.failureReason = invalid ? "party changed while return relocation was pending" :
                     "party return relocation timed out";
                 action.completedAt = now;
-                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
-                    PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.lease,
                     PlayerbotRendezvousManager::PartyActivityPhase::failed,
                     invalid ? "party_return_participant_unavailable" : "party_return_timeout");
                 Report(action);
@@ -1838,8 +1831,7 @@ void PlayerbotSocialActionBroker::Update()
                 action.restoreFollow = false;
                 action.state = "completed";
                 action.completedAt = now;
-                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
-                    PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.lease,
                     PlayerbotRendezvousManager::PartyActivityPhase::completed,
                     "party_return_completed");
                 Report(action);
@@ -1852,8 +1844,7 @@ void PlayerbotSocialActionBroker::Update()
                 action.state = "failed";
                 action.failureReason = "party return timed out";
                 action.completedAt = now;
-                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.botGuid,
-                    PlayerbotRendezvousManager::PartyActivityOwner::player_command,
+                sPlayerbotRendezvousManager.ReleasePartyActivityLease(action.lease,
                     PlayerbotRendezvousManager::PartyActivityPhase::failed,
                     "party_return_timeout");
                 Report(action);

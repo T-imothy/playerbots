@@ -6,6 +6,16 @@
 
 namespace LivingActivity
 {
+    bool SameLease(const ActivityLease& a, const ActivityLease& b) {
+        return a.actor && a.generation && a.actor == b.actor && a.rootTask == b.rootTask &&
+            a.generation == b.generation && a.context == b.context;
+    }
+    bool MayAcquireCompatibilityLease(const ActivityLease& held, const ActivityLease& caller,
+        const ActivityLease& requested, bool unexpired) {
+        if (!requested.actor || !IsUuid(requested.rootTask)) return false;
+        return !unexpired || (held.actor == requested.actor && held.rootTask == requested.rootTask &&
+            SameLease(held, caller));
+    }
     namespace {
         constexpr const char* phases[] = {"queued", "preparing", "traveling", "executing",
             "verifying", "completed", "waiting_external", "paused", "deferred", "failed",
@@ -53,6 +63,12 @@ namespace LivingActivity
             std::all_of(value.begin(), value.end(), [](char c) {
                 return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
             });
+    }
+    bool IsSourceKey(const std::string& value) {
+        return !value.empty() && value.size() <= 160 && std::all_of(value.begin(), value.end(), [](char c) {
+            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '_' || c == '-' || c == ':' || c == '.';
+        });
     }
     bool Terminal(Phase phase) {
         return phase == Phase::Completed || phase == Phase::Failed || phase == Phase::Cancelled;

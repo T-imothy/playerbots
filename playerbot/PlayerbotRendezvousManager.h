@@ -5,6 +5,7 @@
 #include "PartyLootWindow.h"
 #include "PlayerbotErrandTravel.h"
 #include "PlayerbotServiceCatchup.h"
+#include "LivingActivity.h"
 #include <deque>
 #include <map>
 #include <set>
@@ -85,11 +86,13 @@ public:
     bool FindSafeStagingPoint(Player* bot, Player* player,
         float& x, float& y, float& z) const;
     bool AcquirePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
+        PartyActivityPhase phase, uint32 ttlSeconds, const std::string& reason,
+        const std::string& jobKey, LivingActivity::ActivityLease& handle);
+    bool UpdatePartyActivityLease(const LivingActivity::ActivityLease& handle,
         PartyActivityPhase phase, uint32 ttlSeconds, const std::string& reason);
-    bool UpdatePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
-        PartyActivityPhase phase, uint32 ttlSeconds, const std::string& reason);
-    void ReleasePartyActivityLease(uint32 botGuid, PartyActivityOwner owner,
+    void ReleasePartyActivityLease(const LivingActivity::ActivityLease& handle,
         PartyActivityPhase terminalPhase, const std::string& reason);
+    bool HasPartyActivityLease(const LivingActivity::ActivityLease& handle) const;
     std::vector<std::string> DrainPartyActivityTelemetry(bool includeSnapshots,
         size_t* transitionCount = nullptr);
     void RequeuePartyActivityTelemetry(const std::vector<std::string>& transitions);
@@ -241,6 +244,7 @@ private:
 
     struct ExternalLease
     {
+        LivingActivity::ActivityLease handle;
         PartyActivityOwner owner = PartyActivityOwner::none;
         PartyActivityPhase phase = PartyActivityPhase::idle;
         std::string reason;
@@ -313,6 +317,7 @@ private:
     std::map<uint32, Session> sessions;
     std::map<uint32, PartySession> partySessions;
     std::map<uint32, ExternalLease> externalLeases;
+    uint64 externalLeaseGeneration = 0;
     std::map<std::string, SuppressedActivityAggregate> suppressedActivityAggregates;
     std::chrono::steady_clock::time_point nextSuppressionTelemetryFlush;
     std::deque<std::string> activityTelemetry;

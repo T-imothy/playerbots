@@ -2,6 +2,7 @@
 #define _PLAYERBOT_ORGANIC_ECONOMY_H
 
 #include "Common.h"
+#include "LivingActivity.h"
 
 #include <chrono>
 #include <future>
@@ -57,6 +58,7 @@ private:
     std::map<uint32, CraftAttempt> craftAttempts;
     struct ServiceTrip
     {
+        LivingActivity::ActivityLease lease;
         std::string goal;
         uint32 purpose=0, started=0, progress=0, nextMove=0, attempts=0;
         float distance=1e30f;

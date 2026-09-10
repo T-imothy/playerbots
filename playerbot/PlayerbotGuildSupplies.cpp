@@ -100,6 +100,7 @@ uint32 DonationAllowance(Player* p,uint32 now) {
     return SupplyDonation(p->GetMoney(),protectedMoney,f[0].GetUInt32(),f[1].GetUInt32(),(now-joined)/86400);
 }
 struct Delivery {
+    LivingActivity::ActivityLease lease;
     uint64 id=0;uint32 guild=0,donor=0,carrier=0,item=0,entry=0,quantity=0,deposited=0,mail=0;
     std::string goal,phase,blocker;
     uint32 retry=0,active=0,last=0,nextMove=0,progress=0,attempts=0,operations=0,prepVendor=0,prepBank=0;
@@ -121,7 +122,7 @@ uint16 EmptyBagSlot(Player* p) {
 struct PlayerbotGuildSupplies::State {
     bool ready=false;uint32 check=0,next=0,load=0,cursor=0;
     std::map<uint64,Delivery> deliveries;
-    std::set<uint32> moving;
+    std::map<uint32,uint64> moving;
     std::set<uint32> protectedItems;
     std::vector<Service> services;
     std::map<uint32,bool> enabled;
@@ -133,17 +134,21 @@ struct PlayerbotGuildSupplies::State {
     bool mailRecorded=false;
     uint32 mailReceiver=0;
 
-    void Release(uint32 guid) {
-        if(!moving.erase(guid)) return;
+    void Release(Delivery& delivery) {
+        const uint32 guid = delivery.lease.actor;
+        auto entry = moving.find(guid);
+        if(entry != moving.end() && entry->second == delivery.id) moving.erase(entry);
         Player* p=Online(guid);
         if(p&&p->IsInWorld()&&p->GetMap()&&p->IsAlive()&&!p->IsInCombat()&&!p->IsBeingTeleported()&&
+            sPlayerbotRendezvousManager.HasPartyActivityLease(delivery.lease)&&
             sPlayerbotRendezvousManager.GetPartyActivityOwner(guid)==Owner::guild_supply) {
             p->StopMoving();p->GetMotionMaster()->MoveIdle();
         }
-        sPlayerbotRendezvousManager.ReleasePartyActivityLease(guid,Owner::guild_supply,Phase::deferred,"supply_delivery_released");
+        sPlayerbotRendezvousManager.ReleasePartyActivityLease(delivery.lease,Phase::deferred,"supply_delivery_released");
+        delivery.lease = {};
     }
     void Block(Delivery& d,const std::string& reason,uint32 now,bool cooldown=false) {
-        Release(d.carrier);
+        Release(d);
         if(d.blocker!=reason) {
             d.blocker=reason;
             CharacterDatabase.PExecute("UPDATE guild_society_supply_delivery SET blocker='%s',updated_at=%u WHERE delivery_id=%llu",reason.c_str(),now,(unsigned long long)d.id);
@@ -151,7 +156,7 @@ struct PlayerbotGuildSupplies::State {
         if(cooldown) {d.retry=now+600;d.active=0;d.last=0;d.operations=0;d.attempts=0;d.service=0;d.prepVendor=0;d.prepBank=0;}
     }
     void Finish(Delivery& d,const char* phase,const char* reason,uint32 now) {
-        Release(d.carrier);d.phase=phase;d.blocker=reason;
+        Release(d);d.phase=phase;d.blocker=reason;
         CharacterDatabase.PExecute("UPDATE guild_society_supply_delivery SET phase='%s',blocker='%s',updated_at=%u WHERE delivery_id=%llu",phase,reason,now,(unsigned long long)d.id);
         InvalidateItems(Online(d.carrier));
     }
@@ -167,13 +172,17 @@ struct PlayerbotGuildSupplies::State {
         std::map<uint64,Delivery> fresh;
         if(rows) do {
             Field* f=rows->Fetch();Delivery d;
-            auto old=deliveries.find(f[0].GetUInt64());if(old!=deliveries.end()) d=old->second;
+            auto old=deliveries.find(f[0].GetUInt64());
+            if(old!=deliveries.end()) {
+                if(old->second.carrier!=f[4].GetUInt32()) Release(old->second);
+                d=old->second;
+            }
             d.id=f[0].GetUInt64();d.guild=f[1].GetUInt32();d.goal=f[2].GetString();d.donor=f[3].GetUInt32();d.carrier=f[4].GetUInt32();
             if(d.phase!=f[10].GetString()||d.deposited!=f[8].GetUInt32()) {d.operations=0;d.service=0;d.active=0;}
             d.item=f[5].GetUInt32();d.entry=f[6].GetUInt32();d.quantity=f[7].GetUInt32();d.deposited=f[8].GetUInt32();d.mail=f[9].GetUInt32();d.phase=f[10].GetString();d.blocker=f[11].GetString();
             fresh[d.id]=d;
         } while(rows->NextRow());
-        for(auto& old:deliveries) if(!fresh.count(old.first)) {Release(old.second.carrier);InvalidateItems(Online(old.second.carrier));}
+        for(auto& old:deliveries) if(!fresh.count(old.first)) {Release(old.second);InvalidateItems(Online(old.second.carrier));}
         deliveries.swap(fresh);
         protectedItems.clear();
         for(const auto& pair:deliveries) {
@@ -209,9 +218,10 @@ struct PlayerbotGuildSupplies::State {
         for(const auto& s:services) if(s.guid==d.service&&s.type==type) {service=&s;break;}
         if(!service) {service=Destination(p,mail,npcFlag);if(service) {d.service=service->guid;d.distance=1e30f;d.progress=now;d.attempts=0;}}
         if(!service) {Block(d,"no_accessible_service",now,true);return nullptr;}
-        if(!sPlayerbotRendezvousManager.AcquirePartyActivityLease(p->GetGUIDLow(),Owner::guild_supply,Phase::traveling,90,"guild_supply_delivery")) return nullptr;
+        if(!sPlayerbotRendezvousManager.AcquirePartyActivityLease(p->GetGUIDLow(),Owner::guild_supply,Phase::traveling,90,
+            "guild_supply_delivery",std::to_string(d.id),d.lease)) return nullptr;
         working();
-        moving.insert(p->GetGUIDLow());
+        moving[p->GetGUIDLow()]=d.id;
         const float distance=p->GetMapId()==service->map?p->GetDistance(service->x,service->y,service->z):1e20f;
         if(distance+2<d.distance) {d.distance=distance;d.progress=now;}
         if(distance<=600&&now<d.progress+30&&now>=d.nextMove) {
@@ -252,7 +262,7 @@ struct PlayerbotGuildSupplies::State {
             // Native operations must produce actual capacity, never trust their
             // return value. Persist changed possessions before collecting mail.
             if(Inventory(p).size()<before) p->SaveToDB();
-            d.service=0;d.nextMove=0;Release(d.carrier);
+            d.service=0;d.nextMove=0;Release(d);
         }
         return false;
     }
@@ -269,7 +279,12 @@ bool PlayerbotGuildSupplies::Reserved(uint32 item) const {
     return state_->protectedItems.count(item)!=0;
 }
 bool PlayerbotGuildSupplies::OwnsMovement(uint32 guid) const {
-    return state_->moving.count(guid)!=0&&sPlayerbotRendezvousManager.GetPartyActivityOwner(guid)==Owner::guild_supply;
+    auto moving=state_->moving.find(guid);
+    if(moving==state_->moving.end()) return false;
+    auto delivery=state_->deliveries.find(moving->second);
+    return delivery!=state_->deliveries.end()&&
+        sPlayerbotRendezvousManager.HasPartyActivityLease(delivery->second.lease)&&
+        sPlayerbotRendezvousManager.GetPartyActivityOwner(guid)==Owner::guild_supply;
 }
 bool PlayerbotGuildSupplies::MoneyEnabled(uint32 guild) const {return state_->ready&&state_->moneyEnabled.count(guild)!=0;}
 uint32 PlayerbotGuildSupplies::InTransit(uint32 guild,const std::string& goal,std::string& status) const {
@@ -378,7 +393,8 @@ void PlayerbotGuildSupplies::Update() {
             // A short cast pauses the trip; releasing ownership here allowed
             // unrelated town/buff movement to repeatedly steal its route.
             // All other safety blockers still release immediately.
-            if(std::string(safety)=="active_spell_or_channel" && s.moving.count(d.carrier)) {
+            if(std::string(safety)=="active_spell_or_channel" &&
+                sPlayerbotRendezvousManager.HasPartyActivityLease(d.lease)) {
                 if(d.blocker!=safety) {d.blocker=safety;CharacterDatabase.PExecute("UPDATE guild_society_supply_delivery SET blocker='%s',updated_at=%u WHERE delivery_id=%llu",safety,now,(unsigned long long)d.id);}
             } else s.Block(d,safety,now);
             continue;
@@ -407,7 +423,7 @@ void PlayerbotGuildSupplies::Update() {
                 s.depositing=d.id;s.depositCount=amount;
                 WorldPacket packet(CMSG_GUILD_BANK_DEPOSIT_MONEY);packet<<bank->GetObjectGuid()<<amount;
                 p->GetSession()->HandleGuildBankDepositMoney(packet);
-                s.depositing=0;s.depositCount=0;s.Release(d.carrier);s.load=0;
+                s.depositing=0;s.depositCount=0;s.Release(d);s.load=0;
                 if(guild->GetGuildBankMoney()>=target)
                     CharacterDatabase.PExecute("UPDATE guild_society_supply_goal SET state='completed',updated_at=%u WHERE goal_id='%s' AND guild_id=%u AND request_kind='money' AND state='active'",now,d.goal.c_str(),d.guild);
             }
@@ -424,7 +440,7 @@ void PlayerbotGuildSupplies::Update() {
                 if(!p->GetMItem(d.item)) {s.Block(d,"attachment_unavailable_review",now,true);continue;}
                 if(++d.operations>2) {s.Block(d,"mail_collection_blocked",now,true);continue;}
                 WorldPacket packet(CMSG_MAIL_TAKE_ITEM);packet<<mailbox->GetObjectGuid()<<d.mail<<d.item;
-                p->GetSession()->HandleMailTakeItem(packet);s.Release(d.carrier);s.load=0;
+                p->GetSession()->HandleMailTakeItem(packet);s.Release(d);s.load=0;
             }
             continue;
         }
@@ -448,7 +464,7 @@ void PlayerbotGuildSupplies::Update() {
                 if(++d.operations>2) {s.Block(d,"bank_operation_blocked",now,true);continue;}
                 s.depositing=d.id;s.depositCount=finalAmount;
                 guild->MoveFromCharToBank(p,item->GetBagSlot(),item->GetSlot(),uint8(tab),255,finalAmount);
-                s.depositing=0;s.depositCount=0;s.Release(d.carrier);s.load=0;
+                s.depositing=0;s.depositCount=0;s.Release(d);s.load=0;
             }
         } else if(d.mail) s.Block(d,"deposit_permission_revoked",now,true);
         else {
@@ -503,7 +519,7 @@ void PlayerbotGuildSupplies::Update() {
                 draft.AddItem(item);
                 draft.SendMailTo(MailReceiver(recipient),MailSender(p),MAIL_CHECK_MASK_HAS_BODY,
                     p->GetSession()->GetAccountId()==recipient->GetSession()->GetAccountId()?0:sWorld.getConfig(CONFIG_UINT32_MAIL_DELIVERY_DELAY));
-                s.mailing=0;s.mailReceiver=0;s.Release(p->GetGUIDLow());s.load=0;
+                s.mailing=0;s.mailReceiver=0;s.Release(d);s.load=0;
                 if(!s.mailRecorded) s.Block(d,"mail_transaction_requires_review",now,true);
             }
         }

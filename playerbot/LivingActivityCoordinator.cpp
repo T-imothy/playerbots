@@ -508,3 +508,22 @@ void LivingActivityCoordinator::ObserveLeaseBoundary(uint32_t guid, LeaseBoundar
     state->actionInbox.TryPush({guid, 0, 0, {0, Lane::Inspection, true}, action,
         state->worldThreadReady.load(std::memory_order_acquire) && state->worldThread == std::this_thread::get_id()});
 }
+
+bool LivingActivityCoordinator::CompatibilityContext(uint32_t guid, const std::string& source,
+    const std::string& key, ActivityLease& identity) const {
+    if (!OnWorldThread() || !guid || !IsToken(source) || !IsSourceKey(key)) return false;
+    Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
+    if (!bot || !bot->GetPlayerbotAI()) return false;
+    const auto current = ReadNativeContext(*bot, state->policyRevision, state->boot);
+    if (!current.actorGeneration || !current.mapGeneration) return false;
+    identity = {};
+    identity.actor = guid;
+    identity.rootTask = SourceId(source, key);
+    identity.context = current;
+    return true;
+}
+
+bool LivingActivityCoordinator::OnWorldThread() const {
+    return state->worldThreadReady.load(std::memory_order_acquire) &&
+        state->worldThread == std::this_thread::get_id();
+}
