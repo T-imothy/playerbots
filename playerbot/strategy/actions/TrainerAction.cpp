@@ -249,6 +249,12 @@ bool TrainerAction::Execute(Event& event)
         // Older ranks can unlock newer ones whose IDs sort earlier. Complete
         // the eligible chain during this visit, without bypassing prerequisites.
         uint32 moneyBefore = bot->GetMoney();
+        std::set<uint32> petKnownBefore;
+        Pet* trainingPet = bot->GetPet();
+        const ObjectGuid trainingPetGuid = trainingPet ? trainingPet->GetObjectGuid() : ObjectGuid();
+        if (trainingPet)
+            for (const auto& spell : trainingPet->m_spells)
+                if (spell.second.state != PETSPELL_REMOVED) petKnownBefore.insert(spell.first);
         std::set<uint32> knownBefore;
         for (const auto& spell : bot->GetSpellMap())
             if (spell.second.state != PLAYERSPELL_REMOVED && !spell.second.disabled)
@@ -266,10 +272,22 @@ bool TrainerAction::Execute(Event& event)
                 sLog.outString("Living WoW training event=spell_learned bot=%u trainer=%u spell=%u level=%u money_before=%u money_after=%u",
                     bot->GetGUIDLow(), creature->GetEntry(), spell.first, bot->GetLevel(), moneyBefore, bot->GetMoney());
             }
+        uint32 petLearnedCount = 0;
+        trainingPet = bot->GetPet();
+        if (trainingPet && trainingPet->GetObjectGuid() == trainingPetGuid)
+            for (const auto& spell : trainingPet->m_spells)
+                if (spell.second.state != PETSPELL_REMOVED && !petKnownBefore.count(spell.first))
+                {
+                    ++petLearnedCount;
+                    sLog.outString("Living WoW training event=pet_spell_learned bot=%u pet=%u trainer=%u spell=%u",
+                        bot->GetGUIDLow(), trainingPet->GetGUIDLow(), creature->GetEntry(), spell.first);
+                }
         const auto trainerType = creature->GetCreatureInfo()->TrainerType;
         PlayerbotServiceTracking::Result(bot, trainerType == TRAINER_TYPE_CLASS ? "class_training" :
-            trainerType == TRAINER_TYPE_TRADESKILLS ? "profession_training" : "other_training",
-            creature->GetEntry(), 0, "newly_learned_spells", 0, learnedCount);
+            trainerType == TRAINER_TYPE_TRADESKILLS ? "profession_training" :
+            trainerType == TRAINER_TYPE_PETS ? "pet_training" : "other_training",
+            creature->GetEntry(), 0, trainerType == TRAINER_TYPE_PETS ? "newly_learned_pet_spells" : "newly_learned_spells",
+            0, trainerType == TRAINER_TYPE_PETS ? petLearnedCount : learnedCount);
         context->ClearValues("item usage");
         context->ClearValues("trainable spells");
         context->ClearValues("available trainers");

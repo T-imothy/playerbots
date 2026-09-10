@@ -1,5 +1,7 @@
 #pragma once
 #include <algorithm>
+#include "Entities/Pet.h"
+#include "Spells/SpellTargetDefines.h"
 
 // Bot sessions alone receive the trainer subsidy. Human trainer handling stays
 // in the core, with its normal prices and all normal spell prerequisites.
@@ -11,6 +13,27 @@ inline bool LivingWowFreeBotTraining(Player* player)
 inline bool LivingWowCanTrainSpell(Player* bot, TrainerSpell const* spell, Unit* trainer = nullptr)
 {
     if (!bot || !spell) return false;
+    // Pet-directed trainer spells must be eligible for the living pet, not
+    // repeatedly offered because they are absent from its owner's spellbook.
+    const SpellEntry* teaching = sSpellTemplate.LookupEntry<SpellEntry>(spell->spell);
+    if (!teaching) return false;
+    for (unsigned effect = 0; effect < 3; ++effect)
+    {
+        if (teaching->Effect[effect] != SPELL_EFFECT_LEARN_PET_SPELL &&
+            !(teaching->Effect[effect] == SPELL_EFFECT_LEARN_SPELL &&
+              (teaching->EffectImplicitTargetA[effect] == TARGET_UNIT_CASTER_PET ||
+               teaching->EffectImplicitTargetB[effect] == TARGET_UNIT_CASTER_PET))) continue;
+        Pet* pet = bot->GetPet();
+        const uint32 learned = teaching->EffectTriggerSpell[effect];
+        const SpellEntry* ability = sSpellTemplate.LookupEntry<SpellEntry>(learned);
+        if (!pet || !pet->IsAlive() || !ability || pet->HasSpell(learned) ||
+            pet->GetLevel() < ability->spellLevel || !pet->HasTPForSpell(learned) ||
+            !pet->CanTakeMoreActiveSpells(learned)) return false;
+        for (const auto& known : pet->m_spells)
+            if (known.second.state != PETSPELL_REMOVED &&
+                sSpellMgr.GetFirstSpellInChain(known.first) == sSpellMgr.GetFirstSpellInChain(learned) &&
+                sSpellMgr.GetSpellRank(known.first) >= sSpellMgr.GetSpellRank(learned)) return false;
+    }
     uint32 requiredLevel = 0;
     if (!bot->IsSpellFitByClassAndRace(spell->spell, &requiredLevel)) return false;
     requiredLevel = spell->isProvidedReqLevel ? spell->reqLevel : std::max(requiredLevel, spell->reqLevel);

@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotServiceTracking.h"
 #include "RepairAllAction.h"
+#include "playerbot/strategy/ItemVisitors.h"
 
 #include "playerbot/ServerFacade.h"
 
@@ -9,6 +10,18 @@ using namespace ai;
 
 bool RepairAllAction::Execute(Event& event)
 {
+    // Group leaders may remain here so followers can repair. That group trigger
+    // does not mean the leader has damaged items of their own to repair.
+    bool damaged = false;
+    const auto repairMask = IterateItemsMask(uint8(IterateItemsMask::ITERATE_ITEMS_IN_EQUIP) | uint8(IterateItemsMask::ITERATE_ITEMS_IN_BAGS));
+    for (Item* item : ai->InventoryParseItems("all", repairMask))
+        if (item && item->GetUInt32Value(ITEM_FIELD_DURABILITY) < item->GetUInt32Value(ITEM_FIELD_MAXDURABILITY))
+        {
+            damaged = true;
+            break;
+        }
+    if (!damaged) return false;
+
     // Retain the legacy sound policy independently. Chat visibility is owned
     // by PlayerbotAI's scoped central boundary.
     bool suppressMaintenanceSound = sPlayerbotAIConfig.chatDirectorV2 &&

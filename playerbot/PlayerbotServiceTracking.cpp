@@ -88,6 +88,7 @@ namespace
         AiObjectContext* context = ai->GetAiObjectContext();
         // Reuse cached gameplay predicates; do not choose destinations or change strategies.
         Observe(bot, "class_training", !AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", TRAINER_TYPE_CLASS).empty(), "");
+        Observe(bot, "pet_training", bot->getClass() == CLASS_HUNTER && !AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", TRAINER_TYPE_PETS).empty(), "");
         Observe(bot, "profession_training", !AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", TRAINER_TYPE_TRADESKILLS).empty(), "");
         Observe(bot, "repair", AI_VALUE(bool, "should repair"),
             !ai->HasStrategy("rpg maintenance", BotState::BOT_STATE_NON_COMBAT) ? "repair_strategy_disabled" :

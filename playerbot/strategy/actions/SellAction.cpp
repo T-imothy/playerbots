@@ -116,6 +116,7 @@ bool SellAction::Sell(Player* requester, Item* item)
         const std::string itemText = chat->formatItem(item);
         const uint32 beforeCount = bot->GetItemCount(itemEntry, false);
 
+        const bool itemLootOpen = bot->GetLootGuid() == itemguid;
         WorldPacket p;
         p << vendorguid << itemguid << count;
         bot->GetSession()->HandleSellItemOpcode(p);
@@ -126,7 +127,8 @@ bool SellAction::Sell(Player* requester, Item* item)
         }
 
         if (!PlayerbotServiceTracking::Result(bot, "sell", pCreature->GetEntry(), itemEntry, "bag_item_count",
-            beforeCount, bot->GetItemCount(itemEntry, false), false))
+            beforeCount, bot->GetItemCount(itemEntry, false), false,
+            itemLootOpen ? "item_loot_open" : "vendor_rejected_sale"))
             return false;
         sPlayerbotAIConfig.logEvent(ai, "SellAction", itemText, std::to_string(itemEntry));
         out << "Selling " << itemText;

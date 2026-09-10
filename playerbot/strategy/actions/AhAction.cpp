@@ -1,3 +1,4 @@
+#include "playerbot/LivingAuctionBid.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotAuctionEligibility.h"
@@ -360,7 +361,7 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
             if (!auction)
                 continue;
 
-            if (auction->owner == bot->GetGUIDLow())
+            if (auction->owner == bot->GetGUIDLow() || auction->bidder == bot->GetGUIDLow())
                 continue;
             uint32 sellerAccount = CharacterAccount(auction->owner);
             if (!sellerAccount || sellerAccount == bot->GetSession()->GetAccountId())
@@ -373,8 +374,9 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
             if (loop && (*loop)[0].GetUInt32() >= 3)
                 continue;
 
-            uint32 totalCost = std::min(auction->buyout, uint32(std::max(auction->bid, auction->startbid) * frand(1.05f, 1.25f)));
+            uint32 totalCost = LivingAuctionMinimumBid(auction->startbid, auction->bid, auction->GetAuctionOutBid(), auction->buyout);
 
+            if (!totalCost) continue;
             usage = AI_VALUE2(ItemUsage, "item usage", ItemQualifier(auction).GetQualifier());
 
             if (freeMoney.find(usage) == freeMoney.end() || totalCost > AI_VALUE2(uint32, "free money for", freeMoney[usage]))
@@ -442,13 +444,14 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
 
             usage = AI_VALUE2(ItemUsage, "item usage", ItemQualifier(auction).GetQualifier());
 
-            uint32 currentBidPrice = std::max(auction->bid, auction->startbid);
+            uint32 currentBidPrice = LivingAuctionMinimumBid(auction->startbid, auction->bid, auction->GetAuctionOutBid(), auction->buyout);
+            if (!currentBidPrice) continue;
             uint32 currentBuyoutPrice = auction->buyout;
 
             bool shouldBuyout = false;
 
             //determine if should look at buyout or bid price depending on item usage
-            uint32 price = currentBuyoutPrice;
+            uint32 price = currentBuyoutPrice ? currentBuyoutPrice : currentBidPrice;
 
             if (usage == ItemUsage::ITEM_USAGE_VENDOR || usage == ItemUsage::ITEM_USAGE_FORCE_GREED || usage == ItemUsage::ITEM_USAGE_NONE)
             {
@@ -487,9 +490,19 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
 
             std::string reason = ItemUsageValue::ReasonForNeed(usage, auction, auction->itemCount, bot);            
 
-            bidItems = BidItem(requester, auction, price, auctioneer, price == currentBuyoutPrice, reason);
+            // Recheck the actual chosen price: the candidate may have been ranked
+            // by a smaller bid, or earlier purchases may have consumed the budget.
+            uint32 spentToday = 0;
+            if (RecentPurchases(bot->GetGUIDLow(), HOUR) >= policy.maxPurchasesPerHour) break;
+            RecentPurchases(bot->GetGUIDLow(), DAY, &spentToday);
+            if (!price || price > bot->GetMoney() || freeMoney.find(usage) == freeMoney.end() ||
+                price > AI_VALUE2(uint32, "free money for", freeMoney[usage]) ||
+                uint64(spentToday) + price > (uint64(bot->GetMoney()) + spentToday) * policy.maxDailySpendPercent / 100)
+                continue;
+            const bool placedBid = BidItem(requester, auction, price, auctioneer, currentBuyoutPrice && price == currentBuyoutPrice, reason);
+            bidItems = placedBid || bidItems;
 
-            if (bidItems)
+            if (placedBid)
                 totalcount++;
 
             if (!urand(0, 5) || totalcount > 10)
@@ -511,7 +524,7 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
     {
         auction = curAuction.second;
 
-        if (auction->owner == bot->GetGUIDLow())
+        if (auction->owner == bot->GetGUIDLow() || auction->bidder == bot->GetGUIDLow())
             continue;
 
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(auction->itemTemplate);
@@ -525,10 +538,9 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
         if (!strstri(proto->Name1, text.c_str()))
             continue;
 
-        if (price && auction->bid + 5 > price)
-            continue;
+        uint32 cost = LivingAuctionMinimumBid(auction->startbid, auction->bid, auction->GetAuctionOutBid(), auction->buyout);
 
-        uint32 cost = std::min(auction->buyout, uint32(std::max(auction->bid, auction->startbid) * frand(1.05f, 1.25f)));
+        if (!cost || (price && cost > price)) continue;
 
         uint32 power = auction->itemCount;
         power *= 1000;
@@ -544,7 +556,7 @@ bool AhBidAction::ExecuteCommand(Player* requester, std::string text, Unit* auct
 
     auction = auctionPowers.begin()->first;
 
-    uint32 cost = std::min(auction->buyout, uint32(std::max(auction->bid, auction->startbid) * frand(1.05f, 1.25f)));
+    uint32 cost = LivingAuctionMinimumBid(auction->startbid, auction->bid, auction->GetAuctionOutBid(), auction->buyout);
 
     return BidItem(requester, auction, cost, auctioneer, cost == auction->buyout);
 }
@@ -577,6 +589,10 @@ bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price
 
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(auction->itemTemplate);
 
+    // A successful buyout deletes AuctionEntry inside the core handler.
+    const uint32 auctionId = auction->Id;
+    const uint32 sellerGuid = auction->owner;
+    const uint32 itemGuid = auction->itemGuidLow;
     const uint32 auctionItemEntry = auction->itemTemplate;
     bot->GetSession()->HandleAuctionPlaceBid(packet);
     PlayerbotServiceTracking::Result(bot, "auction_bid", auctioneer->GetEntry(), auctionItemEntry,
@@ -586,8 +602,8 @@ bool AhBidAction::BidItem(Player* requester, AuctionEntry* auction, uint32 price
     {
         CharacterDatabase.PExecute("INSERT INTO organic_economy_auction_history "
             "(auction_id,auction_house_id,seller_guid,buyer_guid,item_guid,item_entry,quantity,unit_price_copper,outcome) "
-            "VALUES ('%u','%u','%u','%u','%u','%u','%u','%u','%s')", auction->Id, auctionHouseEntry->houseId,
-            auction->owner, bot->GetGUIDLow(), auction->itemGuidLow, auction->itemTemplate, count,
+            "VALUES ('%u','%u','%u','%u','%u','%u','%u','%u','%s')", auctionId, auctionHouseEntry->houseId,
+            sellerGuid, bot->GetGUIDLow(), itemGuid, auctionItemEntry, count,
             price / std::max<uint32>(1, count), isBuyout ? "sold" : "bid");
         sPlayerbotAIConfig.logEvent(ai, "AhBidAction", proto->Name1, std::to_string(proto->ItemId));
         std::ostringstream out;
