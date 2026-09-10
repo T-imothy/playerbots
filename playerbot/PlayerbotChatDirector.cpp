@@ -2526,6 +2526,9 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             ",\"alternate_goals\":" << (sPlayerbotAIConfig.chatDirectorRecoveryAlternateGoals ? "true" : "false") <<
             ",\"no_progress_seconds\":" << sPlayerbotAIConfig.chatDirectorRecoveryNoProgressSeconds <<
             ",\"failure_backoff_seconds\":" << sPlayerbotAIConfig.chatDirectorRecoveryFailureBackoffSeconds <<
+            ",\"background_activity_ceiling_percent\":" << sPlayerbotAIConfig.botActiveAlone <<
+            ",\"activity_percentage\":" << sRandomPlayerbotMgr.getActivityPercentage() <<
+            ",\"world_average_diff_ms\":" << sWorld.GetAverageDiff() <<
             "},\"samples\":[";
         for (size_t i = start; i < samples.size() && i < start + healthBatchSize; ++i)
         {
