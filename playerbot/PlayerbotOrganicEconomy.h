@@ -15,6 +15,7 @@ class PlayerbotOrganicEconomy
 public:
     static PlayerbotOrganicEconomy& instance();
     void Update();
+    std::string CurrentGoalType(uint32 characterGuid) const;
 
 private:
     struct Policy
@@ -35,6 +36,9 @@ private:
         bool career = false;
         uint32 intendedOne = 0;
         uint32 intendedTwo = 0;
+        std::string currentGoalId;
+        std::string currentGoalType;
+        std::string currentGoalState;
     };
 
     PlayerbotOrganicEconomy() = default;
@@ -51,6 +55,7 @@ private:
     std::chrono::steady_clock::time_point lastChannelAd;
     std::map<uint32, std::chrono::steady_clock::time_point> actionCooldowns;
     std::map<uint32, std::chrono::steady_clock::time_point> adCooldowns;
+    std::map<uint32, Profile> profiles;
     Policy policy;
 };
 

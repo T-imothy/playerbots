@@ -425,10 +425,11 @@ static std::set<uint32> FindPlayerSaleItems(Player* player, const std::string& m
     return entries;
 }
 
-static uint32 BuyerDemandScore(ai::ItemUsage usage, ItemPrototype const* proto, uint32 current,
+static uint32 BuyerDemandScore(Player* bot, ai::ItemUsage usage, ItemPrototype const* proto, uint32 current,
     uint32& desired, std::string& reason)
 {
     desired = current;
+    const std::string activeGoal = bot ? sPlayerbotOrganicEconomy.CurrentGoalType(bot->GetGUIDLow()) : "";
     switch (usage)
     {
         case ai::ItemUsage::ITEM_USAGE_EQUIP:
@@ -437,24 +438,34 @@ static uint32 BuyerDemandScore(ai::ItemUsage usage, ItemPrototype const* proto, 
         case ai::ItemUsage::ITEM_USAGE_QUEST:
             desired = std::max<uint32>(current + 1, 1); reason = "quest"; return 90;
         case ai::ItemUsage::ITEM_USAGE_AMMO:
-            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize() * 2); reason = "ammo"; return 85;
+            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize() * 2);
+            reason = "ammo";
+            return activeGoal == "maintain_supplies" ? 95 : 85;
         case ai::ItemUsage::ITEM_USAGE_USE:
-            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize()); reason = "consumable"; return 80;
+            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize());
+            reason = "consumable";
+            return activeGoal == "maintain_supplies" ? 90 : 80;
         case ai::ItemUsage::ITEM_USAGE_SKILL:
         case ai::ItemUsage::ITEM_USAGE_GUILD_TASK:
-            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize()); reason = "profession"; return 75;
+            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize());
+            reason = "profession";
+            return activeGoal == "profession_skill_up" ? 95 : 75;
         case ai::ItemUsage::ITEM_USAGE_DISENCHANT:
             desired = current + 1; reason = "disenchant"; return 55;
         case ai::ItemUsage::ITEM_USAGE_AH:
         case ai::ItemUsage::ITEM_USAGE_FORCE_GREED:
-            desired = current + 1; reason = "resale"; return 45;
+            desired = current + std::min<uint32>(3, std::max<uint32>(1, proto->GetMaxStackSize()));
+            reason = "resale";
+            return 40;
         case ai::ItemUsage::ITEM_USAGE_KEEP:
         case ai::ItemUsage::ITEM_USAGE_BANK:
-            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize()); reason = "stock"; return 40;
+            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize());
+            reason = "stock";
+            return activeGoal == "maintain_supplies" ? 75 : 40;
         default:
-            // A low, explicit social-help motive lets a friendly personality buy
-            // ordinary goods without pretending every bot personally needs them.
-            desired = current + 1; reason = "social_help"; return 20;
+            // Friendly opportunistic purchases remain possible, but the gateway
+            // demand threshold admits only unusually helpful personalities.
+            desired = current + 1; reason = "social_help"; return 10;
     }
 }
 
@@ -645,7 +656,7 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             uint32 currentQuantity = std::max<int32>(0, countVisitor.items[itemId]);
             uint32 desiredQuantity = currentQuantity;
             std::string demandReason;
-            uint32 demandScore = BuyerDemandScore(usage, proto, currentQuantity, desiredQuantity, demandReason);
+            uint32 demandScore = BuyerDemandScore(bot, usage, proto, currentQuantity, desiredQuantity, demandReason);
             if (proto->Class == ITEM_CLASS_CONTAINER && proto->SubClass == ITEM_SUBCLASS_CONTAINER &&
                 proto->ContainerSlots > ai::ItemUsageValue::GetSmallestBagSize(bot))
             {

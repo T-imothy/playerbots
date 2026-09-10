@@ -113,8 +113,12 @@ std::map<uint32, PlayerbotOrganicEconomy::Profile> PlayerbotOrganicEconomy::Load
 {
     std::map<uint32, Profile> profiles;
     std::unique_ptr<QueryResult> result = CharacterDatabase.Query(
-        "SELECT character_guid,career_participant,COALESCE(intended_profession_one,0),"
-        "COALESCE(intended_profession_two,0) FROM organic_economy_profile");
+        "SELECT profile.character_guid,profile.career_participant,COALESCE(profile.intended_profession_one,0),"
+        "COALESCE(profile.intended_profession_two,0),COALESCE(goal.capability_ref,''),"
+        "COALESCE(goal.goal_type,''),COALESCE(goal.state,'') FROM organic_economy_profile profile "
+        "LEFT JOIN organic_economy_goal goal ON goal.goal_id=(SELECT MAX(candidate.goal_id) FROM organic_economy_goal candidate "
+        "WHERE candidate.character_guid=profile.character_guid AND candidate.state IN ('active','proposed') "
+        "AND (candidate.expires_at IS NULL OR candidate.expires_at>NOW()))");
     if (!result)
         return profiles;
     do
@@ -124,9 +128,18 @@ std::map<uint32, PlayerbotOrganicEconomy::Profile> PlayerbotOrganicEconomy::Load
         profile.career = fields[1].GetBool();
         profile.intendedOne = fields[2].GetUInt32();
         profile.intendedTwo = fields[3].GetUInt32();
+        profile.currentGoalId = fields[4].GetString();
+        profile.currentGoalType = fields[5].GetString();
+        profile.currentGoalState = fields[6].GetString();
         profiles[fields[0].GetUInt32()] = profile;
     } while (result->NextRow());
     return profiles;
+}
+
+std::string PlayerbotOrganicEconomy::CurrentGoalType(uint32 characterGuid) const
+{
+    auto found = profiles.find(characterGuid);
+    return found == profiles.end() ? "" : found->second.currentGoalType;
 }
 
 bool PlayerbotOrganicEconomy::SafeForEconomy(Player* bot) const
@@ -151,7 +164,7 @@ bool PlayerbotOrganicEconomy::SafeForEconomy(Player* bot) const
 
 bool PlayerbotOrganicEconomy::Submit(const Policy& currentPolicy)
 {
-    std::map<uint32, Profile> profiles = LoadProfiles();
+    profiles = LoadProfiles();
     std::ostringstream events, plans;
     events << "{\"events\":[";
     plans << "{\"bots\":[";
@@ -197,6 +210,10 @@ bool PlayerbotOrganicEconomy::Submit(const Policy& currentPolicy)
             << ",\"intended_profession_two\":" << profile.intendedTwo
             << ",\"profession_one\":" << professionOne << ",\"profession_two\":" << professionTwo
             << ",\"profession_one_skill\":" << skillOne << ",\"profession_two_skill\":" << skillTwo
+            << ",\"current_goal_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(profile.currentGoalId)
+            << "\",\"current_goal_type\":\"" << PlayerbotLLMInterface::SanitizeForJson(profile.currentGoalType)
+            << "\",\"current_goal_state\":\"" << PlayerbotLLMInterface::SanitizeForJson(profile.currentGoalState)
+            << "\""
             << ",\"known_recipe_outputs\":[";
         for (size_t i = 0; i < outputs.size(); ++i) { if (i) events << ','; events << outputs[i]; }
         events << "],\"auction_surplus\":" << (surplus ? "true" : "false") << '}';
