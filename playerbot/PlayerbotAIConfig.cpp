@@ -666,6 +666,12 @@ bool PlayerbotAIConfig::Initialize()
     chatDirectorSocialActions = config.GetBoolDefault("AiPlayerbot.ChatDirectorSocialActions", true);
     chatDirectorProactiveGrouping = config.GetBoolDefault("AiPlayerbot.ChatDirectorProactiveGrouping", true);
     chatDirectorSuppressLegacyOperationalChat = config.GetBoolDefault("AiPlayerbot.ChatDirectorSuppressLegacyOperationalChat", true);
+    chatDirectorRendezvousCatchup = config.GetBoolDefault("AiPlayerbot.ChatDirectorRendezvousCatchup", true);
+    chatDirectorRendezvousTargetSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousTargetSeconds", 10);
+    chatDirectorRendezvousMaximumSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousMaximumSeconds", 30);
+    chatDirectorRendezvousTriggerSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousTriggerSeconds", 30);
+    chatDirectorRendezvousCooldownSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousCooldownSeconds", 300);
+    chatDirectorRendezvousDepartureSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousDepartureSeconds", 90);
     chatDirectorSocialOfferSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorSocialOfferSeconds", 90);
     chatDirectorProactivePlayerCooldownSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorProactivePlayerCooldownSeconds", 600);
     chatDirectorProactivePairCooldownSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorProactivePairCooldownSeconds", 1800);

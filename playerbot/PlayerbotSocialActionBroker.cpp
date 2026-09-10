@@ -6,6 +6,7 @@
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotChatDirector.h"
 #include "PlayerbotLLMInterface.h"
+#include "PlayerbotRendezvousManager.h"
 #include "RandomPlayerbotMgr.h"
 
 #include <regex>
@@ -23,7 +24,7 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
     return sPlayerbotAIConfig.chatDirectorSocialActions && (type == "create_group_and_invite" || type == "invite_to_existing_group" ||
         type == "request_leader_invite" || type == "accept_group_invite" ||
         type == "pass_leadership" || type == "leave_group" ||
-        type == "share_quest" || type == "accept_party_quest_plan");
+        type == "share_quest" || type == "accept_party_quest_plan" || type == "meet_player");
 }
 
 bool PlayerbotSocialActionBroker::ValidateCommon(Player* bot, Player* player) const
@@ -168,6 +169,24 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living party quest plan", std::to_string(questId), player), true);
         }
     }
+    else if (proposal.type == "meet_player" &&
+        std::regex_match(proposal.capabilityRef, match, std::regex(R"(meet:([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow())
+    {
+        PlayerbotRendezvousManager::RequestResult result = sPlayerbotRendezvousManager.Request(
+            bot, player, action.actionId, true);
+        if (result == PlayerbotRendezvousManager::RequestResult::accepted ||
+            result == PlayerbotRendezvousManager::RequestResult::ordinary_travel)
+        {
+            action.state = "meeting";
+            actions[action.actionId] = action;
+            Report(actions[action.actionId]);
+            return true;
+        }
+        action.failureReason = result == PlayerbotRendezvousManager::RequestResult::unsafe ?
+            "no observer-safe rendezvous route" : "bot cannot leave its current activity";
+    }
 
     action.state = completed ? "completed" : "rejected";
     if (!completed)
@@ -191,6 +210,31 @@ void PlayerbotSocialActionBroker::Update()
     for (auto& pair : actions)
     {
         Action& action = pair.second;
+        if (action.state == "meeting")
+        {
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
+            Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
+            if (bot && player && bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
+            {
+                action.state = "completed";
+                action.completedAt = now;
+                Report(action);
+            }
+            else if (now >= action.expires)
+            {
+                action.state = "expired";
+                action.failureReason = "meeting offer expired";
+                sPlayerbotRendezvousManager.BeginDeparture(action.botGuid, action.playerGuid, action.failureReason);
+                Report(action);
+            }
+        }
+        else if (action.state == "completed" && action.type == "meet_player" &&
+            std::chrono::duration_cast<std::chrono::seconds>(now - action.completedAt).count() >= 30)
+        {
+            sPlayerbotRendezvousManager.BeginDeparture(action.botGuid, action.playerGuid, "meetup_completed");
+            action.state = "departing";
+            Report(action);
+        }
         if (action.state == "preparing" && now >= action.expires)
         {
             action.state = "expired";
@@ -216,7 +260,9 @@ void PlayerbotSocialActionBroker::Report(const Action& action) const
          << "\",\"type\":\"" << action.type << "\",\"capability_ref\":\""
          << PlayerbotLLMInterface::SanitizeForJson(action.capabilityRef)
          << "\",\"item_name\":\"\",\"quantity\":0,\"price_copper\":0,\"delivery\":\"immediate\",\"state\":\""
-         << action.state << "\",\"failure_reason\":\"" << PlayerbotLLMInterface::SanitizeForJson(action.failureReason)
+         << action.state << "\",\"rendezvous_state\":\"" << sPlayerbotRendezvousManager.State(action.botGuid, action.playerGuid)
+         << "\",\"catchup_relocated\":" << (sPlayerbotRendezvousManager.WasRelocated(action.botGuid, action.playerGuid) ? "true" : "false")
+         << ",\"failure_reason\":\"" << PlayerbotLLMInterface::SanitizeForJson(action.failureReason)
          << "\",\"group_id\":" << action.groupId << ",\"quest_id\":" << action.questId << ",\"expires_at\":\"world-clock\"}";
     std::string payload = body.str();
     std::thread([payload]() {

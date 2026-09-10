@@ -7,6 +7,7 @@
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotChatJson.h"
 #include "PlayerbotLLMInterface.h"
+#include "PlayerbotRendezvousManager.h"
 #include "RandomPlayerbotMgr.h"
 #include "ServerFacade.h"
 #include "strategy/ItemVisitors.h"
@@ -194,6 +195,14 @@ static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandid
     if (!sPlayerbotAIConfig.chatDirectorSocialActions || !bot || !speaker)
         return;
     Group* group = bot->GetGroup();
+    if (bot->GetMapId() == speaker->GetMapId() && bot->GetZoneId() == speaker->GetZoneId() &&
+        !bot->IsWithinDistInMap(speaker, INTERACTION_DISTANCE))
+    {
+        std::ostringstream ref;
+        ref << "meet:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow();
+        AddSocialCapability(candidate, ref.str(), "meet_player", 0, bot->GetGUIDLow(), 0,
+            "Travel to meet the player only after an explicit meetup request has been accepted.");
+    }
     candidate.groupState.pendingInvite = bot->GetGroupInvite() != nullptr;
     if (!group)
     {
@@ -378,6 +387,39 @@ static std::set<uint32> FindPlayerSaleItems(Player* player, const std::string& m
     return entries;
 }
 
+static uint32 BuyerDemandScore(ai::ItemUsage usage, ItemPrototype const* proto, uint32 current,
+    uint32& desired, std::string& reason)
+{
+    desired = current;
+    switch (usage)
+    {
+        case ai::ItemUsage::ITEM_USAGE_EQUIP:
+        case ai::ItemUsage::ITEM_USAGE_FORCE_NEED:
+            desired = std::max<uint32>(current + 1, 1); reason = "upgrade"; return 95;
+        case ai::ItemUsage::ITEM_USAGE_QUEST:
+            desired = std::max<uint32>(current + 1, 1); reason = "quest"; return 90;
+        case ai::ItemUsage::ITEM_USAGE_AMMO:
+            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize() * 2); reason = "ammo"; return 85;
+        case ai::ItemUsage::ITEM_USAGE_USE:
+            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize()); reason = "consumable"; return 80;
+        case ai::ItemUsage::ITEM_USAGE_SKILL:
+        case ai::ItemUsage::ITEM_USAGE_GUILD_TASK:
+            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize()); reason = "profession"; return 75;
+        case ai::ItemUsage::ITEM_USAGE_DISENCHANT:
+            desired = current + 1; reason = "disenchant"; return 55;
+        case ai::ItemUsage::ITEM_USAGE_AH:
+        case ai::ItemUsage::ITEM_USAGE_FORCE_GREED:
+            desired = current + 1; reason = "resale"; return 45;
+        case ai::ItemUsage::ITEM_USAGE_KEEP:
+        case ai::ItemUsage::ITEM_USAGE_BANK:
+            desired = std::max<uint32>(current + 1, proto->GetMaxStackSize()); reason = "stock"; return 40;
+        default:
+            // A low, explicit social-help motive lets a friendly personality buy
+            // ordinary goods without pretending every bot personally needs them.
+            desired = current + 1; reason = "social_help"; return 20;
+    }
+}
+
 static void PopulateGrounding(Player* bot, Player* speaker, const std::string& message, ChatDirectorCandidate& candidate)
 {
     candidate.subzone = sServerFacade.GetAreaId(bot);
@@ -531,7 +573,17 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             uint32 minimumUnitPrice = std::max<uint32>(1, unitPrice / 2);
             if (!proto || proto->Class == ITEM_CLASS_QUEST || !available || !unitPrice || freeMoney < minimumUnitPrice)
                 continue;
+            ai::ItemQualifier qualifier(itemId);
+            ai::ItemUsage usage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<ai::ItemUsage>(
+                "item usage", qualifier.GetQualifier())->Get();
+            uint32 currentQuantity = std::max<int32>(0, countVisitor.items[itemId]);
+            uint32 desiredQuantity = currentQuantity;
+            std::string demandReason;
+            uint32 demandScore = BuyerDemandScore(usage, proto, currentQuantity, desiredQuantity, demandReason);
+            uint32 missingQuantity = desiredQuantity > currentQuantity ? desiredQuantity - currentQuantity : 0;
             uint32 affordableQuantity = std::min<uint32>(available, std::max<uint32>(1, freeMoney / unitPrice));
+            affordableQuantity = std::min<uint32>(affordableQuantity, std::min<uint32>(5, missingQuantity));
+            if (!affordableQuantity) continue;
             uint32 maximumUnitPrice = std::min<uint32>(unitPrice, freeMoney / affordableQuantity);
             if (maximumUnitPrice < minimumUnitPrice) continue;
             ChatDirectorCapability capability;
@@ -549,7 +601,11 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             capability.economicVersion = 1;
             capability.itemId = proto->ItemId;
             capability.quality = proto->Quality;
-            capability.itemUsage = "player_offer";
+            capability.itemUsage = ItemUsageName(usage);
+            capability.demandReason = demandReason;
+            capability.demandScore = demandScore;
+            capability.currentQuantity = currentQuantity;
+            capability.desiredQuantity = desiredQuantity;
             capability.totalQuantity = available;
             capability.disposableQuantity = capability.maxQuantity;
             capability.playerbotBuyCopper = unitPrice;
@@ -803,6 +859,15 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         }
         std::string action = bot->GetPlayerbotAI()->HandleRemoteCommand("action");
         std::string lowered = boost::algorithm::to_lower_copy(action);
+        Player* humanMaster = bot->GetPlayerbotAI()->GetMaster();
+        if (bot->GetGroup() && humanMaster && humanMaster->isRealPlayer() && humanMaster->IsInWorld() &&
+            humanMaster->GetMapId() == bot->GetMapId() && bot->GetDistance(humanMaster) >
+                7.0f * std::max<uint32>(10, sPlayerbotAIConfig.chatDirectorRendezvousTriggerSeconds) &&
+            (lowered.find("follow") != std::string::npos || bot->GetPlayerbotAI()->HasRealPlayerMaster()))
+        {
+            sPlayerbotRendezvousManager.Request(bot, humanMaster,
+                "group-follow-" + std::to_string(bot->GetGUIDLow()), false);
+        }
         bool completedQuest = HasCompletedQuest(bot);
         if (completedQuest && state.completedQuestSince.time_since_epoch().count() == 0)
             state.completedQuestSince = now;
@@ -1302,7 +1367,11 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
                  << "\",\"item_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(capability.itemName)
                  << "\",\"item_kind\":\"" << capability.itemKind
                  << "\",\"item_usage\":\"" << capability.itemUsage
+                 << "\",\"demand_reason\":\"" << capability.demandReason
                  << "\",\"economic_version\":" << capability.economicVersion
+                 << ",\"demand_score\":" << capability.demandScore
+                 << ",\"current_quantity\":" << capability.currentQuantity
+                 << ",\"desired_quantity\":" << capability.desiredQuantity
                  << ",\"item_id\":" << capability.itemId << ",\"quality\":" << capability.quality
                  << ",\"min_quantity\":" << (capability.minQuantity ? capability.minQuantity : capability.quantity)
                  << ",\"max_quantity\":" << (capability.maxQuantity ? capability.maxQuantity : capability.quantity)

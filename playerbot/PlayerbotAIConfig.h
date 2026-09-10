@@ -402,8 +402,12 @@ public:
     uint32 llmEnabled, llmContextLength, llmBotToBotChatChance, llmGenerationTimeout, llmMaxSimultaniousGenerations, llmRpgAIChatChance;
     bool llmGlobalContext, chatDirectorV2, chatDirectorSocialActions, chatDirectorProactiveGrouping;
     bool chatDirectorSuppressLegacyOperationalChat;
+    bool chatDirectorRendezvousCatchup;
     uint32 chatDirectorBotRecoveryMode, chatDirectorMovementStuckSeconds, chatDirectorQuestStuckSeconds;
     uint32 chatDirectorRecoveryCooldownSeconds, chatDirectorMaxRecoveriesPerHour;
+    uint32 chatDirectorRendezvousTargetSeconds, chatDirectorRendezvousMaximumSeconds;
+    uint32 chatDirectorRendezvousTriggerSeconds, chatDirectorRendezvousCooldownSeconds;
+    uint32 chatDirectorRendezvousDepartureSeconds;
     uint32 chatDirectorSocialOfferSeconds, chatDirectorProactivePlayerCooldownSeconds;
     uint32 chatDirectorProactivePairCooldownSeconds, chatDirectorSharedActivitySeconds;
     uint32 chatDirectorSharedActivityWindowSeconds, chatDirectorSharedActivityDistance, chatDirectorMaximumLevelDifference;

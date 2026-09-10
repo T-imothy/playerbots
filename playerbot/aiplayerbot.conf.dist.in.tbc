@@ -1197,3 +1197,11 @@ AiPlayerbot.LLMDefaultPromptsFile = llm_character_card.txt
 
 # Mystery config value. Currently enables async bot pathfinding. Rarely crashes the server.
 # AiPlayerbot.TweakValue = 0
+# Observer-safe catch-up for already committed human-directed meetings. The bot
+# still runs the final leg normally and returns to its prior autonomous activity.
+AiPlayerbot.ChatDirectorRendezvousCatchup = 1
+AiPlayerbot.ChatDirectorRendezvousTargetSeconds = 10
+AiPlayerbot.ChatDirectorRendezvousMaximumSeconds = 30
+AiPlayerbot.ChatDirectorRendezvousTriggerSeconds = 30
+AiPlayerbot.ChatDirectorRendezvousCooldownSeconds = 300
+AiPlayerbot.ChatDirectorRendezvousDepartureSeconds = 90

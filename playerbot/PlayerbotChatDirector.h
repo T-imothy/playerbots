@@ -18,7 +18,11 @@ struct ChatDirectorCapability
     std::string itemName;
     std::string itemKind;
     std::string itemUsage;
+    std::string demandReason;
     uint32 economicVersion = 0;
+    uint32 demandScore = 0;
+    uint32 currentQuantity = 0;
+    uint32 desiredQuantity = 0;
     uint32 itemId = 0;
     uint32 quality = 0;
     uint32 quantity = 0;

@@ -3,6 +3,7 @@
 
 #include "PlayerbotChatDirector.h"
 #include "PlayerbotLLMInterface.h"
+#include "PlayerbotRendezvousManager.h"
 #include "RandomPlayerbotMgr.h"
 #include "ServerFacade.h"
 #include "TravelMgr.h"
@@ -20,14 +21,15 @@ using namespace ai;
 
 static uint32 CountBrokerPlayerItem(Player* player, uint32 entry);
 
-static bool MoveToMeetingPlayer(Player* bot, Player* player)
+static uint32 CountBrokerBotItem(Player* bot, uint32 entry)
 {
-    if (!bot || !player || bot->IsInCombat() || bot->GetMapId() != player->GetMapId())
-        return false;
-    // Meeting another player is ordinary travel, not a catch-up emergency.  The
-    // alwaysBoost flag visibly accelerates playerbots and can resemble a teleport.
-    bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
-    return true;
+    if (!bot || !entry) return 0;
+    FindItemByIdVisitor visitor(entry);
+    bot->GetPlayerbotAI()->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+    uint32 count = 0;
+    for (Item* item : visitor.GetResult())
+        if (item) count += item->GetCount();
+    return count;
 }
 
 static std::string MeetingPlayerLocation(Player* player)
@@ -268,6 +270,16 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
         "free money for", std::to_string((uint32)NeedMoneyFor::anything))->Get() : 0;
     if (buying && CountBrokerPlayerItem(player, itemEntry) < proposal.quantity)
         return reject("insufficient_player_inventory", "You no longer have that many to sell.");
+    if (buying && offeredCapability && offeredCapability->desiredQuantity)
+    {
+        uint32 currentQuantity = CountBrokerBotItem(bot, itemEntry);
+        uint32 missingQuantity = offeredCapability->desiredQuantity > currentQuantity ?
+            offeredCapability->desiredQuantity - currentQuantity : 0;
+        if (!missingQuantity)
+            return reject("buyer_demand_satisfied", "I don't need any more of that now.");
+        if (proposal.quantity > missingQuantity)
+            return reject("buyer_quantity_changed", "I don't need that many anymore.");
+    }
     if (buying && !price)
         return reject("invalid_price", "That purchase needs a valid price.");
     if (buying && reservedMoney[bot->GetGUIDLow()] + price > freeMoney)
@@ -281,6 +293,17 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
             return reject("gift_policy_rejected", "I can't give that item away right now.");
     }
 
+    std::string transactionId = "wow-tx-" + event.eventId + "-" + proposal.proposalId;
+    if (proposal.delivery == "meeting" && !conjure)
+    {
+        PlayerbotRendezvousManager::RequestResult meeting =
+            sPlayerbotRendezvousManager.Request(bot, player, transactionId, true);
+        if (meeting == PlayerbotRendezvousManager::RequestResult::unavailable)
+            return reject("meeting_unavailable", "I can't get away from what I'm doing quickly enough right now.");
+        if (meeting == PlayerbotRendezvousManager::RequestResult::unsafe)
+            return reject("meeting_not_viable", "I can't reach you naturally from here. Let's use mail or meet at a landmark.");
+    }
+
     if (!conjure && !crafting && !buying && proposal.delivery == "mail" && item->GetCount() != proposal.quantity)
     {
         item = SplitBrokerItem(bot, item, proposal.quantity);
@@ -292,7 +315,8 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
         giftHistory[proposal.targetGuid].push_back(std::chrono::steady_clock::now());
 
     Transaction transaction;
-    transaction.transactionId = "wow-tx-" + event.eventId + "-" + proposal.proposalId;
+    transaction.transactionId = transactionId;
+    transaction.commissionId = crafting ? "lwc-" + std::to_string(std::hash<std::string>{}(transactionId)) : "";
     transaction.eventId = event.eventId;
     transaction.proposalId = proposal.proposalId;
     transaction.botGuid = proposal.botGuid;
@@ -344,11 +368,7 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
                 PopulateTrade(bot, player);
         }
         else
-        {
-            if (MoveToMeetingPlayer(bot, player))
-                active.lastMeetingMove = std::chrono::steady_clock::now();
-            // The grounded director line already reports combat and location; retry after combat in Update().
-        }
+            active.lastMeetingMove = std::chrono::steady_clock::now();
     }
     return PlayerbotActionResult(true, "created", "");
 }
@@ -520,6 +540,7 @@ void PlayerbotActionBroker::CompleteTrade(Player* bot, Player* trader)
     reservedItems.erase(transaction->itemGuid);
     if (transaction->type == "buy_item") reservedMoney[transaction->botGuid] -= std::min(reservedMoney[transaction->botGuid], transaction->priceCopper);
     Report(*transaction);
+    sPlayerbotRendezvousManager.BeginDeparture(transaction->botGuid, transaction->playerGuid, "trade_completed");
 }
 
 void PlayerbotActionBroker::CancelTrade(Player* bot, Player* trader, const std::string& reason)
@@ -531,10 +552,12 @@ void PlayerbotActionBroker::CancelTrade(Player* bot, Player* trader, const std::
     reservedItems.erase(transaction->itemGuid);
     if (transaction->type == "buy_item") reservedMoney[transaction->botGuid] -= std::min(reservedMoney[transaction->botGuid], transaction->priceCopper);
     Report(*transaction);
+    sPlayerbotRendezvousManager.BeginDeparture(transaction->botGuid, transaction->playerGuid, reason);
 }
 
 void PlayerbotActionBroker::Update()
 {
+    sPlayerbotRendezvousManager.Update();
     const auto now = std::chrono::steady_clock::now();
     for (auto& pair : transactions)
     {
@@ -586,6 +609,7 @@ void PlayerbotActionBroker::Update()
             reservedItems.erase(transaction.itemGuid);
             if (buying) reservedMoney[transaction.botGuid] -= std::min(reservedMoney[transaction.botGuid], transaction.priceCopper);
             Report(transaction);
+            sPlayerbotRendezvousManager.BeginDeparture(transaction.botGuid, transaction.playerGuid, transaction.failureReason);
             continue;
         }
         if (transaction.state == "preparing")
@@ -607,7 +631,10 @@ void PlayerbotActionBroker::Update()
                 else
                 {
                     transaction.state = "meeting";
-                    if (MoveToMeetingPlayer(bot, player))
+                    PlayerbotRendezvousManager::RequestResult meeting = sPlayerbotRendezvousManager.Request(
+                        bot, player, transaction.transactionId, true);
+                    if (meeting == PlayerbotRendezvousManager::RequestResult::accepted ||
+                        meeting == PlayerbotRendezvousManager::RequestResult::ordinary_travel)
                     {
                         transaction.lastMeetingMove = now;
                         bot->Whisper(crafting ? "It's ready. I'm heading to you." : "Water is ready. I'm heading to you.", LANG_UNIVERSAL, player->GetObjectGuid());
@@ -658,8 +685,14 @@ void PlayerbotActionBroker::Update()
             !bot->IsInCombat() && (transaction.lastMeetingMove.time_since_epoch().count() == 0 ||
             std::chrono::duration_cast<std::chrono::seconds>(now - transaction.lastMeetingMove).count() >= 1))
         {
-            if (MoveToMeetingPlayer(bot, player))
-                transaction.lastMeetingMove = now;
+            if (!sPlayerbotRendezvousManager.IsActive(transaction.botGuid, transaction.playerGuid))
+            {
+                PlayerbotRendezvousManager::RequestResult meeting = sPlayerbotRendezvousManager.Request(
+                    bot, player, transaction.transactionId, true);
+                if (meeting == PlayerbotRendezvousManager::RequestResult::accepted ||
+                    meeting == PlayerbotRendezvousManager::RequestResult::ordinary_travel)
+                    transaction.lastMeetingMove = now;
+            }
         }
         if (transaction.state == "meeting" && bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
         {
@@ -683,6 +716,7 @@ void PlayerbotActionBroker::Update()
             reservedItems.erase(transaction.itemGuid);
             if (buying) reservedMoney[transaction.botGuid] -= std::min(reservedMoney[transaction.botGuid], transaction.priceCopper);
             Report(transaction);
+            sPlayerbotRendezvousManager.BeginDeparture(transaction.botGuid, transaction.playerGuid, "transaction_expired");
         }
     }
 }
@@ -736,7 +770,9 @@ void PlayerbotActionBroker::Report(const Transaction& transaction) const
          << "\",\"item_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(proto ? proto->Name1 : "")
          << "\",\"quantity\":" << transaction.quantity << ",\"price_copper\":" << transaction.priceCopper
          << ",\"delivery\":\"" << transaction.delivery << "\",\"state\":\"" << transaction.state
-         << "\",\"failure_reason\":\"" << PlayerbotLLMInterface::SanitizeForJson(transaction.failureReason)
+         << "\",\"rendezvous_state\":\"" << sPlayerbotRendezvousManager.State(transaction.botGuid, transaction.playerGuid)
+         << "\",\"catchup_relocated\":" << (sPlayerbotRendezvousManager.WasRelocated(transaction.botGuid, transaction.playerGuid) ? "true" : "false")
+         << ",\"failure_reason\":\"" << PlayerbotLLMInterface::SanitizeForJson(transaction.failureReason)
          << "\",\"expires_at\":\"world-clock\"}";
     std::string payload = body.str();
     std::thread([payload]() {

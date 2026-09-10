@@ -33,6 +33,7 @@ private:
         std::string state;
         std::string failureReason;
         std::chrono::steady_clock::time_point expires;
+        std::chrono::steady_clock::time_point completedAt;
     };
 
     bool ValidateCommon(Player* bot, Player* player) const;
