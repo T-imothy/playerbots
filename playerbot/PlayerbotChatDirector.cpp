@@ -1113,9 +1113,20 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         if (levelChanged || xpChanged || questProgressChanged)
         {
             state.lastMeaningfulProgress = now;
-            state.recoveryStep = 0;
-            state.recoveryQuestId = 0;
-            state.recoveryResult.clear();
+            // Unrelated XP, levels, or another quest changing must not discard
+            // an exact turn-in task that is still authoritatively pending.
+            // That race repeatedly pulled canaries away before they reached
+            // their quest taker.
+            bool recoveryQuestStillPending = state.recoveryQuestId &&
+                questSnapshot.completed.count(state.recoveryQuestId);
+            if (!recoveryQuestStillPending)
+            {
+                state.recoveryStep = 0;
+                state.recoveryQuestId = 0;
+                state.recoveryInteractionAttempts = 0;
+                state.lastRecoveryInteraction = std::chrono::steady_clock::time_point();
+                state.recoveryResult.clear();
+            }
         }
         long stillSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMoved).count();
         long progressSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMeaningfulProgress).count();
@@ -1186,6 +1197,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                         (reset ? "quest_turnin_request_rejected" : "quest_turnin_reset_rejected");
                     state.recoveryQuestId = stalledQuestId;
                     state.recoveryStep = 3;
+                    state.recoveryInteractionAttempts = 0;
+                    state.lastRecoveryInteraction = std::chrono::steady_clock::time_point();
                 }
                 else if (state.recoveryStep >= 2 && sPlayerbotAIConfig.chatDirectorQuestInteraction &&
                     lowered.find("quest") != std::string::npos && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 6)
@@ -1245,9 +1258,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         }
         TravelStatus recoveryStatus = recoveryTarget ? recoveryTarget->GetStatus() :
             TravelStatus::TRAVEL_STATUS_NONE;
-        if (recoveryCanary && state.recoveryStep == 3 && state.recoveryQuestId && recoveryTarget &&
-            (recoveryStatus == TravelStatus::TRAVEL_STATUS_READY ||
-             recoveryStatus == TravelStatus::TRAVEL_STATUS_TRAVEL))
+        bool exactTurninTarget = false;
+        if (recoveryCanary && state.recoveryStep == 3 && state.recoveryQuestId && recoveryTarget)
         {
             // Async travel requests share legacy metadata slots with ordinary
             // Playerbots travel. If another request updates those slots while
@@ -1260,10 +1272,77 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             if (questDestination && questDestination->GetQuestId() == state.recoveryQuestId &&
                 questDestination->GetPurpose() == TravelDestinationPurpose::QuestTaker)
             {
+                exactTurninTarget = true;
                 boundedRecoveryTarget = true;
-                recoveryTarget->AddCondition("can move around");
+                // The guarded movement action checks can-move-around on every
+                // execution. Keeping that volatile value as a target lifetime
+                // condition made long routes cool down before arrival.
+                recoveryTarget->SetConditions({});
                 recoveryTarget->SetRelevance(std::max<uint32>(recoveryTarget->GetRelevance(), 199u));
+                if (recoveryTarget->GetTimeLeft() < 15 * 60 * 1000)
+                    recoveryTarget->SetExpireIn(15 * 60 * 1000);
             }
+        }
+
+        // A QuestTaker travel target only gets the bot near the authoritative
+        // creature or gameobject. Complete the ordinary, legitimate interaction
+        // and verify the quest reward before releasing the persistent task.
+        std::string recoveryInteractionResult = "not_applicable";
+        if (!excluded && exactTurninTarget)
+        {
+            GuidPosition* targetPosition = dynamic_cast<GuidPosition*>(recoveryTarget->GetPosition());
+            WorldObject* questTaker = targetPosition ?
+                targetPosition->GetWorldObject(bot->GetInstanceId()) : nullptr;
+            float interactionDistance = questTaker ? bot->GetDistance(questTaker) :
+                recoveryTarget->Distance(bot);
+            if (recoveryStatus == TravelStatus::TRAVEL_STATUS_WORK &&
+                interactionDistance > INTERACTION_DISTANCE)
+            {
+                // WORK is not success. If the legacy destination bounding box
+                // reports arrival too early, resume guarded travel to the exact
+                // spawn instead of abandoning the turn-in.
+                recoveryTarget->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
+                recoveryStatus = TravelStatus::TRAVEL_STATUS_TRAVEL;
+                recoveryInteractionResult = "quest_turnin_early_arrival_corrected";
+            }
+            if (questTaker && interactionDistance <= INTERACTION_DISTANCE)
+            {
+                bool retryReady = state.lastRecoveryInteraction.time_since_epoch().count() == 0 ||
+                    std::chrono::duration_cast<std::chrono::seconds>(
+                        now - state.lastRecoveryInteraction).count() >= 5;
+                if (retryReady && state.recoveryInteractionAttempts < 3)
+                {
+                    state.lastRecoveryInteraction = now;
+                    ++state.recoveryInteractionAttempts;
+                    Event interaction("living progression turnin interaction",
+                        questTaker->GetObjectGuid(), bot);
+                    bool processed = bot->GetPlayerbotAI()->DoSpecificAction(
+                        "talk to quest giver", interaction, true);
+                    if (bot->GetQuestRewardStatus(state.recoveryQuestId))
+                    {
+                        recoveryInteractionResult = "quest_turnin_completed";
+                        state.recoveryResult = recoveryInteractionResult;
+                        state.recoveryStep = 0;
+                        state.recoveryQuestId = 0;
+                        state.recoveryInteractionAttempts = 0;
+                        state.lastRecoveryInteraction = std::chrono::steady_clock::time_point();
+                    }
+                    else
+                    {
+                        recoveryInteractionResult = processed ?
+                            "quest_turnin_not_rewarded" : "quest_turnin_interaction_rejected";
+                        state.recoveryResult = recoveryInteractionResult;
+                    }
+                }
+                else if (state.recoveryInteractionAttempts >= 3)
+                    recoveryInteractionResult = "quest_turnin_interaction_failed";
+                else
+                    recoveryInteractionResult = "quest_turnin_interaction_backoff";
+            }
+            else if (!questTaker && recoveryTarget->Distance(bot) <= sPlayerbotAIConfig.sightDistance)
+                recoveryInteractionResult = "quest_turnin_target_not_loaded";
+            else if (recoveryInteractionResult == "not_applicable")
+                recoveryInteractionResult = "quest_turnin_traveling";
         }
         if (!excluded && boundedRecoveryTarget &&
             (recoveryStatus == TravelStatus::TRAVEL_STATUS_READY ||
@@ -1350,6 +1429,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recovery_move_useful\":" << (recoveryMoveUseful ? "true" : "false")
              << ",\"recovery_move_possible\":" << (recoveryMovePossible ? "true" : "false")
              << ",\"recovery_move_result\":\"" << recoveryMoveResult << "\""
+             << ",\"recovery_interaction_result\":\"" << recoveryInteractionResult << "\""
+             << ",\"recovery_interaction_attempts\":" << state.recoveryInteractionAttempts
              << ",\"grouped\":" << (bot->GetGroup() ? "true" : "false") << "}";
         samples.push_back(json.str());
     }

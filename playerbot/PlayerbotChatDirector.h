@@ -200,6 +200,8 @@ private:
         std::string questProgressSignature;
         uint32 recoveryQuestId = 0;
         uint32 recoveryStep = 0;
+        uint32 recoveryInteractionAttempts = 0;
+        std::chrono::steady_clock::time_point lastRecoveryInteraction;
     };
 
     std::mutex mutex;
