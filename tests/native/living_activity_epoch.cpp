@@ -15,7 +15,7 @@ struct Player {
     Actor ai;
     bool inWorld = true, teleporting = false;
     uint32_t map = 0, instance = 0;
-    const Actor* GetPlayerbotAI() const { return &ai; }
+    Actor* GetPlayerbotAI() { return &ai; } // Matches the pinned native API.
     bool IsInWorld() const { return inWorld; }
     bool IsBeingTeleported() const { return teleporting; }
     uint32_t GetMapId() const { return map; }

@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 
 #include "ReactionEngine.h"
+#include "playerbot/LivingActivityCoordinator.h"
 #include <iomanip>
 
 using namespace ai;
@@ -212,6 +213,8 @@ bool ReactionEngine::Update(uint32 elapsed, bool minimal, bool isStunned, bool& 
 
 bool ReactionEngine::ListenAndExecute(Action* action, Event& event)
 {
+    sLivingActivityCoordinator.ObserveAction(ai->GetBot()->GetGUIDLow(), ai->GetActivityActorEpoch(),
+        ai->GetActivityMapEpoch(), action->GetActivityEffects(), action->getName());
     PlayerbotAI::ScopedChatAction chatActionScope(ai, action->getName(), event);
     bool actionExecuted = false;
     if (actionExecutionListeners.Before(action, event))

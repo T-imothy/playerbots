@@ -36,9 +36,10 @@ namespace LivingActivity {
 
     struct NativeWorldStamp { uint32_t map, instance; uint64_t actorEpoch, mapEpoch; };
     template<class NativePlayer>
-    bool SameNativeWorld(const NativePlayer& player, const NativeWorldStamp& stamp) {
+    bool SameNativeWorld(NativePlayer& player, const NativeWorldStamp& stamp) {
         // GetMap/GetTerrain assert outside world membership in pinned CMaNGOS.
         // Never call either just to test whether a map pointer is available.
+        // Pinned CMaNGOS exposes GetPlayerbotAI() only on non-const Player.
         const auto* ai = player.GetPlayerbotAI();
         return player.IsInWorld() && !player.IsBeingTeleported() && ai &&
             stamp.actorEpoch && stamp.mapEpoch && player.GetMapId() == stamp.map &&
