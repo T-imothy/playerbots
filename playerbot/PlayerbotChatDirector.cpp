@@ -1627,6 +1627,44 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // lifecycle. Health sampling must never create a second rendezvous or
         // relocate an already-persisted party during login.
         ProgressionQuestSnapshot questSnapshot = GetProgressionQuestSnapshot(bot);
+        TravelTarget* observedTravelTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
+            GetValue<TravelTarget*>("travel target")->Get();
+        TravelStatus observedTravelStatus = observedTravelTarget ?
+            observedTravelTarget->GetStatus() : TravelStatus::TRAVEL_STATUS_NONE;
+        bool observedTravelActive = observedTravelTarget &&
+            (observedTravelStatus == TravelStatus::TRAVEL_STATUS_READY ||
+             observedTravelStatus == TravelStatus::TRAVEL_STATUS_TRAVEL ||
+             observedTravelStatus == TravelStatus::TRAVEL_STATUS_WORK);
+        bool travelAdvanced = false;
+        if (observedTravelActive)
+        {
+            std::string targetPosition = observedTravelTarget->GetPosStr();
+            float targetDistance = observedTravelTarget->Distance(bot);
+            if (state.travelTargetPosition != targetPosition)
+            {
+                // Installing a validated target is a real goal transition, but
+                // it is not yet movement. Start a separate route-progress clock
+                // so a newly selected long route gets a fair chance to advance.
+                state.travelTargetPosition = targetPosition;
+                state.lastTravelDistance = targetDistance;
+                state.lastTravelAdvance = now;
+            }
+            else if (state.lastTravelDistance < 0.0f ||
+                targetDistance + 5.0f <= state.lastTravelDistance)
+            {
+                travelAdvanced = state.lastTravelDistance >= 0.0f;
+                state.lastTravelDistance = targetDistance;
+                state.lastTravelAdvance = now;
+            }
+            if (travelAdvanced)
+                state.travelAdvancedSinceReport = true;
+        }
+        else
+        {
+            state.travelTargetPosition.clear();
+            state.lastTravelDistance = -1.0f;
+            state.lastTravelAdvance = std::chrono::steady_clock::time_point();
+        }
         bool questProgressChanged = !state.questProgressSignature.empty() &&
             state.questProgressSignature != questSnapshot.signature;
         state.questProgressSignature = questSnapshot.signature;
@@ -1645,7 +1683,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // Position changes alone are not meaningful progression. Bots that
         // shuffle a few yards while repeatedly producing no action must remain
         // eligible for recovery.
-        if (levelChanged || xpChanged || questProgressChanged)
+        if (levelChanged || xpChanged || questProgressChanged || travelAdvanced)
         {
             state.lastMeaningfulProgress = now;
             // Unrelated XP, levels, or another quest changing must not discard
@@ -1687,11 +1725,17 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             }
         }
         bool noActions = lowered.find("no actions executed") != std::string::npos;
+        bool routeAdvancing = observedTravelActive &&
+            state.lastTravelAdvance.time_since_epoch().count() != 0 &&
+            std::chrono::duration_cast<std::chrono::seconds>(
+                now - state.lastTravelAdvance).count() <
+                sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
         // A bot carrying a completed quest gets a short grace period for the
         // ordinary travel strategy to find its turn-in. Do not spend its first
         // limited recovery attempt on generic objective reselection while that
         // more authoritative diagnosis is aging toward questStalled.
         bool movementStalled = questSnapshot.completed.empty() && expectsMovement && noActions &&
+            !routeAdvancing && stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds &&
             progressSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
         // A completed quest has its own authoritative age. Unrelated kill XP,
         // another quest objective, or ordinary combat must not restart that
@@ -1721,10 +1765,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             (sPlayerbotAIConfig.chatDirectorBotRecoveryMode == 1 && recoveryCanary);
         const bool recoveryAttemptEligible = recoveryExecutionScope &&
             (!globalRecovery || recoveryCanary || recoverySweepMember);
-        TravelTarget* inFlightRecoveryTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
-            GetValue<TravelTarget*>("travel target")->Get();
-        TravelStatus inFlightRecoveryStatus = inFlightRecoveryTarget ?
-            inFlightRecoveryTarget->GetStatus() : TravelStatus::TRAVEL_STATUS_NONE;
+        TravelTarget* inFlightRecoveryTarget = observedTravelTarget;
+        TravelStatus inFlightRecoveryStatus = observedTravelStatus;
         bool recoveryRouteTerminal = state.recoveryStep > 0 &&
             (inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_NONE ||
              inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_COOLDOWN ||
@@ -1734,8 +1776,17 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             uint32 terminalStep = state.recoveryStep;
             if ((terminalStep == 2 || terminalStep == 6) && HasActiveProgressionQuestUseItem(bot))
                 state.questItemFollowup = true;
-            state.recoveryResult = terminalStep == 3 ? "quest_turnin_route_terminal" :
+            std::string terminalResult = terminalStep == 3 ? "quest_turnin_route_terminal" :
                 (terminalStep == 5 ? "vendor_route_terminal" : "objective_route_terminal");
+            // A terminal target remains the authoritative travel value until it
+            // is explicitly replaced. Merely releasing recoveryStep left the
+            // normal travel strategy evaluating the same cooldown/expired
+            // target and produced the persistent travel/no-action loop.
+            bool terminalCleared = bot->GetPlayerbotAI()->DoSpecificAction(
+                "progression reset travel target",
+                Event("living progression clear terminal route"), true);
+            state.recoveryResult = terminalResult +
+                (terminalCleared ? "_cleared" : "_clear_rejected");
             // Terminal targets cannot be advanced. Keeping their recovery step
             // nonzero made hundreds of bots bypass the global sampling buckets
             // every ten seconds forever. Release the hot-loop state and let the
@@ -1744,6 +1795,9 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             state.recoveryQuestId = 0;
             state.recoveryInteractionAttempts = 0;
             state.lastRecoveryInteraction = std::chrono::steady_clock::time_point();
+            state.travelTargetPosition.clear();
+            state.lastTravelDistance = -1.0f;
+            state.lastTravelAdvance = std::chrono::steady_clock::time_point();
         }
         bool turninRecoveryInFlight = state.recoveryStep == 3 && state.recoveryQuestId &&
             questSnapshot.completed.count(state.recoveryQuestId) && inFlightRecoveryTarget &&
@@ -2052,7 +2106,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         json << "],\"bag_used_percent\":" << (uint32)bagUsed << ",\"objective_counters\":" << questSnapshot.objectiveJson
              << ",\"classification\":\"" << classification << "\",\"suspected_stuck\":" << (suspected ? "true" : "false")
              << ",\"current_action\":\"" << PlayerbotLLMInterface::SanitizeForJson(action)
-             << "\",\"quest_state\":\"" << (!questSnapshot.completed.empty() ? "completed_quest_pending" : "none_completed")
+             << "\",\"travel_advanced\":" << (state.travelAdvancedSinceReport ? "true" : "false")
+             << ",\"quest_state\":\"" << (!questSnapshot.completed.empty() ? "completed_quest_pending" : "none_completed")
              << "\",\"path_status\":\"" << pathStatus << "\",\"zone_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(zoneName)
              << "\",\"subzone_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(subzoneName)
              << "\",\"x\":" << bot->GetPositionX() << ",\"y\":" << bot->GetPositionY()
@@ -2078,7 +2133,10 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recovery_interaction_attempts\":" << state.recoveryInteractionAttempts
              << ",\"grouped\":" << (bot->GetGroup() ? "true" : "false") << "}";
         if (emitHealthSample)
+        {
             samples.push_back(json.str());
+            state.travelAdvancedSinceReport = false;
+        }
     }
 
     std::vector<std::string> payloads;

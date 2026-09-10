@@ -219,6 +219,10 @@ private:
         float y = 0.0f;
         std::chrono::steady_clock::time_point lastMoved;
         std::chrono::steady_clock::time_point lastMeaningfulProgress;
+        std::chrono::steady_clock::time_point lastTravelAdvance;
+        std::string travelTargetPosition;
+        float lastTravelDistance = -1.0f;
+        bool travelAdvancedSinceReport = false;
         std::map<uint32, std::chrono::steady_clock::time_point> completedQuestSince;
         std::chrono::steady_clock::time_point heightFaultSince;
         std::chrono::steady_clock::time_point lastRecovery;
