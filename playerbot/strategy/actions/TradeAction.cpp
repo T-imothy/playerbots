@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "TradeAction.h"
+#include "playerbot/PlayerbotActionBroker.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/strategy/values/ItemCountValue.h"
 
@@ -32,6 +33,14 @@ bool TradeAction::Execute(Event& event)
         {
             return false;
         }
+
+        // Chat v2 owns real-player transactions. The legacy command action
+        // opens a trade window before it knows whether it can supply the
+        // requested item, which turns ordinary chat such as "trade me food"
+        // into an unsolicited empty trade.
+        if (sPlayerbotAIConfig.chatDirectorV2 && player->isRealPlayer() &&
+            !sPlayerbotActionBroker.Authorizes(bot, player))
+            return false;
 
         if (!player->GetTrader())
         {
