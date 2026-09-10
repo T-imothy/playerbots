@@ -661,6 +661,18 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                 LogPartyEvent(session, "human_reconnected");
             }
 
+            // During logout and instance/map transfers the human can remain
+            // an authoritative group member while temporarily having no live
+            // Player object. Preserve the reconnect grace state, but do not
+            // fall through into active/free-time/hearth branches that
+            // dereference the absent human. The next world update resumes the
+            // same session as soon as FindPartyHuman can resolve the player.
+            if (waitingForReconnect)
+            {
+                ++iterator;
+                continue;
+            }
+
             // A bot in a human party may reach a spirit healer only because
             // its automated corpse navigation failed. Do not make the human
             // party wait through resurrection sickness for that automation
