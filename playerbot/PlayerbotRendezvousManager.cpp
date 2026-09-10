@@ -645,6 +645,14 @@ bool PlayerbotRendezvousManager::ReturnToActivity(Session& session, Player* bot)
 
 void PlayerbotRendezvousManager::Cancel(uint32 botGuid, uint32 playerGuid, const std::string& reason)
 {
+    Session* session = Find(botGuid, playerGuid);
+    if (session && session->actionId.find("guild-event:") == 0)
+    {
+        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(botGuid);
+        if (bot && bot->GetPlayerbotAI())
+            bot->GetPlayerbotAI()->ChangeStrategy(
+                "-stay,+follow,-wander", BotState::BOT_STATE_NON_COMBAT);
+    }
     BeginDeparture(botGuid, playerGuid, reason);
 }
 
@@ -745,6 +753,8 @@ void PlayerbotRendezvousManager::Update()
                         // can wander away while later members are arriving.
                         session.state = "assembled";
                         session.stateSince = now;
+                        bot->GetPlayerbotAI()->ChangeStrategy(
+                            "+stay,-follow,-wander", BotState::BOT_STATE_NON_COMBAT);
                         bot->GetPlayerbotAI()->StopMoving();
                         LogEvent(session, "assembly_held");
                     }
@@ -774,6 +784,8 @@ void PlayerbotRendezvousManager::Update()
             if (!player || !player->IsInWorld() || !player->GetGroup() ||
                 bot->GetGroup() != player->GetGroup())
             {
+                bot->GetPlayerbotAI()->ChangeStrategy(
+                    "-stay,+follow,-wander", BotState::BOT_STATE_NON_COMBAT);
                 LogEvent(session, "assembly_cancelled");
                 erase = true;
             }
@@ -782,6 +794,8 @@ void PlayerbotRendezvousManager::Update()
             {
                 session.state = "approaching";
                 session.stateSince = now;
+                bot->GetPlayerbotAI()->ChangeStrategy(
+                    "-stay,+follow,-wander", BotState::BOT_STATE_NON_COMBAT);
                 bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
                 LogEvent(session, "assembly_rejoin");
             }

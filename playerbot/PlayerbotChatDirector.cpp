@@ -3671,7 +3671,7 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
         // rendezvous manager follows the live organizer, so starting the
         // activity route before this transition creates a moving target that
         // can keep an otherwise valid party scattered indefinitely.
-        if (nextState == "active" && organizer && organizer->GetPlayerbotAI())
+        if ((nextState == "active" || terminal) && organizer && organizer->GetGroup())
         {
             for (GroupReference* reference = organizer->GetGroup()->GetFirstMember();
                 reference; reference = reference->next())
@@ -3680,11 +3680,15 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
                 if (!member || member == organizer)
                     continue;
                 sPlayerbotRendezvousManager.Cancel(
-                    member->GetGUIDLow(), organizer->GetGUIDLow(), "guild_event_started");
-                if (!member->IsInCombat())
+                    member->GetGUIDLow(), organizer->GetGUIDLow(),
+                    nextState == "active" ? "guild_event_started" : "guild_event_terminal");
+                if (nextState == "active" && !member->IsInCombat())
                     member->GetMotionMaster()->MoveFollow(
                         organizer, 2.0f, member->GetAngle(organizer), true, false);
             }
+        }
+        if (nextState == "active" && organizer && organizer->GetPlayerbotAI())
+        {
             const char* activityAction = eventType == "leveling" ?
                 "request progression grind travel target" :
                 "request progression quest travel target";
