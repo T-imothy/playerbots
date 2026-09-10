@@ -879,7 +879,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         std::ostringstream json;
         json << "{\"bot_guid\":" << guid << ",\"bot_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(bot->GetName())
              << "\",\"level\":" << (uint32)bot->GetLevel() << ",\"level_changed\":" << (levelChanged ? "true" : "false")
-             << "\",\"classification\":\"" << classification << "\",\"suspected_stuck\":" << (suspected ? "true" : "false")
+             << ",\"classification\":\"" << classification << "\",\"suspected_stuck\":" << (suspected ? "true" : "false")
              << ",\"current_action\":\"" << PlayerbotLLMInterface::SanitizeForJson(action)
              << "\",\"quest_state\":\"" << (completedQuest ? "completed_quest_pending" : "none_completed")
              << "\",\"path_status\":\"not_instrumented\",\"zone_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(zoneName)
