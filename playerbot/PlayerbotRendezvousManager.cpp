@@ -2722,6 +2722,55 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
         session.currentErrand, &session.errandBefore, nullptr);
 }
 
+void PlayerbotRendezvousManager::RecoverStalePartyCombat(PartySession& session, Player* bot, Player* human)
+{
+    // Run during arrival as well as follow. A pending arrival otherwise waits
+    // forever for a combat engine which can only select invalid targets.
+    const auto now = std::chrono::steady_clock::now();
+    bool ungroundedCombat = bot && human && bot->IsInWorld() && human->IsInWorld() &&
+        bot->IsAlive() && human->IsAlive() && bot->GetPlayerbotAI() &&
+        bot->GetMapId() == human->GetMapId() && bot->GetInstanceId() == human->GetInstanceId() &&
+        bot->GetDistance(human) > 20.0f && bot->IsInCombat() && !human->IsInCombat() &&
+        !bot->GetVictim() && bot->getAttackers().empty() &&
+        !bot->getHostileRefManager().getFirst() && !bot->IsNonMeleeSpellCasted(false) &&
+        !bot->hasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL) &&
+        !bot->IsBeingTeleported() && !bot->IsTaxiFlying() && !bot->GetTransport() &&
+        !bot->InBattleGround() && !bot->duel;
+    if (!ungroundedCombat)
+    {
+        session.staleCombatSince = std::chrono::steady_clock::time_point();
+        return;
+    }
+    // A warlock/hunter can have no personal victim while its pet is fighting.
+    // Never end that legitimate combat to expedite an arrival.
+    if (Unit* pet = bot->GetPet())
+    {
+        if (pet->IsInCombat() || pet->GetVictim() || !pet->getAttackers().empty() ||
+            pet->getHostileRefManager().getFirst() || pet->IsNonMeleeSpellCasted(false))
+        {
+            session.staleCombatSince = std::chrono::steady_clock::time_point();
+            return;
+        }
+    }
+    if (session.staleCombatSince.time_since_epoch().count() == 0)
+    {
+        session.staleCombatSince = now;
+        session.reason = "stale_combat_follow_blocked";
+        LogPartyEvent(session, "stale_combat_follow_blocked");
+    }
+    if (std::chrono::duration_cast<std::chrono::seconds>(now - session.staleCombatSince).count() < 12)
+        return;
+
+    bot->CombatStop(true);
+    bot->GetPlayerbotAI()->ChangeEngine(BotState::BOT_STATE_NON_COMBAT);
+    session.staleCombatSince = std::chrono::steady_clock::time_point();
+    session.lastFollowProgress = now - std::chrono::seconds(18);
+    session.nextFollowRepair = now;
+    session.nextApproachAttempt = now;
+    session.reason = "stale_combat_cleared";
+    LogPartyEvent(session, "stale_combat_cleared");
+}
+
 bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Player* bot, Player* player)
 {
     if (!bot || !player || !bot->IsInWorld() || !player->IsInWorld())
@@ -3722,6 +3771,7 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
             else if (session.state == "pending")
             {
                 session.playerGuid = human->GetGUIDLow();
+                RecoverStalePartyCombat(session, bot, human);
                 // Do not wait for one bot to finish its visible run before
                 // starting another. Only serialize the actual teleport calls
                 // by one world update so group and movement state are never
@@ -3744,6 +3794,7 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
             }
             else if (session.state == "approaching")
             {
+                RecoverStalePartyCombat(session, bot, human);
                 if (bot->GetMapId() == human->GetMapId() && bot->GetInstanceId() == human->GetInstanceId())
                 {
                     const float distance = bot->GetDistance(human);
@@ -3871,43 +3922,7 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                 }
                 else
                 {
-                    // A stale combat flag can starve the normal follow and
-                    // rendezvous paths forever: Playerbots remains in its combat
-                    // engine, fails to select a target, and this maintenance
-                    // branch traditionally refuses to move a combat-flagged bot.
-                    // Clear only an ungrounded flag after a sustained timeout.
-                    // Real combat always has a victim, attacker, hostile threat
-                    // reference, cast, or loss-of-control state and is untouched.
-                    bool ungroundedCombat = bot->IsInCombat() && sameMap && distance > 20.0f &&
-                        !human->IsInCombat() && !bot->GetVictim() && bot->getAttackers().empty() &&
-                        !bot->getHostileRefManager().getFirst() && !bot->IsNonMeleeSpellCasted(false) &&
-                        !bot->hasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL) &&
-                        !bot->IsBeingTeleported() && !bot->IsTaxiFlying() && !bot->GetTransport() &&
-                        !bot->InBattleGround() && !bot->duel;
-                    if (ungroundedCombat)
-                    {
-                        if (session.staleCombatSince.time_since_epoch().count() == 0)
-                        {
-                            session.staleCombatSince = now;
-                            session.reason = "stale_combat_follow_blocked";
-                            LogPartyEvent(session, "stale_combat_follow_blocked");
-                        }
-                        long staleSeconds = std::chrono::duration_cast<std::chrono::seconds>(
-                            now - session.staleCombatSince).count();
-                        if (staleSeconds >= 12)
-                        {
-                            bot->CombatStop(true);
-                            PlayerbotAI* ai = bot->GetPlayerbotAI();
-                            ai->ChangeEngine(BotState::BOT_STATE_NON_COMBAT);
-                            session.staleCombatSince = std::chrono::steady_clock::time_point();
-                            session.lastFollowProgress = now - std::chrono::seconds(18);
-                            session.nextFollowRepair = now;
-                            session.reason = "stale_combat_cleared";
-                            LogPartyEvent(session, "stale_combat_cleared");
-                        }
-                    }
-                    else
-                        session.staleCombatSince = std::chrono::steady_clock::time_point();
+                    RecoverStalePartyCombat(session, bot, human);
 
                     bool followBlocked = bot->IsInCombat() || bot->IsBeingTeleported() ||
                         bot->IsTaxiFlying() || bot->GetTransport();

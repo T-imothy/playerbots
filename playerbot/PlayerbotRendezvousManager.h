@@ -258,6 +258,7 @@ private:
     bool PartyInstanceBoundarySafe(Player* bot, Player* player) const;
     bool PartySafeToRelease(Player* bot) const;
     bool StartPartyApproach(PartySession& session, Player* bot, Player* player);
+    void RecoverStalePartyCombat(PartySession& session, Player* bot, Player* human);
     void BeginPartyHandoff(PartySession& session, Player* bot, Player* player,
         const std::string& reason);
     void ClearMovementState(Player* bot, Player* master, bool restoreFollow);
