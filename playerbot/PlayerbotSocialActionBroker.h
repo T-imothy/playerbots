@@ -21,6 +21,11 @@ public:
     bool CanUseSharedObject(Player* bot, Player* player, ObjectGuid guid);
     void AddSharedObjectCapabilities(Player* bot, Player* player, ChatDirectorCandidate& candidate);
     uint32 PreferredQuest(uint32 botGuid) const;
+    // A bot that explicitly left an autonomous party for a human must not be
+    // reclaimed by bot-only grouping before that human can invite it.  The
+    // reservation is intentionally short lived and is cleared on acceptance.
+    uint32 ReservedForPlayer(uint32 botGuid);
+    void CompleteGroupReservation(uint32 botGuid, uint32 playerGuid);
     // Used while grounding chat capabilities so a leader can queue broader
     // personal free time behind an already-authorized maintenance trip.
     bool HasActiveVendorTrip(uint32 botGuid) const;
@@ -82,6 +87,12 @@ private:
         std::string mode;
     };
 
+    struct GroupReservation
+    {
+        uint32 playerGuid = 0;
+        std::chrono::steady_clock::time_point expires;
+    };
+
     bool ValidateCommon(Player* bot, Player* player) const;
     bool StartVendorTrip(Player* bot, Player* player, const std::string& actionId,
         const std::string& eventId, const std::string& proposalId, bool announce);
@@ -89,6 +100,7 @@ private:
     bool ContinueAtBank(Action& action, Player* bot);
     void QueuePartyReturn(Action& action, Player* bot, Player* player,
         const std::string& reason, bool success);
+    void ReserveForPlayer(uint32 botGuid, uint32 playerGuid);
     void Report(const Action& action) const;
     std::map<std::string, Action> actions;
     std::map<uint32, std::pair<uint32, std::chrono::steady_clock::time_point>> preferredQuests;
@@ -98,6 +110,7 @@ private:
     std::map<std::string, std::chrono::steady_clock::time_point> sharedObjectCooldowns;
     std::map<std::string, std::chrono::steady_clock::time_point> sharedObjectPartyCooldowns;
     std::map<std::string, GatheringPolicy> gatheringPolicies;
+    std::map<uint32, GroupReservation> groupReservations;
     std::chrono::steady_clock::time_point nextVendorScan;
 };
 

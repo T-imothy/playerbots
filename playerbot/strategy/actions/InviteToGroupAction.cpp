@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "InviteToGroupAction.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/PlayerbotSocialActionBroker.h"
 #include "playerbot/strategy/values/Formations.h"
 #include "Guilds/GuildMgr.h"
 
@@ -13,6 +14,19 @@ namespace ai
             return false;
 
         if (inviter == player)
+            return false;
+
+        // Keep a bot that just left an autonomous party available for the
+        // human who requested that release.  This gate covers both random
+        // nearby grouping and guild grouping because they share Invite().
+        if (player->GetPlayerbotAI())
+        {
+            uint32 reservedFor = sPlayerbotSocialActionBroker.ReservedForPlayer(player->GetGUIDLow());
+            if (reservedFor && inviter->GetGUIDLow() != reservedFor)
+                return false;
+        }
+        if (inviter->GetPlayerbotAI() &&
+            sPlayerbotSocialActionBroker.ReservedForPlayer(inviter->GetGUIDLow()))
             return false;
 
         if (!player->GetPlayerbotAI() && !ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, true, player))

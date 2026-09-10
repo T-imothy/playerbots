@@ -147,6 +147,40 @@ static bool LeaveAiOnlyParty(Player* bot, uint32 expectedGroupId)
     return true;
 }
 
+uint32 PlayerbotSocialActionBroker::ReservedForPlayer(uint32 botGuid)
+{
+    auto found = groupReservations.find(botGuid);
+    if (found == groupReservations.end())
+        return 0;
+
+    const auto now = std::chrono::steady_clock::now();
+    Player* bot = sRandomPlayerbotMgr.GetPlayerBot(botGuid);
+    Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, found->second.playerGuid));
+    if (now >= found->second.expires || !bot || !player || !player->IsInWorld() || bot->GetGroup())
+    {
+        groupReservations.erase(found);
+        return 0;
+    }
+    return found->second.playerGuid;
+}
+
+void PlayerbotSocialActionBroker::ReserveForPlayer(uint32 botGuid, uint32 playerGuid)
+{
+    if (!botGuid || !playerGuid)
+        return;
+    GroupReservation reservation;
+    reservation.playerGuid = playerGuid;
+    reservation.expires = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+    groupReservations[botGuid] = reservation;
+}
+
+void PlayerbotSocialActionBroker::CompleteGroupReservation(uint32 botGuid, uint32 playerGuid)
+{
+    auto found = groupReservations.find(botGuid);
+    if (found != groupReservations.end() && found->second.playerGuid == playerGuid)
+        groupReservations.erase(found);
+}
+
 bool PlayerbotSocialActionBroker::ValidateCommon(Player* bot, Player* player) const
 {
     return bot && player && bot->GetPlayerbotAI() && bot->IsInWorld() && player->IsInWorld() &&
@@ -725,7 +759,10 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             }
             completed = LeaveAiOnlyParty(bot, groupId);
             if (completed)
+            {
+                ReserveForPlayer(bot->GetGUIDLow(), player->GetGUIDLow());
                 SendSocialWhisper(bot, player, "I'm free now. You can invite me.");
+            }
         }
         else
             action.failureReason = GroupHasRealHuman(group) ? "a human is now in the party" :
@@ -1360,6 +1397,7 @@ void PlayerbotSocialActionBroker::Update()
             {
                 action.state = "completed";
                 action.completedAt = now;
+                ReserveForPlayer(bot->GetGUIDLow(), player->GetGUIDLow());
                 SendSocialWhisper(bot, player, "I'm free now. You can invite me.");
                 Report(action);
             }

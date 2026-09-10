@@ -2,6 +2,7 @@
 
 #include "playerbot/strategy/Action.h"
 #include "playerbot/PlayerbotRendezvousManager.h"
+#include "playerbot/PlayerbotSocialActionBroker.h"
 
 namespace ai
 {
@@ -19,6 +20,13 @@ namespace ai
             Player* inviter = sObjectMgr.GetPlayer(grp->GetLeaderGuid());
             if (!inviter)
                 return false;
+
+            uint32 reservedFor = sPlayerbotSocialActionBroker.ReservedForPlayer(bot->GetGUIDLow());
+            if (reservedFor && inviter->GetGUIDLow() != reservedFor)
+            {
+                bot->UninviteFromGroup();
+                return false;
+            }
 
 			if (!ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, false, inviter))
             {
@@ -39,6 +47,9 @@ namespace ai
 
             if (!bot->GetGroup() || !bot->GetGroup()->IsMember(inviter->GetObjectGuid()))
                 return false;
+
+            sPlayerbotSocialActionBroker.CompleteGroupReservation(
+                bot->GetGUIDLow(), inviter->GetGUIDLow());
 
             // Capture the bot's pre-assist position and activity immediately
             // after a real player's invitation succeeds. Movement itself is
