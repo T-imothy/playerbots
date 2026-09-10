@@ -343,6 +343,31 @@ static bool FindOwnedGuildPetition(Player* owner, uint32& petitionGuid, std::str
     return signatures < required;
 }
 
+static uint32 PopulateOwnedPetitionState(Player* bot, ChatDirectorCandidate& candidate)
+{
+    if (!bot || bot->GetGuildId() || bot->GetGuildIdInvited())
+        return 0;
+
+    Item* petition = bot->GetItemByEntry(5863);
+    if (!petition)
+        return 0;
+
+    uint32 petitionGuid = petition->GetObjectGuid().GetCounter();
+    auto petitionRow = CharacterDatabase.PQuery(
+        "SELECT name FROM petition WHERE petitionguid = '%u' AND ownerguid = '%u'",
+        petitionGuid, bot->GetGUIDLow());
+    if (!petitionRow)
+        return 0;
+
+    candidate.hasPetition = true;
+    candidate.petitionName = petitionRow->Fetch()[0].GetString();
+    auto signatureRows = CharacterDatabase.PQuery(
+        "SELECT playerguid FROM petition_sign WHERE petitionguid = '%u'", petitionGuid);
+    candidate.petitionSignatures = signatureRows ? signatureRows->GetRowCount() : 0;
+    candidate.petitionRequired = sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS);
+    return petitionGuid;
+}
+
 static void PopulatePublicPetitionVolunteer(Player* bot, Player* speaker, const std::string& message,
     ChatDirectorCandidate& candidate)
 {
@@ -532,6 +557,10 @@ static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandid
     if (!sPlayerbotAIConfig.chatDirectorSocialActions || !bot || !speaker)
         return;
     PopulateGuildState(bot, speaker, candidate);
+    // A character's own charter is authoritative regardless of how the player
+    // addressed them. Party membership controls who can be solicited, not
+    // whether the owner remembers that the charter exists.
+    uint32 ownedPetitionGuid = PopulateOwnedPetitionState(bot, candidate);
     Group* group = bot->GetGroup();
     if (bot->GetMapId() == speaker->GetMapId() &&
         sServerFacade.GetDistance2d(bot, speaker) <= sPlayerbotAIConfig.farDistance)
@@ -652,38 +681,17 @@ static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandid
             AddSocialCapability(candidate, hearthRef.str(), "use_hearthstone", state.groupId,
                 bot->GetGUIDLow(), 0, "Use this character's ready hearthstone through normal game rules.");
         }
-        Item* petition = (!bot->GetGuildId() && !bot->GetGuildIdInvited()) ?
-            bot->GetItemByEntry(5863) : nullptr;
-        if (petition)
+        if (ownedPetitionGuid)
         {
-            uint32 petitionGuid = petition->GetObjectGuid().GetCounter();
-            auto petitionRow = CharacterDatabase.PQuery(
-                "SELECT name FROM petition WHERE petitionguid = '%u' AND ownerguid = '%u'",
-                petitionGuid, bot->GetGUIDLow());
-            if (!petitionRow)
-                petition = nullptr;
-            else
-            {
-                candidate.hasPetition = true;
-                candidate.petitionName = petitionRow->Fetch()[0].GetString();
-            }
-        }
-        if (petition)
-        {
-            uint32 petitionGuid = petition->GetObjectGuid().GetCounter();
-            auto signatures = CharacterDatabase.PQuery(
-                "SELECT playerguid FROM petition_sign WHERE petitionguid = '%u'", petitionGuid);
-            uint32 signatureCount = signatures ? signatures->GetRowCount() : 0;
-            uint32 required = sWorld.getConfig(CONFIG_UINT32_MIN_PETITION_SIGNS);
-            candidate.petitionSignatures = signatureCount;
-            candidate.petitionRequired = required;
-            PopulatePartyPetitionMembers(bot, group, petitionGuid, candidate);
+            uint32 signatureCount = candidate.petitionSignatures;
+            uint32 required = candidate.petitionRequired;
+            PopulatePartyPetitionMembers(bot, group, ownedPetitionGuid, candidate);
             uint32 eligible = candidate.eligiblePetitionPartyMembers.size();
-            if (eligible)
+            if (eligible && signatureCount < required)
             {
                 std::ostringstream petitionRef;
                 petitionRef << "guild:petition-solicit:" << bot->GetGUIDLow() << ':'
-                    << speaker->GetGUIDLow() << ':' << state.groupId << ':' << petitionGuid;
+                    << speaker->GetGUIDLow() << ':' << state.groupId << ':' << ownedPetitionGuid;
                 std::ostringstream description;
                 description << "Ask up to " << std::min<uint32>(eligible, required - signatureCount)
                     << " eligible, nearby, unsigned members of this party to sign this bot's existing guild charter. "
