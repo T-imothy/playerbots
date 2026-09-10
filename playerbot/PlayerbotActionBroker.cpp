@@ -24,7 +24,9 @@ static bool MoveToMeetingPlayer(Player* bot, Player* player)
 {
     if (!bot || !player || bot->IsInCombat() || bot->GetMapId() != player->GetMapId())
         return false;
-    bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, true);
+    // Meeting another player is ordinary travel, not a catch-up emergency.  The
+    // alwaysBoost flag visibly accelerates playerbots and can resemble a teleport.
+    bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
     return true;
 }
 
@@ -651,16 +653,7 @@ void PlayerbotActionBroker::Update()
         if (transaction.state == "offered" && bot->GetTradeData() && bot->GetTrader() == player)
             PopulateTrade(bot, player);
         if ((transaction.state == "offered" || transaction.state == "trading") && bot->GetTrader() == player)
-        {
             bot->GetPlayerbotAI()->StopMoving();
-            if (transaction.state == "trading" && bot->GetTradeData() &&
-                (transaction.lastTradeRefresh.time_since_epoch().count() == 0 ||
-                std::chrono::duration_cast<std::chrono::seconds>(now - transaction.lastTradeRefresh).count() >= 1))
-            {
-                player->GetSession()->SendUpdateTrade(true);
-                transaction.lastTradeRefresh = now;
-            }
-        }
         if ((transaction.state == "mail_travel" || transaction.state == "meeting" || transaction.state == "offered" || transaction.state == "trading") && now >= transaction.expires)
         {
             transaction.state = "expired";

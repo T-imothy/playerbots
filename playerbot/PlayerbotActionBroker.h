@@ -55,7 +55,6 @@ private:
         std::chrono::steady_clock::time_point expires;
         std::chrono::steady_clock::time_point preparingSince;
         std::chrono::steady_clock::time_point lastMeetingMove;
-        std::chrono::steady_clock::time_point lastTradeRefresh;
     };
 
     Transaction* Find(uint32 botGuid, uint32 playerGuid);
