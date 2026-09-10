@@ -1,5 +1,6 @@
 #include "botpch.h"
 #include "PlayerbotServiceTracking.h"
+#include "LivingActivityCoordinator.h"
 #include "PlayerbotChatDirector.h"
 #include "PlayerbotGuildGovernance.h"
 #include "PlayerbotGuildSupplies.h"
@@ -2565,6 +2566,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recovery_route_refreshes\":" << state.recoveryRouteRefreshes
              << ",\"recovery_interaction_result\":\"" << recoveryInteractionResult << "\""
              << ",\"recovery_interaction_attempts\":" << state.recoveryInteractionAttempts
+             << ",\"living_activity\":" << sLivingActivityCoordinator.ActorJson(guid)
              << ",\"grouped\":" << (bot->GetGroup() ? "true" : "false") << "}";
         if (emitHealthSample)
         {
