@@ -3562,7 +3562,8 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
                 if (bot && std::find(roster.begin(), roster.end(), bot) == roster.end())
                     roster.push_back(bot);
             };
-            const uint32 minimum = decisionType == "schedule_dungeon" ? 5 : 2;
+            std::string effectiveDecisionType = decisionType;
+            uint32 minimum = decisionType == "schedule_dungeon" ? 5 : 2;
             if (decisionType == "schedule_dungeon")
             {
                 // Do not take the first five online members and then discover
@@ -3593,6 +3594,23 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
                 if (PlayerbotAI::IsHeal(bot, false)) ++healers;
             }
             bool rolesReady = decisionType != "schedule_dungeon" || (tanks > 0 && healers > 0);
+            if (decisionType == "schedule_dungeon" &&
+                (roster.size() < minimum || !rolesReady) && eligible.size() >= 2)
+            {
+                // A guild should not manufacture a doomed dungeon event when
+                // its currently safe members cannot fill the required roles.
+                // Preserve the planner's social intent by forming a truthful
+                // leveling group from the same validated participants.
+                effectiveDecisionType = "schedule_leveling_group";
+                minimum = 2;
+                rolesReady = true;
+                roster.clear();
+                for (Player* bot : eligible)
+                {
+                    addUnique(bot);
+                    if (roster.size() >= 5) break;
+                }
+            }
             if (roster.size() >= minimum && rolesReady)
             {
                 // Guild events may reclaim bots only from AI-only groups; the
@@ -3631,10 +3649,10 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
                 else
                     rejection = "group_formation_failed";
             }
-            eventType = decisionType == "schedule_dungeon" ? "dungeon" :
-                decisionType == "schedule_quest_group" ? "quest" : "leveling";
-            title = decisionType == "schedule_dungeon" ? "Guild dungeon group" :
-                decisionType == "schedule_quest_group" ? "Guild quest group" : "Guild leveling group";
+            eventType = effectiveDecisionType == "schedule_dungeon" ? "dungeon" :
+                effectiveDecisionType == "schedule_quest_group" ? "quest" : "leveling";
+            title = effectiveDecisionType == "schedule_dungeon" ? "Guild dungeon group" :
+                effectiveDecisionType == "schedule_quest_group" ? "Guild quest group" : "Guild leveling group";
         }
         const uint32 nowEpoch = uint32(time(nullptr));
         CharacterDatabase.PExecute(
@@ -3649,19 +3667,19 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
             "VALUES ('%s',%u,'%s','%s','%s',0,%u,%u,%u,5,%u,%u,%u,'%s',%u,%u) "
             "ON DUPLICATE KEY UPDATE state=VALUES(state),organizer_guid=VALUES(organizer_guid),failure_reason=VALUES(failure_reason),updated_at=VALUES(updated_at)",
             eventId.c_str(), guildId, eventType.c_str(), eventState.c_str(), title.c_str(), organizerGuid,
-            nowEpoch, decisionType == "schedule_dungeon" ? 5 : 2,
-            decisionType == "schedule_dungeon" ? 1 : 0, decisionType == "schedule_dungeon" ? 1 : 0,
-            decisionType == "schedule_dungeon" ? 3 : 0, rejection.c_str(), nowEpoch, nowEpoch);
+            nowEpoch, eventType == "dungeon" ? 5 : 2,
+            eventType == "dungeon" ? 1 : 0, eventType == "dungeon" ? 1 : 0,
+            eventType == "dungeon" ? 3 : 0, rejection.c_str(), nowEpoch, nowEpoch);
         std::ostringstream telemetry;
         telemetry << "{\"events\":[{\"event_id\":\"execution-" << decisionId
             << "\",\"type\":\"guild_event\",\"guild_event_id\":\"" << eventId
             << "\",\"guild_id\":" << guildId << ",\"event_type\":\"" << eventType
             << "\",\"title\":\"" << title << "\",\"scheduled_at\":" << nowEpoch
             << ",\"state\":\"" << eventState << "\",\"organizer_guid\":" << organizerGuid
-            << ",\"minimum_members\":" << (decisionType == "schedule_dungeon" ? 5 : 2)
-            << ",\"maximum_members\":5,\"tank_slots\":" << (decisionType == "schedule_dungeon" ? 1 : 0)
-            << ",\"healer_slots\":" << (decisionType == "schedule_dungeon" ? 1 : 0)
-            << ",\"damage_slots\":" << (decisionType == "schedule_dungeon" ? 3 : 0)
+            << ",\"minimum_members\":" << (eventType == "dungeon" ? 5 : 2)
+            << ",\"maximum_members\":5,\"tank_slots\":" << (eventType == "dungeon" ? 1 : 0)
+            << ",\"healer_slots\":" << (eventType == "dungeon" ? 1 : 0)
+            << ",\"damage_slots\":" << (eventType == "dungeon" ? 3 : 0)
             << ",\"failure_reason\":\"" << rejection << "\"}]}";
         const std::string body = telemetry.str();
         std::thread([body]()
