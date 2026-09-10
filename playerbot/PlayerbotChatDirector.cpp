@@ -3102,6 +3102,114 @@ static bool SafeGuildWireId(const std::string& value, size_t maximum)
         std::regex_match(value, std::regex("[A-Za-z0-9:_-]+"));
 }
 
+static uint32 GuildEventGroupSize(Player* organizer)
+{
+    Group* group = organizer ? organizer->GetGroup() : nullptr;
+    if (!group)
+        return 0;
+    uint32 members = 0;
+    for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
+    {
+        Player* member = reference->getSource();
+        if (member && member->IsInWorld() && member->GetSession())
+            ++members;
+    }
+    return members;
+}
+
+void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock::time_point now)
+{
+    if (nextGuildLifecycleUpdate.time_since_epoch().count() && now < nextGuildLifecycleUpdate)
+        return;
+    nextGuildLifecycleUpdate = now + std::chrono::seconds(10);
+    if (guildPolicyMode != "active")
+        return;
+
+    auto events = CharacterDatabase.PQuery(
+        "SELECT event_id,guild_id,event_type,state,title,organizer_guid,scheduled_at,minimum_members,"
+        "maximum_members,tank_slots,healer_slots,damage_slots,created_at FROM guild_society_event "
+        "WHERE state IN ('forming','traveling','active') ORDER BY created_at LIMIT 24");
+    if (!events)
+        return;
+
+    const uint32 nowEpoch = uint32(time(nullptr));
+    do
+    {
+        Field* fields = events->Fetch();
+        const std::string eventId = fields[0].GetString();
+        const uint32 guildId = fields[1].GetUInt32();
+        const std::string eventType = fields[2].GetString();
+        const std::string state = fields[3].GetString();
+        const std::string title = fields[4].GetString();
+        const uint32 organizerGuid = fields[5].GetUInt32();
+        const uint32 scheduledAt = fields[6].GetUInt32();
+        const uint32 minimumMembers = std::max<uint32>(1, fields[7].GetUInt32());
+        const uint32 maximumMembers = std::max<uint32>(minimumMembers, fields[8].GetUInt32());
+        const uint32 tankSlots = fields[9].GetUInt32();
+        const uint32 healerSlots = fields[10].GetUInt32();
+        const uint32 damageSlots = fields[11].GetUInt32();
+        const uint32 createdAt = fields[12].GetUInt32();
+        if (!SafeGuildWireId(eventId, 100) ||
+            !GuildExecutionEnabled(guildPolicyMode, guildRolloutScope, guildCanaryIds, guildId))
+            continue;
+
+        Player* organizer = sRandomPlayerbotMgr.GetPlayerBot(organizerGuid);
+        const uint32 groupSize = GuildEventGroupSize(organizer);
+        const uint32 age = nowEpoch > createdAt ? nowEpoch - createdAt : 0;
+        std::string nextState, failureReason;
+        if (state == "forming" || state == "traveling")
+        {
+            if (groupSize >= minimumMembers)
+                nextState = "active";
+            else if (age >= 300)
+            {
+                nextState = "failed";
+                failureReason = "formation_timeout";
+            }
+        }
+        else if (state == "active")
+        {
+            if (groupSize < minimumMembers)
+            {
+                nextState = age >= 300 ? "completed" : "failed";
+                if (nextState == "failed")
+                    failureReason = "group_disbanded_early";
+            }
+            else if (age >= 1800)
+                nextState = "completed";
+        }
+        if (nextState.empty())
+            continue;
+
+        const bool terminal = nextState == "completed" || nextState == "failed";
+        const std::string endsAt = terminal ? std::to_string(nowEpoch) : "NULL";
+        CharacterDatabase.PExecute(
+            "UPDATE guild_society_event SET state='%s',failure_reason='%s',ends_at=%s,updated_at=%u "
+            "WHERE event_id='%s' AND state='%s'", nextState.c_str(), failureReason.c_str(),
+            endsAt.c_str(), nowEpoch, eventId.c_str(), state.c_str());
+
+        const std::string safeType = PlayerbotLLMInterface::SanitizeForJson(eventType);
+        const std::string safeTitle = PlayerbotLLMInterface::SanitizeForJson(title);
+        std::ostringstream telemetry;
+        telemetry << "{\"events\":[{\"event_id\":\"lifecycle-" << eventId << '-' << nowEpoch
+            << "\",\"type\":\"guild_event\",\"guild_event_id\":\"" << eventId
+            << "\",\"guild_id\":" << guildId << ",\"event_type\":\"" << safeType
+            << "\",\"title\":\"" << safeTitle << "\",\"scheduled_at\":" << scheduledAt
+            << ",\"ends_at\":" << (terminal ? nowEpoch : 0)
+            << ",\"state\":\"" << nextState << "\",\"organizer_guid\":" << organizerGuid
+            << ",\"minimum_members\":" << minimumMembers << ",\"maximum_members\":" << maximumMembers
+            << ",\"tank_slots\":" << tankSlots << ",\"healer_slots\":" << healerSlots
+            << ",\"damage_slots\":" << damageSlots << ",\"failure_reason\":\"" << failureReason << "\"}]}";
+        const std::string body = telemetry.str();
+        std::thread([body]()
+        {
+            std::vector<std::string> debug;
+            PlayerbotLLMInterface::Generate(body, 9, 1000000, debug, true, "/v2/guilds/events");
+        }).detach();
+    }
+    while (events->NextRow());
+}
+
 void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
     std::chrono::steady_clock::time_point /*now*/)
 {
@@ -3135,6 +3243,20 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
         const uint32 leaderAccount = guild ? sObjectMgr.GetPlayerAccountIdByGUID(guild->GetLeaderGuid()) : 0;
         if (!guild || !sPlayerbotAIConfig.IsInRandomAccountList(leaderAccount))
             continue;
+
+        const uint32 decisionEpoch = uint32(time(nullptr));
+        auto activeEvent = CharacterDatabase.PQuery(
+            "SELECT event_id FROM guild_society_event WHERE guild_id=%u "
+            "AND state IN ('announced','forming','traveling','active') LIMIT 1", guildId);
+        if (activeEvent)
+        {
+            CharacterDatabase.PExecute(
+                "INSERT INTO guild_society_decision (decision_id,guild_id,decision_type,candidate_id,state,source,rejection_code,created_at,updated_at) "
+                "VALUES ('%s',%u,'%s','%s','rejected','%s','active_event_in_progress',%u,%u)",
+                decisionId.c_str(), guildId, decisionType.c_str(), candidateId.c_str(), source.c_str(),
+                decisionEpoch, decisionEpoch);
+            continue;
+        }
 
         const bool groupEvent = decisionType == "schedule_quest_group" ||
             decisionType == "schedule_leveling_group" || decisionType == "schedule_dungeon";
@@ -3238,6 +3360,7 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
 void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock::time_point now)
 {
     ReloadGuildPolicy(now);
+    UpdateGuildEventLifecycle(now);
     if (pendingGuildPlans.valid() && pendingGuildPlans.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
         ApplyGuildPlans(pendingGuildPlans.get(), now);
     if (guildPolicyMode == "off")

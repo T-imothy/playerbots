@@ -211,6 +211,7 @@ private:
     void MaybeReportOrganicEconomy(std::chrono::steady_clock::time_point now);
     void MaybeReportGuildSocieties(std::chrono::steady_clock::time_point now);
     void ApplyGuildPlans(const std::string& response, std::chrono::steady_clock::time_point now);
+    void UpdateGuildEventLifecycle(std::chrono::steady_clock::time_point now);
     void ReloadGuildPolicy(std::chrono::steady_clock::time_point now);
     void SendGuildAddonSnapshot(Player* source, Player* receiver);
 
@@ -257,6 +258,7 @@ private:
     std::chrono::steady_clock::time_point nextEconomySample;
     std::chrono::steady_clock::time_point nextGuildSample;
     std::chrono::steady_clock::time_point nextGuildPolicyReload;
+    std::chrono::steady_clock::time_point nextGuildLifecycleUpdate;
     std::string guildPolicyMode = "observe";
     std::string guildRolloutScope = "canary";
     std::set<uint32> guildCanaryIds;
