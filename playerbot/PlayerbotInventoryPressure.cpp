@@ -2,6 +2,7 @@
 #include "PlayerbotInventoryPressure.h"
 
 #include "PlayerbotActionBroker.h"
+#include "PlayerbotGuildSupplies.h"
 #include "PlayerbotAI.h"
 #include "strategy/values/ItemUsageValue.h"
 
@@ -20,7 +21,9 @@ LivingWowItemDisposition PlayerbotInventoryPressure::Classify(Player* bot, Item*
     if (!bot || !item || !bot->GetPlayerbotAI())
         return LivingWowItemDisposition::Keep;
 
-    if (sPlayerbotActionBroker.IsItemReserved(item->GetGUIDLow()))
+    if (sPlayerbotActionBroker.IsItemReserved(item->GetGUIDLow()) ||
+        sGuildSupplies.Reserved(item->GetGUIDLow()) ||
+        sGuildSupplies.ReservedEntry(bot->GetGUIDLow(),item->GetEntry()))
     {
         if (hardReserved)
             *hardReserved = true;

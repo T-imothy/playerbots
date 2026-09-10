@@ -25,6 +25,30 @@ using namespace livingguild;
 namespace {
 using Owner=PlayerbotRendezvousManager::PartyActivityOwner;
 using Phase=PlayerbotRendezvousManager::PartyActivityPhase;
+std::map<uint32,uint32> absentHumans;
+bool HasOnlineHuman(Player* p) {
+    if(p->GetGroup()) for(const auto& slot:p->GetGroup()->GetMemberSlots())
+        if(!sPlayerbotAIConfig.IsInRandomAccountList(sObjectMgr.GetPlayerAccountIdByGUID(slot.guid))&&sObjectAccessor.FindPlayer(slot.guid)) return true;
+    return false;
+}
+bool HumanPartyBlocks(Player* p) {
+    bool hasHuman=false;
+    if(p->GetGroup()) for(const auto& slot:p->GetGroup()->GetMemberSlots()) {
+        if(sPlayerbotAIConfig.IsInRandomAccountList(sObjectMgr.GetPlayerAccountIdByGUID(slot.guid))) continue;
+        hasHuman=true;
+        // A loaded human may be zoning, so do not mistake map transfer for logout.
+        if(Player* human=sObjectAccessor.FindPlayer(slot.guid)) {
+            absentHumans.erase(p->GetGUIDLow());
+            if(!human->IsInWorld()||!human->IsAlive()||human->IsInCombat()||human->IsTaxiFlying()||human->GetTransport()||
+                !sPlayerbotRendezvousManager.IsPartyFreeTime(p->GetGUIDLow())||
+                sPlayerbotRendezvousManager.HasVerifiedErrandRoute(p->GetGUIDLow())) return true;
+        }
+    }
+    if(!hasHuman||HasOnlineHuman(p)) {absentHumans.erase(p->GetGUIDLow());return false;}
+    const uint32 now=uint32(time(nullptr));auto inserted=absentHumans.emplace(p->GetGUIDLow(),now);
+    const uint32 grace=std::max(60u,std::min(900u,uint32(sPlayerbotAIConfig.chatDirectorPartyDisconnectGraceSeconds)));
+    return now-inserted.first->second<grace;
+}
 Player* Online(uint32 guid) {return sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER,guid));}
 bool Bot(Player* p) {return p&&p->GetSession()&&!p->isRealPlayer()&&p->GetPlayerbotAI()&&
     sPlayerbotAIConfig.IsInRandomAccountList(p->GetSession()->GetAccountId());}
@@ -38,12 +62,13 @@ const char* SafetyBlocker(Player* p) {
     if(p->InBattleGround()||p->GetMap()->IsDungeon()) return "in_dungeon_or_battleground";
     if(p->IsNonMeleeSpellCasted(false)||p->GetTradeData()) return "finishing_cast_or_trade";
     if(sGuildEventExecutor.Reserved(p->GetGUIDLow())) return "committed_to_guild_event";
-    if(p->GetGroup()) for(const auto& slot:p->GetGroup()->GetMemberSlots())
-        if(!sPlayerbotAIConfig.IsInRandomAccountList(sObjectMgr.GetPlayerAccountIdByGUID(slot.guid))) return "with_human_party";
+    if(HumanPartyBlocks(p)) return "human_party_or_reconnect_grace";
     const auto owner=sPlayerbotRendezvousManager.GetPartyActivityOwner(p->GetGUIDLow());
     // Stale ordinary follow may yield once there is no human party. Explicit
     // actions, errands and guild commitments retain their higher priority.
     if(owner==Owner::none||owner==Owner::guild_supply||owner==Owner::party_follow) return "";
+    if(owner==Owner::party_errand&&sPlayerbotRendezvousManager.IsPartyFreeTime(p->GetGUIDLow())&&
+        !sPlayerbotRendezvousManager.HasVerifiedErrandRoute(p->GetGUIDLow())) return "";
     return "another_activity_owns_movement";
 }
 bool Safe(Player* p) {return !*SafetyBlocker(p);}
@@ -76,7 +101,7 @@ uint32 DonationAllowance(Player* p,uint32 now) {
 struct Delivery {
     uint64 id=0;uint32 guild=0,donor=0,carrier=0,item=0,entry=0,quantity=0,deposited=0,mail=0;
     std::string goal,phase,blocker;
-    uint32 retry=0,active=0,last=0,nextMove=0,progress=0,attempts=0,operations=0;
+    uint32 retry=0,active=0,last=0,nextMove=0,progress=0,attempts=0,operations=0,prepVendor=0,prepBank=0;
     float distance=1e30f;uint32 service=0;
 };
 struct Service {uint32 guid=0,entry=0,map=0,type=0,zone=0;float x=0,y=0,z=0;};
@@ -112,7 +137,7 @@ struct PlayerbotGuildSupplies::State {
             d.blocker=reason;
             CharacterDatabase.PExecute("UPDATE guild_society_supply_delivery SET blocker='%s',updated_at=%u WHERE delivery_id=%llu",reason.c_str(),now,(unsigned long long)d.id);
         }
-        if(cooldown) {d.retry=now+600;d.active=0;d.last=0;d.operations=0;d.attempts=0;d.service=0;}
+        if(cooldown) {d.retry=now+600;d.active=0;d.last=0;d.operations=0;d.attempts=0;d.service=0;d.prepVendor=0;d.prepBank=0;}
     }
     void Finish(Delivery& d,const char* phase,const char* reason,uint32 now) {
         Release(d.carrier);d.phase=phase;d.blocker=reason;
@@ -148,23 +173,30 @@ struct PlayerbotGuildSupplies::State {
         }
     }
     bool Busy(uint32 guid) const {for(const auto& d:deliveries) if(!SupplyTerminal(d.second.phase)&&(d.second.carrier==guid||d.second.donor==guid)) return true;return false;}
-    const Service* Destination(Player* p,bool mail) const {
+    const Service* Destination(Player* p,bool mail,uint32 npcFlag=0) const {
         const Service* best=nullptr;float score=1e30f;
         for(const auto& s:services) {
-            if(s.type!=(mail?GAMEOBJECT_TYPE_MAILBOX:GAMEOBJECT_TYPE_GUILD_BANK)||!SupplyCity(s.zone,p->GetTeam()==ALLIANCE)) continue;
+            if(s.type!=(npcFlag?100000+npcFlag:uint32(mail?GAMEOBJECT_TYPE_MAILBOX:GAMEOBJECT_TYPE_GUILD_BANK))||!SupplyCity(s.zone,p->GetTeam()==ALLIANCE)) continue;
             const float distance=s.map==p->GetMapId()?p->GetDistance(s.x,s.y,s.z):100000.0f+std::abs(s.x-p->GetPositionX());
             if(distance<score) {best=&s;score=distance;}
         }
         return best;
     }
-    GameObject* Reach(Player* p,Delivery& d,bool mail,uint32 now) {
-        const uint32 type=mail?GAMEOBJECT_TYPE_MAILBOX:GAMEOBJECT_TYPE_GUILD_BANK;
-        auto working=[&]() {if(!d.blocker.empty()) {d.blocker.clear();CharacterDatabase.PExecute("UPDATE guild_society_supply_delivery SET blocker='',updated_at=%u WHERE delivery_id=%llu",now,(unsigned long long)d.id);}};
-        const auto nearby=p->GetPlayerbotAI()->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest game objects no los")->Get();
-        for(auto guid:nearby) if(auto* go=p->GetGameObjectIfCanInteractWith(guid,GameobjectTypes(type))) {working();return go;}
+    WorldObject* Reach(Player* p,Delivery& d,bool mail,uint32 now,uint32 npcFlag=0) {
+        const uint32 type=npcFlag?100000+npcFlag:uint32(mail?GAMEOBJECT_TYPE_MAILBOX:GAMEOBJECT_TYPE_GUILD_BANK);
+        const std::string workingReason=npcFlag?(npcFlag==UNIT_NPC_FLAG_VENDOR?"clearing_bags_at_vendor":"clearing_bags_at_personal_bank"):"";
+        auto working=[&]() {if(d.blocker!=workingReason) {d.blocker=workingReason;CharacterDatabase.PExecute("UPDATE guild_society_supply_delivery SET blocker='%s',updated_at=%u WHERE delivery_id=%llu",workingReason.c_str(),now,(unsigned long long)d.id);}};
+        const auto nearby=p->GetPlayerbotAI()->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>(npcFlag?"nearest npcs no los":"nearest game objects no los")->Get();
+        for(auto guid:nearby) {
+            if(npcFlag) {if(auto* npc=p->GetNPCIfCanInteractWith(guid,npcFlag)) {working();return npc;}}
+            else if(auto* go=p->GetGameObjectIfCanInteractWith(guid,GameobjectTypes(type))) {working();return go;}
+        }
+        // Online town breaks may use a service already reached by normal
+        // errands, but must not install a competing route or teleport.
+        if(HasOnlineHuman(p)) {Block(d,"waiting_for_local_town_service",now);return nullptr;}
         const Service* service=nullptr;
         for(const auto& s:services) if(s.guid==d.service&&s.type==type) {service=&s;break;}
-        if(!service) {service=Destination(p,mail);if(service) {d.service=service->guid;d.distance=1e30f;d.progress=now;}}
+        if(!service) {service=Destination(p,mail,npcFlag);if(service) {d.service=service->guid;d.distance=1e30f;d.progress=now;d.attempts=0;}}
         if(!service) {Block(d,"no_accessible_service",now,true);return nullptr;}
         if(!sPlayerbotRendezvousManager.AcquirePartyActivityLease(p->GetGUIDLow(),Owner::guild_supply,Phase::traveling,90,"guild_supply_delivery")) return nullptr;
         working();
@@ -191,6 +223,26 @@ struct PlayerbotGuildSupplies::State {
             if(d.active>=300) Block(d,"safe_travel_deferred",now,true);
         }
         return nullptr;
+    }
+    bool MakeCollectionRoom(Player* p,Delivery& d,uint32 now) {
+        ItemPosCountVec dest;
+        if(p->CanStoreNewItem(NULL_BAG,NULL_SLOT,dest,d.entry,d.quantity-d.deposited)==EQUIP_ERR_OK) return true;
+        const auto summary=sPlayerbotInventoryPressure.Analyze(p);
+        const bool vendor=summary.vendorStacks&&d.prepVendor<2;
+        const bool bank=summary.HasBankableStorage()&&d.prepBank<2;
+        if(!vendor&&!bank) {Block(d,"bags_full_no_safe_storage",now,true);return false;}
+        const uint32 flag=vendor?UNIT_NPC_FLAG_VENDOR:UNIT_NPC_FLAG_BANKER;
+        if(Reach(p,d,false,now,flag)) {
+            auto* ai=p->GetPlayerbotAI();const size_t before=Inventory(p).size();
+            if(vendor) ++d.prepVendor;else ++d.prepBank;
+            ai->DoSpecificAction(vendor?"sell":"bank",Event("rpg action",vendor?"living-wow-safe-vendor":"living-wow-safe-storage",nullptr),true);
+            InvalidateItems(p);ai->GetAiObjectContext()->ClearValues("bag space");ai->GetAiObjectContext()->ClearValues("bank space");
+            // Native operations must produce actual capacity, never trust their
+            // return value. Persist changed possessions before collecting mail.
+            if(Inventory(p).size()<before) p->SaveToDB();
+            d.service=0;d.nextMove=0;Release(d.carrier);
+        }
+        return false;
     }
 };
 PlayerbotGuildSupplies::PlayerbotGuildSupplies():state_(new State) {}
@@ -226,6 +278,16 @@ bool PlayerbotGuildSupplies::AllowsMovement(uint32 guid,const std::string& actio
     return action.find("travel")==std::string::npos&&action.find("rpg")==std::string::npos&&
         action.find("follow")==std::string::npos&&action.find("move random")==std::string::npos&&
         action!="go"&&action.find("grind")==std::string::npos;
+}
+void PlayerbotGuildSupplies::DeliveryCounts(uint32 guild,const std::string& goal,uint32& reserved,uint32& mailed,uint32& collected) const {
+    reserved=mailed=collected=0;
+    for(const auto& pair:state_->deliveries) {const auto& d=pair.second;
+        if(d.guild!=guild||d.goal!=goal||SupplyTerminal(d.phase)) continue;
+        const uint32 amount=d.quantity-d.deposited;
+        if(d.phase=="mailed") mailed+=amount;
+        else if(d.mail) collected+=amount;
+        else reserved+=amount;
+    }
 }
 void PlayerbotGuildSupplies::RecordDeposit(uint32 guild,uint32 actor,uint32 entry,uint32 count) {
     auto found=state_->deliveries.find(state_->depositing);if(found==state_->deliveries.end()) return;
@@ -275,6 +337,12 @@ void PlayerbotGuildSupplies::Update() {
         if(!s.ready) return;
         auto services=WorldDatabase.PQuery("SELECT g.guid,g.id,g.map,g.position_x,g.position_y,g.position_z,t.type FROM gameobject g JOIN gameobject_template t ON t.entry=g.id WHERE g.map IN (0,1,530) AND (t.type=%u OR (t.type=%u AND EXISTS (SELECT 1 FROM gameobject b JOIN gameobject_template bt ON bt.entry=b.id WHERE bt.type=%u AND b.map=g.map AND ABS(b.position_x-g.position_x)<600 AND ABS(b.position_y-g.position_y)<600))) ORDER BY t.type DESC,g.guid",uint32(GAMEOBJECT_TYPE_GUILD_BANK),uint32(GAMEOBJECT_TYPE_MAILBOX),uint32(GAMEOBJECT_TYPE_GUILD_BANK));
         if(services) do {Field* f=services->Fetch();Service p;p.guid=f[0].GetUInt32();p.entry=f[1].GetUInt32();p.map=f[2].GetUInt32();p.x=f[3].GetFloat();p.y=f[4].GetFloat();p.z=f[5].GetFloat();p.type=f[6].GetUInt32();s.services.push_back(p);} while(services->NextRow());
+        // Cache only vendors/bankers around real guild-bank hubs, once at load.
+        auto maintenance=WorldDatabase.PQuery("SELECT c.guid,c.id,c.map,c.position_x,c.position_y,c.position_z,t.NpcFlags FROM creature c JOIN creature_template t ON t.Entry=c.id WHERE c.map IN (0,1) AND (t.NpcFlags & %u)<>0 AND EXISTS (SELECT 1 FROM gameobject g JOIN gameobject_template gt ON gt.entry=g.id WHERE gt.type=%u AND g.map=c.map AND ABS(g.position_x-c.position_x)<600 AND ABS(g.position_y-c.position_y)<600)",uint32(UNIT_NPC_FLAG_VENDOR|UNIT_NPC_FLAG_BANKER),uint32(GAMEOBJECT_TYPE_GUILD_BANK));
+        if(maintenance) do {Field* f=maintenance->Fetch();for(uint32 flag:{uint32(UNIT_NPC_FLAG_VENDOR),uint32(UNIT_NPC_FLAG_BANKER)}) {
+            if(!(f[6].GetUInt32()&flag)) continue;
+            Service p;p.guid=f[0].GetUInt32();p.entry=f[1].GetUInt32();p.map=f[2].GetUInt32();p.x=f[3].GetFloat();p.y=f[4].GetFloat();p.z=f[5].GetFloat();p.type=100000+flag;s.services.push_back(p);
+        }} while(maintenance->NextRow());
     }
     // Terrain metadata is populated incrementally, never a world-tick scan of
     // every mailbox or bot. No raw pointers are kept beyond the update.
@@ -326,6 +394,8 @@ void PlayerbotGuildSupplies::Update() {
             if(!mail||mail->state==MAIL_STATE_DELETED) {s.Block(d,"mail_unavailable_review",now);continue;}
             if(mail->COD||mail->sender!=d.donor) {s.Block(d,"mail_identity_mismatch",now);continue;}
             if(mail->deliver_time>time(nullptr)) {d.active=0;s.Block(d,"mail_delivery_delay",now);continue;}
+            if(!p->GetMItem(d.item)) {s.Block(d,"attachment_unavailable_review",now,true);continue;}
+            if(!s.MakeCollectionRoom(p,d,now)) continue;
             if(auto* mailbox=s.Reach(p,d,true,now)) {
                 if(!p->GetMItem(d.item)) {s.Block(d,"attachment_unavailable_review",now,true);continue;}
                 if(++d.operations>2) {s.Block(d,"mail_collection_blocked",now,true);continue;}
@@ -365,8 +435,7 @@ void PlayerbotGuildSupplies::Update() {
                 // current party/combat/event. Safe() still gates collection and
                 // deposit after receipt; keep the one-delivery courier bound.
                 if(!Bot(candidate)||!candidate->IsInWorld()||!candidate->GetMap()||candidate==p||candidate->GetGuildId()!=d.guild||s.Busy(guid)||
-                    !MayDeposit(guild,guid)||guild->FindSupplyDepositTab(guid,item,amount)<0||candidate->GetMailSize()>=50||
-                    candidate->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get()>70) continue;
+                    !MayDeposit(guild,guid)||guild->FindSupplyDepositTab(guid,item,amount)<0||candidate->GetMailSize()>=50) continue;
                 const Service* bankService=s.Destination(candidate,false);if(!bankService) continue;
                 float score=candidate->GetMapId()==bankService->map?candidate->GetDistance(bankService->x,bankService->y,bankService->z):100000;
                 if(score<distance) {recipient=candidate;distance=score;}

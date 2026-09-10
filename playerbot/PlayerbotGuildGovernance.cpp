@@ -295,6 +295,8 @@ void PlayerbotGuildGovernance::Snapshot(Player* actor,Guild* guild,Policy& p,con
             if(money&&f[5].GetCppString()=="completed") deliveryStatus="fundraiser_completed";
             else if(money&&!transit&&deliveryStatus=="searching_for_spare_items") deliveryStatus="waiting_for_willing_donors_with_spare_gold";
             Send(actor,"GOALDELIVERY\t"+op+"\t"+f[0].GetString()+"\t"+std::to_string(transit)+"\t"+Wire(deliveryStatus,48));
+            uint32 held=0,mailed=0,collected=0;sGuildSupplies.DeliveryCounts(id,f[0].GetString(),held,mailed,collected);
+            Send(actor,"GOALFLOW\t"+op+"\t"+f[0].GetString()+"\t"+std::to_string(held)+"\t"+std::to_string(mailed)+"\t"+std::to_string(collected));
         } while(rows->NextRow());
         Send(actor,"END\t"+op+"\tgoals\t"+std::to_string(count>5?offset+5:0));
     } else if(section=="history" && permissions) {
