@@ -5,6 +5,7 @@
 #include "playerbot/AiFactory.h"
 #include "playerbot/strategy/Action.h"
 #include "playerbot/strategy/actions/ChangeTalentsAction.h"
+#include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/RandomPlayerbotMgr.h"
 
 #include "Chat/Chat.h"
@@ -96,6 +97,8 @@ void PlayerbotPartyCombatCoordinator::ReloadPolicy() const
     policy.addonTelemetry = ReadBool(json, "addonTelemetry", policy.addonTelemetry);
     policy.manaAssistance = ReadBool(json, "manaAssistance", policy.manaAssistance);
     policy.humanFirstLoot = ReadBool(json, "humanFirstLoot", policy.humanFirstLoot);
+    policy.roleStrategySync = ReadBool(json, "roleStrategySync", policy.roleStrategySync);
+    policy.roleAwareTactics = ReadBool(json, "roleAwareTactics", policy.roleAwareTactics);
     policy.equipmentLootNeed = ReadBool(json, "equipmentUpgradeNeed", policy.equipmentLootNeed);
     policy.professionLootNeed = ReadBool(json, "professionNeed", policy.professionLootNeed);
     policy.questLootNeed = ReadBool(json, "questNeed", policy.questLootNeed);
@@ -113,6 +116,8 @@ void PlayerbotPartyCombatCoordinator::ReloadPolicy() const
     policy.maximumOverhealPercent = ReadUInt(json, "maximumOverhealPercent", policy.maximumOverhealPercent);
     policy.combatManaRegenPercent = ReadUInt(json, "combatManaRegenPercent", policy.combatManaRegenPercent);
     policy.combatCastingRegenFloorPercent = ReadUInt(json, "combatCastingRegenFloorPercent", policy.combatCastingRegenFloorPercent);
+    policy.aoeMinimumTargets = ReadUInt(json, "aoeMinimumTargets", policy.aoeMinimumTargets);
+    policy.ccPriorityTargets = ReadUInt(json, "ccPriorityTargets", policy.ccPriorityTargets);
     policy.outOfCombatManaRegenPercent = ReadUInt(json, "outOfCombatManaRegenPercent", policy.outOfCombatManaRegenPercent);
     policy.humanRollSafetySeconds = ReadUInt(json, "humanRollSafetySeconds", policy.humanRollSafetySeconds);
     policy.telemetryMilliseconds = ReadUInt(json, "telemetryMilliseconds", policy.telemetryMilliseconds);
@@ -250,7 +255,16 @@ std::string PlayerbotPartyCombatCoordinator::ApplyRoleTalents(Player* member, Li
     member->resetTalents(true);
     std::ostringstream details;
     ChangeTalentsAction::AutoSelectTalents(member, &details, desired);
-    member->GetPlayerbotAI()->DoSpecificAction("auto learn spell");
+    PlayerbotAI* memberAi = member->GetPlayerbotAI();
+    memberAi->DoSpecificAction("auto learn spell");
+    memberAi->UpdateTalentSpec();
+
+    // Talent assignment alone does not replace the combat engine that was
+    // built from the previous specialization.  Rebuild from the newly applied
+    // spec so a restoration assignment cannot keep enhancement/feral melee
+    // strategies.  Do not reload persisted strategy toggles from the old role.
+    if (policy.roleStrategySync)
+        memberAi->ResetStrategies(false);
 
     const uint32 freePoints = member->GetFreeTalentPoints();
     const uint32 totalPoints = member->CalculateTalentsPoints();
@@ -258,6 +272,9 @@ std::string PlayerbotPartyCombatCoordinator::ApplyRoleTalents(Player* member, Li
     sLog.outString("Living WoW role respec bot=%u name=%s role=%s spec=%s used=%u free=%u",
         member->GetGUIDLow(), member->GetName(), RoleName(role), specName.c_str(),
         totalPoints >= freePoints ? totalPoints - freePoints : 0, freePoints);
+    if (policy.roleStrategySync)
+        sLog.outString("Living WoW role strategies synchronized bot=%u name=%s role=%s",
+            member->GetGUIDLow(), member->GetName(), RoleName(role));
     return freePoints == 0 ? "completed" : "talent_assignment_incomplete";
 }
 
@@ -565,9 +582,61 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
     // still must not begin an unapproved pull in a human-led party.
     if (target && !CanInitiate(bot, target)) return 0.0f;
     ActionThreatType threat = action->getThreatType();
+    LivingPartyRoleState role = GetRole(bot);
+
+    if (policy.roleAwareTactics)
+    {
+        // A healer assignment is a combat behavior contract, not just a UI
+        // label.  Keep healers at casting range and reserve their action budget
+        // whenever the tank or another member needs authoritative healing.
+        if (role.primary == LivingPartyRole::Healer)
+        {
+            if (actionName == "melee" || actionName == "reach melee")
+                return 0.0f;
+
+            bool healingNeeded = false;
+            bool emergency = false;
+            Group::MemberSlotList const& slots = bot->GetGroup()->GetMemberSlots();
+            for (Group::MemberSlotList::const_iterator i = slots.begin(); i != slots.end(); ++i)
+                if (Player* member = sObjectAccessor.FindPlayer(i->guid))
+                {
+                    if (!member->IsAlive() || !member->GetMaxHealth()) continue;
+                    uint32 health = member->GetHealth() * 100 / member->GetMaxHealth();
+                    emergency = emergency || health <= policy.emergencyHealthPercent;
+                    const bool isTank = member->GetObjectGuid() == state->tank;
+                    healingNeeded = healingNeeded ||
+                        health <= (isTank ? policy.tankHealPercent : policy.partyHealPercent);
+                }
+            if (target && !bot->CanAssist(target) && emergency)
+                return 0.0f;
+            if (target && !bot->CanAssist(target) && healingNeeded)
+                return 0.15f;
+        }
+
+        // Offensive AoE is valuable only on a real multi-target encounter and
+        // must never break damage-sensitive crowd control. Friendly AoE heals
+        // returned above through the CanAssist path and are unaffected.
+        if (threat == ActionThreatType::ACTION_THREAT_AOE &&
+            role.primary != LivingPartyRole::Tank)
+        {
+            if (state->approvedTargets.size() < policy.aoeMinimumTargets)
+                return 0.0f;
+            for (std::set<ObjectGuid>::const_iterator i = state->approvedTargets.begin();
+                i != state->approvedTargets.end(); ++i)
+                if (Unit* engaged = sObjectAccessor.GetUnit(*bot, *i))
+                    if (engaged != target && engaged->HasBreakableByDamageCrowdControlAura())
+                        return 0.0f;
+        }
+    }
     if (threat == ActionThreatType::ACTION_THREAT_NONE || threat == ActionThreatType::ACTION_THREAT_LOW)
+    {
+        if (policy.roleAwareTactics &&
+            dynamic_cast<CastCrowdControlSpellAction*>(action) != NULL &&
+            state->approvedTargets.size() >= policy.ccPriorityTargets)
+            return 1.35f;
         return 1.0f;
-    LivingPartyRoleState role = GetRole(bot); if (role.primary == LivingPartyRole::Tank) return 1.0f;
+    }
+    if (role.primary == LivingPartyRole::Tank) return 1.0f;
     if (!policy.threatThrottling) return 1.0f;
     if (state->hold) return 0.0f;
     uint32 elapsed = WorldTimer::getMSTimeDiff(state->phaseSince, WorldTimer::getMSTime());

@@ -55,6 +55,8 @@ namespace ai
         bool addonTelemetry = true;
         bool manaAssistance = true;
         bool humanFirstLoot = true;
+        bool roleStrategySync = true;
+        bool roleAwareTactics = true;
         bool equipmentLootNeed = true;
         bool professionLootNeed = true;
         bool questLootNeed = true;
@@ -76,6 +78,8 @@ namespace ai
         uint16 combatManaRegenPercent = 125;
         uint16 combatCastingRegenFloorPercent = 25;
         uint16 outOfCombatManaRegenPercent = 200;
+        uint8 aoeMinimumTargets = 3;
+        uint8 ccPriorityTargets = 3;
         uint8 humanRollSafetySeconds = 3;
         uint32 telemetryMilliseconds = 500;
     };

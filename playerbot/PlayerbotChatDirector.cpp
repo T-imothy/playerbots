@@ -2176,6 +2176,27 @@ void PlayerbotChatDirector::Dispatch(const ScheduledReply& scheduledReply)
     Player* bot = sRandomPlayerbotMgr.GetPlayerBot(scheduledReply.reply.botGuid);
     if (!bot || !bot->GetPlayerbotAI() || !bot->IsInWorld())
         return;
+
+    // Group-conflict events are planned asynchronously.  The bot can leave
+    // its AI-only party through a newer, authoritative chat action before the
+    // older explanation is ready.  Never deliver wording based on that stale
+    // group snapshot after membership has changed.
+    if (scheduledReply.event.groundingType == "group_invite_conflict")
+    {
+        std::map<uint32, ChatDirectorCandidate>::const_iterator snapshot =
+            scheduledReply.event.candidates.find(scheduledReply.reply.botGuid);
+        if (snapshot != scheduledReply.event.candidates.end())
+        {
+            uint32 currentGroupId = bot->GetGroup() ? bot->GetGroup()->GetId() : 0;
+            if (currentGroupId != snapshot->second.groupState.groupId)
+            {
+                sLog.outDetail("Living WoW stale chat reply suppressed bot=%u event=%s old_group=%u current_group=%u",
+                    bot->GetGUIDLow(), scheduledReply.event.eventId.c_str(),
+                    snapshot->second.groupState.groupId, currentGroupId);
+                return;
+            }
+        }
+    }
     PlayerbotAI* ai = bot->GetPlayerbotAI();
     const std::string& channel = scheduledReply.reply.replyChannel.empty() ?
         scheduledReply.event.channelType : scheduledReply.reply.replyChannel;
