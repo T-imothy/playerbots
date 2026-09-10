@@ -4037,6 +4037,48 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             << ",\"tank_candidates\":" << tankCandidates[guildId]
             << ",\"healer_candidates\":" << healerCandidates[guildId] << "}";
 
+        // Mirror authoritative persistent officers and supply goals through
+        // the same single, retried status batch as the guild snapshot. The
+        // one-off execution notification is useful for immediacy, but it must
+        // not be the only path by which Admin learns durable world state.
+        if (auto officerSnapshots = CharacterDatabase.PQuery(
+                "SELECT duty,character_guid,state FROM guild_society_officer WHERE guild_id=%u", guildId))
+        {
+            do
+            {
+                Field* fields = officerSnapshots->Fetch();
+                std::string officerName;
+                sObjectMgr.GetPlayerNameByGUID(ObjectGuid(HIGHGUID_PLAYER, fields[1].GetUInt32()), officerName);
+                events << ",{\"event_id\":\"officer-state-" << guildId << '-' << fields[0].GetString()
+                    << '-' << fields[1].GetUInt32() << "\",\"type\":\"officer_snapshot\",\"guild_id\":"
+                    << guildId << ",\"duty\":\"" << fields[0].GetString() << "\",\"character_guid\":"
+                    << fields[1].GetUInt32() << ",\"character_name\":\""
+                    << PlayerbotLLMInterface::SanitizeForJson(officerName) << "\",\"state\":\""
+                    << PlayerbotLLMInterface::SanitizeForJson(fields[2].GetString()) << "\"}";
+            } while (officerSnapshots->NextRow());
+        }
+        if (auto supplySnapshots = CharacterDatabase.PQuery(
+                "SELECT goal_id,item_entry,required_quantity,available_quantity,reserved_quantity,state "
+                "FROM guild_society_supply_goal WHERE guild_id=%u", guildId))
+        {
+            do
+            {
+                Field* fields = supplySnapshots->Fetch();
+                const uint32 itemEntry = fields[1].GetUInt32();
+                const ItemPrototype* item = sObjectMgr.GetItemPrototype(itemEntry);
+                events << ",{\"event_id\":\"supply-state-" << guildId << '-' << itemEntry
+                    << "\",\"type\":\"supply_goal\",\"goal_id\":\""
+                    << PlayerbotLLMInterface::SanitizeForJson(fields[0].GetString())
+                    << "\",\"guild_id\":" << guildId << ",\"goal_type\":\"event_consumables\",\"item_entry\":"
+                    << itemEntry << ",\"item_name\":\""
+                    << PlayerbotLLMInterface::SanitizeForJson(item ? item->Name1 : "")
+                    << "\",\"required_quantity\":" << fields[2].GetUInt32()
+                    << ",\"available_quantity\":" << fields[3].GetUInt32()
+                    << ",\"reserved_quantity\":" << fields[4].GetUInt32() << ",\"state\":\""
+                    << PlayerbotLLMInterface::SanitizeForJson(fields[5].GetString()) << "\"}";
+            } while (supplySnapshots->NextRow());
+        }
+
         CharacterDatabase.PExecute(
             "INSERT INTO guild_society_profile (guild_id,bot_led,faction,leader_guid,size_band,target_size,primary_focus,secondary_focus,culture,motto,recruitment_style,state,created_at,updated_at) "
             "VALUES (%u,%u,'%s',%u,'%s',%u,'%s','%s','','','welcoming','%s',%u,%u) ON DUPLICATE KEY UPDATE "
