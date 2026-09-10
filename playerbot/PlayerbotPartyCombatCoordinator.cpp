@@ -417,7 +417,14 @@ PlayerbotPartyCombatCoordinator::GroupState* PlayerbotPartyCombatCoordinator::En
 
 void PlayerbotPartyCombatCoordinator::Update(Player* bot)
 {
-    ReloadPolicy(); GroupState* state = EnsureState(bot); if (!state) return;
+    ReloadPolicy(); GroupState* state = EnsureState(bot);
+    if (!state)
+    {
+        SynchronizeHunterPetThreat(bot, NULL);
+        return;
+    }
+    SynchronizeAutomaticRole(bot, *state);
+    SynchronizeHunterPetThreat(bot, state);
     // Human-led bots intentionally do not load Playerbots' broad maintenance
     // strategy. Run the narrowly grounded quest-source action explicitly from
     // the mixed-party coordinator instead of relying on a trigger that does
