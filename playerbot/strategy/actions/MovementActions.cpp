@@ -566,6 +566,62 @@ bool MovementAction::UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition d
     return false;
 }
 
+bool MovementAction::HandleTransportPath(PlayerbotAI* ai, TravelPath path)
+{
+    Player* bot = ai->GetBot();
+    if (bot->IsBeingTeleported() || path.empty()) return false;
+    LastMovement& lastMove = ai->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get();
+    GenericTransport* aboard = bot->GetTransport();
+    if (!aboard && !path.PrepareTransportLeg(WorldPosition(bot), sPlayerbotAIConfig.reactDistance, false))
+        return false;
+    const uint32 entry = aboard ? aboard->GetEntry() : path.getPath().front().entry;
+    if (!entry || (aboard && !path.PrepareTransportLeg(WorldPosition(bot), 0, true, entry))) return false;
+    PathNodePoint stop = path.getPath().front();
+
+    if (!aboard)
+    {
+        if (sPlayerbotAIConfig.transportTeleportType == 2)
+        {
+            // Preserve an explicitly selected dock-to-dock mode. Default mode
+            // 1 boards the vessel and rides it; it never takes this shortcut.
+            TravelPath arrival = path;
+            if (!arrival.PrepareTransportLeg(WorldPosition(bot), 0, true, entry)) return false;
+            PathNodePoint shore = arrival.getPath()[1];
+            if (bot->TeleportTo(shore.point.getMapId(), shore.point.getX(), shore.point.getY(),
+                shore.point.getZ(), shore.point.getO(), 0))
+            {
+                arrival.cutTo(shore, false);
+                lastMove.setPath(arrival);
+                lastMove.lastTransportEntry = 0;
+            }
+            return true;
+        }
+        if (UseTransport(ai, entry, stop.point, WorldPosition(), sPlayerbotAIConfig.transportTeleportType > 0))
+        {
+            // Save arrival stop + shore before the vessel departs.
+            path.PrepareTransportLeg(WorldPosition(bot), 0, true, entry);
+            lastMove.setPath(path);
+            lastMove.lastTransportEntry = entry;
+            sLog.outString("Living WoW transport event=boarded bot=%u entry=%u arrival_map=%u",
+                bot->GetGUIDLow(), entry, path.getPath().front().point.getMapId());
+        }
+        return true;
+    }
+
+    PathNodePoint shore = path.getPath()[1];
+    lastMove.setPath(path);
+    lastMove.lastTransportEntry = entry;
+    if (UseTransport(ai, entry, stop.point, shore.point, sPlayerbotAIConfig.transportTeleportType > 0))
+    {
+        path.cutTo(shore, false);
+        lastMove.setPath(path);
+        lastMove.lastTransportEntry = 0;
+        sLog.outString("Living WoW transport event=disembarked bot=%u entry=%u map=%u",
+            bot->GetGUIDLow(), entry, shore.point.getMapId());
+    }
+    return true;
+}
+
 bool MovementAction::MinimalMove(PlayerbotAI* ai)
 {
     if (!sPlayerbotAIConfig.enableMinimalMove)
@@ -579,6 +635,19 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
 
     if (bot->IsTaxiFlying())
         return false;
+
+    if (bot->GetTransport())
+    {
+        if (HandleTransportPath(ai, lastMove.lastPath)) return true;
+        if (ai->HasRealPlayerMaster() && ai->GetMaster() &&
+            ai->GetMaster()->GetTransport() == bot->GetTransport()) return false;
+        if (ExitTransportAtDock(ai))
+        {
+            lastMove.clear();
+            ai->GetAiObjectContext()->ClearValues("no active travel destinations");
+        }
+        return true;
+    }
 
     if (lastMove.lastPath.empty())
         return false;
@@ -620,49 +689,8 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
         return true;
     }
 
-   //Transport handling: If not on transport wait for transport and teleport on it when it's near (and cut to last transport point). If on transport wait until it is near exit and teleport to exit.
-    if (nextStep != path.end() && nextStep->type == PathNodeType::NODE_TRANSPORT)
-    {
-        auto exitStep = std::next(nextStep);
-
-        WorldPosition exitPos = (exitStep != path.end()) ? exitStep->point : nextStep->point;
-
-        bool didTransport = UseTransport(ai, nextStep->entry, nextStep->point, exitPos, true);
-
-        if (!didTransport) //We did not board yet or are on the transport so just wait.
-        {
-            return true;
-        }
-
-        if (bot->GetTransport()) //Just boarded
-        {
-            PathNodePoint lastStep = *nextStep;
-
-            for (auto& step : path)
-            {
-                if (step.type == PathNodeType::NODE_TRANSPORT && step.entry == nextStep->entry)
-                {
-                    lastStep = step;
-                    continue;
-                }
-
-                break;
-            }
-
-            lastMove.lastPath.cutTo(lastStep, false); //Remove path up to last transport point.
-
-            return true;
-        }
-
-        //Ready to exit
-        lastMove.lastPath.cutTo(*nextStep, true); //Removing boarding point.
-
-        nextStep = path.begin();
-
-        bot->TeleportTo(nextStep->point);
-
-        return true;
-    }
+    if (bot->GetTransport() || nextStep->type == PathNodeType::NODE_TRANSPORT)
+        return HandleTransportPath(ai, lastMove.lastPath);
 
     //Skip over stuff we don't walk.
     if (!nextStep->isWalkable())
@@ -714,40 +742,25 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
 bool MovementAction::WaitForTransport()
 {
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
-
-    // Check if we need to resume transport journey
-    if (!lastMove.lastTransportEntry)
-        return false;
-
     GenericTransport* transport = bot->GetTransport();
-
-    if (!transport || transport->GetEntry() != lastMove.lastTransportEntry ||
-        lastMove.lastPath.getPath().empty() ||
-        lastMove.lastPath.getPath().front().type != PathNodeType::NODE_TRANSPORT ||
-        lastMove.lastPath.getPath().front().entry != lastMove.lastTransportEntry)
+    if (!transport)
     {
         lastMove.lastTransportEntry = 0;
         return false;
     }
-
-    TravelPath path = lastMove.lastPath;
-
-    if(!path.UpcommingSpecialMovement(bot, 0.0f, bot->GetTransport()))
+    if (bot->IsBeingTeleported()) return true;
+    if (HandleTransportPath(ai, lastMove.lastPath)) return true;
+    // A passenger following a human on the same vessel belongs to follow AI.
+    if (ai->HasRealPlayerMaster() && ai->GetMaster() && ai->GetMaster()->GetTransport() == transport)
         return false;
-
-    if (path.getPath().size() < 2)
+    // A stale/wrong-boat path must never become an ordinary movement request
+    // while aboard. Recover only at an actual stop with a validated shore.
+    if (ExitTransportAtDock(ai))
     {
-        lastMove.lastTransportEntry = 0;
-        return false;
+        lastMove.clear();
+        ai->GetAiObjectContext()->ClearValues("no active travel destinations");
     }
-    PathNodePoint dockPoint = path.getPath().front();
-    PathNodePoint telePoint = *std::next(path.getPath().begin());
-        
-    if (!UseTransport(ai, dockPoint.entry, dockPoint.point, telePoint.point, sPlayerbotAIConfig.transportTeleportType > 0))
-        return true;
-
-    lastMove.lastTransportEntry = 0;
-    return false;
+    return true;
 }
 
 TravelPath MovementAction::ResolveMovePath(const WorldPosition& startPosition, const WorldPosition& endPosition, Unit* mover, LastMovement& lastMove)    
@@ -854,45 +867,8 @@ bool MovementAction::HandleSpecialMovement(TravelPath& path)
             return bot->TeleportTo(nextPoint.point.getMapId(), nextPoint.point.getX(), nextPoint.point.getY(), nextPoint.point.getZ(), nextPoint.point.getO(), 0) ? true : false;
     }
 
-    //We are getting 'on' transport.
-    if (nextPoint.type == PathNodeType::NODE_TRANSPORT)
-    {
-        bool usedTransport = UseTransport(ai, nextPoint.entry, nextPoint.point, WorldPosition(), sPlayerbotAIConfig.transportTeleportType > 0);
-
-        uint32 lastTransportEntry = 0;
-
-        if (usedTransport)
-            AI_VALUE(LastMovement&, "last movement").lastTransportEntry = nextPoint.entry;
-
-        WaitForReach(1000.0f);
-        return true;
-    }
-
     if (currentPoint.type == PathNodeType::NODE_TRANSPORT)
-    {
-        bool usedTransport = UseTransport(ai, currentPoint.entry, currentPoint.point, nextPoint.point, sPlayerbotAIConfig.transportTeleportType > 0);
-
-        uint32 lastTransportEntry = 0;
-
-        if (!usedTransport)
-        {
-            if (bot->GetTransport())
-                lastTransportEntry = currentPoint.entry;
-        }
-        else
-        {
-            if (!bot->GetTransport())
-                return true; // Exit already committed; do not teleport over its walking path.
-
-            lastTransportEntry = currentPoint.entry;
-        }
-
-        if (lastTransportEntry)
-            AI_VALUE(LastMovement&, "last movement").lastTransportEntry = lastTransportEntry;
-
-        WaitForReach(1000.0f);
-        return true;
-    }
+        return HandleTransportPath(ai, path);
 
     if (nextPoint.type == PathNodeType::NODE_FLIGHTPATH && nextPoint.entry)
         return UseTaxi(ai, nextPoint.entry, true) ? true : false;

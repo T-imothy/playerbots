@@ -296,6 +296,7 @@ namespace ai
 
         void makeShortCut(WorldPosition startPos, float maxDist, Unit* bot);
         bool shouldMoveToNextPoint(WorldPosition startPos, std::vector<PathNodePoint>::iterator beg, std::vector<PathNodePoint>::iterator ed, std::vector<PathNodePoint>::iterator p, float& moveDist, float maxDist);
+        bool PrepareTransportLeg(WorldPosition startPos, float maxDist, bool onTransport, uint32 transportEntry = 0);
         bool UpcommingSpecialMovement(WorldPosition startPos, float maxDist, bool onTransport);
 
         void ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets);

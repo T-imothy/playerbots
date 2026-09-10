@@ -18,6 +18,7 @@ namespace ai
         static bool MinimalMove(PlayerbotAI* ai);
         static bool UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition dockPosition, WorldPosition exitPosition, bool doTeleport);
         static bool ExitTransportAtDock(PlayerbotAI* ai);
+        static bool HandleTransportPath(PlayerbotAI* ai, TravelPath path);
     protected:
         static bool MoveOnTransport(PlayerbotAI* ai, GenericTransport* transport, bool doTeleport);
         static bool MoveOffTransport(PlayerbotAI* ai, WorldPosition exitPos, bool doTeleport);

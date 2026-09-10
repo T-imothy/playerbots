@@ -823,6 +823,8 @@ bool TravelPath::cutTo(PathNodePoint point, bool including)
 //Attempts to move ahead of the path.
 void TravelPath::makeShortCut(WorldPosition startPos, float maxDist, Unit* bot)
 {
+    if (!fullPath.empty() && fullPath.front().type == PathNodeType::NODE_TRANSPORT) return;
+
     if (getPath().empty())
         return;
 
@@ -1022,16 +1024,71 @@ std::vector<PathNodePoint>::iterator TravelPath::getNextPoint(WorldPosition star
     return startP;
 }
 
+bool TravelPath::PrepareTransportLeg(WorldPosition startPos, float maxDist, bool onTransport, uint32 transportEntry)
+{
+    if (fullPath.empty()) return false;
+    auto begin = (onTransport || fullPath.front().type == PathNodeType::NODE_TRANSPORT) ?
+        fullPath.begin() : getNextPoint(startPos, maxDist, false);
+    if (begin == fullPath.end()) return false;
+    if (begin->type != PathNodeType::NODE_TRANSPORT)
+    {
+        if (onTransport || std::next(begin) == fullPath.end() ||
+            std::next(begin)->type != PathNodeType::NODE_TRANSPORT) return false;
+        ++begin;
+    }
+    auto boarding = begin;
+    while (boarding != fullPath.end() && boarding->type == PathNodeType::NODE_TRANSPORT && !boarding->entry)
+        ++boarding;
+    if (boarding == fullPath.end() || boarding->type != PathNodeType::NODE_TRANSPORT || !boarding->entry)
+        return false;
+    const uint32 entry = boarding->entry;
+    if (onTransport && transportEntry && entry != transportEntry) return false;
+    if (!onTransport && (begin->point.getMapId() != startPos.getMapId() ||
+        begin->point.distance(startPos) > std::max(maxDist, float(INTERACTION_DISTANCE)))) return false;
+
+    // A ride is a contiguous run of nonzero boat entries, followed by its
+    // zero-entry deck/shore markers. Do not consume the next ferry's leg.
+    auto stop = boarding;
+    while (std::next(stop) != fullPath.end() && std::next(stop)->type == PathNodeType::NODE_TRANSPORT &&
+        std::next(stop)->entry == entry) ++stop;
+    auto shore = std::next(stop);
+    if (shore == fullPath.end() ||
+        (shore->type == PathNodeType::NODE_TRANSPORT && shore->entry)) return false;
+    if (shore->type == PathNodeType::NODE_TRANSPORT)
+        while (std::next(shore) != fullPath.end() && std::next(shore)->type == PathNodeType::NODE_TRANSPORT &&
+            !std::next(shore)->entry) ++shore;
+    else if (!shore->isWalkable()) return false;
+    if (!shore->point.isValid() || shore->point.getMapId() != stop->point.getMapId() ||
+        shore->point.distance(stop->point) > 60.0f) return false;
+
+    if (!onTransport)
+    {
+        // Keep the complete leg until boarding succeeds.
+        fullPath.erase(fullPath.begin(), boarding);
+        return true;
+    }
+    std::vector<PathNodePoint> remainder;
+    remainder.push_back(*stop);
+    PathNodePoint exit = *shore;
+    exit.type = PathNodeType::NODE_PATH;
+    exit.entry = 0;
+    remainder.push_back(exit);
+    remainder.insert(remainder.end(), std::next(shore), fullPath.end());
+    fullPath.swap(remainder);
+    return true;
+}
+
 bool TravelPath::UpcommingSpecialMovement(WorldPosition startPos, float maxDist, bool onTransport)
 {
     if (getPath().empty())
         return false;
 
+    if (onTransport || fullPath.front().type == PathNodeType::NODE_TRANSPORT)
+        return PrepareTransportLeg(startPos, maxDist, onTransport);
+
     auto startP = getNextPoint(startPos, maxDist, onTransport);
 
-    auto prevP = startP, nextP = startP;
-    if (startP != fullPath.begin())
-        prevP = std::prev(prevP);
+    auto nextP = startP;
     if (std::next(nextP) != fullPath.end())
         nextP = std::next(nextP);
 
@@ -1079,41 +1136,8 @@ bool TravelPath::UpcommingSpecialMovement(WorldPosition startPos, float maxDist,
         return true;
     }
 
-    //Walk on / teleport to transport.
-    if (sPlayerbotAIConfig.transportTeleportType < 2 && startP->type == PathNodeType::NODE_TRANSPORT)
-    {
-        uint32 entry = nextP->entry;
-
-        if (!onTransport) 
-        {
-            cutTo(*prevP, false); //Previous point = dock, startP = where transport will stop.
-            return true;
-        }
-
-        for (auto p = startP; p != fullPath.end(); p++) //Move along the transport path to the end of the boat ride.
-        {
-            if (p->type != PathNodeType::NODE_TRANSPORT || (p->entry && p->entry != entry))
-            {
-                cutTo(*p, false); //PrevP = where transport will stop, startP = dock where we want to walk to.
-                return true;
-            }
-
-            prevP = p;
-        }
-    }
-        
-    //Teleport to end of transport.
-    if (sPlayerbotAIConfig.transportTeleportType == 2 && nextP->type == PathNodeType::NODE_TRANSPORT)
-    {
-        for (auto p = startP + 1; p != fullPath.end(); p++) //Move along the transport path to the end of the boat ride. 
-        {
-            if (p->type != PathNodeType::NODE_TRANSPORT)
-            {
-                cutTo(*prevP, false); //PrevP = where transport will stop, startP = dock where we want to walk to.
-                return true;
-            }
-        }
-    }    
+    if (startP->type == PathNodeType::NODE_TRANSPORT || nextP->type == PathNodeType::NODE_TRANSPORT)
+        return PrepareTransportLeg(startPos, maxDist, false);
 
     return false;
 }
