@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "TrainerValues.h"
+#include "playerbot/PlayerbotTraining.h"
 #include "SharedValueContext.h"
 #include "playerbot/PlayerbotHelpMgr.h"
 
@@ -130,11 +131,7 @@ std::vector<TrainerSpell const*> TrainableSpellsValue::Calculate()
 
             for (auto& [trainerSpell, trainers] : trainerSpellList)
             {
-                uint32 reqLevel = 0;
-
-                reqLevel = trainerSpell->isProvidedReqLevel ? trainerSpell->reqLevel : std::max(reqLevel, trainerSpell->reqLevel);
-                TrainerSpellState state = bot->GetTrainerSpellState(trainerSpell, reqLevel);
-                if (state != TRAINER_SPELL_GREEN)
+                if (!LivingWowCanTrainSpell(bot, trainerSpell))
                     continue;
 
                 //Skip initial profession training.
@@ -206,6 +203,7 @@ std::vector<int32> AvailableTrainersValue::Calculate()
 
 uint32 TrainCostValue::Calculate()
 {
+    if (LivingWowFreeBotTraining(bot)) return 0;
     uint32 TotalCost = 0;
 
     for (auto& spells : AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", getQualifier()))

@@ -12,6 +12,7 @@
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotInventoryPressure.h"
+#include "PlayerbotTraining.h"
 #include "PlayerbotOrganicEconomy.h"
 #include "RandomPlayerbotMgr.h"
 #include "ServerFacade.h"
@@ -36,17 +37,18 @@ namespace
     constexpr uint32 kErrandMail = 1 << 3;
     constexpr uint32 kErrandAuction = 1 << 4;
     constexpr uint32 kErrandProfession = 1 << 5;
+    constexpr uint32 kErrandTraining = 1 << 6;
     constexpr uint32 kAllErrands = kErrandVendor | kErrandRepair | kErrandBank |
-        kErrandMail | kErrandAuction | kErrandProfession;
+        kErrandMail | kErrandAuction | kErrandProfession | kErrandTraining;
     constexpr uint32 kPartyPersistenceSeconds = 7 * 24 * 60 * 60;
     constexpr size_t kPartyPersistenceDataLimit = 255;
     constexpr size_t kPartyPersistenceTaskIdLimit = 32;
     constexpr size_t kPartyPersistenceActivityLimit = 16;
     // v1 uses 18 separators, six ten-digit uint32 identity fields plus the
     // expiry, four bounded fixed-point coordinates, one relocated flag, four
-    // two-digit errand masks, the two capped tokens, and a two-digit state.
+    // three-digit errand masks, the two capped tokens, and a two-digit state.
     constexpr size_t kPartyPersistenceWorstCase = 1 + (6 * 10) + 10 +
-        (3 * 10) + 8 + 1 + (4 * 2) + kPartyPersistenceTaskIdLimit +
+        (3 * 10) + 8 + 1 + (4 * 3) + kPartyPersistenceTaskIdLimit +
         kPartyPersistenceActivityLimit + 2 + 18;
     static_assert(kPartyPersistenceWorstCase <= kPartyPersistenceDataLimit,
         "living party persistence must fit ai_playerbot_random_bots.data");
@@ -70,6 +72,7 @@ namespace
 
     const char* ErrandName(uint32 errand)
     {
+        if (errand == kErrandTraining) return "training";
         if (errand == kErrandVendor) return "vendor";
         if (errand == kErrandRepair) return "repair";
         if (errand == kErrandBank) return "bank";
@@ -187,6 +190,9 @@ namespace
         AiObjectContext* context = ai->GetAiObjectContext();
         LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
         uint32 errands = 0;
+        if (!context->GetValue<std::vector<TrainerSpell const*>>(
+            "trainable spells", std::to_string(TRAINER_TYPE_CLASS))->Get().empty())
+            errands |= kErrandTraining;
         if (pressure.vendorStacks && context->GetValue<bool>("can sell")->Get())
             errands |= kErrandVendor;
         if (context->GetValue<uint8>("durability inventory")->Get() < 85 &&
@@ -267,13 +273,25 @@ namespace
         if (radius <= 0.0f)
             radius = float(std::max<uint32>(100,
                 sPlayerbotAIConfig.chatDirectorPartyLocalServiceRadiusYards));
+        std::vector<int32> entries;
+        if (errand == kErrandTraining)
+        {
+            entries = bot->GetPlayerbotAI()->GetAiObjectContext()->
+                GetValue<std::vector<int32>>("available trainers", std::to_string(TRAINER_TYPE_CLASS))->Get();
+            // An empty filter means ALL destinations to TravelMgr.
+            if (entries.empty()) return false;
+        }
         DestinationList destinations = sTravelMgr.GetDestinations(
-            info, (uint32)ErrandPurpose(errand), {}, true, radius, false);
+            info, (uint32)ErrandPurpose(errand), entries, true, radius, false);
         WorldPosition center(bot);
         float bestDistance = std::numeric_limits<float>::max();
         for (TravelDestination* destination : destinations)
         {
             if (!destination)
+                continue;
+            if (errand == kErrandTraining &&
+                (!LivingWowHasClassTraining(bot, destination->GetEntry()) ||
+                 GuidPosition(HIGHGUID_UNIT, destination->GetEntry()).IsHostileTo(bot)))
                 continue;
             std::list<uint8> chances = {100};
             WorldPosition* position = destination->GetNextPoint(center, chances, true);
@@ -297,7 +315,7 @@ namespace
         uint8 durability = bot && bot->GetPlayerbotAI() ? bot->GetPlayerbotAI()->
             GetAiObjectContext()->GetValue<uint8>("durability inventory")->Get() : 100;
         const uint32 errands[] = {kErrandVendor, kErrandRepair, kErrandBank,
-            kErrandMail, kErrandAuction, kErrandProfession};
+            kErrandMail, kErrandAuction, kErrandProfession, kErrandTraining};
         for (uint32 errand : errands)
         {
             if (!(requested & errand))
@@ -337,7 +355,7 @@ namespace
     {
         if (!bot || !bot->GetPlayerbotAI() || !errands)
             return false;
-        const uint32 priorities[] = {kErrandVendor, kErrandRepair, kErrandBank,
+        const uint32 priorities[] = {kErrandTraining, kErrandVendor, kErrandRepair, kErrandBank,
             kErrandMail, kErrandAuction, kErrandProfession};
         for (uint32 errand : priorities)
         {
@@ -367,6 +385,8 @@ namespace
     std::vector<std::string> PersonalErrands(uint32 errands)
     {
         std::vector<std::string> names;
+        if (errands & kErrandTraining)
+            names.push_back("learn new spells at my class trainer");
         if (errands & kErrandVendor)
             names.push_back("sell some junk");
         if (errands & kErrandRepair)
@@ -390,6 +410,7 @@ namespace
             if (!names.empty()) names += ',';
             names += name;
         };
+        if (errands & kErrandTraining) append("training");
         if (errands & kErrandVendor) append("vendor");
         if (errands & kErrandRepair) append("repair");
         if (errands & kErrandBank) append("bank");
@@ -770,7 +791,7 @@ bool PlayerbotRendezvousManager::RestorePersistedPartySession(
 
     const uint32 restartDeferred = scopeMask & ~(completedMask | deferredMask);
     const uint32 tasks[] = {kErrandVendor, kErrandRepair, kErrandBank,
-        kErrandMail, kErrandAuction, kErrandProfession};
+        kErrandMail, kErrandAuction, kErrandProfession, kErrandTraining};
     for (uint32 task : tasks)
     {
         if (!(scopeMask & task)) continue;
@@ -877,7 +898,7 @@ std::string PlayerbotRendezvousManager::GetPartyActivityStateJson(uint32 botGuid
     json << "\",\"completed_tasks\":[";
     bool first = true;
     const uint32 errands[] = {kErrandVendor, kErrandRepair, kErrandBank,
-        kErrandMail, kErrandAuction, kErrandProfession};
+        kErrandMail, kErrandAuction, kErrandProfession, kErrandTraining};
     for (uint32 errand : errands)
     {
         if (party == partySessions.end()) continue;
@@ -1444,7 +1465,7 @@ bool PlayerbotRendezvousManager::BeginPartyFreeTime(Player* bot, Player* player,
     session.errands.clear();
     if (!errandSequence) errandSequence = uint64(time(nullptr)) * 1000000ULL;
     const uint32 bundleTasks[] = {kErrandVendor, kErrandRepair, kErrandBank,
-        kErrandMail, kErrandAuction, kErrandProfession};
+        kErrandMail, kErrandAuction, kErrandProfession, kErrandTraining};
     for (uint32 task : bundleTasks)
         if (session.automaticErrandScopeMask & task)
         {
@@ -2262,6 +2283,9 @@ PlayerbotRendezvousManager::ObserveErrandState(Player* bot) const
         signature = (signature ^ uint32(std::max<int>(0, item.second))) * 16777619u;
     }
     result.inventorySignature = signature;
+    for (const auto& spell : bot->GetSpellMap())
+        if (spell.second.state != PLAYERSPELL_REMOVED && !spell.second.disabled)
+            result.knownSpells.insert(spell.first);
     return result;
 }
 
@@ -2269,7 +2293,7 @@ bool PlayerbotRendezvousManager::StartNextVerifiedErrand(PartySession& session, 
 {
     uint32 remaining = session.automaticErrandScopeMask &
         ~(session.completedErrandMask | session.deferredErrandMask);
-    const uint32 priorities[] = {kErrandVendor, kErrandRepair, kErrandBank,
+    const uint32 priorities[] = {kErrandTraining, kErrandVendor, kErrandRepair, kErrandBank,
         kErrandMail, kErrandAuction, kErrandProfession};
     session.currentErrand = 0;
     for (uint32 task : priorities)
@@ -2393,6 +2417,10 @@ bool PlayerbotRendezvousManager::StartNextVerifiedErrand(PartySession& session, 
     taskRecord.phase = fallbackRoute ? PartyActivityPhase::departing : PartyActivityPhase::traveling;
     session.errandRelocationPending = fallbackRoute;
     session.errandLastDistance = target->Distance(bot);
+    if (session.currentErrand == kErrandTraining)
+        session.currentErrandDeadline = now + std::chrono::seconds(std::max<uint32>(
+            sPlayerbotAIConfig.chatDirectorPartyTaskActiveDeadlineSeconds,
+            uint32(std::ceil(session.errandLastDistance / kRunSpeedYardsPerSecond)) + 20));
     session.nextErrandStep = now;
     QueueActivityTelemetry(session.botGuid, session.playerGuid, session.groupId,
         PartyActivityOwner::party_errand, taskRecord.phase,
@@ -2406,6 +2434,23 @@ bool PlayerbotRendezvousManager::ExecuteVerifiedErrand(PartySession& session, Pl
 {
     if (!bot || !bot->GetPlayerbotAI()) return false;
     PlayerbotAI* ai = bot->GetPlayerbotAI();
+    if (session.currentErrand == kErrandTraining)
+    {
+        TravelTarget* target = ai->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
+        if (!target || !target->GetEntry()) return false;
+        std::list<ObjectGuid> npcs = ai->GetAiObjectContext()->
+            GetValue<std::list<ObjectGuid>>("nearest npcs no los")->Get();
+        for (const ObjectGuid& guid : npcs)
+        {
+            if (guid.GetEntry() != uint32(target->GetEntry())) continue;
+            Creature* trainer = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_TRAINER);
+            if (!trainer || !trainer->IsTrainerOf(bot, false) ||
+                !LivingWowHasClassTraining(bot, trainer->GetEntry())) continue;
+            session.currentErrandCapability = trainer->GetEntry();
+            return ai->DoSpecificAction("trainer", Event("living party training", guid), true);
+        }
+        return false;
+    }
     Event event("rpg action", "living-wow-verified-errand", nullptr);
     if (session.currentErrand == kErrandVendor)
         return ai->DoSpecificAction("sell", event, true);
@@ -2428,6 +2473,15 @@ bool PlayerbotRendezvousManager::VerifyErrand(const PartySession& session,
 {
     uint32 errand = session.currentErrand;
     const ErrandObservation& before = session.errandBefore;
+    if (errand == kErrandTraining)
+    {
+        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(session.botGuid);
+        if (!bot || !session.currentErrandCapability ||
+            LivingWowHasClassTraining(bot, session.currentErrandCapability)) return false;
+        for (uint32 spell : after.knownSpells)
+            if (!before.knownSpells.count(spell)) return true;
+        return false;
+    }
     if (errand == kErrandVendor)
         return after.vendorStacks < before.vendorStacks || after.bagUsage < before.bagUsage;
     if (errand == kErrandRepair)
@@ -2530,7 +2584,7 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
             ~(session.completedErrandMask | session.deferredErrandMask);
         session.deferredErrandMask |= untouched;
         const uint32 taskTypes[] = {kErrandVendor, kErrandRepair, kErrandBank,
-            kErrandMail, kErrandAuction, kErrandProfession};
+            kErrandMail, kErrandAuction, kErrandProfession, kErrandTraining};
         for (uint32 type : taskTypes)
             if (untouched & type)
             {
@@ -3516,7 +3570,7 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                         ~(session.completedErrandMask | session.deferredErrandMask);
                     session.deferredErrandMask |= unfinishedErrands;
                     const uint32 errandTypes[] = {kErrandVendor, kErrandRepair,
-                        kErrandBank, kErrandMail, kErrandAuction, kErrandProfession};
+                        kErrandBank, kErrandMail, kErrandAuction, kErrandProfession, kErrandTraining};
                     for (uint32 type : errandTypes)
                     {
                         if (!(unfinishedErrands & type)) continue;
@@ -4120,6 +4174,7 @@ std::string PlayerbotRendezvousManager::BuildActivityTelemetry(uint32 botGuid, u
              << ",\"mail_payloads\":" << value->mailPayloads
              << ",\"auction_count\":" << value->auctionCount
              << ",\"profession_skill\":" << value->professionSkill
+             << ",\"known_spells\":" << value->knownSpells.size()
              << ",\"inventory_signature\":" << value->inventorySignature << '}';
     };
     appendObservation("before", before);

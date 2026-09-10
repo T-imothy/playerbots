@@ -5,6 +5,7 @@
 #include "PartyLootWindow.h"
 #include <deque>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -105,6 +106,7 @@ private:
         uint32 auctionCount = 0;
         uint32 professionSkill = 0;
         uint32 inventorySignature = 0;
+        std::set<uint32> knownSpells;
     };
 
     // One durable typed record per task in a party errand bundle. Legacy bit

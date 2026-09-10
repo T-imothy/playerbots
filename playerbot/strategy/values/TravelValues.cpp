@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotTraining.h"
 #include "TravelValues.h"
 #include "QuestValues.h"
 #include "SharedValueContext.h"
@@ -458,10 +459,10 @@ bool ShouldTravelNamedValue::Calculate()
             budgetType = NeedMoneyFor::anything;
         }
 
-        if (AI_VALUE2(uint32, "train cost", trainerType) == 0) //Has nothing to train
+        if (AI_VALUE2(std::vector<TrainerSpell const*>, "trainable spells", trainerType).empty())
             return false;
 
-        if (!AI_VALUE2(bool, "has all money for", (uint32)budgetType))
+        if (!LivingWowFreeBotTraining(bot) && !AI_VALUE2(bool, "has all money for", (uint32)budgetType))
             return false;
 
         return true;

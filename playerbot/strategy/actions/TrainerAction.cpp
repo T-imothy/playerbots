@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "TrainerAction.h"
+#include "playerbot/PlayerbotTraining.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/BudgetValues.h"
 
@@ -8,7 +9,7 @@ using namespace ai;
 
 void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, TrainerSpell const* tSpell, std::ostringstream& msg)
 {
-    if (sPlayerbotAIConfig.autoTrainSpells != "free" &&  !ai->HasCheat(BotCheatMask::gold))
+    if (!LivingWowFreeBotTraining(bot) && sPlayerbotAIConfig.autoTrainSpells != "free" && !ai->HasCheat(BotCheatMask::gold))
     {
         if (AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) < cost)
         {
@@ -85,11 +86,7 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
         if (!tSpell)
             continue;
 
-        uint32 reqLevel = 0;
-
-        reqLevel = tSpell->isProvidedReqLevel ? tSpell->reqLevel : std::max(reqLevel, tSpell->reqLevel);
-        TrainerSpellState state = bot->GetTrainerSpellState(tSpell, reqLevel);
-        if (state != TRAINER_SPELL_GREEN)
+        if (!LivingWowCanTrainSpell(bot, tSpell, creature))
             continue;
 
         uint32 spellId = tSpell->spell;
@@ -167,7 +164,8 @@ bool TrainerAction::Iterate(Player* requester, Creature* creature, TrainerSpellA
         if (!spells.empty() && spells.find(tSpell->spell) == spells.end())
             continue;
 
-        uint32 cost = uint32(floor(tSpell->spellCost *  fDiscountMod));
+        hasTrainable = true; // Directly taught spells also count as eligible.
+        uint32 cost = LivingWowFreeBotTraining(bot) ? 0 : uint32(floor(tSpell->spellCost * fDiscountMod));
         totalCost += cost;
 
         std::ostringstream out;
@@ -196,12 +194,13 @@ bool TrainerAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     std::string text = event.getParam();
+    const bool partyTraining = event.getSource() == "living party training";
     Creature* creature = nullptr;
 
-    if (event.getSource() == "rpg action")
+    if (event.getSource() == "rpg action" || partyTraining)
     {
         ObjectGuid guid = event.getObject();
-        creature = ai->GetCreature(guid);
+        creature = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_TRAINER);
     }
     else
     {
@@ -219,6 +218,9 @@ bool TrainerAction::Execute(Event& event)
 #endif
         return false;       
             
+    if (partyTraining && (creature->GetCreatureInfo()->TrainerType != TRAINER_TYPE_CLASS ||
+        creature->GetCreatureInfo()->TrainerClass != bot->getClass())) return false;
+
     if (!creature->IsTrainerOf(bot, false))
     {
         if (!ai->GetMaster() || sServerFacade.GetDistance2d(bot, ai->GetMaster()) < sPlayerbotAIConfig.reactDistance || ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
@@ -241,10 +243,28 @@ bool TrainerAction::Execute(Event& event)
     if (spell)
         spells.insert(spell);
 
-    if (text.find("learn") != std::string::npos || sRandomPlayerbotMgr.IsFreeBot(bot) || (sPlayerbotAIConfig.autoTrainSpells != "no" && (creature->GetCreatureInfo()->TrainerType != TRAINER_TYPE_TRADESKILLS || !ai->HasActivePlayerMaster()))) //Todo rewrite to only exclude start primary profession skills and make config dependent.
+    if (partyTraining || text.find("learn") != std::string::npos || sRandomPlayerbotMgr.IsFreeBot(bot) || (sPlayerbotAIConfig.autoTrainSpells != "no" && (creature->GetCreatureInfo()->TrainerType != TRAINER_TYPE_TRADESKILLS || !ai->HasActivePlayerMaster()))) //Todo rewrite to only exclude start primary profession skills and make config dependent.
     {
-        if(Iterate(requester, creature, &TrainerAction::Learn, spells))
-            context->ClearValues("item usage"); //Bot might be able to use new items.
+        // Older ranks can unlock newer ones whose IDs sort earlier. Complete
+        // the eligible chain during this visit, without bypassing prerequisites.
+        uint32 moneyBefore = bot->GetMoney();
+        std::set<uint32> knownBefore;
+        for (const auto& spell : bot->GetSpellMap())
+            if (spell.second.state != PLAYERSPELL_REMOVED && !spell.second.disabled)
+                knownBefore.insert(spell.first);
+        for (uint32 pass = 0; pass < (partyTraining ? 20u : 1u); ++pass)
+        {
+            if (!Iterate(requester, creature, &TrainerAction::Learn, spells)) break;
+            if (partyTraining && !LivingWowHasClassTraining(bot, creature->GetEntry())) break;
+        }
+        for (const auto& spell : bot->GetSpellMap())
+            if (spell.second.state != PLAYERSPELL_REMOVED && !spell.second.disabled && !knownBefore.count(spell.first))
+                sLog.outString("Living WoW training event=spell_learned bot=%u trainer=%u spell=%u level=%u money_before=%u money_after=%u",
+                    bot->GetGUIDLow(), creature->GetEntry(), spell.first, bot->GetLevel(), moneyBefore, bot->GetMoney());
+        context->ClearValues("item usage");
+        context->ClearValues("trainable spells");
+        context->ClearValues("available trainers");
+        context->ClearValues("train cost");
     }
     else
         Iterate(requester, creature, NULL, spells);

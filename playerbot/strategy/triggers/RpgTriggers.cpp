@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotTraining.h"
 #include "RpgTriggers.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/actions/GuildCreateActions.h"
@@ -339,11 +340,7 @@ bool RpgTrainTrigger::IsActive()
         if (!tSpell)
             continue;
 
-        uint32 reqLevel = 0;
-
-        reqLevel = tSpell->isProvidedReqLevel ? tSpell->reqLevel : std::max(reqLevel, tSpell->reqLevel);
-        TrainerSpellState state = bot->GetTrainerSpellState(tSpell, reqLevel);
-        if (state != TRAINER_SPELL_GREEN)
+        if (!LivingWowCanTrainSpell(bot, tSpell))
             continue;
 
         uint32 spellId = tSpell->spell;
@@ -437,7 +434,7 @@ bool RpgTrainTrigger::IsActive()
         }
 
         uint32 cost = uint32(floor(tSpell->spellCost * fDiscountMod));
-        if (cost > AI_VALUE2(uint32, "free money for", (uint32)budgetType))
+        if (!LivingWowFreeBotTraining(bot) && cost > AI_VALUE2(uint32, "free money for", (uint32)budgetType))
             continue;
 
         return true;
