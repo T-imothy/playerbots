@@ -1,6 +1,7 @@
 #include "botpch.h"
 #include "PlayerbotRendezvousManager.h"
 
+#include "Entities/Transports.h"
 #include "MotionGenerators/PathFinder.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
@@ -373,9 +374,9 @@ bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Playe
         session.reason = "bot_in_combat";
         return false;
     }
-    if (bot->GetTransport() || bot->IsTaxiFlying())
+    if (bot->IsTaxiFlying())
     {
-        session.reason = "bot_in_transit";
+        session.reason = "bot_on_taxi";
         return false;
     }
     if (bot->InBattleGround() || bot->GetMap()->IsDungeon() || player->InBattleGround() ||
@@ -421,7 +422,17 @@ bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Playe
             session.reason = "no_hidden_staging_point";
             return false;
         }
+        GenericTransport* transport = bot->GetTransport();
         bot->GetPlayerbotAI()->StopMoving();
+        if (transport)
+        {
+            // Playerbots' normal MoveOffTransport path removes the passenger
+            // before teleporting. Reuse the same authoritative transition for
+            // party assists instead of leaving zeppelin passengers pending
+            // forever.
+            transport->RemovePassenger(bot);
+            LogPartyEvent(session, "transport_detached_for_arrival");
+        }
         if (sameMap)
             bot->NearTeleportTo(stageX, stageY, stageZ, bot->GetAngle(player));
         else if (!bot->TeleportTo(player->GetMapId(), stageX, stageY, stageZ, player->GetOrientation()))
