@@ -1,0 +1,21 @@
+name: Living TBC native contracts
+on:
+  push:
+    branches: [master, 'codex/living-playerbots-orchestration']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile actual fork policies with ASan and UBSan
+        run: cmake -S tests -B build-tests -DLIVING_SANITIZERS=ON && cmake --build build-tests --parallel 2
+      - name: Required native contracts
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --test-dir build-tests --output-on-failure
