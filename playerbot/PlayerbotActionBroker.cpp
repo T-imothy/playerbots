@@ -722,8 +722,16 @@ void PlayerbotActionBroker::Update()
                 }
             }
         }
+        // NearTeleportTo updates map position immediately, while the cached zone
+        // can remain the bot's pre-relocation zone until the next area update.
+        // Do not tear down a validated, active rendezvous during that window.
+        // Initial transaction creation still requires the same zone, and a map
+        // change remains an immediate cancellation condition.
+        bool rendezvousActive = bot && player &&
+            sPlayerbotRendezvousManager.IsActive(transaction.botGuid, transaction.playerGuid);
         bool incompatible = transaction.delivery != "mail" && bot && player &&
-            (bot->GetMapId() != player->GetMapId() || bot->GetZoneId() != player->GetZoneId());
+            (bot->GetMapId() != player->GetMapId() ||
+                (!rendezvousActive && bot->GetZoneId() != player->GetZoneId()));
         if (!bot || !player || !bot->IsAlive() || !player->IsAlive() || incompatible ||
             (buying && CountBrokerPlayerItem(player, transaction.itemEntry) < transaction.quantity) ||
             (!buying && transaction.state != "preparing" && (!item || item->GetCount() < transaction.quantity || !item->CanBeTraded())))

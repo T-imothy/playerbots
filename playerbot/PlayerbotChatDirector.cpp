@@ -1104,7 +1104,12 @@ void PlayerbotChatDirector::Observe(Player* bot, uint32 msgType, uint32 speakerG
 
     std::string channelType = ChannelType(msgType, channelName);
     std::ostringstream keyStream;
-    keyStream << speakerGuid << ':' << msgType << ':' << channelName << ':' << message;
+    // The manager-level public fan-out and the outgoing-packet observer can
+    // describe the same built-in channel differently (for example, "" and
+    // "General - Mulgore"). Canonical channel type keeps those observations in
+    // one 150 ms event, so a successful market offer cannot be followed by a
+    // second contradictory no-buyer event.
+    keyStream << speakerGuid << ':' << msgType << ':' << channelType << ':' << message;
     std::string key = keyStream.str();
 
     std::lock_guard<std::mutex> guard(mutex);
