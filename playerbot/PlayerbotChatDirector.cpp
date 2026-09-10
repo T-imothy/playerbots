@@ -1169,7 +1169,19 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // modifying authoritative quest state.
         bool recoveryAllowed = sPlayerbotAIConfig.chatDirectorBotRecoveryMode >= 2 ||
             (sPlayerbotAIConfig.chatDirectorBotRecoveryMode == 1 && recoveryCanary);
-        if (suspected && recoveryAllowed)
+        TravelTarget* inFlightRecoveryTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
+            GetValue<TravelTarget*>("travel target")->Get();
+        TravelStatus inFlightRecoveryStatus = inFlightRecoveryTarget ?
+            inFlightRecoveryTarget->GetStatus() : TravelStatus::TRAVEL_STATUS_NONE;
+        bool turninRecoveryInFlight = state.recoveryStep == 3 && state.recoveryQuestId &&
+            questSnapshot.completed.count(state.recoveryQuestId) && inFlightRecoveryTarget &&
+            (inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_PREPARE ||
+             inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_READY ||
+             inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_TRAVEL ||
+             inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_WORK);
+        // Do not let the hourly recovery cooldown replace a still-valid exact
+        // turn-in with a newer completed quest just before the first one arrives.
+        if (suspected && recoveryAllowed && !turninRecoveryInFlight)
         {
             const auto oneHourAgo = now - std::chrono::hours(1);
             state.recoveryAttempts.erase(std::remove_if(state.recoveryAttempts.begin(), state.recoveryAttempts.end(),
