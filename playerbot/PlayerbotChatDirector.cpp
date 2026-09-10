@@ -1790,7 +1790,15 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // limited recovery attempt on generic objective reselection while that
         // more authoritative diagnosis is aging toward questStalled.
         bool movementStalled = questSnapshot.completed.empty() && expectsMovement && noActions &&
-            !routeAdvancing && stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds &&
+            observedTravelActive && !routeAdvancing &&
+            stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds &&
+            progressSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
+        // "No actions executed" while no travel target exists is action
+        // starvation, not proof that pathfinding failed. Keeping those states
+        // separate lets recovery select a fresh objective instead of repeatedly
+        // clearing a target that does not exist.
+        bool actionStarved = questSnapshot.completed.empty() && expectsMovement && noActions &&
+            !observedTravelActive &&
             progressSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
         // A completed quest has its own authoritative age. Unrelated kill XP,
         // another quest objective, or ordinary combat must not restart that
@@ -1801,7 +1809,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         bool inventoryBlocked = bagUsed >= 95;
         bool inventoryStalled = inventoryBlocked && noActions &&
             stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
-        bool suspected = !excluded && (movementStalled || questStalled || inventoryStalled);
+        bool suspected = !excluded && (movementStalled || actionStarved || questStalled || inventoryStalled);
         std::string classification = "active";
         if (!bot->IsAlive()) classification = "dead";
         else if (bot->IsInCombat()) classification = "combat";
@@ -1810,6 +1818,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         else if (inventoryStalled) classification = "inventory_blocked";
         else if (questStalled) classification = "completed_quest_awaiting_turn_in";
         else if (movementStalled) classification = "movement_stalled";
+        else if (actionStarved) classification = "action_starvation";
         else if (!expectsMovement && stillSeconds >= 60) classification = "rpg_pause";
 
         // Recovery mode 1 observes only; mode 2 performs the least invasive
@@ -1941,10 +1950,12 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 if (inventoryBlocked && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 5)
                 {
                     bool reset = bot->GetPlayerbotAI()->DoSpecificAction("progression reset travel target", Event("living progression inventory recovery"), true);
-                    recovered = reset && bot->GetPlayerbotAI()->DoSpecificAction(
+                    // A missing prior target is already a clean starting state;
+                    // it must not prevent a fresh vendor route request.
+                    recovered = bot->GetPlayerbotAI()->DoSpecificAction(
                         "request progression vendor travel target", Event("can move around"), true);
                     recovery = recovered ? "vendor_route_requested" :
-                        (reset ? "vendor_request_rejected" : "vendor_reset_rejected");
+                        (reset ? "vendor_request_rejected" : "vendor_request_rejected_no_prior_target");
                     state.recoveryStep = 5;
                 }
                 else if (questStalled && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 3)
@@ -2002,8 +2013,11 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     {
                         bool reset = bot->GetPlayerbotAI()->DoSpecificAction(
                             "progression reset travel target", Event("living progression objective recovery"), true);
-                        recovered = reset;
-                        if (recovered && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 2)
+                        // ResetTargetAction reports false when there was no
+                        // target. That is the common action-starvation case and
+                        // is exactly when a fresh objective route is required.
+                        recovered = false;
+                        if (sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 2)
                             recovered = bot->GetPlayerbotAI()->DoSpecificAction(
                                 "request progression quest travel target", Event("can move around"), true);
                         recovery = recovered ? "objective_route_requested" :
@@ -2207,7 +2221,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         bool heightFault = heightCandidate && std::chrono::duration_cast<std::chrono::seconds>(now - state.heightFaultSince).count() >= 3;
 
         uint32 areaId = sServerFacade.GetAreaId(bot);
-        std::string pathStatus = movementStalled ? "movement_blocked" : (expectsMovement ? "route_ready" : "not_applicable");
+        std::string pathStatus = movementStalled ? "movement_blocked" :
+            (actionStarved ? "not_applicable" : (expectsMovement ? "route_ready" : "not_applicable"));
         std::string zoneName, subzoneName;
         if (AreaTableEntry const* zone = GetAreaEntryByAreaID(bot->GetZoneId())) zoneName = zone->area_name[0];
         if (AreaTableEntry const* area = GetAreaEntryByAreaID(areaId)) subzoneName = area->area_name[0];
