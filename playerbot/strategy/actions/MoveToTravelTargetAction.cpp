@@ -190,7 +190,23 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
 bool MoveToTravelTargetAction::isUseful()
 {
-    if (!ai->AllowActivity(TRAVEL_ACTIVITY))
+    TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
+    bool progressionRecoveryTarget = false;
+    for (std::string const& condition : travelTarget->GetConditions())
+    {
+        if (condition == "can move around")
+        {
+            progressionRecoveryTarget = true;
+            break;
+        }
+    }
+
+    // Activity priority is a population load-shedding decision, not a
+    // movement-safety decision. A bot that has already been classified as
+    // stalled must be allowed to act on its bounded recovery route. All of the
+    // normal taxi, movement, group, loot, and CanFreeMove guards below remain
+    // authoritative.
+    if (!progressionRecoveryTarget && !ai->AllowActivity(TRAVEL_ACTIVITY))
         return false;
 
     if (!AI_VALUE(bool, "travel target traveling") && AI_VALUE(TravelTarget*, "travel target")->GetStatus() != TravelStatus::TRAVEL_STATUS_READY)
@@ -210,8 +226,6 @@ bool MoveToTravelTargetAction::isUseful()
 
     if (!AI_VALUE(bool, "can move around"))
         return false;
-
-    TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
 
     if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT))
     {

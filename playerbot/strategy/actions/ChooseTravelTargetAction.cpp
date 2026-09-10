@@ -1547,12 +1547,29 @@ bool RequestQuestTurninTargetAction::Execute(Event& event)
     // intended to repair. The quest id keeps this lookup narrow; the normal
     // travel manager still validates level, faction, and route feasibility.
     float range = 1000000.0f;
+
+    std::vector<int32> questTakerEntries;
+    questGuidpMap const& questMap = GAI_VALUE(questGuidpMap, "quest guidp map");
+    auto questIt = questMap.find(questId);
+    if (questIt != questMap.end())
+    {
+        auto takersIt = questIt->second.find((uint32)TravelDestinationPurpose::QuestTaker);
+        if (takersIt != questIt->second.end())
+        {
+            for (auto const& entryAndPositions : takersIt->second)
+                questTakerEntries.push_back(entryAndPositions.first);
+        }
+    }
+    if (questTakerEntries.empty())
+        return false;
+
     *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async,
-        [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, questId, range]()
+        [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, questId,
+        questTakerEntries, range]()
         {
             PartitionedTravelList list;
             PartitionedTravelList candidates = sTravelMgr.GetPartitions(center, partitions, travelInfo,
-                (uint32)TravelDestinationPurpose::QuestTaker, {}, false, range);
+                (uint32)TravelDestinationPurpose::QuestTaker, questTakerEntries, false, range);
             for (auto& [partition, points] : candidates)
             {
                 for (auto& point : points)
