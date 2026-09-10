@@ -209,6 +209,8 @@ public:
     std::string commandPrefix, commandSeparator;
     std::string randomBotAccountPrefix;
     uint32 randomBotAccountCount;
+    uint32 randomBotAllianceCount;
+    uint32 randomBotHordeCount;
     bool deleteRandomBotAccounts;
     uint32 randomBotGuildCount;
     bool deleteRandomBotGuilds;

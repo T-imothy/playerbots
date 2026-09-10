@@ -499,6 +499,8 @@ bool PlayerbotAIConfig::Initialize()
 
     randomBotAccountPrefix = config.GetStringDefault("AiPlayerbot.RandomBotAccountPrefix", "rndbot");
     randomBotAccountCount = config.GetIntDefault("AiPlayerbot.RandomBotAccountCount", 50);
+    randomBotAllianceCount = config.GetIntDefault("AiPlayerbot.RandomBotAllianceCount", 0);
+    randomBotHordeCount = config.GetIntDefault("AiPlayerbot.RandomBotHordeCount", 0);
     deleteRandomBotAccounts = config.GetBoolDefault("AiPlayerbot.DeleteRandomBotAccounts", false);
     randomBotGuildCount = config.GetIntDefault("AiPlayerbot.RandomBotGuildCount", 20);
     deleteRandomBotGuilds = config.GetBoolDefault("AiPlayerbot.DeleteRandomBotGuilds", false);

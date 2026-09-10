@@ -838,6 +838,54 @@ void RandomPlayerbotFactory::CreateRandomBots()
     // Shallow copy of the fixed config so we can modify it
     std::map<std::pair<uint8, uint8>, uint32> remaining = sPlayerbotAIConfig.fixedClassRaceCounts;
 
+    // Living WoW may request exact faction populations. Count every existing
+    // random-account character first so creation fills only the real deficit
+    // and never replaces or re-factions an established character.
+    const bool useFactionTargets = !sPlayerbotAIConfig.useFixedClassRaceCounts &&
+        (sPlayerbotAIConfig.randomBotAllianceCount || sPlayerbotAIConfig.randomBotHordeCount);
+    uint32 existingAlliance = 0;
+    uint32 existingHorde = 0;
+    if (useFactionTargets)
+    {
+        for (uint32 accountNumber = 0; accountNumber < sPlayerbotAIConfig.randomBotAccountCount; ++accountNumber)
+        {
+            std::ostringstream out;
+            out << sPlayerbotAIConfig.randomBotAccountPrefix << accountNumber;
+            auto accountResult = LoginDatabase.PQuery(
+                "SELECT id FROM account WHERE username = '%s'", out.str().c_str());
+            if (!accountResult)
+                continue;
+
+            uint32 accountId = accountResult->Fetch()[0].GetUInt32();
+            auto characterResult = CharacterDatabase.PQuery(
+                "SELECT race FROM characters WHERE account = '%u'", accountId);
+            if (!characterResult)
+                continue;
+
+            do
+            {
+                uint8 race = characterResult->Fetch()[0].GetUInt8();
+                if (isRaceForTeam(race, Team::ALLIANCE))
+                    ++existingAlliance;
+                else if (isRaceForTeam(race, Team::HORDE))
+                    ++existingHorde;
+            } while (characterResult->NextRow());
+        }
+    }
+
+    uint32 allianceRemaining = useFactionTargets && existingAlliance < sPlayerbotAIConfig.randomBotAllianceCount
+        ? sPlayerbotAIConfig.randomBotAllianceCount - existingAlliance : 0;
+    uint32 hordeRemaining = useFactionTargets && existingHorde < sPlayerbotAIConfig.randomBotHordeCount
+        ? sPlayerbotAIConfig.randomBotHordeCount - existingHorde : 0;
+    if (useFactionTargets)
+    {
+        sLog.outString(
+            "Living WoW faction population: Alliance %u/%u, Horde %u/%u; creating %u Alliance and %u Horde bots",
+            existingAlliance, sPlayerbotAIConfig.randomBotAllianceCount,
+            existingHorde, sPlayerbotAIConfig.randomBotHordeCount,
+            allianceRemaining, hordeRemaining);
+    }
+
     for (uint32 accountNumber = 0; accountNumber < sPlayerbotAIConfig.randomBotAccountCount; ++accountNumber)
     {
         std::ostringstream out; out << sPlayerbotAIConfig.randomBotAccountPrefix << accountNumber;
@@ -916,27 +964,63 @@ void RandomPlayerbotFactory::CreateRandomBots()
 	}
 	else
 	{
-            for (uint8 cls = CLASS_WARRIOR; cls < MAX_CLASSES - count; ++cls)
+            const uint32 accountCapacity =
+#ifdef MANGOSBOT_TWO
+                10;
+#else
+                9;
+#endif
+            uint32 created = 0;
+            uint32 attempts = 0;
+            while (count + created < accountCapacity && attempts++ < accountCapacity * 20)
             {
-                // skip nonexistent classes
-                if (!((1 << (cls - 1)) & CLASSMASK_ALL_PLAYABLE) || !sChrClassesStore.LookupEntry(cls))
+                Team team = Team::TEAM_BOTH_ALLOWED;
+                if (useFactionTargets)
+                {
+                    uint32 totalRemaining = allianceRemaining + hordeRemaining;
+                    if (!totalRemaining)
+                        break;
+                    if (!hordeRemaining)
+                        team = Team::ALLIANCE;
+                    else if (!allianceRemaining)
+                        team = Team::HORDE;
+                    else
+                        team = urand(1, totalRemaining) <= allianceRemaining ? Team::ALLIANCE : Team::HORDE;
+                }
+
+                uint8 cls = factory.GetRandomClass();
+                uint8 race = useFactionTargets ? factory.GetRandomRace(cls, team) : 0;
+                if (useFactionTargets && !factory.isRaceForTeam(race, team))
+                {
+                    for (uint8 candidate : availableRaces[cls])
+                    {
+                        if (factory.isRaceForTeam(candidate, team))
+                        {
+                            race = candidate;
+                            break;
+                        }
+                    }
+                }
+                if (!factory.CreateRandomBot(cls, race))
                     continue;
 
-#ifdef MANGOSBOT_TWO
-                if (cls != 10)
-#else
-                if (cls != 10 && cls != 6)
-#endif
-                {
-                    uint8 rclss = factory.GetRandomClass();
-                    botsCreated++;
-                    factory.CreateRandomBot(rclss);
-                    bar1.step();
-                }
+                ++created;
+                ++botsCreated;
+                bar1.step();
+                if (team == Team::ALLIANCE)
+                    --allianceRemaining;
+                else if (team == Team::HORDE)
+                    --hordeRemaining;
             }
 	}
 
         totalRandomBotChars += sAccountMgr.GetCharactersCount(accountId);
+    }
+    if (useFactionTargets && (allianceRemaining || hordeRemaining))
+    {
+        sLog.outError(
+            "Unable to reach Living WoW faction targets: %u Alliance and %u Horde character slots remain",
+            allianceRemaining, hordeRemaining);
     }
     if (sPlayerbotAIConfig.useFixedClassRaceCounts && !remaining.empty())
     {
