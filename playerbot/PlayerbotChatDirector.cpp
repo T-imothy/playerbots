@@ -1457,22 +1457,27 @@ void PlayerbotChatDirector::Update()
         for (const ChatDirectorActionProposal& proposal : proposals)
         {
             bool social = sPlayerbotSocialActionBroker.Supports(proposal.type);
-            bool made = social ? sPlayerbotSocialActionBroker.Create(proposal, it->event) :
-                sPlayerbotActionBroker.Create(proposal, it->event);
+            PlayerbotActionResult actionResult;
+            bool made = false;
+            if (social)
+                made = sPlayerbotSocialActionBroker.Create(proposal, it->event);
+            else
+            {
+                actionResult = sPlayerbotActionBroker.Create(proposal, it->event);
+                made = actionResult.created;
+            }
             created[proposal.proposalId] = made;
             if (made || social || (proposal.type != "give_item" && proposal.type != "sell_item" &&
                 proposal.type != "buy_item" && proposal.type != "conjure_water"))
                 continue;
 
-            sPlayerbotActionBroker.ReportRejected(proposal, it->event,
-                "world validation rejected the proposed transaction");
+            sPlayerbotActionBroker.ReportRejected(proposal, it->event, actionResult.reasonCode);
             Player* bot = sRandomPlayerbotMgr.GetPlayerBot(proposal.botGuid);
             Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, proposal.targetGuid));
             if (bot && player && proposal.targetGuid == it->event.speakerGuid)
             {
-                std::string failure = proposal.type == "buy_item" ?
-                    "Sorry, I can't complete that purchase right now." :
-                    "Sorry, I can't complete that trade right now.";
+                std::string failure = actionResult.playerMessage.empty() ?
+                    "Sorry, I can't complete that transaction right now." : actionResult.playerMessage;
                 bot->Whisper(failure, LANG_UNIVERSAL, player->GetObjectGuid());
             }
         }

@@ -120,18 +120,24 @@ const PlayerbotActionBroker::Transaction* PlayerbotActionBroker::Find(uint32 bot
     return nullptr;
 }
 
-bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event)
+PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event)
 {
+    auto reject = [](const std::string& code, const std::string& message)
+    {
+        return PlayerbotActionResult(false, code, message);
+    };
     if ((proposal.delivery != "direct" && proposal.delivery != "meeting" && proposal.delivery != "mail") ||
         (proposal.type != "give_item" && proposal.type != "sell_item" && proposal.type != "buy_item" && proposal.type != "conjure_water"))
-        return false;
-    if (proposal.botGuid == 0 || proposal.targetGuid != event.speakerGuid || proposal.quantity == 0 || Find(proposal.botGuid, proposal.targetGuid))
-        return false;
+        return reject("unsupported_proposal", "I can't handle that kind of transaction.");
+    if (proposal.botGuid == 0 || proposal.targetGuid != event.speakerGuid || proposal.quantity == 0)
+        return reject("malformed_proposal", "That trade request was incomplete.");
+    if (Find(proposal.botGuid, proposal.targetGuid))
+        return reject("active_transaction_conflict", "We already have another trade in progress.");
 
     const ChatDirectorCapability* offeredCapability = nullptr;
     auto candidate = event.candidates.find(proposal.botGuid);
     if (candidate == event.candidates.end())
-        return false;
+        return reject("bot_not_candidate", "I'm not available for that trade now.");
     bool negotiatedProposal = proposal.priceCopper != 0 && proposal.proposalId.compare(0, 11, "negotiated-") == 0 &&
         (proposal.type == "sell_item" || proposal.type == "buy_item");
 
@@ -144,10 +150,10 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
         }
     }
     if (!offeredCapability && !negotiatedProposal)
-        return false;
+        return reject("missing_or_stale_capability", "That offer is no longer available.");
     if (offeredCapability && (proposal.quantity < offeredCapability->minQuantity ||
         proposal.quantity > offeredCapability->maxQuantity))
-        return false;
+        return reject("quantity_changed", "That quantity is no longer available.");
     if (offeredCapability)
     {
         bool giftedSaleCapability = proposal.type == "give_item" && offeredCapability->type == "sell_item" &&
@@ -155,7 +161,7 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
         bool negotiatedEconomicType = negotiatedProposal &&
             (offeredCapability->type == "give_item" || offeredCapability->type == "sell_item" || offeredCapability->type == "buy_item");
         if (proposal.type != offeredCapability->type && !giftedSaleCapability && !negotiatedEconomicType)
-            return false;
+            return reject("capability_type_mismatch", "That offer can't perform this transaction.");
     }
 
     std::smatch match;
@@ -164,46 +170,58 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
     uint32 itemEntry = 0, itemGuid = 0, spellId = 0;
     if (buying)
     {
-        if (proposal.delivery == "mail" || !std::regex_match(proposal.capabilityRef, match, std::regex(R"(buy:([0-9]+))"))) return false;
+        if (proposal.delivery == "mail") return reject("unsupported_delivery", "I can't buy that through the mail.");
+        if (!std::regex_match(proposal.capabilityRef, match, std::regex(R"(buy:([0-9]+))")))
+            return reject("invalid_capability_ref", "That purchase offer is invalid.");
         itemEntry = (uint32)std::stoul(match[1].str());
     }
     else if (conjure)
     {
         if (proposal.delivery == "mail" || !std::regex_match(proposal.capabilityRef, match,
-            std::regex(R"(spell:conjure_water:([0-9]+):([0-9]+))"))) return false;
+            std::regex(R"(spell:conjure_water:([0-9]+):([0-9]+))")))
+            return reject("invalid_capability_ref", "That conjuring offer is invalid.");
         spellId = (uint32)std::stoul(match[1].str());
         itemEntry = (uint32)std::stoul(match[2].str());
     }
     else
     {
-        if (!std::regex_match(proposal.capabilityRef, match, std::regex(R"(item:([0-9]+):([0-9]+))"))) return false;
+        if (!std::regex_match(proposal.capabilityRef, match, std::regex(R"(item:([0-9]+):([0-9]+))")))
+            return reject("invalid_capability_ref", "That item offer is invalid.");
         itemEntry = (uint32)std::stoul(match[1].str());
         itemGuid = (uint32)std::stoul(match[2].str());
-        if (reservedItems.find(itemGuid) != reservedItems.end()) return false;
+        if (reservedItems.find(itemGuid) != reservedItems.end()) return reject("item_reserved", "That item is already reserved.");
     }
 
     Player* bot = sRandomPlayerbotMgr.GetPlayerBot(proposal.botGuid);
     Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, proposal.targetGuid));
     Item* item = !conjure && !buying && bot ? FindBrokerItem(bot, itemEntry, itemGuid) : nullptr;
     bool sameZone = bot && player && bot->GetMapId() == player->GetMapId() && bot->GetZoneId() == player->GetZoneId();
-    if (!bot || !player || (!conjure && !buying && !item) || !bot->IsAlive() || !player->IsAlive() || bot->GetTeam() != player->GetTeam() ||
-        (proposal.delivery != "mail" && !sameZone) || (proposal.delivery == "direct" && !bot->IsWithinDistInMap(player, INTERACTION_DISTANCE)) ||
-        (!conjure && !buying && (!item->CanBeTraded() || item->IsSoulBound() || item->GetCount() < proposal.quantity)))
-        return false;
+    if (!bot || !player) return reject("participant_unavailable", "One of us is no longer available.");
+    if (!bot->IsAlive() || !player->IsAlive()) return reject("participant_dead", "We can't trade while one of us is dead.");
+    if (bot->GetTeam() != player->GetTeam()) return reject("faction_mismatch", "We can't trade across factions.");
+    if (proposal.delivery != "mail" && !sameZone) return reject("incompatible_zone", "We're no longer in the same area.");
+    if (proposal.delivery == "direct" && !bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
+        return reject("out_of_range", "You're too far away to trade directly.");
+    if (!conjure && !crafting && !buying && !item) return reject("item_missing", "I no longer have that item.");
+    if (!conjure && !crafting && !buying && item->GetCount() < proposal.quantity)
+        return reject("quantity_changed", "I no longer have that many.");
+    if (!conjure && !crafting && !buying && (!item->CanBeTraded() || item->IsSoulBound()))
+        return reject("item_protected", "That item can't be traded.");
     if (!conjure && !crafting && !buying && proposal.delivery == "mail" && item->IsConjuredConsumable())
-        return false;
+        return reject("conjured_item_mail_restricted", "Conjured items can't be mailed.");
     if (!conjure && !crafting && !buying && proposal.delivery != "mail")
     {
         ItemPosCountVec destination;
         uint8 bagSlot = 0;
         if (player->CanStoreItem(NULL_BAG, NULL_SLOT, destination, item, bagSlot, false) != EQUIP_ERR_OK)
-            return false;
+            return reject("player_inventory_full", "You don't have room for that item.");
     }
     if (conjure && (bot->getClass() != CLASS_MAGE || proposal.quantity > 5 ||
-        !bot->GetPlayerbotAI()->CanCastSpell(spellId, bot, 0))) return false;
+        !bot->GetPlayerbotAI()->CanCastSpell(spellId, bot, 0)))
+        return reject("ability_unavailable", "I can't conjure that right now.");
 
     ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemEntry);
-    if (!proto) return false;
+    if (!proto) return reject("unknown_item", "That item is no longer valid.");
     uint32 value = (conjure || buying) ? 0 : proposal.quantity * ItemUsageValue::GetBotSellPrice(proto, bot);
     uint32 minimumUnitPrice = 0, maximumUnitPrice = 0;
     if (offeredCapability)
@@ -234,7 +252,7 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
         uint64 negotiated = proposal.priceCopper ? proposal.priceCopper :
             uint64(proposal.quantity) * ItemUsageValue::GetBotBuyPrice(proto, bot);
         if (!negotiated || negotiated < minimum || negotiated > maximum || negotiated > UINT32_MAX)
-            return false;
+            return reject("invalid_price", "That price is outside the valid offer.");
         price = (uint32)negotiated;
     }
     else if (proposal.type == "sell_item")
@@ -243,27 +261,31 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
         uint64 maximum = uint64(maximumUnitPrice) * proposal.quantity;
         uint64 negotiated = proposal.priceCopper ? proposal.priceCopper : value;
         if (!negotiated || negotiated < minimum || negotiated > maximum || negotiated > UINT32_MAX)
-            return false;
+            return reject("invalid_price", "That price is outside the valid offer.");
         price = (uint32)negotiated;
     }
     uint32 freeMoney = buying ? bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint32>(
         "free money for", std::to_string((uint32)NeedMoneyFor::anything))->Get() : 0;
-    if (buying && (CountBrokerPlayerItem(player, itemEntry) < proposal.quantity || !price ||
-        reservedMoney[bot->GetGUIDLow()] + price > freeMoney)) return false;
+    if (buying && CountBrokerPlayerItem(player, itemEntry) < proposal.quantity)
+        return reject("insufficient_player_inventory", "You no longer have that many to sell.");
+    if (buying && !price)
+        return reject("invalid_price", "That purchase needs a valid price.");
+    if (buying && reservedMoney[bot->GetGUIDLow()] + price > freeMoney)
+        return reject("insufficient_bot_spendable_money", "I can't afford that from my available spending money.");
     if (proposal.type == "give_item" || conjure)
     {
         auto& history = giftHistory[proposal.targetGuid];
         const auto cutoff = std::chrono::steady_clock::now() - std::chrono::hours(1);
         history.erase(std::remove_if(history.begin(), history.end(), [&](const auto& stamp) { return stamp < cutoff; }), history.end());
         if (proposal.quantity > 5 || value > 100 || history.size() >= 3 || !offeredCapability->giftEligible)
-            return false;
+            return reject("gift_policy_rejected", "I can't give that item away right now.");
     }
 
     if (!conjure && !crafting && !buying && proposal.delivery == "mail" && item->GetCount() != proposal.quantity)
     {
         item = SplitBrokerItem(bot, item, proposal.quantity);
         if (!item)
-            return false;
+            return reject("inventory_split_failed", "I couldn't prepare that item for mail.");
         itemGuid = item->GetGUIDLow();
     }
     if (proposal.type == "give_item" || conjure)
@@ -328,7 +350,7 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
             // The grounded director line already reports combat and location; retry after combat in Update().
         }
     }
-    return true;
+    return PlayerbotActionResult(true, "created", "");
 }
 
 bool PlayerbotActionBroker::Authorizes(Player* bot, Player* trader) const

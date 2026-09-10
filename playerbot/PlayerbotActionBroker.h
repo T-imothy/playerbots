@@ -23,11 +23,21 @@ struct ChatDirectorActionProposal
     std::string intent;
 };
 
+struct PlayerbotActionResult
+{
+    PlayerbotActionResult(bool createdValue = false, const std::string& reason = "",
+        const std::string& message = "") : created(createdValue), reasonCode(reason), playerMessage(message) {}
+
+    bool created;
+    std::string reasonCode;
+    std::string playerMessage;
+};
+
 class PlayerbotActionBroker
 {
 public:
     static PlayerbotActionBroker& instance();
-    bool Create(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event);
+    PlayerbotActionResult Create(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event);
     bool Authorizes(Player* bot, Player* trader) const;
     bool PopulateTrade(Player* bot, Player* trader);
     bool ValidateTrade(Player* bot, Player* trader);
