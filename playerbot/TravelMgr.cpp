@@ -2569,7 +2569,8 @@ WorldPosition* TravelMgr::GetFishSpot(WorldPosition start, bool onlyNearestGrid)
     return fishMap.GetNextPoint(start, chances);
 }
 
-DestinationList TravelMgr::GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries, bool onlyPossible, float maxDistance) const
+DestinationList TravelMgr::GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag, const std::vector<int32>& entries,
+    bool onlyPossible, float maxDistance, bool requireSpatialReachability) const
 {
     WorldPosition center = info.GetPosition();
     DestinationList retDests;
@@ -2593,7 +2594,7 @@ DestinationList TravelMgr::GetDestinations(const PlayerTravelInfo& info, uint32 
                 if (maxDistance > 0 && dest->DistanceTo(center) > maxDistance)
                     continue;
 
-                if (dest->DistanceTo(center) == FLT_MAX) //Do not return destinations on maps you can't path to.
+                if (requireSpatialReachability && dest->DistanceTo(center) == FLT_MAX) //Do not return destinations on maps you can't path to.
                     continue;
                 
                 retDests.push_back(dest);

@@ -1585,7 +1585,10 @@ bool RequestQuestTurninTargetAction::Execute(Event& event)
             // so query the exact quest and then retain only the authoritative
             // takers discovered for this character's completed quest.
             DestinationList destinations = sTravelMgr.GetDestinations(travelInfo,
-                (uint32)TravelDestinationPurpose::QuestTaker, { (int32)questId }, false, range);
+                (uint32)TravelDestinationPurpose::QuestTaker, { (int32)questId }, false, range, false);
+            // Exact authoritative spawn points are handed to the normal
+            // guarded movement action below; do not let the approximate
+            // destination-square reachability prefilter discard them first.
             for (TravelDestination* candidate : destinations)
             {
                 QuestTravelDestination* destination = dynamic_cast<QuestTravelDestination*>(candidate);
