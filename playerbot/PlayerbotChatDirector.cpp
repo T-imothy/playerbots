@@ -9,6 +9,7 @@
 #include "RandomPlayerbotMgr.h"
 #include "ServerFacade.h"
 #include "strategy/ItemVisitors.h"
+#include "strategy/values/BudgetValues.h"
 #include "strategy/values/ItemUsageValue.h"
 
 #include <algorithm>
@@ -524,8 +525,14 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
             uint32 available = std::min<uint32>(5, CountTradeablePlayerItem(speaker, itemId));
             uint32 unitPrice = proto ? ai::ItemUsageValue::GetBotBuyPrice(proto, bot) : 0;
-            if (!proto || proto->Class == ITEM_CLASS_QUEST || !available || !unitPrice || bot->GetMoney() < unitPrice)
+            uint32 freeMoney = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint32>(
+                "free money for", std::to_string((uint32)NeedMoneyFor::anything))->Get();
+            uint32 minimumUnitPrice = std::max<uint32>(1, unitPrice / 2);
+            if (!proto || proto->Class == ITEM_CLASS_QUEST || !available || !unitPrice || freeMoney < minimumUnitPrice)
                 continue;
+            uint32 affordableQuantity = std::min<uint32>(available, std::max<uint32>(1, freeMoney / unitPrice));
+            uint32 maximumUnitPrice = std::min<uint32>(unitPrice, freeMoney / affordableQuantity);
+            if (maximumUnitPrice < minimumUnitPrice) continue;
             ChatDirectorCapability capability;
             capability.capabilityRef = "buy:" + std::to_string(itemId);
             capability.type = "buy_item";
@@ -535,7 +542,7 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             else capability.itemKind = "item";
             capability.quantity = available;
             capability.minQuantity = 1;
-            capability.maxQuantity = std::min<uint32>(available, bot->GetMoney() / unitPrice);
+            capability.maxQuantity = affordableQuantity;
             capability.priceCopper = unitPrice;
             capability.valueCopper = unitPrice;
             capability.economicVersion = 1;
@@ -549,8 +556,8 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             capability.vendorSellCopper = proto->SellPrice;
             capability.marketUnitCopper = ai::ItemUsageValue::GetAHMedianBuyoutPricePerItem(proto);
             capability.marketSamples = (uint32)sRandomPlayerbotMgr.GetAhPrices(proto->ItemId).size();
-            capability.minimumUnitPriceCopper = std::max<uint32>(1, unitPrice / 2);
-            capability.maximumUnitPriceCopper = unitPrice;
+            capability.minimumUnitPriceCopper = minimumUnitPrice;
+            capability.maximumUnitPriceCopper = maximumUnitPrice;
             if (direct) capability.deliveries.push_back("direct");
             capability.deliveries.push_back("meeting");
             candidate.actionCapabilities.push_back(std::move(capability));
@@ -1438,9 +1445,27 @@ void PlayerbotChatDirector::Update()
         std::vector<ChatDirectorActionProposal> proposals = ParseActionProposals(response);
         std::map<std::string, bool> created;
         for (const ChatDirectorActionProposal& proposal : proposals)
-            created[proposal.proposalId] = sPlayerbotSocialActionBroker.Supports(proposal.type) ?
-                sPlayerbotSocialActionBroker.Create(proposal, it->event) :
+        {
+            bool social = sPlayerbotSocialActionBroker.Supports(proposal.type);
+            bool made = social ? sPlayerbotSocialActionBroker.Create(proposal, it->event) :
                 sPlayerbotActionBroker.Create(proposal, it->event);
+            created[proposal.proposalId] = made;
+            if (made || social || (proposal.type != "give_item" && proposal.type != "sell_item" &&
+                proposal.type != "buy_item" && proposal.type != "conjure_water"))
+                continue;
+
+            sPlayerbotActionBroker.ReportRejected(proposal, it->event,
+                "world validation rejected the proposed transaction");
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(proposal.botGuid);
+            Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, proposal.targetGuid));
+            if (bot && player && proposal.targetGuid == it->event.speakerGuid)
+            {
+                std::string failure = proposal.type == "buy_item" ?
+                    "Sorry, I can't complete that purchase right now." :
+                    "Sorry, I can't complete that trade right now.";
+                bot->Whisper(failure, LANG_UNIVERSAL, player->GetObjectGuid());
+            }
+        }
         for (ChatDirectorReply& reply : replies)
         {
             if (it->event.candidates.find(reply.botGuid) == it->event.candidates.end())

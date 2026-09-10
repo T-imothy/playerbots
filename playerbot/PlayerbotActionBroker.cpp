@@ -665,6 +665,39 @@ void PlayerbotActionBroker::Update()
     }
 }
 
+void PlayerbotActionBroker::ReportRejected(const ChatDirectorActionProposal& proposal,
+    const ChatDirectorEvent& event, const std::string& reason) const
+{
+    Transaction transaction;
+    transaction.transactionId = "wow-rejected-" + event.eventId + "-" + proposal.proposalId;
+    transaction.eventId = event.eventId;
+    transaction.proposalId = proposal.proposalId;
+    transaction.botGuid = proposal.botGuid;
+    transaction.playerGuid = proposal.targetGuid;
+    transaction.quantity = proposal.quantity;
+    transaction.priceCopper = proposal.priceCopper;
+    transaction.type = proposal.type;
+    transaction.delivery = proposal.delivery;
+    transaction.state = "rejected";
+    transaction.failureReason = reason;
+
+    std::smatch match;
+    if (std::regex_match(proposal.capabilityRef, match, std::regex(R"(buy:([0-9]+))")))
+        transaction.itemEntry = (uint32)std::stoul(match[1].str());
+    else if (std::regex_match(proposal.capabilityRef, match, std::regex(R"(item:([0-9]+):([0-9]+))")))
+    {
+        transaction.itemEntry = (uint32)std::stoul(match[1].str());
+        transaction.itemGuid = (uint32)std::stoul(match[2].str());
+    }
+    else if (std::regex_match(proposal.capabilityRef, match,
+        std::regex(R"(spell:conjure_water:([0-9]+):([0-9]+))")))
+        transaction.itemEntry = (uint32)std::stoul(match[2].str());
+    else if (std::regex_match(proposal.capabilityRef, match,
+        std::regex(R"(spell:craft:([0-9]+):([0-9]+))")))
+        transaction.itemEntry = (uint32)std::stoul(match[2].str());
+    Report(transaction);
+}
+
 void PlayerbotActionBroker::Report(const Transaction& transaction) const
 {
     Player* bot = sRandomPlayerbotMgr.GetPlayerBot(transaction.botGuid);

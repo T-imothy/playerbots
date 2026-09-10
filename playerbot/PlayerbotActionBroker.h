@@ -34,6 +34,8 @@ public:
     void CompleteTrade(Player* bot, Player* trader);
     void CancelTrade(Player* bot, Player* trader, const std::string& reason);
     void Update();
+    void ReportRejected(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event,
+        const std::string& reason) const;
 
 private:
     struct Transaction
