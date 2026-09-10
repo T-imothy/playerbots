@@ -1,6 +1,7 @@
 #include "botpch.h"
 #include "PlayerbotChatDirector.h"
 #include "PlayerbotGuildGovernance.h"
+#include "PlayerbotGuildSupplies.h"
 #include "PlayerbotGuildEventExecutor.h"
 #include "PlayerbotGuildEventReporter.h"
 #include "GuildPlanLease.h"
@@ -4340,6 +4341,7 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
 {
     ReloadGuildPolicy(now);
     sGuildGovernance.Update(guildPolicyMode == "active");
+    sGuildSupplies.Update();
     UpdateGuildEventLifecycle(now);
     if (pendingGuildPlans.valid() && pendingGuildPlans.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
         ApplyGuildPlans(pendingGuildPlans.get(), now);

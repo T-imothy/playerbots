@@ -17,7 +17,7 @@ public:
     enum class PartyActivityOwner
     {
         none, party_follow, combat, death_recovery, transport, rendezvous,
-        party_errand, guild_event, player_command
+        party_errand, guild_event, player_command, guild_supply
     };
     enum class PartyActivityPhase
     {

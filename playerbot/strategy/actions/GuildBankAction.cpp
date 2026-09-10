@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "GuildBankAction.h"
+#include "playerbot/PlayerbotGuildSupplies.h"
 
 #include "playerbot/strategy/values/ItemCountValue.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
@@ -63,6 +64,8 @@ bool GuildBankAction::Execute(std::string text, GameObject* bank, Player* reques
 
 bool GuildBankAction::MoveFromCharToBank(Item* item, GameObject* bank, Player* requester)
 {
+    if (!item || sGuildSupplies.Reserved(item->GetGUIDLow()))
+        return false;
 #ifndef MANGOSBOT_ZERO
     uint32 playerSlot = item->GetSlot();
     uint32 playerBag = item->GetBagSlot();
@@ -108,7 +111,7 @@ bool GuildBankAction::AutoDeposit(GameObject* bank)
         std::list<Item*> items = AI_VALUE2(std::list<Item*>, "inventory items", "usage " + std::to_string(usageType));
         for (auto item : items)
         {
-            if (!item)
+            if (!item || sGuildSupplies.Reserved(item->GetGUIDLow()))
                 continue;
 
             ItemPrototype const* proto = item->GetProto();

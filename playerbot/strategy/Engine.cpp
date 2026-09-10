@@ -7,6 +7,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PerformanceMonitor.h"
 #include "playerbot/PlayerbotGuildEventExecutor.h"
+#include "playerbot/PlayerbotGuildSupplies.h"
 #include "playerbot/PlayerbotRendezvousManager.h"
 
 #ifdef BUILD_ELUNA
@@ -691,6 +692,8 @@ Action* Engine::InitializeAction(ActionNode* actionNode)
 
 bool Engine::ListenAndExecute(Action* action, Event& event)
 {
+    if(state==BotState::BOT_STATE_NON_COMBAT &&
+        !sGuildSupplies.AllowsMovement(ai->GetBot()->GetGUIDLow(),action->getName())) return false;
     if (state == BotState::BOT_STATE_NON_COMBAT &&
         sGuildEventExecutor.OwnsMovement(ai->GetBot()->GetGUIDLow()) &&
         !sPlayerbotRendezvousManager.AllowsOwnedMovement(ai->GetBot()->GetGUIDLow(), action->getName()))

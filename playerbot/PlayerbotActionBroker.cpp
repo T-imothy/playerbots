@@ -1,5 +1,6 @@
 #include "botpch.h"
 #include "PlayerbotActionBroker.h"
+#include "PlayerbotGuildSupplies.h"
 
 #include "PlayerbotAI.h"
 #include "PlayerbotChatDirector.h"
@@ -269,7 +270,7 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
             return reject("invalid_capability_ref", "That item offer is invalid.");
         itemEntry = (uint32)std::stoul(match[1].str());
         itemGuid = (uint32)std::stoul(match[2].str());
-        if (reservedItems.find(itemGuid) != reservedItems.end()) return reject("item_reserved", "That item is already reserved.");
+        if (IsItemReserved(itemGuid)) return reject("item_reserved", "That item is already reserved.");
     }
 
     Player* bot = sRandomPlayerbotMgr.GetPlayerBot(proposal.botGuid);
@@ -510,7 +511,7 @@ bool PlayerbotActionBroker::Authorizes(Player* bot, Player* trader) const
 
 bool PlayerbotActionBroker::IsItemReserved(uint32 itemGuid) const
 {
-    return reservedItems.find(itemGuid) != reservedItems.end();
+    return reservedItems.find(itemGuid) != reservedItems.end() || sGuildSupplies.Reserved(itemGuid);
 }
 
 bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
@@ -547,6 +548,7 @@ bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
         {
             auto reservation = reservedItems.find(candidate->GetGUIDLow());
             if (candidate->GetCount() >= transaction->quantity && candidate->CanBeTraded() &&
+                !sGuildSupplies.Reserved(candidate->GetGUIDLow()) &&
                 (reservation == reservedItems.end() || reservation->second == transaction->transactionId))
             {
                 reservedItems.erase(transaction->itemGuid);
@@ -734,6 +736,7 @@ void PlayerbotActionBroker::Update()
             {
                 auto reservation = reservedItems.find(candidate->GetGUIDLow());
                 if (candidate->GetCount() >= transaction.quantity && candidate->CanBeTraded() &&
+                    !sGuildSupplies.Reserved(candidate->GetGUIDLow()) &&
                     (reservation == reservedItems.end() || reservation->second == transaction.transactionId))
                 {
                     reservedItems.erase(transaction.itemGuid);

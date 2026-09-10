@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "SellAction.h"
+#include "playerbot/PlayerbotGuildSupplies.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/PlayerbotInventoryPressure.h"
@@ -83,6 +84,8 @@ bool SellAction::Sell(Player* requester, FindItemVisitor* visitor)
 
 bool SellAction::Sell(Player* requester, Item* item)
 {
+    if (!item || sGuildSupplies.Reserved(item->GetGUIDLow()))
+        return false;
     bool didSell = false;
 
     std::ostringstream out;

@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "ItemUsageValue.h"
+#include "playerbot/PlayerbotGuildSupplies.h"
 #include "CraftValues.h"
 #include "MountValues.h"
 #include "BudgetValues.h"
@@ -81,6 +82,7 @@ ItemUsage ItemUsageValue::Calculate()
     uint32 itemId = itemQualifier.GetId();
     if (!itemId)
         return ItemUsage::ITEM_USAGE_NONE;
+    if(sGuildSupplies.ReservedEntry(bot->GetGUIDLow(),itemId)) return ItemUsage::ITEM_USAGE_KEEP;
 
     const ItemPrototype* proto = sObjectMgr.GetItemPrototype(itemId);
     if (!proto)

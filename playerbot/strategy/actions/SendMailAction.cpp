@@ -2,6 +2,7 @@
 #include "Mails/Mail.h"
 #include "playerbot/playerbot.h"
 #include "SendMailAction.h"
+#include "playerbot/PlayerbotGuildSupplies.h"
 
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/ItemVisitors.h"
@@ -95,6 +96,8 @@ bool SendMailAction::Execute(Event& event)
         for (std::list<Item*>::iterator i = items.begin(); i != items.end(); ++i)
         {
             Item* item = *i;
+            if (sGuildSupplies.Reserved(item->GetGUIDLow()))
+                continue;
             if (item->IsSoulBound() || item->IsConjuredConsumable())
             {
                 std::ostringstream out;

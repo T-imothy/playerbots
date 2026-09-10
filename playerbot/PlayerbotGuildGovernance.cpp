@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "PlayerbotGuildGovernance.h"
+#include "PlayerbotGuildSupplies.h"
 #include "PlayerbotGuildEventExecutor.h"
 #include "GuildEventPolicy.h"
 #include "Guilds/Guild.h"
@@ -89,6 +90,9 @@ bool PlayerbotGuildGovernance::Allows(Guild* guild,const std::string& duty,Playe
         (duty=="supplies"&&!supplies_)||duty=="promotions") return false;
     Policy* p=Load(guild);
     if(!p||!Delegated(*p,duty)) return false;
+    // Supply participation is permission-based, not a named officer duty.
+    // Native per-tab bank rights are checked again by the delivery executor.
+    if(duty=="supplies") return !actor||guild->GetMemberSlot(actor->GetObjectGuid());
     const uint32 permission=duty=="recruitment"?Recruit:duty=="promotions"?Promote:Configure;
     if(actor && !(Permissions(actor,guild)&permission)) return false;
     if(actor && actor->GetObjectGuid()==guild->GetLeaderGuid()) return true;
@@ -280,6 +284,11 @@ void PlayerbotGuildGovernance::Snapshot(Player* actor,Guild* guild,Policy& p,con
                 <<f[4].GetUInt32()<<'\t'<<Wire(goalState,20)<<'\t'<<f[6].GetUInt32();
             Send(actor,out.str());
             Send(actor,"GOALMETA\t"+op+"\t"+f[0].GetString()+"\t"+Wire(f[7].GetString(),32)+"\t"+std::to_string(uint32(time(nullptr))));
+            std::string deliveryStatus;const uint32 transit=sGuildSupplies.InTransit(id,f[0].GetString(),deliveryStatus);
+            if(!guild->GetPurchasedTabs()) deliveryStatus="no_guild_bank_tabs";
+            else if(!Allows(guild,"supplies")) deliveryStatus="supply_automation_paused";
+            else if(available>=f[2].GetUInt32()+f[4].GetUInt32()) deliveryStatus="stock_target_met";
+            Send(actor,"GOALDELIVERY\t"+op+"\t"+f[0].GetString()+"\t"+std::to_string(transit)+"\t"+Wire(deliveryStatus,48));
         } while(rows->NextRow());
         Send(actor,"END\t"+op+"\tgoals\t"+std::to_string(count>5?offset+5:0));
     } else if(section=="history" && permissions) {
