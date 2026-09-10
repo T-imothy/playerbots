@@ -347,7 +347,10 @@ namespace ai
         UseRandomQuestItemAction(PlayerbotAI* ai) : UseAction(ai, "use random quest item") {}
 
         virtual bool isUseful() override;
-        virtual bool isPossible() override { return AI_VALUE2(uint32, "item count", "quest") > 0;}
+        // Quest source items are not always classified as ordinary quest
+        // inventory by ItemUsageValue, so isUseful performs the authoritative
+        // quest/source/focus check instead.
+        virtual bool isPossible() override { return true; }
 
         virtual bool Execute(Event& event) override;
 

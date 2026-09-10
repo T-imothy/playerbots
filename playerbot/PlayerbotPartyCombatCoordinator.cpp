@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotPartyCombatCoordinator.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
+#include "playerbot/strategy/values/LootValues.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/strategy/Action.h"
 
@@ -308,6 +309,11 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
 {
     ReloadPolicy(); if (!action || policy.mode != "active") return 1.0f;
     GroupState* state = EnsureState(bot); if (!state) return 1.0f;
+    const std::string actionName = action->getName();
+    if (!bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<LootRollMap>("active rolls")->Get().empty() &&
+        (actionName == "greet" || actionName == "talk" || actionName == "suggest what to do" ||
+            actionName == "suggest trade"))
+        return 0.0f;
     ActionThreatType threat = action->getThreatType(); if (threat == ActionThreatType::ACTION_THREAT_NONE || threat == ActionThreatType::ACTION_THREAT_LOW) return 1.0f;
     LivingPartyRoleState role = GetRole(bot); if (role.primary == LivingPartyRole::Tank) return 1.0f;
     Unit* target = action->GetTarget();

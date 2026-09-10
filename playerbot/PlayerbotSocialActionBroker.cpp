@@ -35,6 +35,51 @@ bool PlayerbotSocialActionBroker::ValidateCommon(Player* bot, Player* player) co
         !bot->InBattleGround() && !player->InBattleGround();
 }
 
+bool PlayerbotSocialActionBroker::HasActiveVendorTrip(uint32 botGuid) const
+{
+    for (const auto& pair : actions)
+        if (pair.second.botGuid == botGuid && pair.second.type == "vendor_bags" &&
+            (pair.second.state == "vendor_travel" || pair.second.state == "returning"))
+            return true;
+    return false;
+}
+
+bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, const std::string& actionId,
+    const std::string& eventId, const std::string& proposalId, bool announce)
+{
+    if (!ValidateCommon(bot, player) || !bot->GetGroup() || bot->GetGroup() != player->GetGroup() ||
+        bot->IsInCombat() || HasActiveVendorTrip(bot->GetGUIDLow()))
+        return false;
+    uint8 bagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
+    if (bagUsage <= 80)
+        return false;
+
+    bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living vendor bags", "", player), true);
+    if (!bot->GetPlayerbotAI()->DoSpecificAction("request travel target::512",
+        Event("living vendor bags", "", player), true))
+        return false;
+
+    Action action;
+    action.actionId = actionId;
+    action.eventId = eventId;
+    action.proposalId = proposalId;
+    action.type = "vendor_bags";
+    action.capabilityRef = "vendor:" + std::to_string(bot->GetGUIDLow()) + ':' +
+        std::to_string(player->GetGUIDLow());
+    action.botGuid = bot->GetGUIDLow();
+    action.playerGuid = player->GetGUIDLow();
+    action.groupId = bot->GetGroup()->GetId();
+    action.initialBagUsage = bagUsage;
+    action.state = "vendor_travel";
+    action.expires = std::chrono::steady_clock::now() + std::chrono::minutes(5);
+    actions[action.actionId] = action;
+    vendorCooldowns[action.botGuid] = std::chrono::steady_clock::now() + std::chrono::minutes(10);
+    Report(actions[action.actionId]);
+    if (announce)
+        bot->GetPlayerbotAI()->SayToParty("My bags are full. I need to make a quick vendor run; I'll catch back up.", true);
+    return true;
+}
+
 static bool InviteSocialPlayer(Player* inviter, Player* player)
 {
     if (!inviter || !player || !inviter->GetSession() || player->GetGroup() || player->GetGroupInvite())
@@ -68,11 +113,8 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
     if (!ValidateCommon(bot, player))
         return false;
 
-    if (proposal.type == "vendor_bags")
-        for (const auto& pair : actions)
-            if (pair.second.botGuid == proposal.botGuid && pair.second.type == "vendor_bags" &&
-                (pair.second.state == "vendor_travel" || pair.second.state == "returning"))
-                return false;
+    if (proposal.type == "vendor_bags" && HasActiveVendorTrip(proposal.botGuid))
+        return false;
 
     Action action;
     action.actionId = "wow-social-" + event.eventId + "-" + proposal.proposalId;
@@ -183,17 +225,8 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
         (uint32)std::stoul(match[2].str()) == player->GetGUIDLow() &&
         bot->GetGroup() && bot->GetGroup() == player->GetGroup() && !bot->IsInCombat())
     {
-        action.initialBagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
-        bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living vendor bags", "", player), true);
-        bool requested = action.initialBagUsage > 80 &&
-            bot->GetPlayerbotAI()->DoSpecificAction("request travel target::512", Event("living vendor bags", "", player), true);
-        if (requested)
-        {
-            action.state = "vendor_travel";
-            actions[action.actionId] = action;
-            Report(actions[action.actionId]);
+        if (StartVendorTrip(bot, player, action.actionId, action.eventId, action.proposalId, false))
             return true;
-        }
         action.failureReason = "no safe vendor trip is currently available";
     }
     else if (proposal.type == "meet_player" &&
@@ -234,6 +267,38 @@ uint32 PlayerbotSocialActionBroker::PreferredQuest(uint32 botGuid) const
 void PlayerbotSocialActionBroker::Update()
 {
     const auto now = std::chrono::steady_clock::now();
+    if (!nextVendorScan.time_since_epoch().count() || now >= nextVendorScan)
+    {
+        nextVendorScan = now + std::chrono::seconds(5);
+        for (const auto& entry : sRandomPlayerbotMgr.GetPlayers())
+        {
+            Player* bot = entry.second;
+            if (!bot || !bot->IsInWorld() || !bot->GetPlayerbotAI() || !bot->GetGroup() ||
+                !bot->IsAlive() || bot->IsInCombat() || HasActiveVendorTrip(bot->GetGUIDLow()) ||
+                bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get() < 100)
+                continue;
+            auto cooldown = vendorCooldowns.find(bot->GetGUIDLow());
+            if (cooldown != vendorCooldowns.end() && cooldown->second > now)
+                continue;
+            Player* player = nullptr;
+            Group::MemberSlotList const& members = bot->GetGroup()->GetMemberSlots();
+            for (Group::MemberSlotList::const_iterator member = members.begin(); member != members.end(); ++member)
+            {
+                Player* candidate = sObjectAccessor.FindPlayer(member->guid);
+                if (candidate && !candidate->GetPlayerbotAI())
+                {
+                    player = candidate;
+                    if (bot->GetGroup()->IsLeader(candidate->GetObjectGuid()))
+                        break;
+                }
+            }
+            if (!player)
+                continue;
+            std::ostringstream id;
+            id << "wow-social-vendor-auto-" << bot->GetGUIDLow() << '-' << time(nullptr);
+            StartVendorTrip(bot, player, id.str(), "inventory-full", "proactive-vendor", true);
+        }
+    }
     for (auto& pair : actions)
     {
         Action& action = pair.second;

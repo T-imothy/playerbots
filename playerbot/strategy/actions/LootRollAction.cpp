@@ -362,7 +362,9 @@ bool AutoLootRollAction::Execute(Event& event)
 
 bool AutoLootRollAction::isPossible()
 {
-    if (!bot->GetGroup() || AI_VALUE(uint8, "bag space") >= 100)
+    // A full bot still has to submit PASS. CalculateRollVote and the mixed-party
+    // policy already prevent it from needing an item it cannot store.
+    if (!bot->GetGroup())
         return false;
 
     LootRollMap lootRolls = AI_VALUE(LootRollMap, "active rolls");

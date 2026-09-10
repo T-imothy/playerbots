@@ -1393,7 +1393,53 @@ bool OpenRandomItemAction::Execute(Event& event)
 
 bool UseRandomQuestItemAction::isUseful()
 {
-    return !bot->InBattleGround() && !bot->IsTaxiFlying() && !bot->IsInCombat();
+    if (bot->InBattleGround() || bot->IsTaxiFlying() || bot->IsInCombat())
+        return false;
+
+    // Preserve legacy autonomous behavior for unmastered bots. In a mixed
+    // party, only become eligible when an active quest has a real source item
+    // whose required spell focus is currently nearby. This makes the action
+    // safe to schedule frequently without clicking arbitrary bag items.
+    if (!ai->HasActivePlayerMaster())
+        return true;
+
+    for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+    {
+        uint32 questId = bot->GetQuestSlotQuestId(slot);
+        if (!questId || bot->GetQuestStatus(questId) != QUEST_STATUS_INCOMPLETE)
+            continue;
+        Quest const* quest = sObjectMgr.GetQuestTemplate(questId);
+        if (!quest)
+            continue;
+        for (uint8 source = 0; source < QUEST_SOURCE_ITEM_IDS_COUNT; ++source)
+        {
+            uint32 sourceId = quest->ReqSourceId[source];
+            if (!sourceId || !quest->ReqSourceCount[source] || !bot->GetItemByEntry(sourceId))
+                continue;
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(sourceId);
+            if (!proto)
+                continue;
+            for (uint8 spell = 0; spell < MAX_ITEM_PROTO_SPELLS; ++spell)
+            {
+                uint32 spellId = proto->Spells[spell].SpellId;
+                if (!spellId || proto->Spells[spell].SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
+                    continue;
+                SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(spellId);
+                if (!spellInfo || !spellInfo->RequiresSpellFocus)
+                    return true;
+                std::list<ObjectGuid> nearbyObjects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
+                for (ObjectGuid const& guid : nearbyObjects)
+                {
+                    GameObject* gameObject = ai->GetGameObject(guid);
+                    GameObjectInfo const* info = gameObject ? gameObject->GetGOInfo() : nullptr;
+                    if (info && info->type == GAMEOBJECT_TYPE_SPELL_FOCUS &&
+                        info->spellFocus.focusId == spellInfo->RequiresSpellFocus)
+                        return true;
+                }
+            }
+        }
+    }
+    return false;
 }
 
 bool UseRandomQuestItemAction::Execute(Event& event)

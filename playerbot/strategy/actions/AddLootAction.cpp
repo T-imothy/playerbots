@@ -196,7 +196,8 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
 
         if (usedBagSpacePercent > 99)
         {
-            ai->TellError(requester, "There is some loot but I do not have free bag space, so not looting");
+            if (!ai->HasActivePlayerMaster())
+                ai->TellError(requester, "There is some loot but I do not have free bag space, so not looting");
             return false;
         }
     }
@@ -313,7 +314,8 @@ bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
 
         if (usedBagSpacePercent > 99)
         {
-            ai->TellError(requester, "There is some loot but I do not have free bag space, so not looting");
+            if (!ai->HasActivePlayerMaster())
+                ai->TellError(requester, "There is some loot but I do not have free bag space, so not looting");
             return false;
         }
     }

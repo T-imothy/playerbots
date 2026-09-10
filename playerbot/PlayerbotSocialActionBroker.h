@@ -38,9 +38,14 @@ private:
     };
 
     bool ValidateCommon(Player* bot, Player* player) const;
+    bool HasActiveVendorTrip(uint32 botGuid) const;
+    bool StartVendorTrip(Player* bot, Player* player, const std::string& actionId,
+        const std::string& eventId, const std::string& proposalId, bool announce);
     void Report(const Action& action) const;
     std::map<std::string, Action> actions;
     std::map<uint32, std::pair<uint32, std::chrono::steady_clock::time_point>> preferredQuests;
+    std::map<uint32, std::chrono::steady_clock::time_point> vendorCooldowns;
+    std::chrono::steady_clock::time_point nextVendorScan;
 };
 
 #define sPlayerbotSocialActionBroker PlayerbotSocialActionBroker::instance()

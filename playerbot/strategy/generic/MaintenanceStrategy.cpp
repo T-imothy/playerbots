@@ -39,8 +39,8 @@ void MaintenanceStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigger
         NextAction::array(0, new NextAction("unstuck", 0.9f), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "random",
-        NextAction::array(0, new NextAction("use random quest item", 0.9f), NULL)));
+        "often",
+        NextAction::array(0, new NextAction("use random quest item", 20.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
         "random",
