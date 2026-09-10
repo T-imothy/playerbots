@@ -46,6 +46,8 @@ private:
     std::map<uint32, Profile> LoadProfiles();
     bool Submit(const Policy& policy);
     void ApplyPlans(const std::string& response, const Policy& policy);
+    void ProcessActiveGoals(const Policy& policy, std::chrono::steady_clock::time_point now);
+    bool ExecuteGoal(Player* bot, Profile& profile, const Policy& policy, std::string& failureReason);
     bool SafeForEconomy(Player* bot) const;
     bool Advertise(Player* bot, uint32 itemEntry, const Policy& policy);
 
@@ -53,8 +55,11 @@ private:
     std::chrono::steady_clock::time_point nextSubmit;
     std::chrono::steady_clock::time_point nextPolicyLoad;
     std::chrono::steady_clock::time_point lastChannelAd;
+    std::chrono::steady_clock::time_point nextExecutionSweep;
     std::map<uint32, std::chrono::steady_clock::time_point> actionCooldowns;
+    std::map<uint32, std::chrono::steady_clock::time_point> retryCooldowns;
     std::map<uint32, std::chrono::steady_clock::time_point> adCooldowns;
+    uint32 executionCursor = 0;
     std::map<uint32, Profile> profiles;
     Policy policy;
 };

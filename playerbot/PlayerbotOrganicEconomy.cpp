@@ -10,6 +10,7 @@
 #include "ServerFacade.h"
 #include "strategy/ItemVisitors.h"
 #include "strategy/values/ItemUsageValue.h"
+#include "strategy/values/TravelValues.h"
 
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -326,6 +327,136 @@ bool PlayerbotOrganicEconomy::Advertise(Player* bot, uint32 itemEntry, const Pol
     return true;
 }
 
+bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
+    const Policy& currentPolicy, std::string& failureReason)
+{
+    if (!bot || !bot->GetPlayerbotAI())
+    {
+        failureReason = "bot_unavailable";
+        return false;
+    }
+    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    const std::string& goalType = profile.currentGoalType;
+    const std::string& goalId = profile.currentGoalId;
+    if (goalType == "profession_skill_up" && currentPolicy.careers)
+    {
+        if (ai->DoSpecificAction("craft random item", Event("organic economy", "", bot), true))
+            return true;
+        failureReason = "no_craftable_recipe_or_materials";
+        return false;
+    }
+    if (goalType == "list_surplus" && currentPolicy.posting)
+    {
+        if (!HasAuctionSurplus(bot))
+            return true;
+        if (ai->DoSpecificAction("ah", Event("rpg action", "vendor", bot), true))
+            return true;
+        std::ostringstream action;
+        action << "request travel target::" << (uint32)TravelDestinationPurpose::AH;
+        if (ai->DoSpecificAction(action.str(), Event("organic economy auction", "", bot), true))
+            failureReason = "traveling_to_auctioneer";
+        else
+            failureReason = "auctioneer_route_pending";
+        return false;
+    }
+    if (goalType == "storage_pressure" && currentPolicy.careers)
+    {
+        LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
+        if (pressure.bagUsage < 85 ||
+            (!pressure.vendorStacks && !pressure.bankStacks && !pressure.craftStacks && !pressure.auctionStacks))
+            return true;
+        if (pressure.vendorStacks)
+        {
+            if (ai->DoSpecificAction("sell", Event("rpg action", "living-wow-safe-vendor", bot), true))
+                return false;
+            if (ai->DoSpecificAction("request progression vendor travel target",
+                    Event("organic economy storage", "", bot), true))
+                failureReason = "traveling_to_vendor";
+            else
+                failureReason = "vendor_route_pending";
+            return false;
+        }
+        if (pressure.craftStacks &&
+            ai->DoSpecificAction("craft random item", Event("organic economy storage", "", bot), true))
+            return false;
+        if (pressure.bankStacks && pressure.bankUsage < 95)
+        {
+            if (ai->DoSpecificAction("bank", Event("rpg action", "living-wow-safe-storage", bot), true))
+                return false;
+            std::ostringstream action;
+            action << "request travel target::" << (uint32)TravelDestinationPurpose::Bank;
+            if (ai->DoSpecificAction(action.str(), Event("organic economy storage", "", bot), true))
+                failureReason = "traveling_to_bank";
+            else
+                failureReason = "bank_route_pending";
+            return false;
+        }
+        if (pressure.auctionStacks && currentPolicy.posting)
+        {
+            if (ai->DoSpecificAction("ah", Event("rpg action", "vendor", bot), true))
+                return false;
+            std::ostringstream action;
+            action << "request travel target::" << (uint32)TravelDestinationPurpose::AH;
+            if (ai->DoSpecificAction(action.str(), Event("organic economy storage", "", bot), true))
+                failureReason = "traveling_to_auctioneer";
+            else
+                failureReason = "auctioneer_route_pending";
+            return false;
+        }
+        failureReason = "protected_inventory_only";
+        return false;
+    }
+    if (goalType == "profession_advertisement" && currentPolicy.advertising)
+    {
+        size_t split = goalId.rfind(':');
+        uint32 itemEntry = split == std::string::npos ? 0 : uint32(std::stoul(goalId.substr(split + 1)));
+        if (Advertise(bot, itemEntry, currentPolicy))
+            return true;
+        failureReason = "advertisement_cooldown_or_location";
+        return false;
+    }
+    if (goalType == "maintain_supplies")
+    {
+        // Existing Playerbots maintenance values own exact purchases. Keeping
+        // the travel strategy active lets those validated needs select a real
+        // vendor without inventing stock or granting supplies here.
+        ai->ChangeStrategy("nc +travel", BotState::BOT_STATE_NON_COMBAT);
+        return true;
+    }
+    failureReason = "unsupported_goal_type";
+    return false;
+}
+
+void PlayerbotOrganicEconomy::ProcessActiveGoals(const Policy& currentPolicy,
+    std::chrono::steady_clock::time_point now)
+{
+    if (currentPolicy.mode != "active" || profiles.empty())
+        return;
+    const uint32 budget = std::min<uint32>(8, profiles.size());
+    std::vector<uint32> guids;
+    guids.reserve(profiles.size());
+    for (const auto& entry : profiles) guids.push_back(entry.first);
+    for (uint32 offset = 0; offset < budget; ++offset)
+    {
+        uint32 guid = guids[(executionCursor + offset) % guids.size()];
+        Profile& profile = profiles[guid];
+        if (profile.currentGoalState != "active" || profile.currentGoalId.empty()) continue;
+        if (retryCooldowns[guid].time_since_epoch().count() && now < retryCooldowns[guid]) continue;
+        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
+        if (!SafeForEconomy(bot)) { retryCooldowns[guid] = now + std::chrono::seconds(30); continue; }
+        std::string failureReason;
+        bool completed = ExecuteGoal(bot, profile, currentPolicy, failureReason);
+        retryCooldowns[guid] = now + std::chrono::seconds(completed ? 600 : 20);
+        if (!completed) continue;
+        actionCooldowns[guid] = now;
+        CharacterDatabase.PExecute(
+            "UPDATE organic_economy_goal SET state='completed',failure_reason='' WHERE character_guid='%u' AND capability_ref='%s' AND state='active'",
+            guid, profile.currentGoalId.c_str());
+        profile.currentGoalState = "completed";
+    }
+    executionCursor = (executionCursor + budget) % guids.size();
+}
+
 void PlayerbotOrganicEconomy::ApplyPlans(const std::string& response, const Policy& currentPolicy)
 {
     if (response.empty()) return;
@@ -349,47 +480,11 @@ void PlayerbotOrganicEconomy::ApplyPlans(const std::string& response, const Poli
             "INSERT INTO organic_economy_goal (character_guid,goal_type,capability_ref,state,utility,source,authoritative_payload,expires_at) "
             "VALUES ('%u','%s','%s','%s',0,'%s','{}',DATE_ADD(NOW(),INTERVAL 1 HOUR))",
             guid, goalType.c_str(), goalId.c_str(), currentPolicy.mode == "active" ? "active" : "proposed", source.c_str());
-        if (currentPolicy.mode != "active") continue;
-        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
-        if (!SafeForEconomy(bot)) continue;
-        auto now = std::chrono::steady_clock::now();
-        if (actionCooldowns[guid].time_since_epoch().count() && now - actionCooldowns[guid] < std::chrono::minutes(10))
-            continue;
-        bool executed = false;
-        if (goalType == "profession_skill_up" && currentPolicy.careers)
-            executed = bot->GetPlayerbotAI()->DoSpecificAction("rpg craft", Event("organic economy", "", bot), true);
-        else if (goalType == "storage_pressure" && currentPolicy.careers)
-        {
-            LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
-            if (pressure.vendorStacks)
-                executed = bot->GetPlayerbotAI()->DoSpecificAction(
-                    "request progression vendor travel target", Event("organic economy storage", "", bot), true);
-            else if (pressure.bankStacks && pressure.bankUsage < 80)
-            {
-                bot->GetPlayerbotAI()->ChangeStrategy("nc +travel", BotState::BOT_STATE_NON_COMBAT);
-                executed = true;
-            }
-            else if (pressure.craftStacks)
-                executed = bot->GetPlayerbotAI()->DoSpecificAction("rpg craft", Event("organic economy storage", "", bot), true);
-            else if (pressure.auctionStacks && currentPolicy.posting)
-            {
-                bot->GetPlayerbotAI()->ChangeStrategy("nc +travel", BotState::BOT_STATE_NON_COMBAT);
-                executed = true;
-            }
-        }
-        else if (goalType == "list_surplus" && currentPolicy.posting)
-            executed = bot->GetPlayerbotAI()->DoSpecificAction("ah", Event("organic economy", "vendor", bot), true);
-        else if (goalType == "profession_advertisement" && currentPolicy.advertising)
-        {
-            size_t split = goalId.rfind(':');
-            uint32 itemEntry = split == std::string::npos ? 0 : uint32(std::stoul(goalId.substr(split + 1)));
-            executed = Advertise(bot, itemEntry, currentPolicy);
-        }
-        if (executed)
-        {
-            actionCooldowns[guid] = now;
-            CharacterDatabase.PExecute("UPDATE organic_economy_goal SET state='completed' WHERE character_guid='%u' AND capability_ref='%s' AND state='active'", guid, goalId.c_str());
-        }
+        Profile& profile = profiles[guid];
+        profile.currentGoalId = goalId;
+        profile.currentGoalType = goalType;
+        profile.currentGoalState = currentPolicy.mode == "active" ? "active" : "proposed";
+        retryCooldowns.erase(guid);
     }
 }
 
@@ -403,6 +498,11 @@ void PlayerbotOrganicEconomy::Update()
     }
     if (pendingPlans.valid() && pendingPlans.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
         ApplyPlans(pendingPlans.get(), policy);
+    if (!nextExecutionSweep.time_since_epoch().count() || now >= nextExecutionSweep)
+    {
+        ProcessActiveGoals(policy, now);
+        nextExecutionSweep = now + std::chrono::seconds(5);
+    }
     if (policy.mode == "off" || pendingPlans.valid() || (nextSubmit.time_since_epoch().count() && now < nextSubmit))
         return;
     // Random bots populate after the world update loop begins. An empty first
