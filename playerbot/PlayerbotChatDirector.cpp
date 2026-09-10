@@ -3521,6 +3521,24 @@ static uint32 GuildEventGroupSize(Player* organizer)
     return members;
 }
 
+static uint32 GuildEventAssembledSize(Player* organizer)
+{
+    Group* group = organizer ? organizer->GetGroup() : nullptr;
+    if (!group || !organizer->IsInWorld())
+        return 0;
+    uint32 members = 0;
+    for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
+    {
+        Player* member = reference->getSource();
+        if (member && member->IsInWorld() && member->GetSession() &&
+            member->GetMapId() == organizer->GetMapId() &&
+            member->GetInstanceId() == organizer->GetInstanceId() &&
+            member->IsWithinDistInMap(organizer, 60.0f))
+            ++members;
+    }
+    return members;
+}
+
 void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock::time_point now)
 {
     if (nextGuildLifecycleUpdate.time_since_epoch().count() && now < nextGuildLifecycleUpdate)
@@ -3563,8 +3581,28 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
         std::string nextState, failureReason;
         if (state == "forming" || state == "traveling")
         {
-            if (groupSize >= minimumMembers)
-                nextState = "active";
+            if (groupSize >= minimumMembers && organizer && organizer->GetGroup())
+            {
+                // Group membership alone is not an assembled event. Retry the
+                // safe one-way rendezvous for remote members, then promote the
+                // event only once a viable roster is physically together.
+                for (GroupReference* reference = organizer->GetGroup()->GetFirstMember();
+                    reference; reference = reference->next())
+                {
+                    Player* member = reference->getSource();
+                    if (!member || member == organizer || !SafeGuildEventParticipant(member, guildId) ||
+                        (member->GetMapId() == organizer->GetMapId() &&
+                            member->GetInstanceId() == organizer->GetInstanceId() &&
+                            member->IsWithinDistInMap(organizer, 60.0f)))
+                        continue;
+                    sPlayerbotRendezvousManager.Request(
+                        member, organizer, "guild-event:" + eventId, false);
+                }
+                if (GuildEventAssembledSize(organizer) >= minimumMembers)
+                    nextState = "active";
+                else if (state == "forming")
+                    nextState = "traveling";
+            }
             else if (age >= 300)
             {
                 nextState = "failed";
@@ -3578,6 +3616,13 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
                 nextState = age >= 300 ? "completed" : "failed";
                 if (nextState == "failed")
                     failureReason = "group_disbanded_early";
+            }
+            else if (GuildEventAssembledSize(organizer) < minimumMembers && age < 1800)
+            {
+                // Recover events persisted across a restart (or split by a
+                // transport) through the same assembly path. Membership must
+                // not leave a physically scattered roster marked active.
+                nextState = "traveling";
             }
             else if (age >= 1800)
                 nextState = "completed";
@@ -3809,7 +3854,7 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
                 {
                     state = "completed";
                     rejection.clear();
-                    eventState = "forming";
+                    eventState = "traveling";
                 }
                 else if (accepted >= 2)
                 {
@@ -3821,16 +3866,24 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
                     minimum = 2;
                     state = "completed";
                     rejection.clear();
-                    eventState = "forming";
+                    eventState = "traveling";
                 }
                 else
                     rejection = "group_formation_failed";
-                if (eventState == "forming")
+                if (eventState == "traveling")
                 {
                     const char* activityAction = effectiveDecisionType == "schedule_leveling_group" ?
                         "request progression grind travel target" : "request progression quest travel target";
                     organizer->GetPlayerbotAI()->DoSpecificAction(
                         activityAction, Event("can move around"), true);
+                    for (Player* member : roster)
+                    {
+                        if (member == organizer || !organizer->GetGroup() ||
+                            member->GetGroup() != organizer->GetGroup())
+                            continue;
+                        sPlayerbotRendezvousManager.Request(
+                            member, organizer, "guild-event:" + candidateId, false);
+                    }
                 }
             }
             eventType = effectiveDecisionType == "schedule_dungeon" ? "dungeon" :

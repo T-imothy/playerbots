@@ -519,10 +519,22 @@ bool PlayerbotRendezvousManager::FindStagingPoint(Player* bot, Player* player, f
 PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
     Player* bot, Player* player, const std::string& actionId, bool returnAfter)
 {
-    if (!bot || !player || !bot->IsInWorld() || !player->IsInWorld() || bot->GetMapId() != player->GetMapId() ||
-        bot->IsInCombat() || !bot->IsAlive() || !player->IsAlive() || bot->GetTransport() || bot->IsTaxiFlying())
+    if (!bot || !player || !bot->IsInWorld() || !player->IsInWorld() ||
+        bot->IsInCombat() || !bot->IsAlive() || !player->IsAlive() || bot->IsTaxiFlying())
         return RequestResult::unavailable;
-    if (Find(bot->GetGUIDLow(), player->GetGUIDLow())) return RequestResult::accepted;
+    if (sessions.find(bot->GetGUIDLow()) != sessions.end())
+        return Find(bot->GetGUIDLow(), player->GetGUIDLow()) ? RequestResult::accepted : RequestResult::unavailable;
+
+    const bool sameMap = bot->GetMapId() == player->GetMapId() &&
+        bot->GetInstanceId() == player->GetInstanceId();
+    // Cross-map rendezvous is reserved for one-way, world-authoritative
+    // handoffs such as assembling a bot guild event. Transactions that must
+    // return to the original activity keep their existing same-map contract.
+    if (!sameMap && (returnAfter || bot->InBattleGround() || player->InBattleGround() ||
+        bot->GetMap()->IsDungeon() || player->GetMap()->IsDungeon()))
+        return RequestResult::unavailable;
+    if (sameMap && bot->GetTransport())
+        return RequestResult::unavailable;
 
     const auto now = std::chrono::steady_clock::now();
     Session session;
@@ -537,7 +549,7 @@ PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
     session.returnAfter = returnAfter;
     session.started = session.stateSince = now;
 
-    float distance = bot->GetDistance(player);
+    float distance = sameMap ? bot->GetDistance(player) : 100000.0f;
     uint32 triggerSeconds = std::max<uint32>(10, std::min<uint32>(300,
         sPlayerbotAIConfig.chatDirectorRendezvousTriggerSeconds));
     bool needsCatchup = distance > kRunSpeedYardsPerSecond * triggerSeconds;
@@ -558,8 +570,14 @@ PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
         float stageX = 0.0f, stageY = 0.0f, stageZ = 0.0f;
         if (!FindStagingPoint(bot, player, stageX, stageY, stageZ))
             return RequestResult::unsafe;
+        GenericTransport* transport = bot->GetTransport();
         bot->GetPlayerbotAI()->StopMoving();
-        bot->NearTeleportTo(stageX, stageY, stageZ, bot->GetAngle(player));
+        if (transport)
+            transport->RemovePassenger(bot);
+        if (sameMap)
+            bot->NearTeleportTo(stageX, stageY, stageZ, bot->GetAngle(player));
+        else if (!bot->TeleportTo(player->GetMapId(), stageX, stageY, stageZ, player->GetOrientation()))
+            return RequestResult::unavailable;
         session.relocated = true;
         lastRelocation[bot->GetGUIDLow()] = now;
     }
@@ -680,9 +698,21 @@ void PlayerbotRendezvousManager::Update()
             }
             else if (bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
             {
-                session.state = "arrived";
-                session.stateSince = now;
-                LogEvent(session, "arrived");
+                if (!session.returnAfter)
+                {
+                    // A one-way rendezvous hands movement back to ordinary
+                    // group AI as soon as the member reaches the organizer.
+                    // Keeping an arrived trade-style session would freeze the
+                    // member beside the organizer indefinitely.
+                    LogEvent(session, "arrival_handed_off");
+                    erase = true;
+                }
+                else
+                {
+                    session.state = "arrived";
+                    session.stateSince = now;
+                    LogEvent(session, "arrived");
+                }
             }
             else if (std::chrono::duration_cast<std::chrono::seconds>(now - session.stateSince).count() >= 2)
             {
