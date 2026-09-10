@@ -10,6 +10,7 @@
 #include "PlayerbotLLMInterface.h"
 #include "PlayerbotRendezvousManager.h"
 #include "RandomPlayerbotMgr.h"
+#include "TravelMgr.h"
 #include "ServerFacade.h"
 #include "strategy/ItemVisitors.h"
 #include "strategy/values/BudgetValues.h"
@@ -1041,7 +1042,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         return;
     const uint32 fullSampleSeconds = std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorHealthSampleSeconds);
     const bool canarySampling = !sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.empty();
-    nextHealthSample = now + std::chrono::seconds(canarySampling ? std::min<uint32>(60, fullSampleSeconds) : fullSampleSeconds);
+    nextHealthSample = now + std::chrono::seconds(canarySampling ? std::min<uint32>(10, fullSampleSeconds) : fullSampleSeconds);
     static std::chrono::steady_clock::time_point nextFullHealthSample;
     const bool fullSample = nextFullHealthSample.time_since_epoch().count() == 0 || now >= nextFullHealthSample;
     if (fullSample) nextFullHealthSample = now + std::chrono::seconds(fullSampleSeconds);
@@ -1219,6 +1220,33 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 }
             }
         }
+
+        // Recovery destination searches finish asynchronously. The ordinary
+        // Playerbots scheduler can retain a validated READY/TRAVEL target yet
+        // never select its low-relevance movement action under a busy 600-bot
+        // workload. Advance only canary recovery targets and still execute the
+        // normal MoveToTravelTargetAction safety checks on the world thread.
+        TravelTarget* recoveryTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
+            GetValue<TravelTarget*>("travel target")->Get();
+        bool boundedRecoveryTarget = false;
+        if (recoveryCanary && state.recoveryStep > 0 && recoveryTarget)
+        {
+            for (std::string const& condition : recoveryTarget->GetConditions())
+            {
+                if (condition == "can move around")
+                {
+                    boundedRecoveryTarget = true;
+                    break;
+                }
+            }
+        }
+        TravelStatus recoveryStatus = recoveryTarget ? recoveryTarget->GetStatus() :
+            TravelStatus::TRAVEL_STATUS_NONE;
+        if (!excluded && boundedRecoveryTarget &&
+            (recoveryStatus == TravelStatus::TRAVEL_STATUS_READY ||
+             recoveryStatus == TravelStatus::TRAVEL_STATUS_TRAVEL))
+            bot->GetPlayerbotAI()->DoSpecificAction(
+                "move to travel target", Event("living progression route continuation"), true);
 
         float terrainZ = bot->GetMap()->GetHeight(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ() + 2.0f);
         bool validTerrain = terrainZ > -100000.0f;
