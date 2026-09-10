@@ -1258,6 +1258,30 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         }
         TravelStatus recoveryStatus = recoveryTarget ? recoveryTarget->GetStatus() :
             TravelStatus::TRAVEL_STATUS_NONE;
+        std::string recoveryPrepareResult = "not_applicable";
+        if (!excluded && recoveryCanary && state.recoveryStep > 0 && recoveryTarget &&
+            recoveryStatus == TravelStatus::TRAVEL_STATUS_PREPARE)
+        {
+            // Prepared recovery searches are futures. Under the 600-bot
+            // scheduler the ordinary low-relevance chooser can remain starved
+            // even after the exact result is ready. Poll and install it through
+            // the normal action; Execute remains non-blocking while pending.
+            bool useful = bot->GetPlayerbotAI()->CanDoSpecificAction(
+                "choose travel target", true, false);
+            bool possible = bot->GetPlayerbotAI()->CanDoSpecificAction(
+                "choose travel target", false, true);
+            if (useful && possible)
+            {
+                bool finalized = bot->GetPlayerbotAI()->DoSpecificAction(
+                    "choose travel target", Event("living progression finalize recovery target"), true);
+                recoveryPrepareResult = finalized ? "target_finalized" : "target_not_ready";
+                recoveryStatus = recoveryTarget->GetStatus();
+            }
+            else if (!useful)
+                recoveryPrepareResult = "target_finalize_not_useful";
+            else
+                recoveryPrepareResult = "target_finalize_impossible";
+        }
         bool exactTurninTarget = false;
         if (recoveryCanary && state.recoveryStep == 3 && state.recoveryQuestId && recoveryTarget)
         {
@@ -1426,6 +1450,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recovery_target_quest_id\":" << state.recoveryQuestId
              << ",\"recovery_target_status\":" << (uint32)recoveryStatus
              << ",\"recovery_target_bounded\":" << (boundedRecoveryTarget ? "true" : "false")
+             << ",\"recovery_prepare_result\":\"" << recoveryPrepareResult << "\""
              << ",\"recovery_move_useful\":" << (recoveryMoveUseful ? "true" : "false")
              << ",\"recovery_move_possible\":" << (recoveryMovePossible ? "true" : "false")
              << ",\"recovery_move_result\":\"" << recoveryMoveResult << "\""
