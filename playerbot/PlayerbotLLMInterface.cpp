@@ -370,7 +370,8 @@ std::string GetSSLError() {
     return std::string(err_buf);
 }
 
-std::string PlayerbotLLMInterface::Generate(const std::string& prompt, int timeOutSeconds, int maxGenerations, std::vector<std::string> & debugLines) {
+std::string PlayerbotLLMInterface::Generate(const std::string& prompt, int timeOutSeconds, int maxGenerations,
+    std::vector<std::string> & debugLines, bool chatDirector, const std::string& pathOverride) {
     bool debug = !debugLines.empty();
 
     if (sPlayerbotLLMInterface.generationCount > maxGenerations)
@@ -400,7 +401,10 @@ std::string PlayerbotLLMInterface::Generate(const std::string& prompt, int timeO
     }
 #endif
 
-    ParsedUrl parsedUrl = sPlayerbotAIConfig.llmEndPointUrl;
+    ParsedUrl parsedUrl = chatDirector ? sPlayerbotAIConfig.chatDirectorEndPointUrl : sPlayerbotAIConfig.llmEndPointUrl;
+    if (!pathOverride.empty())
+        parsedUrl.path = pathOverride;
+    const std::string& apiKey = chatDirector ? sPlayerbotAIConfig.chatDirectorApiKey : sPlayerbotAIConfig.llmApiKey;
 
     if (debug)
         debugLines.push_back("Resolve hostname to IP address: " + parsedUrl.hostname + " " + std::to_string(parsedUrl.port));
@@ -561,8 +565,8 @@ std::string PlayerbotLLMInterface::Generate(const std::string& prompt, int timeO
     request << "Accept: application/json\r\n";
     request << "Connection: close\r\n";
     
-    if (!sPlayerbotAIConfig.llmApiKey.empty())
-        request << "Authorization: Bearer " << sPlayerbotAIConfig.llmApiKey << "\r\n";
+    if (!apiKey.empty())
+        request << "Authorization: Bearer " << apiKey << "\r\n";
     
     std::string body = prompt;
     request << "Content-Length: " << body.size() << "\r\n";

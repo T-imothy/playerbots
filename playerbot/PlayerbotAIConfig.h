@@ -398,9 +398,10 @@ public:
 
     //LM BEGIN
     std::string llmApiEndpoint, llmApiKey, llmApiJson, llmPrePrompt, llmPreRpgPrompt, llmPrompt, llmPostPrompt, llmResponseStartPattern, llmResponseEndPattern, llmResponseDeletePattern, llmResponseSplitPattern;
+    std::string chatDirectorEndpoint, chatDirectorApiKey;
     uint32 llmEnabled, llmContextLength, llmBotToBotChatChance, llmGenerationTimeout, llmMaxSimultaniousGenerations, llmRpgAIChatChance;
-    bool llmGlobalContext;
-    ParsedUrl llmEndPointUrl;
+    bool llmGlobalContext, chatDirectorV2;
+    ParsedUrl llmEndPointUrl, chatDirectorEndPointUrl;
     std::set<uint32> llmBlockedReplyChannels;
     //LM END
 

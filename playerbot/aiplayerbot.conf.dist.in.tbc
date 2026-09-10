@@ -1061,6 +1061,10 @@ AiPlayerbot.PerfMonEnabled = 0
 # AiPlayerbot.LLMApiEndpoint = http://127.0.0.1:5001/api/v1/generate
 # The api key needed to access the endpoint.
 # AiPlayerbot.LLMApiKey =
+# Living WoW Chat v2 consolidates one visible chat event into a coordinated multi-bot response plan.
+# AiPlayerbot.ChatDirectorV2 = 0
+# AiPlayerbot.ChatDirectorEndpoint = http://127.0.0.1:8765/v2/chat-events
+# AiPlayerbot.ChatDirectorApiKey =
 # The default json to send to the endpoint.
 # AiPlayerbot.LLMApiJson = {"max_length": 100, "prompt": "[<pre prompt>]<context> <prompt> <post prompt>"}
 

@@ -41,6 +41,7 @@
 #include "Guilds/GuildMgr.h"
 #include "Chat/ChannelMgr.h"
 #include "PlayerbotLLMInterface.h"
+#include "PlayerbotChatDirector.h"
 
 #include <boost/algorithm/string.hpp>
 
@@ -1438,7 +1439,10 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
         return;
     }
 
-    if (!IsAllowedCommand(filtered) && !GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, type != CHAT_MSG_WHISPER, &fromPlayer))
+    // Incoming whispers are also handled by the social-chat path. Keep an
+    // ungrouped player's command blocked, but do not send the command-security
+    // rejection before the delayed social reply.
+    if (!IsAllowedCommand(filtered) && !GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, &fromPlayer))
         return;
 
     if (type == CHAT_MSG_RAID_WARNING && filtered.find(bot->GetName()) != std::string::npos && filtered.find("award") == std::string::npos)
@@ -1765,6 +1769,16 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                         if (player && player->isRealPlayer())
                             isFromFreeBot = false;
                     }
+                }
+
+                if (sPlayerbotAIConfig.chatDirectorV2 && isAiChat)
+                {
+                    // The shared director observes real-player messages once across all
+                    // listeners. Bot-authored lines are already recorded by the gateway
+                    // and must not recursively enter the legacy per-bot LLM path.
+                    if (!isFromFreeBot && msgtype != CHAT_MSG_WHISPER)
+                        sPlayerbotChatDirector.Observe(bot, msgtype, guid1.GetCounter(), name, message, chanName);
+                    return;
                 }
 
                 bool isMentioned = message.find(bot->GetName()) != std::string::npos;

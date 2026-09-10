@@ -659,7 +659,17 @@ bool PlayerbotAIConfig::Initialize()
     catch (const std::invalid_argument& e) {
         sLog.outError("Unable to parse LLMApiEndpoint url: %s", e.what());
     }
-    llmApiKey = config.GetStringDefault("AiPlayerbot.LLMApiKey", "");    
+    llmApiKey = config.GetStringDefault("AiPlayerbot.LLMApiKey", "");
+    chatDirectorV2 = config.GetBoolDefault("AiPlayerbot.ChatDirectorV2", false);
+    chatDirectorEndpoint = config.GetStringDefault("AiPlayerbot.ChatDirectorEndpoint", "http://127.0.0.1:8765/v2/chat-events");
+    chatDirectorApiKey = config.GetStringDefault("AiPlayerbot.ChatDirectorApiKey", "");
+    try {
+        chatDirectorEndPointUrl = parseUrl(chatDirectorEndpoint);
+    }
+    catch (const std::invalid_argument& e) {
+        sLog.outError("Unable to parse ChatDirectorEndpoint url: %s", e.what());
+        chatDirectorV2 = false;
+    }
     llmApiJson = config.GetStringDefault("AiPlayerbot.LLMApiJson", "{ \"max_length\": 100, \"prompt\": \"[<pre prompt>]<context> <prompt> <post prompt>\"}");
     llmContextLength = config.GetIntDefault("AiPlayerbot.LLMContextLength", 4096);
     llmGenerationTimeout = config.GetIntDefault("AiPlayerbot.LLMGenerationTimeout", 600);

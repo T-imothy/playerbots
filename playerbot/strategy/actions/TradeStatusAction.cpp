@@ -4,6 +4,7 @@
 
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/PlayerbotActionBroker.h"
 #include "playerbot/RandomPlayerbotMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/CraftValues.h"
@@ -20,9 +21,10 @@ bool TradeStatusAction::Execute(Event& event)
         return false;
 
     bool shouldTrade = true;
+    bool brokerTrade = sPlayerbotActionBroker.Authorizes(bot, trader);
     if (!trader->GetPlayerbotAI())
     {
-        shouldTrade = false;
+        shouldTrade = brokerTrade;
         if (trader == master || bot->IsInGroup(trader))
         {
             shouldTrade = ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false, trader);
@@ -43,6 +45,15 @@ bool TradeStatusAction::Execute(Event& event)
     uint32 status;
     p >> status;
 
+    if (brokerTrade && (status == TRADE_STATUS_TRADE_CANCELED || status == TRADE_STATUS_TRADE_REJECTED ||
+        status == TRADE_STATUS_CLOSE_WINDOW || status == TRADE_STATUS_TARGET_TO_FAR ||
+        status == TRADE_STATUS_YOU_DEAD || status == TRADE_STATUS_TARGET_DEAD ||
+        status == TRADE_STATUS_YOU_LOGOUT || status == TRADE_STATUS_TARGET_LOGOUT))
+    {
+        sPlayerbotActionBroker.CancelTrade(bot, trader, "trade cancelled by participant or game state");
+        return false;
+    }
+
     if (status == TRADE_STATUS_TRADE_ACCEPT || (status == TRADE_STATUS_BACK_TO_TRADE && trader->GetTradeData() && trader->GetTradeData()->IsAccepted()))
     {
         WorldPacket p;
@@ -50,7 +61,7 @@ bool TradeStatusAction::Execute(Event& event)
         p << status;
 
         uint32 discount = sRandomPlayerbotMgr.GetTradeDiscount(bot, trader);
-        if (CheckTrade())
+        if (brokerTrade ? sPlayerbotActionBroker.ValidateTrade(bot, trader) : CheckTrade())
         {
             int32 botMoney = CalculateCost(bot, true);
 
@@ -73,6 +84,9 @@ bool TradeStatusAction::Execute(Event& event)
                 sRandomPlayerbotMgr.SetTradeDiscount(bot, trader, discount);
                 return false;
             }
+
+            if (brokerTrade)
+                sPlayerbotActionBroker.CompleteTrade(bot, trader);
 
             for (std::map<uint32, uint32>::iterator i = givenItemIds.begin(); i != givenItemIds.end(); ++i)
             {
@@ -106,7 +120,9 @@ bool TradeStatusAction::Execute(Event& event)
         if (!sServerFacade.IsInFront(bot, trader, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
             sServerFacade.SetFacingTo(bot, trader);
 
-        BeginTrade();
+        BeginTrade(!brokerTrade);
+        if (brokerTrade)
+            sPlayerbotActionBroker.PopulateTrade(bot, trader);
 
         return true;
     }
@@ -114,7 +130,7 @@ bool TradeStatusAction::Execute(Event& event)
     return false;
 }
 
-void TradeStatusAction::BeginTrade()
+void TradeStatusAction::BeginTrade(bool listInventory)
 {
     Player* trader = bot->GetTrader();
     if (!trader || trader->GetPlayerbotAI())
@@ -122,6 +138,9 @@ void TradeStatusAction::BeginTrade()
 
     WorldPacket p;
     bot->GetSession()->HandleBeginTradeOpcode(p);
+
+    if (!listInventory)
+        return;
 
     ListItemsVisitor visitor;
     ai->InventoryIterateItems(&visitor, IterateItemsMask::ITERATE_ITEMS_IN_BAGS);

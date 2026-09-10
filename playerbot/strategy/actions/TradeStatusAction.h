@@ -10,7 +10,7 @@ namespace ai
         virtual bool Execute(Event& event) override;
 
     private:
-        void BeginTrade();
+        void BeginTrade(bool listInventory = true);
         bool CheckTrade();
         int32 CalculateCost(Player *player, bool sell);
     };

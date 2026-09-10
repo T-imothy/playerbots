@@ -25,6 +25,7 @@
 #include "Guilds/GuildMgr.h"
 #include "World/WorldState.h"
 #include "PlayerbotLoginMgr.h"
+#include "PlayerbotChatDirector.h"
 #include "Entities/Transports.h"
 
 #ifndef MANGOSBOT_ZERO
@@ -648,6 +649,8 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 
     if (!sPlayerbotAIConfig.randomBotAutologin || !sPlayerbotAIConfig.enabled)
         return;
+
+    sPlayerbotChatDirector.Update();
 
 #ifdef GenerateBotTests
     if (sPlayerbotAIConfig.startupRunTestsPending)

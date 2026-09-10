@@ -224,6 +224,11 @@ bool BroadcastHelper::BroadcastLootingItem(
     ItemQualifier& itemQualifier
     )
 {
+    // Chat Director v2 owns public ambient dialogue. Loot remains authoritative
+    // game state, but must not bypass the shared conversation coordinator.
+    if (sPlayerbotAIConfig.chatDirectorV2)
+        return false;
+
     std::map<std::string, std::string> placeholders;
     placeholders["%item_link"] = ai->GetChatHelper()->formatItem(itemQualifier);
     AreaTableEntry const* current_area = ai->GetCurrentArea();
@@ -947,6 +952,9 @@ bool BroadcastHelper::BroadcastSuggestSomething(
     Player* bot
 )
 {
+    if (sPlayerbotAIConfig.chatDirectorV2)
+        return false;
+
     if (urand(1, sPlayerbotAIConfig.broadcastChanceMaxValue) <= sPlayerbotAIConfig.broadcastChanceSuggestSomething)
     {
         std::map<std::string, std::string> placeholders;
@@ -975,6 +983,9 @@ bool BroadcastHelper::BroadcastSuggestSomethingToxic(
     Player* bot
 )
 {
+    if (sPlayerbotAIConfig.chatDirectorV2)
+        return false;
+
     if (urand(1, sPlayerbotAIConfig.broadcastChanceMaxValue) <= sPlayerbotAIConfig.broadcastChanceSuggestSomethingToxic)
     {
         //items

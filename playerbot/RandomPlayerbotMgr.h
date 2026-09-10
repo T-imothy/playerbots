@@ -99,6 +99,7 @@ public:
         void OnPlayerLoginError(uint32 bot);
         Player* GetRandomPlayer();
         PlayerBotMap& GetPlayers() { return players; };
+        std::list<uint32> GetChatBotGuids() { return GetBots(); }
         Player* GetPlayer(uint32 playerGuid);
         void PrintStats(uint32 requesterGuid);
         double GetBuyMultiplier(Player* bot);
