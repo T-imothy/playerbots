@@ -5,6 +5,7 @@
 #include "PlayerbotActionBroker.h"
 #include "PlayerbotSocialActionBroker.h"
 #include "PlayerbotAIConfig.h"
+#include "PlayerbotChatJson.h"
 #include "PlayerbotLLMInterface.h"
 #include "RandomPlayerbotMgr.h"
 #include "ServerFacade.h"
@@ -1337,15 +1338,21 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
 std::vector<ChatDirectorReply> PlayerbotChatDirector::ParseReplies(const std::string& response) const
 {
     std::vector<ChatDirectorReply> replies;
-    std::regex pattern(R"re("bot_guid"\s*:\s*([0-9]+)\s*,\s*"text"\s*:\s*"((?:\\.|[^"\\])*)"\s*,\s*"delay_ms"\s*:\s*([0-9]+)(?:\s*,\s*"requires_action_id"\s*:\s*"((?:\\.|[^"\\])*)")?(?:\s*,\s*"reply_channel"\s*:\s*"((?:\\.|[^"\\])*)")?)re");
-    for (std::sregex_iterator it(response.begin(), response.end(), pattern), end; it != end; ++it)
+    LivingWowChatJson::Envelope envelope;
+    std::string error;
+    if (!LivingWowChatJson::ParseEnvelope(response, envelope, error))
+    {
+        sLog.outError("Living WoW Chat v2 response rejected: %s", error.c_str());
+        return replies;
+    }
+    for (const LivingWowChatJson::Reply& parsed : envelope.replies)
     {
         ChatDirectorReply reply;
-        reply.botGuid = (uint32)std::stoul((*it)[1].str());
-        reply.text = JsonUnescape((*it)[2].str());
-        reply.delayMs = std::max<uint32>(1200, std::min<uint32>(8000, (uint32)std::stoul((*it)[3].str())));
-        if ((*it)[4].matched) reply.requiresActionId = JsonUnescape((*it)[4].str());
-        if ((*it)[5].matched) reply.replyChannel = JsonUnescape((*it)[5].str());
+        reply.botGuid = parsed.botGuid;
+        reply.text = parsed.text;
+        reply.delayMs = std::max<uint32>(1200, std::min<uint32>(8000, parsed.delayMs));
+        reply.requiresActionId = parsed.requiresActionId;
+        reply.replyChannel = parsed.replyChannel;
         if (!reply.text.empty()) replies.push_back(std::move(reply));
     }
     return replies;
@@ -1354,20 +1361,22 @@ std::vector<ChatDirectorReply> PlayerbotChatDirector::ParseReplies(const std::st
 std::vector<ChatDirectorActionProposal> PlayerbotChatDirector::ParseActionProposals(const std::string& response) const
 {
     std::vector<ChatDirectorActionProposal> proposals;
-    std::regex pattern(R"re("proposal_id"\s*:\s*"([^"\\]+)"\s*,\s*"bot_guid"\s*:\s*([0-9]+)\s*,\s*"target_guid"\s*:\s*([0-9]+)\s*,\s*"type"\s*:\s*"([^"\\]+)"\s*,\s*"capability_ref"\s*:\s*"([^"\\]+)"\s*,\s*"quantity"\s*:\s*([0-9]+)\s*,\s*(?:"price_copper"\s*:\s*([0-9]+)\s*,\s*)?"delivery"\s*:\s*"([^"\\]+)"\s*,\s*"intent"\s*:\s*"((?:\\.|[^"\\])*)"(?:\s*,\s*"price_copper"\s*:\s*([0-9]+))?)re");
-    for (std::sregex_iterator it(response.begin(), response.end(), pattern), end; it != end; ++it)
+    LivingWowChatJson::Envelope envelope;
+    std::string error;
+    if (!LivingWowChatJson::ParseEnvelope(response, envelope, error))
+        return proposals;
+    for (const LivingWowChatJson::Proposal& parsed : envelope.proposals)
     {
         ChatDirectorActionProposal proposal;
-        proposal.proposalId = (*it)[1].str();
-        proposal.botGuid = (uint32)std::stoul((*it)[2].str());
-        proposal.targetGuid = (uint32)std::stoul((*it)[3].str());
-        proposal.type = (*it)[4].str();
-        proposal.capabilityRef = (*it)[5].str();
-        proposal.quantity = (uint32)std::stoul((*it)[6].str());
-        if ((*it)[7].matched) proposal.priceCopper = (uint32)std::stoul((*it)[7].str());
-        else if ((*it)[10].matched) proposal.priceCopper = (uint32)std::stoul((*it)[10].str());
-        proposal.delivery = (*it)[8].str();
-        proposal.intent = JsonUnescape((*it)[9].str());
+        proposal.proposalId = parsed.proposalId;
+        proposal.botGuid = parsed.botGuid;
+        proposal.targetGuid = parsed.targetGuid;
+        proposal.type = parsed.type;
+        proposal.capabilityRef = parsed.capabilityRef;
+        proposal.quantity = parsed.quantity;
+        proposal.priceCopper = parsed.priceCopper;
+        proposal.delivery = parsed.delivery;
+        proposal.intent = parsed.intent;
         proposals.push_back(std::move(proposal));
     }
     return proposals;
