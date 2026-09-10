@@ -1217,6 +1217,101 @@ void PlayerbotChatDirector::MaybeCreateAmbientEvent(std::chrono::steady_clock::t
         pending[event.eventId] = std::move(event);
 }
 
+void PlayerbotChatDirector::MaybeAdvertiseGuilds(std::chrono::steady_clock::time_point now)
+{
+    if (!sPlayerbotAIConfig.chatDirectorSocialActions)
+        return;
+    if (!nextGuildAdvertisement.time_since_epoch().count())
+    {
+        nextGuildAdvertisement = now + std::chrono::seconds(urand(300, 600));
+        return;
+    }
+    if (now < nextGuildAdvertisement)
+        return;
+
+    struct Advertisement
+    {
+        Player* bot = nullptr;
+        std::string key;
+        std::string text;
+        bool charter = false;
+    };
+    std::vector<Advertisement> charters;
+    std::vector<Advertisement> guilds;
+    std::set<uint32> representedGuilds;
+
+    for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
+    {
+        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
+        if (!bot || !bot->GetPlayerbotAI() || !bot->IsInWorld() || !bot->IsAlive() ||
+            bot->IsInCombat() || bot->InBattleGround() || bot->IsTaxiFlying() || bot->GetTransport())
+            continue;
+
+        uint32 petitionGuid = 0, signatures = 0, required = 0;
+        std::string petitionName;
+        if (FindOwnedGuildPetition(bot, petitionGuid, petitionName, signatures, required))
+        {
+            std::string key = "petition:" + std::to_string(petitionGuid);
+            auto cooldown = guildAdvertisementCooldowns.find(key);
+            if (cooldown == guildAdvertisementCooldowns.end() || now >= cooldown->second)
+            {
+                uint32 pending = sPlayerbotSocialActionBroker.PendingPetitionVolunteers(petitionGuid);
+                uint32 remaining = required > signatures + pending ? required - signatures - pending : 0;
+                if (remaining)
+                {
+                    std::ostringstream text;
+                    text << "Looking for " << remaining << " more "
+                         << (remaining == 1 ? "person" : "people") << " to sign the "
+                         << petitionName << " guild charter. Whisper " << bot->GetName()
+                         << " if you can help.";
+                    charters.push_back({bot, key, text.str(), true});
+                }
+            }
+        }
+
+        uint32 guildId = bot->GetGuildId();
+        if (!guildId || representedGuilds.find(guildId) != representedGuilds.end())
+            continue;
+        Guild* guild = sGuildMgr.GetGuildById(guildId);
+        if (!guild || guild->GetMemberSize() >= 1000 ||
+            !guild->HasRankRight(bot->GetRank(), GR_RIGHT_INVITE))
+            continue;
+        // Prefer the leader as the public face. An officer with invite rights
+        // remains a valid fallback when the leader is offline.
+        Player* leader = sObjectAccessor.FindPlayer(guild->GetLeaderGuid());
+        if (leader && leader->IsInWorld() && leader->GetPlayerbotAI() && leader != bot)
+            continue;
+        representedGuilds.insert(guildId);
+        std::string key = "guild:" + std::to_string(guildId);
+        auto cooldown = guildAdvertisementCooldowns.find(key);
+        if (cooldown != guildAdvertisementCooldowns.end() && now < cooldown->second)
+            continue;
+        std::ostringstream text;
+        text << guild->GetName() << " is recruiting. Whisper " << bot->GetName()
+             << " if you're interested in joining.";
+        guilds.push_back({bot, key, text.str(), false});
+    }
+
+    std::vector<Advertisement>& pool = !charters.empty() &&
+        (guilds.empty() || urand(0, 1) == 0) ? charters : guilds;
+    if (pool.empty())
+    {
+        nextGuildAdvertisement = now + std::chrono::minutes(5);
+        return;
+    }
+    Advertisement& selected = pool[urand(0, pool.size() - 1)];
+    if (selected.bot->GetPlayerbotAI()->SayToGeneral(selected.text))
+    {
+        guildAdvertisementCooldowns[selected.key] = now +
+            (selected.charter ? std::chrono::minutes(45) : std::chrono::minutes(90));
+        nextGuildAdvertisement = now + std::chrono::seconds(urand(600, 1200));
+        sLog.outString("Living WoW guild advertisement bot=%u type=%s key=%s",
+            selected.bot->GetGUIDLow(), selected.charter ? "charter" : "recruitment", selected.key.c_str());
+    }
+    else
+        nextGuildAdvertisement = now + std::chrono::minutes(5);
+}
+
 static uint32 SharedQuestId(Player* left, Player* right)
 {
     if (!left || !right)
@@ -2735,6 +2830,7 @@ void PlayerbotChatDirector::Update()
         return;
     const auto now = std::chrono::steady_clock::now();
     MaybeCreateAmbientEvent(now);
+    MaybeAdvertiseGuilds(now);
     MaybeCreateProactiveGroupEvent(now);
     MaybeReportBotHealth(now);
     MaybeReportProgressionTrace(now);

@@ -203,6 +203,7 @@ private:
     std::vector<ChatDirectorActionProposal> ParseActionProposals(const std::string& response) const;
     void Dispatch(const ScheduledReply& scheduled);
     void MaybeCreateAmbientEvent(std::chrono::steady_clock::time_point now);
+    void MaybeAdvertiseGuilds(std::chrono::steady_clock::time_point now);
     void MaybeCreateProactiveGroupEvent(std::chrono::steady_clock::time_point now);
     void MaybeReportBotHealth(std::chrono::steady_clock::time_point now);
     void MaybeReportProgressionTrace(std::chrono::steady_clock::time_point now);
@@ -235,6 +236,7 @@ private:
     std::vector<ScheduledReply> scheduled;
     uint64 sequence = 0;
     std::chrono::steady_clock::time_point nextAmbient;
+    std::chrono::steady_clock::time_point nextGuildAdvertisement;
     std::chrono::steady_clock::time_point lastConversation;
     std::chrono::steady_clock::time_point nextEconomySample;
     std::chrono::steady_clock::time_point nextHealthSample;
@@ -249,6 +251,7 @@ private:
     };
     std::map<std::string, SharedActivityState> sharedActivity;
     std::map<uint32, std::chrono::steady_clock::time_point> proactivePlayerCooldowns;
+    std::map<std::string, std::chrono::steady_clock::time_point> guildAdvertisementCooldowns;
 };
 
 #define sPlayerbotChatDirector PlayerbotChatDirector::instance()
