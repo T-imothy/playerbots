@@ -49,9 +49,17 @@ private:
         bool forceRelocation = false;
         bool approachIssued = false;
         uint32 approachAttempts = 0;
+        float lastHumanDistance = 0.0f;
+        uint32 hearthStartMapId = 0;
+        float hearthStartX = 0.0f;
+        float hearthStartY = 0.0f;
+        float hearthStartZ = 0.0f;
         std::chrono::steady_clock::time_point stateSince;
         std::chrono::steady_clock::time_point nextApproachAttempt;
         std::chrono::steady_clock::time_point humanAbsentSince;
+        std::chrono::steady_clock::time_point lastFollowProgress;
+        std::chrono::steady_clock::time_point nextFollowRepair;
+        std::chrono::steady_clock::time_point hearthStarted;
     };
 
     struct Session

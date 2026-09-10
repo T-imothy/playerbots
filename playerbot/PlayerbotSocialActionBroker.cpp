@@ -33,7 +33,19 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
         type == "leave_ai_party_for_player" ||
         type == "share_quest" || type == "accept_party_quest_plan" || type == "meet_player" ||
         type == "vendor_bags" || type == "gather_node" || type == "decline_gather_node" ||
-        type == "open_chest" || type == "decline_chest");
+        type == "open_chest" || type == "decline_chest" ||
+        type == "reserve_gathering_nodes" || type == "release_gathering_nodes" ||
+        type == "ask_gathering_nodes");
+}
+
+static std::string GatheringPolicyKey(uint32 groupId, uint32 playerGuid, uint32 skillId)
+{
+    return std::to_string(groupId) + ':' + std::to_string(playerGuid) + ':' + std::to_string(skillId);
+}
+
+static const char* GatheringSkillName(uint32 skillId)
+{
+    return skillId == SKILL_MINING ? "mining" : "herbalism";
 }
 
 static bool GroupHasRealHuman(Group* group)
@@ -211,6 +223,16 @@ bool PlayerbotSocialActionBroker::CanUseSharedObject(Player* bot, Player* player
         // Do not ask the human to reserve a node they cannot actually use.
         if (!playerCanGather)
             return true;
+
+        auto policy = gatheringPolicies.find(GatheringPolicyKey(
+            bot->GetGroup()->GetId(), player->GetGUIDLow(), loot.skillId));
+        if (policy != gatheringPolicies.end())
+        {
+            if (policy->second.mode == "human_reserved")
+                return false;
+            if (policy->second.mode == "bots_open")
+                return true;
+        }
     }
 
     const auto now = std::chrono::steady_clock::now();
@@ -351,8 +373,36 @@ void PlayerbotSocialActionBroker::QueuePartyReturn(Action& action, Player* bot, 
 void PlayerbotSocialActionBroker::AddSharedObjectCapabilities(Player* bot, Player* player,
     ChatDirectorCandidate& candidate)
 {
-    if (!bot || !player)
+    if (!bot || !player || !bot->GetGroup() || bot->GetGroup() != player->GetGroup())
         return;
+
+    for (uint32 skillId : { uint32(SKILL_MINING), uint32(SKILL_HERBALISM) })
+    {
+        if (!player->HasSkill((SkillType)skillId))
+            continue;
+        std::string skillName = GatheringSkillName(skillId);
+        for (const std::string& mode : { std::string("reserve"), std::string("release"), std::string("ask") })
+        {
+            ChatDirectorCapability capability;
+            capability.capabilityRef = "gather-policy:" + mode + ':' +
+                std::to_string(bot->GetGUIDLow()) + ':' + std::to_string(player->GetGUIDLow()) + ':' +
+                std::to_string(bot->GetGroup()->GetId()) + ':' + std::to_string(skillId);
+            capability.type = mode == "reserve" ? "reserve_gathering_nodes" :
+                mode == "release" ? "release_gathering_nodes" : "ask_gathering_nodes";
+            capability.itemKind = skillName;
+            capability.quantity = capability.minQuantity = capability.maxQuantity = 1;
+            capability.groupId = bot->GetGroup()->GetId();
+            capability.actorGuid = bot->GetGUIDLow();
+            capability.description = mode == "reserve" ?
+                "Reserve all " + skillName + " nodes the human can gather for the human for this party session, without asking at each node." :
+                mode == "release" ?
+                "Allow party bots to gather " + skillName + " nodes without asking the human until the policy changes." :
+                "Restore asking the human for permission each time a party bot finds a " + skillName + " node the human can gather.";
+            capability.deliveries.push_back("immediate");
+            candidate.actionCapabilities.push_back(std::move(capability));
+        }
+    }
+
     auto found = sharedObjectOffers.find(bot->GetGUIDLow());
     if (found == sharedObjectOffers.end())
         return;
@@ -550,6 +600,42 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             return true;
         action.failureReason = "no safe vendor trip is currently available";
     }
+    else if ((proposal.type == "reserve_gathering_nodes" ||
+              proposal.type == "release_gathering_nodes" || proposal.type == "ask_gathering_nodes") &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(gather-policy:(reserve|release|ask):([0-9]+):([0-9]+):([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[2].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[3].str()) == player->GetGUIDLow())
+    {
+        uint32 groupId = (uint32)std::stoul(match[4].str());
+        uint32 skillId = (uint32)std::stoul(match[5].str());
+        Group* group = bot->GetGroup();
+        completed = group && group == player->GetGroup() && group->GetId() == groupId &&
+            (skillId == SKILL_MINING || skillId == SKILL_HERBALISM);
+        if (completed)
+        {
+            GatheringPolicy policy;
+            policy.playerGuid = player->GetGUIDLow();
+            policy.groupId = groupId;
+            policy.skillId = skillId;
+            policy.mode = match[1].str() == "reserve" ? "human_reserved" :
+                match[1].str() == "release" ? "bots_open" : "ask";
+            std::string key = GatheringPolicyKey(groupId, policy.playerGuid, skillId);
+            if (policy.mode == "ask")
+                gatheringPolicies.erase(key);
+            else
+                gatheringPolicies[key] = policy;
+
+            for (auto offer = sharedObjectOffers.begin(); offer != sharedObjectOffers.end(); )
+                if (offer->second.groupId == groupId && offer->second.playerGuid == policy.playerGuid &&
+                    offer->second.skillId == skillId)
+                    offer = sharedObjectOffers.erase(offer);
+                else
+                    ++offer;
+            sLog.outString("Living WoW gathering policy player=%u group=%u skill=%u mode=%s actor=%u",
+                policy.playerGuid, groupId, skillId, policy.mode.c_str(), bot->GetGUIDLow());
+        }
+    }
     else if ((proposal.type == "gather_node" || proposal.type == "decline_gather_node" ||
               proposal.type == "open_chest" || proposal.type == "decline_chest") &&
         std::regex_match(proposal.capabilityRef, match,
@@ -622,6 +708,14 @@ uint32 PlayerbotSocialActionBroker::PreferredQuest(uint32 botGuid) const
 void PlayerbotSocialActionBroker::Update()
 {
     const auto now = std::chrono::steady_clock::now();
+    for (auto policy = gatheringPolicies.begin(); policy != gatheringPolicies.end(); )
+    {
+        Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, policy->second.playerGuid));
+        if (!player || !player->GetGroup() || player->GetGroup()->GetId() != policy->second.groupId)
+            policy = gatheringPolicies.erase(policy);
+        else
+            ++policy;
+    }
     for (auto offer = sharedObjectOffers.begin(); offer != sharedObjectOffers.end(); )
     {
         Player* bot = sRandomPlayerbotMgr.GetPlayerBot(offer->second.botGuid);

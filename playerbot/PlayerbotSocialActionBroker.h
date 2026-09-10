@@ -67,6 +67,14 @@ private:
         std::chrono::steady_clock::time_point expires;
     };
 
+    struct GatheringPolicy
+    {
+        uint32 playerGuid = 0;
+        uint32 groupId = 0;
+        uint32 skillId = 0;
+        std::string mode;
+    };
+
     bool ValidateCommon(Player* bot, Player* player) const;
     bool HasActiveVendorTrip(uint32 botGuid) const;
     bool StartVendorTrip(Player* bot, Player* player, const std::string& actionId,
@@ -81,6 +89,7 @@ private:
     std::map<uint32, std::chrono::steady_clock::time_point> vendorCooldowns;
     std::set<uint32> vendorPressureNotified;
     std::map<uint32, SharedObjectOffer> sharedObjectOffers;
+    std::map<std::string, GatheringPolicy> gatheringPolicies;
     std::chrono::steady_clock::time_point nextVendorScan;
 };
 

@@ -17,6 +17,12 @@ namespace
     {
         return player && player->IsInWorld() && player->isRealPlayer();
     }
+
+    bool IsCastingHearthstone(Player* player)
+    {
+        Spell* spell = player ? player->GetCurrentSpell(CURRENT_GENERIC_SPELL) : nullptr;
+        return spell && spell->m_spellInfo && spell->m_spellInfo->Id == 8690;
+    }
 }
 
 PlayerbotRendezvousManager& PlayerbotRendezvousManager::instance()
@@ -559,6 +565,23 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                 LogPartyEvent(session, "human_reconnected");
             }
 
+            bool canSyncHearth = originalParty && human && !bot->IsInCombat() && !human->IsInCombat() &&
+                !bot->IsTaxiFlying() && !bot->GetTransport() && !bot->IsBeingTeleported() &&
+                session.state != "departing" && session.state != "hearth_sync";
+            if (canSyncHearth && IsCastingHearthstone(human))
+            {
+                session.state = "hearth_sync";
+                session.reason = "human_hearthstone";
+                session.hearthStartMapId = human->GetMapId();
+                session.hearthStartX = human->GetPositionX();
+                session.hearthStartY = human->GetPositionY();
+                session.hearthStartZ = human->GetPositionZ();
+                session.hearthStarted = now;
+                bot->GetPlayerbotAI()->DoSpecificAction(
+                    "hearthstone", Event("living party hearth", "follow human hearth", human), true);
+                LogPartyEvent(session, "hearth_sync_started");
+            }
+
             if (session.state == "departing")
             {
                 if (PartySafeToRelease(bot))
@@ -598,6 +621,39 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                     LogPartyEvent(session, "departure_started");
                 }
             }
+            else if (session.state == "hearth_sync")
+            {
+                long elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - session.hearthStarted).count();
+                if (!IsCastingHearthstone(human))
+                {
+                    if (elapsed >= 8)
+                    {
+                        // A bot's own hearth bind may differ from the human's.
+                        // Reuse the authoritative party rendezvous after the cast
+                        // so every bot converges on the human's actual destination.
+                        session.state = "pending";
+                        session.reason = "follow_human_hearth_destination";
+                        session.forceRelocation = true;
+                        session.approachIssued = false;
+                        session.nextApproachAttempt = std::chrono::steady_clock::time_point();
+                        session.stateSince = now;
+                        LogPartyEvent(session, "hearth_destination_queued");
+                    }
+                    else
+                    {
+                        Spell* spell = bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+                        if (spell && spell->m_spellInfo && spell->m_spellInfo->Id == 8690)
+                            bot->InterruptSpell(CURRENT_GENERIC_SPELL, false);
+                        bool nearby = bot->GetMapId() == human->GetMapId() &&
+                            bot->GetInstanceId() == human->GetInstanceId() && bot->IsWithinDistInMap(human, 12.0f);
+                        session.state = nearby ? "active" : "approaching";
+                        session.reason = "human_hearth_cancelled";
+                        session.approachIssued = false;
+                        session.stateSince = now;
+                        LogPartyEvent(session, "hearth_sync_cancelled");
+                    }
+                }
+            }
             else if (session.state == "pending")
             {
                 session.playerGuid = human->GetGUIDLow();
@@ -632,6 +688,9 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                     {
                         session.state = "active";
                         session.stateSince = now;
+                        session.lastHumanDistance = bot->GetDistance(human);
+                        session.lastFollowProgress = now;
+                        session.nextFollowRepair = now + std::chrono::seconds(6);
                         LogPartyEvent(session, "arrived");
                     }
                     else if (!session.approachIssued && !bot->IsInCombat() && !bot->IsBeingTeleported())
@@ -641,6 +700,48 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                         // resume it if another authoritative action interrupts.
                         bot->GetMotionMaster()->MoveFollow(human, 2.0f, 0.0f, true, false);
                         session.approachIssued = true;
+                    }
+                }
+            }
+            else if (session.state == "active")
+            {
+                bool sameMap = bot->GetMapId() == human->GetMapId() &&
+                    bot->GetInstanceId() == human->GetInstanceId();
+                float distance = sameMap ? bot->GetDistance(human) : 100000.0f;
+                if (sameMap && distance <= 12.0f)
+                {
+                    session.lastHumanDistance = distance;
+                    session.lastFollowProgress = now;
+                    session.nextFollowRepair = now + std::chrono::seconds(6);
+                }
+                else if (!bot->IsInCombat() && !bot->IsBeingTeleported() &&
+                    !bot->IsTaxiFlying() && !bot->GetTransport())
+                {
+                    if (session.lastFollowProgress.time_since_epoch().count() == 0 ||
+                        distance + 1.5f < session.lastHumanDistance)
+                    {
+                        session.lastHumanDistance = distance;
+                        session.lastFollowProgress = now;
+                    }
+                    long stalled = std::chrono::duration_cast<std::chrono::seconds>(
+                        now - session.lastFollowProgress).count();
+                    if (sameMap && distance > 20.0f && stalled >= 6 &&
+                        (session.nextFollowRepair.time_since_epoch().count() == 0 || now >= session.nextFollowRepair))
+                    {
+                        bot->GetMotionMaster()->MoveFollow(human, 2.0f, 0.0f, true, false);
+                        session.nextFollowRepair = now + std::chrono::seconds(6);
+                        session.reason = "active_follow_reissued";
+                        LogPartyEvent(session, "active_follow_repaired");
+                    }
+                    if ((!sameMap || distance > 70.0f) && stalled >= 18)
+                    {
+                        session.state = "pending";
+                        session.reason = "active_follow_stalled";
+                        session.forceRelocation = true;
+                        session.approachIssued = false;
+                        session.nextApproachAttempt = std::chrono::steady_clock::time_point();
+                        session.stateSince = now;
+                        LogPartyEvent(session, "active_follow_relocation_queued");
                     }
                 }
             }
