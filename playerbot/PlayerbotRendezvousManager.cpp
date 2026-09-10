@@ -208,9 +208,11 @@ void PlayerbotRendezvousManager::Update()
             {
                 if (!session.combatPaused)
                 {
-                    // Release the rendezvous follow generator once, then let
-                    // ordinary Playerbots combat movement and targeting win.
-                    bot->GetMotionMaster()->Clear(false, true);
+                    // Do not synchronously clear the movement generator here.
+                    // This update can run immediately after NearTeleportTo;
+                    // Playerbots may still hold the active generator for its
+                    // next AI tick, and deleting it here causes a use-after-free.
+                    // Normal combat AI owns subsequent movement until combat ends.
                     session.combatPaused = true;
                     session.stateSince = now;
                     LogEvent(session, "combat_paused");
