@@ -61,7 +61,7 @@ const char* SafetyBlocker(Player* p) {
     if(p->IsBeingTeleported()) return "map_transfer_in_progress";
     if(p->IsTaxiFlying()||p->GetTransport()) return "aboard_transport";
     if(p->InBattleGround()||p->GetMap()->IsDungeon()) return "in_dungeon_or_battleground";
-    if(LivingServiceExecution::Busy(p)) return "finishing_cast_or_trade";
+    if(LivingServiceExecution::Busy(p)) return LivingServiceExecution::Blocker(p);
     if(sGuildEventExecutor.Reserved(p->GetGUIDLow())) return "committed_to_guild_event";
     if(HumanPartyBlocks(p)) return "human_party_or_reconnect_grace";
     const auto owner=sPlayerbotRendezvousManager.GetPartyActivityOwner(p->GetGUIDLow());
@@ -107,6 +107,16 @@ struct Delivery {
 };
 struct Service {uint32 guid=0,entry=0,map=0,type=0,zone=0;float x=0,y=0,z=0;};
 struct Goal {uint32 guild=0,required=0,reserved=0;bool money=false;};
+uint16 EmptyBagSlot(Player* p) {
+    for(uint8 slot=INVENTORY_SLOT_ITEM_START;slot<INVENTORY_SLOT_ITEM_END;++slot)
+        if(!p->GetItemByPos(INVENTORY_SLOT_BAG_0,slot)) return (uint16(INVENTORY_SLOT_BAG_0)<<8)|slot;
+    for(uint8 bag=INVENTORY_SLOT_BAG_START;bag<INVENTORY_SLOT_BAG_END;++bag) {
+        Bag* container=dynamic_cast<Bag*>(p->GetItemByPos(INVENTORY_SLOT_BAG_0,bag));
+        if(container) for(uint8 slot=0;slot<container->GetBagSize();++slot)
+            if(!p->GetItemByPos(bag,slot)) return (uint16(bag)<<8)|slot;
+    }
+    return 0;
+}
 }
 struct PlayerbotGuildSupplies::State {
     bool ready=false;uint32 check=0,next=0,load=0,cursor=0;
@@ -226,6 +236,7 @@ struct PlayerbotGuildSupplies::State {
         return nullptr;
     }
     bool MakeCollectionRoom(Player* p,Delivery& d,uint32 now,bool requireEmptySlot=false) {
+        if(requireEmptySlot && EmptyBagSlot(p)) return true;
         ItemPosCountVec dest;
         if(!requireEmptySlot && p->CanStoreNewItem(NULL_BAG,NULL_SLOT,dest,d.entry,d.quantity-d.deposited)==EQUIP_ERR_OK) return true;
         const auto summary=sPlayerbotInventoryPressure.Analyze(p);
@@ -367,7 +378,7 @@ void PlayerbotGuildSupplies::Update() {
             // A short cast pauses the trip; releasing ownership here allowed
             // unrelated town/buff movement to repeatedly steal its route.
             // All other safety blockers still release immediately.
-            if(std::string(safety)=="finishing_cast_or_trade" && !p->GetTradeData() && s.moving.count(d.carrier)) {
+            if(std::string(safety)=="active_spell_or_channel" && s.moving.count(d.carrier)) {
                 if(d.blocker!=safety) {d.blocker=safety;CharacterDatabase.PExecute("UPDATE guild_society_supply_delivery SET blocker='%s',updated_at=%u WHERE delivery_id=%llu",safety,now,(unsigned long long)d.id);}
             } else s.Block(d,safety,now);
             continue;
@@ -463,20 +474,18 @@ void PlayerbotGuildSupplies::Update() {
                 d.quantity=amount;
             }
             if(p->GetMoney()<30) {s.Block(d,"insufficient_postage",now,true);continue;}
+            // Preparation owns its service leg until actual capacity exists.
+            // Never return to the mailbox midway through a storage trip.
+            if(LivingServiceExecution::NeedsSplitPreparation(item->GetCount(),amount,EmptyBagSlot(p)!=0)) {
+                s.MakeCollectionRoom(p,d,now,true);continue;
+            }
             if(s.Reach(p,d,true,now)) {
                 if(!CharacterDatabase.PQuery("SELECT goal_id FROM guild_society_supply_goal WHERE goal_id='%s' AND guild_id=%u AND state='active'",d.goal.c_str(),d.guild)) {s.Finish(d,"cancelled","goal_cancelled_items_preserved",now);continue;}
                 if(d.operations>=2) {s.Block(d,"mail_send_blocked",now,true);continue;}
                 if(item->GetCount()>amount) {
                     // Native stack splitting, saved with the new attachment
                     // reference before sending. Never create extra quantities.
-                    uint16 empty=0;
-                    for(uint8 slot=INVENTORY_SLOT_ITEM_START;slot<INVENTORY_SLOT_ITEM_END&&!empty;++slot)
-                        if(!p->GetItemByPos(INVENTORY_SLOT_BAG_0,slot)) empty=(uint16(INVENTORY_SLOT_BAG_0)<<8)|slot;
-                    for(uint8 bag=INVENTORY_SLOT_BAG_START;bag<INVENTORY_SLOT_BAG_END&&!empty;++bag) {
-                        Bag* container=dynamic_cast<Bag*>(p->GetItemByPos(INVENTORY_SLOT_BAG_0,bag));if(!container) continue;
-                        for(uint8 slot=0;slot<container->GetBagSize()&&!empty;++slot)
-                            if(!p->GetItemByPos(bag,slot)) empty=(uint16(bag)<<8)|slot;
-                    }
+                    uint16 empty=EmptyBagSlot(p);
                     if(!empty) {s.MakeCollectionRoom(p,d,now,true);continue;}
                     const uint32 before=item->GetCount();p->SplitItem(item->GetPos(),empty,amount);
                     Item* split=p->GetItemByPos(empty);

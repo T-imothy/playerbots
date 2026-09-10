@@ -303,7 +303,8 @@ std::map<uint32, PlayerbotOrganicEconomy::Profile> PlayerbotOrganicEconomy::Load
     std::unique_ptr<QueryResult> result = CharacterDatabase.Query(
         "SELECT profile.character_guid,profile.career_participant,COALESCE(profile.intended_profession_one,0),"
         "COALESCE(profile.intended_profession_two,0),COALESCE(goal.capability_ref,''),"
-        "COALESCE(goal.goal_type,''),COALESCE(goal.state,''),profile.profession_plan_version,actor.race FROM organic_economy_profile profile "
+        "COALESCE(goal.goal_type,''),COALESCE(goal.state,''),profile.profession_plan_version,actor.race,"
+        "COALESCE(UNIX_TIMESTAMP(goal.created_at),0),COALESCE(JSON_EXTRACT(goal.authoritative_payload,'$.paid_materials_until'),0) FROM organic_economy_profile profile "
         "JOIN characters actor ON actor.guid=profile.character_guid "
         "LEFT JOIN organic_economy_goal goal ON goal.goal_id=(SELECT MAX(candidate.goal_id) FROM organic_economy_goal candidate "
         "WHERE candidate.character_guid=profile.character_guid AND candidate.state IN ('active','proposed','candidate') "
@@ -317,6 +318,7 @@ std::map<uint32, PlayerbotOrganicEconomy::Profile> PlayerbotOrganicEconomy::Load
             profile.career = fields[1].GetBool();
             profile.planVersion = fields[7].GetUInt32();
             profile.race = fields[8].GetUInt32();
+            profile.createdAt = fields[9].GetUInt32();profile.committedUntil = fields[10].GetUInt32();
             profile.intendedOne = fields[2].GetUInt32();
             profile.intendedTwo = fields[3].GetUInt32();
             profile.currentGoalId = fields[4].GetString();
@@ -420,11 +422,13 @@ bool PlayerbotOrganicEconomy::SafeForEconomy(Player* bot) const
     if (!ai || (sPlayerbotRendezvousManager.BlocksAutonomousPartyWork(bot->GetGUIDLow()) &&
         sPlayerbotRendezvousManager.GetPartyActivityOwner(bot->GetGUIDLow()) !=
             PlayerbotRendezvousManager::PartyActivityOwner::economy_service) ||
-        (ai->GetMaster() && !partyFreeTime))
+        (ai->GetMaster() && (ai->GetMaster()->isRealPlayer() || !ai->GetMaster()->GetPlayerbotAI()) && !partyFreeTime))
         return false;
     Group* group = bot->GetGroup();
     if (group)
     {
+        if(!partyFreeTime) for(const auto& slot:group->GetMemberSlots())
+            if(!sPlayerbotAIConfig.IsInRandomAccountList(sObjectMgr.GetPlayerAccountIdByGUID(slot.guid))) return false;
         for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
         {
             Player* member = reference->getSource();
@@ -482,7 +486,7 @@ void PlayerbotOrganicEconomy::ReachRecipeService(Player* bot,uint32 purpose,cons
     using Phase=PlayerbotRendezvousManager::PartyActivityPhase;
     const uint32 guid=bot->GetGUIDLow(), now=uint32(time(nullptr));
     if(!SafeForEconomy(bot)) {ReleaseRecipeService(guid,"recipe_service_safety_pause");return;}
-    if(!LivingServiceExecution::Prepare(bot)) {blocker="recipe_finishing_cast_or_trade";return;}
+    if(!LivingServiceExecution::Prepare(bot)) {blocker=LivingServiceExecution::Blocker(bot);return;}
     if(serviceRetry[guid]>now) {blocker="recipe_service_retry_wait";return;}
     auto* ai=bot->GetPlayerbotAI();auto* context=ai->GetAiObjectContext();
     auto* target=context->GetValue<ai::TravelTarget*>("travel target")->Get();
@@ -866,7 +870,7 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
             return false;
         }
         if(!LivingServiceExecution::Prepare(bot))
-        {failureReason="recipe_finishing_cast_or_trade";return false;}
+        {failureReason=LivingServiceExecution::Blocker(bot);return false;}
         const uint32 recipe = GoalRecipe(bot->GetGUIDLow(),goalId);
         if (!recipe)
         { failureReason = "invalid_profession_recipe"; return false; }
@@ -878,7 +882,7 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
         // recipe is still useful for leveling or another reagent is available.
         for(uint32 i=0;i<MAX_SPELL_REAGENTS;++i) {
             if(spell->Reagent[i]<=0 || !ai::AhBidAction::HasPendingMaterial(bot,spell->Reagent[i])) continue;
-            if(!LivingServiceExecution::Prepare(bot)) {failureReason="recipe_finishing_cast_or_trade";return false;}
+            if(!LivingServiceExecution::Prepare(bot)) {failureReason=LivingServiceExecution::Blocker(bot);return false;}
             if(!PrepareRecipeMail(bot,spell->Reagent[i],goalId,failureReason)) return false;
             ai::AhBidAction market(ai);
             market.CollectRecipeMaterial(spell->Reagent[i],failureReason);
@@ -1078,6 +1082,13 @@ void PlayerbotOrganicEconomy::ProcessActiveGoals(const Policy& currentPolicy,
         { ReleaseRecipeService(guid,"recipe_service_safety_pause");retryCooldowns[guid] = now + std::chrono::seconds(30); continue; }
         std::string failureReason;
         bool completed = ExecuteGoal(bot, profile, currentPolicy, failureReason);
+        if(!completed && failureReason=="recipe_materials_received") {
+            // One real receipt buys a bounded execution window, not indefinite
+            // immunity from replanning. The deadline survives realm restarts.
+            const uint32 epoch=uint32(time(nullptr));
+            profile.committedUntil=std::min(epoch+1800,profile.createdAt+10800);
+            CharacterDatabase.PExecute("UPDATE organic_economy_goal SET authoritative_payload=JSON_SET(authoritative_payload,'$.paid_materials_until',%u),expires_at=GREATEST(expires_at,FROM_UNIXTIME(%u)) WHERE character_guid=%u AND capability_ref='%s' AND state='active'",profile.committedUntil,profile.committedUntil,guid,profile.currentGoalId.c_str());
+        }
         retryCooldowns[guid] = now + std::chrono::seconds(completed ? 600 : serviceTrips.count(guid) ? 5 : 20);
         if (!completed)
         {
@@ -1121,6 +1132,7 @@ void PlayerbotOrganicEconomy::ApplyPlans(const std::string& response, const Poli
         if(currentPolicy.mode=="active" && active!=profiles.end() && active->second.currentGoalState=="active" &&
             active->second.currentGoalType=="profession_skill_up") {
             Player* bot=sRandomPlayerbotMgr.GetPlayerBot(guid);
+            if(active->second.committedUntil>uint32(time(nullptr))) continue;
             const uint32 pendingRecipe=bot && bot->IsInWorld()?PendingRecipeSpell(bot):0;
             const uint32 currentRecipe=GoalRecipe(guid,active->second.currentGoalId);
             const auto* currentSpell=sServerFacade.LookupSpellInfo(currentRecipe);
@@ -1145,6 +1157,7 @@ void PlayerbotOrganicEconomy::ApplyPlans(const std::string& response, const Poli
         profile.currentGoalId = goalId;
         profile.currentGoalType = goalType;
         profile.currentGoalState = currentPolicy.mode == "active" ? "active" : "proposed";
+        profile.createdAt=uint32(time(nullptr));profile.committedUntil=0;
         retryCooldowns.erase(guid);
         lastBlockers.erase(guid);
         craftAttempts.erase(guid);

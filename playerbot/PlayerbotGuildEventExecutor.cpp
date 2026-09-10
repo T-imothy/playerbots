@@ -42,13 +42,16 @@ struct DungeonObjective {
     struct Boss {uint32 entry=0,bit=0,order=0;};
     std::vector<Boss> bosses;
     uint32 required=0,final=0,level=0;
-    bool valid=false;
+    uint32 map=0,entranceTeam=0;
+    const AreaTrigger* entrance=nullptr;
+    WorldPosition approach;
+    bool valid=false,hasEntrance=false;
 };
 const DungeonObjective& DungeonFor(uint32 map) {
     // Realm metadata is immutable after startup; compute once on the world thread.
     static std::map<uint32,DungeonObjective> cache;
     auto found=cache.find(map);if(found!=cache.end()) return found->second;
-    DungeonObjective d;const auto* info=sMapStore.LookupEntry(map);
+    DungeonObjective d;d.map=map;const auto* info=sMapStore.LookupEntry(map);
     bool supported=info&&info->IsNonRaidDungeon();
     auto bounds=sObjectMgr.GetDungeonEncounterBoundsByMap(map);
     for(auto it=bounds.first;it!=bounds.second;++it) {
@@ -62,7 +65,16 @@ const DungeonObjective& DungeonFor(uint32 map) {
         d.level=std::max(d.level,uint32(creature->MaxLevel));
     }
     std::sort(d.bosses.begin(),d.bosses.end(),[](const DungeonObjective::Boss& a,const DungeonObjective::Boss& b){return a.order<b.order;});
-    d.valid=supported&&d.required&&d.final;
+    d.entrance=sObjectMgr.GetMapEntranceTrigger(map);
+    if(d.entrance) if(const auto* trigger=sAreaTriggerStore.LookupEntry(d.entrance->entry)) {
+        d.approach=WorldPosition(trigger->mapid,trigger->x,trigger->y,trigger->z);
+        d.hasEntrance=true;
+        if(const auto* area=d.approach.GetArea()) {
+            if(area->zone) if(const auto* zone=sAreaStore.LookupEntry(area->zone)) area=zone;
+            d.entranceTeam=area->team;
+        }
+    }
+    d.valid=supported&&d.required&&d.final&&d.hasEntrance&&d.approach.isValid();
     return cache.emplace(map,std::move(d)).first->second;
 }
 bool EventSafe(Player* p,const CalendarEvent& e) {
@@ -75,6 +87,18 @@ const char* ActiveRole(Player* p) {
 }
 bool DungeonReady(Player* p,const DungeonObjective& d) {
     if(!p||!d.valid||p->GetDifficulty()!=0||p->GetLevel()+3<d.level||p->GetLevel()>d.level+8) return false;
+    if(p->GetMapId()!=d.map) {
+        if((d.entranceTeam==AREATEAM_HORDE && p->GetTeam()==ALLIANCE)||
+            (d.entranceTeam==AREATEAM_ALLY && p->GetTeam()==HORDE)) return false;
+        if(WorldPosition(p).distance(d.approach)>10000) return false;
+    }
+    // Fail closed on unsupported attunements instead of scheduling an event
+    // whose participants cannot enter. Native portal checks remain authoritative.
+    if(p->GetLevel()<d.entrance->requiredLevel || d.entrance->conditionId ||
+        (d.entrance->requiredQuest && !p->GetQuestRewardStatus(d.entrance->requiredQuest)) ||
+        ((d.entrance->requiredItem||d.entrance->requiredItem2) &&
+         !(d.entrance->requiredItem&&p->GetItemCount(d.entrance->requiredItem,false)) &&
+         !(d.entrance->requiredItem2&&p->GetItemCount(d.entrance->requiredItem2,false)))) return false;
     // No phantom equipment or forced respec: use the current real build and gear.
     if(!p->GetItemByPos(INVENTORY_SLOT_BAG_0,EQUIPMENT_SLOT_MAINHAND)||
        !p->GetItemByPos(INVENTORY_SLOT_BAG_0,EQUIPMENT_SLOT_CHEST)) return false;
@@ -239,6 +263,7 @@ bool PlayerbotGuildEventExecutor::AllowsMovement(uint32 guid,const std::string& 
     auto it=state_->reservations.find(guid);if(it==state_->reservations.end()) return true;
     const auto& r=it->second;if(!r.moving) return true;
     if(action=="follow") return r.active&&guid!=r.coordinator;
+    if(action=="move to fish" || action=="fish" || action=="random recipe") return false;
     if(action=="move to travel target" || action=="travel") {
         auto route=state_->installed.find(guid);Player* bot=Online(guid);
         if(!r.active||guid!=r.coordinator||route==state_->installed.end()||!bot||!bot->GetPlayerbotAI()) return false;
@@ -309,7 +334,8 @@ void PlayerbotGuildEventExecutor::Update() {
                 !sPlayerbotSocialActionBroker.ReservedForPlayer(bot->GetGUIDLow())&&
                 !HasUncommittedHuman(bot,accepted)&&
                 (e.kind=="dungeon"?DungeonReady(bot,DungeonFor(e.target)):
-                    ((bot->GetQuestStatus(e.target)==QUEST_STATUS_INCOMPLETE||bot->GetQuestStatus(e.target)==QUEST_STATUS_COMPLETE)&&
+                    ((bot->GetQuestStatus(e.target)==QUEST_STATUS_INCOMPLETE ||
+                        (e.state=="active"&&bot->GetQuestStatus(e.target)==QUEST_STATUS_COMPLETE))&&
                     !bot->GetQuestRewardStatus(e.target)))&&
                 // A pre-existing dungeon is never appropriated for a new event.
                 (!bot->GetMap()->IsDungeon()||e.state=="active"||e.state=="traveling");
@@ -452,6 +478,28 @@ void PlayerbotGuildEventExecutor::Update() {
             } else if(EventFormationExpired(e.phaseAt,now)) Transition(e,"failed","assembly_timeout",now);
         }
         if(e.state!="active") continue;
+        // An unfinished quest member must own objective travel. Once the
+        // current bot leader finishes, transfer only a fully bot-owned event
+        // group, retaining the same event/revision and all earned evidence.
+        if(e.kind=="quest" && coordinator->GetQuestStatus(e.target)!=QUEST_STATUS_INCOMPLETE &&
+            !HasUncommittedHuman(coordinator,{}) && coordinator->GetGroup() &&
+            coordinator->GetGroup()->GetLeaderGuid()==coordinator->GetObjectGuid()) {
+            for(uint32 guid:accepted) {
+                Player* next=Online(guid);
+                if(next==coordinator || !EventSafe(next,e) || next->isRealPlayer() || !next->GetPlayerbotAI() ||
+                    next->GetGroup()!=coordinator->GetGroup() || next->GetQuestStatus(e.target)!=QUEST_STATUS_INCOMPLETE) continue;
+                if(!Transition(e,"active","quest_objective_leader_handoff",now,guid)) break;
+                auto old=state_->reservations.find(e.coordinator);
+                if(old!=state_->reservations.end()) state_->Release(e.coordinator,old->second);
+                coordinator->GetGroup()->ChangeLeader(next->GetObjectGuid());
+                coordinator=next;e.coordinator=guid;
+                for(uint32 member:accepted) {
+                    auto r=state_->reservations.find(member);
+                    if(r!=state_->reservations.end()) r->second.coordinator=guid;
+                }
+                break;
+            }
+        }
         uint32 completedMask=0;
         std::map<uint32,uint32> proofMasks;
         std::set<uint32> questRewards;

@@ -5,9 +5,15 @@
 // A stale wand/shoot pointer is not an active cast. Never cancel generic spells
 // or channels, and never stop auto-repeat while a combat target still exists.
 namespace LivingServiceExecution {
+template<class Bot> const char* Blocker(Bot* bot) {
+    if(bot->IsInCombat()) return "in_combat";
+    if(bot->GetTradeData()) return "trade_in_progress";
+    if(bot->IsNonMeleeSpellCasted(false, false, true)) return "active_spell_or_channel";
+    if(bot->GetVictim() || !bot->getAttackers().empty()) return "combat_target_not_released";
+    return "";
+}
 template<class Bot> bool Busy(Bot* bot) {
-    return bot->IsNonMeleeSpellCasted(false, false, true) || bot->GetTradeData() ||
-        bot->IsInCombat() || bot->GetVictim() || !bot->getAttackers().empty();
+    return *Blocker(bot)!=0;
 }
 template<class Bot> bool Prepare(Bot* bot) {
     if (Busy(bot)) return false;
@@ -16,6 +22,10 @@ template<class Bot> bool Prepare(Bot* bot) {
     return true;
 }
 inline bool DisruptiveMaintenance(const std::string& action) {
-    return action == "random recipe" || action == "use random recipe";
+    return action == "random recipe" || action == "use random recipe" ||
+        action == "move to fish" || action == "fish";
+}
+inline bool NeedsSplitPreparation(unsigned stack, unsigned amount, bool emptySlot) {
+    return stack>amount && !emptySlot;
 }
 }

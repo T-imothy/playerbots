@@ -40,6 +40,7 @@ private:
         bool career = false;
         uint32 planVersion = 0;
         uint32 race = 0;
+        uint32 createdAt = 0, committedUntil = 0;
         uint32 intendedOne = 0;
         uint32 intendedTwo = 0;
         std::string currentGoalId;
