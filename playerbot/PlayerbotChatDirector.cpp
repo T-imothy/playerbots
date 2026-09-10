@@ -2874,10 +2874,12 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
         return;
     nextGuildSample = now + std::chrono::minutes(15);
 
+    // GetPlayers() is only the legacy manager-owned subset. The GUID list is
+    // the authoritative population used by progression and organic economy.
     std::map<uint32, Player*> representatives;
-    for (const auto& entry : sRandomPlayerbotMgr.GetPlayers())
+    for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
     {
-        Player* bot = entry.second;
+        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
         if (!bot || !bot->IsInWorld() || !bot->GetGuildId() || !bot->GetSession() ||
             !sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()))
             continue;
