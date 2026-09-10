@@ -240,6 +240,7 @@ private:
         uint32 recoveryStep = 0;
         std::chrono::steady_clock::time_point recoveryStartedAt;
         uint32 objectiveRouteFailures = 0;
+        uint32 recoveryRouteRefreshes = 0;
         std::string recoveryTerminalReason;
         std::string nearbyRerouteResult;
         bool questItemFollowup = false;

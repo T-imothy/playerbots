@@ -37,11 +37,14 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     std::string futureTravelPurpose = AI_VALUE2(std::string, "manual string", "future travel purpose");
     std::string futureTravelPurposeName = GetTravelPurposeName(futureTravelPurpose);
     bool turninRouteDiagnostic = futureTravelPurpose.find("quest-turnin-") == 0;
+    bool recoveryRouteDiagnostic = turninRouteDiagnostic ||
+        (futureTravelPurpose == std::to_string((uint32)TravelDestinationPurpose::Grind) &&
+         AI_VALUE2(std::string, "manual string", "future travel condition") == "can move around");
     uint32 targetRelevance = AI_VALUE2(int, "manual int", "future travel relevance");
 
     if (!futureDestinations->valid())
     {
-        if (turninRouteDiagnostic)
+        if (recoveryRouteDiagnostic)
             SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "invalid_future");
         travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_NONE);
         context->ClearValues("no active travel destinations");        
@@ -56,7 +59,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     uint32 destinationPoints = 0;
     for (const auto& partition : destinationList)
         destinationPoints += partition.second.size();
-    if (turninRouteDiagnostic)
+    if (recoveryRouteDiagnostic)
     {
         SET_AI_VALUE2(int, "manual int", "future travel range count", (int)destinationList.size());
         SET_AI_VALUE2(int, "manual int", "future travel point count", (int)destinationPoints);
@@ -123,7 +126,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
     if (!SetBestTarget(requester, &newTarget, destinationList))
     {
         SET_AI_VALUE2(bool, "no active travel destinations", futureTravelPurpose, true);
-        if (turninRouteDiagnostic)
+        if (recoveryRouteDiagnostic)
             SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "no_valid_target");
         ai->TellDebug(ai->GetMaster(), "No target set", "debug travel");
         return false;
@@ -133,7 +136,7 @@ bool ChooseTravelTargetAction::Execute(Event& event)
         newTarget.SetForced(false);
 
     setNewTarget(requester, &newTarget, travelTarget);
-    if (turninRouteDiagnostic)
+    if (recoveryRouteDiagnostic)
         SET_AI_VALUE2(std::string, "manual string", "future travel outcome", "selected");
     
     return true;
@@ -148,7 +151,7 @@ bool ChooseTravelTargetAction::isUseful()
         // validated result; it does not move the bot. Do not strand a ready
         // future merely because an unrelated transient activity currently
         // disallows travel. Movement retains its ordinary activity guards.
-        return !bot->InBattleGround() && AI_VALUE(bool, "can move around");
+        return !bot->InBattleGround();
     }
 
     if (!ai->AllowActivity(TRAVEL_ACTIVITY))
@@ -712,7 +715,7 @@ bool RefreshTravelTargetAction::Execute(Event& event)
 
     PlayerTravelInfo info(bot);
     
-    WorldPosition* newPosition;
+    WorldPosition* newPosition = nullptr;
 
     for (uint8 i = 0; i < 5; i++)
     {
@@ -747,7 +750,7 @@ bool RefreshTravelTargetAction::Execute(Event& event)
     ai->TellDebug(requester, "Refreshed travel target", "debug travel");
     ReportTravelTarget(bot, requester, target, target);
 
-    return false;
+    return true;
 }
 
 bool RefreshTravelTargetAction::isUseful()
@@ -755,10 +758,12 @@ bool RefreshTravelTargetAction::isUseful()
     if (bot->InBattleGround())
         return false;
 
-    if (!ChooseTravelTargetAction::isUseful())
+    if (!ai->AllowActivity(TRAVEL_ACTIVITY) || !AI_VALUE(bool, "can move around"))
         return false;
 
-    if (AI_VALUE(TravelTarget*, "travel target")->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE)
+    TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
+    if (!target || target->GetStatus() == TravelStatus::TRAVEL_STATUS_PREPARE ||
+        !target->GetDestination())
         return false;
 
     if (!WorldPosition(bot).isOverworld())
@@ -767,7 +772,7 @@ bool RefreshTravelTargetAction::isUseful()
     if (urand(1, 100) <= 10)
         return false;
 
-    if (!AI_VALUE(TravelTarget*, "travel target")->GetDestination()->IsActive(bot, PlayerTravelInfo(bot)))
+    if (!target->GetDestination()->IsActive(bot, PlayerTravelInfo(bot)))
         return false;
 
     return true;

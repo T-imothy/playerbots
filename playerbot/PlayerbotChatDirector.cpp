@@ -20,6 +20,7 @@
 #include "strategy/values/ItemUsageValue.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <boost/algorithm/string.hpp>
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -1655,6 +1656,14 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 state.nearbyRerouteResult = "movement_confirmed";
                 state.objectiveRouteFailures = 0;
             }
+            else if (state.nearbyRerouteResult == "alternate_grind_requested" ||
+                state.nearbyRerouteResult == "alternate_grind_target_selected" ||
+                state.nearbyRerouteResult == "alternate_grind_point_refreshed")
+            {
+                state.nearbyRerouteResult = "alternate_grind_movement_confirmed";
+                state.objectiveRouteFailures = 0;
+                state.recoveryRouteRefreshes = 0;
+            }
         }
         std::string action = bot->GetPlayerbotAI()->HandleRemoteCommand("action");
         std::string lowered = boost::algorithm::to_lower_copy(action);
@@ -1692,7 +1701,14 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 state.lastTravelAdvance = now;
             }
             if (travelAdvanced)
+            {
                 state.travelAdvancedSinceReport = true;
+                if (state.recoveryStep == 7)
+                {
+                    state.nearbyRerouteResult = "alternate_grind_advancing";
+                    state.objectiveRouteFailures = 0;
+                }
+            }
         }
         else
         {
@@ -1731,7 +1747,9 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         {
             state.lastMeaningfulProgress = now;
             state.objectiveRouteFailures = 0;
-            if (state.nearbyRerouteResult != "movement_confirmed")
+            if (state.nearbyRerouteResult != "movement_confirmed" &&
+                state.nearbyRerouteResult != "alternate_grind_movement_confirmed" &&
+                state.nearbyRerouteResult != "alternate_grind_advancing")
                 state.nearbyRerouteResult.clear();
             // Unrelated XP, levels, or another quest changing must not discard
             // an exact turn-in task that is still authoritatively pending.
@@ -1856,7 +1874,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             if ((terminalStep == 2 || terminalStep == 6) && HasActiveProgressionQuestUseItem(bot))
                 state.questItemFollowup = true;
             std::string terminalResult = terminalStep == 3 ? "quest_turnin_route_terminal" :
-                (terminalStep == 5 ? "vendor_route_terminal" : "objective_route_terminal");
+                (terminalStep == 5 ? "vendor_route_terminal" :
+                    (terminalStep == 7 ? "alternate_grind_route_terminal" : "objective_route_terminal"));
             state.recoveryTerminalReason = recoveryPrepareTimedOut ? "prepare_timeout" :
                 (recoveryMovementTimedOut ? "movement_timeout" : "status_terminal");
             // A terminal target remains the authoritative travel value until it
@@ -1938,6 +1957,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             state.travelTargetPosition.clear();
             state.lastTravelDistance = -1.0f;
             state.lastTravelAdvance = std::chrono::steady_clock::time_point();
+            state.recoveryRouteRefreshes = 0;
         }
         bool turninRecoveryInFlight = state.recoveryStep == 3 && state.recoveryQuestId &&
             questSnapshot.completed.count(state.recoveryQuestId) && inFlightRecoveryTarget &&
@@ -2042,7 +2062,10 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 state.recoveryAttempts.push_back(now);
                 state.recoveryResult = recovery;
                 if (state.recoveryStep > 0)
+                {
                     state.recoveryStartedAt = now;
+                    state.recoveryRouteRefreshes = 0;
+                }
                 if (recovered)
                 {
                     state.lastMoved = now;
@@ -2094,6 +2117,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     "choose travel target", Event("living progression finalize recovery target"), true);
                 recoveryPrepareResult = finalized ? "target_finalized" : "target_not_ready";
                 recoveryStatus = recoveryTarget->GetStatus();
+                if (finalized && state.recoveryStep == 7)
+                    state.nearbyRerouteResult = "alternate_grind_target_selected";
             }
             else if (!useful)
                 recoveryPrepareResult = "target_finalize_not_useful";
@@ -2193,6 +2218,44 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             (recoveryStatus == TravelStatus::TRAVEL_STATUS_READY ||
              recoveryStatus == TravelStatus::TRAVEL_STATUS_TRAVEL))
         {
+            // One inaccessible point must not keep a bot evaluating the same
+            // empty path until the broad stall timeout. After 45 seconds with
+            // neither physical nor route-distance progress, select one other
+            // validated point from the same destination. If that also fails,
+            // cool the route so the bounded recovery state machine can choose
+            // a different goal on its next eligible sweep.
+            if (recoveryAgeSeconds >= 45 && stillSeconds >= 45 &&
+                travelAdvanceAgeSeconds >= 45)
+            {
+                if (state.recoveryRouteRefreshes == 0)
+                {
+                    const std::string oldPosition = recoveryTarget->GetPosStr();
+                    bool refreshed = bot->GetPlayerbotAI()->DoSpecificAction(
+                        "refresh travel target", Event("living progression alternate route point"), true);
+                    if (refreshed && recoveryTarget->GetPosStr() != oldPosition)
+                    {
+                        ++state.recoveryRouteRefreshes;
+                        state.lastMoved = now;
+                        state.lastTravelAdvance = now;
+                        recoveryMoveResult = "alternate_point_selected";
+                        if (state.recoveryStep == 7)
+                            state.nearbyRerouteResult = "alternate_grind_point_refreshed";
+                    }
+                    else
+                    {
+                        recoveryTarget->SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
+                        bot->GetPlayerbotAI()->StopMoving();
+                        recoveryMoveResult = "unreachable_point_cooled";
+                    }
+                }
+                else
+                {
+                    recoveryTarget->SetStatus(TravelStatus::TRAVEL_STATUS_COOLDOWN);
+                    bot->GetPlayerbotAI()->StopMoving();
+                    recoveryMoveResult = "refreshed_point_still_unreachable_cooled";
+                }
+                recoveryStatus = recoveryTarget->GetStatus();
+            }
             // A movement generator that has reported movement while producing
             // no position change for the full stall threshold is stale. Clear
             // it before asking the ordinary guarded action to continue; this
@@ -2203,9 +2266,11 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 bot->GetPlayerbotAI()->StopMoving();
                 recoveryMoveResult = "stale_movement_cleared";
             }
-            recoveryMoveUseful = bot->GetPlayerbotAI()->CanDoSpecificAction(
+            recoveryMoveUseful = recoveryStatus != TravelStatus::TRAVEL_STATUS_COOLDOWN &&
+                bot->GetPlayerbotAI()->CanDoSpecificAction(
                 "move to travel target", true, false);
-            recoveryMovePossible = bot->GetPlayerbotAI()->CanDoSpecificAction(
+            recoveryMovePossible = recoveryStatus != TravelStatus::TRAVEL_STATUS_COOLDOWN &&
+                bot->GetPlayerbotAI()->CanDoSpecificAction(
                 "move to travel target", false, true);
             if (recoveryMoveUseful && recoveryMovePossible)
             {
@@ -2304,6 +2369,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recovery_move_useful\":" << (recoveryMoveUseful ? "true" : "false")
              << ",\"recovery_move_possible\":" << (recoveryMovePossible ? "true" : "false")
              << ",\"recovery_move_result\":\"" << recoveryMoveResult << "\""
+             << ",\"recovery_route_refreshes\":" << state.recoveryRouteRefreshes
              << ",\"recovery_interaction_result\":\"" << recoveryInteractionResult << "\""
              << ",\"recovery_interaction_attempts\":" << state.recoveryInteractionAttempts
              << ",\"grouped\":" << (bot->GetGroup() ? "true" : "false") << "}";
@@ -3524,11 +3590,17 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
         if (!guild || !sPlayerbotAIConfig.IsInRandomAccountList(leaderAccount))
             continue;
 
+        const bool groupEvent = decisionType == "schedule_quest_group" ||
+            decisionType == "schedule_leveling_group" || decisionType == "schedule_dungeon";
+        const bool officerDecision = decisionType == "review_officer_coverage";
+        const bool supplyDecision = decisionType == "stock_guild_supplies";
+        if (!groupEvent && !officerDecision && !supplyDecision)
+            continue;
         const uint32 decisionEpoch = uint32(time(nullptr));
         auto activeEvent = CharacterDatabase.PQuery(
             "SELECT event_id FROM guild_society_event WHERE guild_id=%u "
             "AND state IN ('announced','forming','traveling','active') LIMIT 1", guildId);
-        if (activeEvent)
+        if (activeEvent && groupEvent)
         {
             CharacterDatabase.PExecute(
                 "INSERT INTO guild_society_decision (decision_id,guild_id,decision_type,candidate_id,state,source,rejection_code,created_at,updated_at) "
@@ -3538,8 +3610,6 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
             continue;
         }
 
-        const bool groupEvent = decisionType == "schedule_quest_group" ||
-            decisionType == "schedule_leveling_group" || decisionType == "schedule_dungeon";
         std::string state = "rejected", rejection = groupEvent ? "no_safe_roster" : "executor_not_available";
         std::string eventState = "failed", eventType, title;
         uint32 organizerGuid = 0, accepted = 0;
@@ -3654,13 +3724,131 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
             title = effectiveDecisionType == "schedule_dungeon" ? "Guild dungeon group" :
                 effectiveDecisionType == "schedule_quest_group" ? "Guild quest group" : "Guild leveling group";
         }
+        else if (officerDecision)
+        {
+            std::vector<Player*> eligible;
+            for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
+            {
+                Player* member = sRandomPlayerbotMgr.GetPlayerBot(guid);
+                if (!member || !member->IsInWorld() || member->GetGuildId() != guildId ||
+                    member->GetGUIDLow() == guild->GetLeaderGuid().GetCounter())
+                    continue;
+                eligible.push_back(member);
+            }
+            std::sort(eligible.begin(), eligible.end(), [](Player* left, Player* right)
+            {
+                return left->GetGUIDLow() < right->GetGUIDLow();
+            });
+            Player* fallback = sRandomPlayerbotMgr.GetPlayerBot(guild->GetLeaderGuid().GetCounter());
+            if (eligible.empty() && fallback)
+                eligible.push_back(fallback);
+            static const char* duties[] = {"recruiter", "event_organizer", "quartermaster"};
+            if (!eligible.empty())
+            {
+                for (uint32 index = 0; index < 3; ++index)
+                {
+                    Player* officer = eligible[index % eligible.size()];
+                    CharacterDatabase.PExecute(
+                        "INSERT INTO guild_society_officer (guild_id,duty,character_guid,state,assigned_at,updated_at) "
+                        "VALUES (%u,'%s',%u,'active',%u,%u) ON DUPLICATE KEY UPDATE "
+                        "character_guid=VALUES(character_guid),state='active',updated_at=VALUES(updated_at)",
+                        guildId, duties[index], officer->GetGUIDLow(), decisionEpoch, decisionEpoch);
+                }
+                state = "completed";
+                rejection.clear();
+            }
+            else
+                rejection = "no_online_officer_candidate";
+        }
+        else if (supplyDecision)
+        {
+            uint32 candidateGuild = 0, itemEntry = 0, required = 0;
+            if (std::sscanf(candidateId.c_str(), "supply:%u:%u:%u", &candidateGuild, &itemEntry, &required) == 3 &&
+                candidateGuild == guildId && required >= 1 && required <= 200 && sObjectMgr.GetItemPrototype(itemEntry))
+            {
+                uint32 available = 0;
+                auto bank = CharacterDatabase.PQuery(
+                    "SELECT COALESCE(SUM(ii.count),0) FROM guild_bank_item bi "
+                    "JOIN item_instance ii ON ii.guid=bi.item_guid WHERE bi.guildid=%u AND bi.item_entry=%u",
+                    guildId, itemEntry);
+                if (bank)
+                    available = bank->Fetch()[0].GetUInt32();
+                const std::string goalId = "supply-" + std::to_string(guildId) + "-" + std::to_string(itemEntry);
+                const char* goalState = available >= required ? "completed" : "active";
+                CharacterDatabase.PExecute(
+                    "INSERT INTO guild_society_supply_goal (goal_id,guild_id,goal_type,item_entry,required_quantity,available_quantity,reserved_quantity,state,source_event_id,created_at,updated_at) "
+                    "VALUES ('%s',%u,'event_consumables',%u,%u,%u,0,'%s',NULL,%u,%u) "
+                    "ON DUPLICATE KEY UPDATE required_quantity=VALUES(required_quantity),available_quantity=VALUES(available_quantity),"
+                    "state=VALUES(state),updated_at=VALUES(updated_at)", goalId.c_str(), guildId, itemEntry,
+                    required, available, goalState, decisionEpoch, decisionEpoch);
+                state = "completed";
+                rejection.clear();
+            }
+            else
+                rejection = "invalid_supply_candidate";
+        }
         const uint32 nowEpoch = uint32(time(nullptr));
         CharacterDatabase.PExecute(
             "INSERT INTO guild_society_decision (decision_id,guild_id,decision_type,candidate_id,state,source,rejection_code,created_at,updated_at) "
             "VALUES ('%s',%u,'%s','%s','%s','%s','%s',%u,%u)", decisionId.c_str(), guildId,
             decisionType.c_str(), candidateId.c_str(), state.c_str(), source.c_str(), rejection.c_str(), nowEpoch, nowEpoch);
         if (!groupEvent)
+        {
+            std::ostringstream telemetry;
+            telemetry << "{\"events\":[";
+            if (officerDecision && state == "completed")
+            {
+                auto officers = CharacterDatabase.PQuery(
+                    "SELECT duty,character_guid FROM guild_society_officer WHERE guild_id=%u AND state='active' ORDER BY duty",
+                    guildId);
+                bool firstOfficer = true;
+                if (officers) do
+                {
+                    Field* fields = officers->Fetch();
+                    std::string officerName;
+                    sObjectMgr.GetPlayerNameByGUID(ObjectGuid(HIGHGUID_PLAYER, fields[1].GetUInt32()), officerName);
+                    if (!firstOfficer) telemetry << ',';
+                    firstOfficer = false;
+                    telemetry << "{\"event_id\":\"officer-" << guildId << '-' << fields[0].GetString()
+                        << '-' << decisionEpoch << "\",\"type\":\"officer_snapshot\",\"guild_id\":" << guildId
+                        << ",\"duty\":\"" << fields[0].GetString() << "\",\"character_guid\":"
+                        << fields[1].GetUInt32() << ",\"character_name\":\""
+                        << PlayerbotLLMInterface::SanitizeForJson(officerName) << "\",\"state\":\"active\"}";
+                } while (officers->NextRow());
+            }
+            else if (supplyDecision && state == "completed")
+            {
+                uint32 ignoredGuild = 0, itemEntry = 0, required = 0;
+                std::sscanf(candidateId.c_str(), "supply:%u:%u:%u", &ignoredGuild, &itemEntry, &required);
+                uint32 available = 0;
+                std::string goalState = "active";
+                auto goal = CharacterDatabase.PQuery(
+                    "SELECT available_quantity,state FROM guild_society_supply_goal WHERE guild_id=%u AND item_entry=%u LIMIT 1",
+                    guildId, itemEntry);
+                if (goal)
+                {
+                    Field* fields = goal->Fetch();
+                    available = fields[0].GetUInt32();
+                    goalState = fields[1].GetString();
+                }
+                const ItemPrototype* item = sObjectMgr.GetItemPrototype(itemEntry);
+                telemetry << "{\"event_id\":\"supply-" << guildId << '-' << itemEntry << '-' << decisionEpoch
+                    << "\",\"type\":\"supply_goal\",\"goal_id\":\"supply-" << guildId << '-' << itemEntry
+                    << "\",\"guild_id\":" << guildId << ",\"goal_type\":\"event_consumables\",\"item_entry\":"
+                    << itemEntry << ",\"item_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(item ? item->Name1 : "")
+                    << "\",\"required_quantity\":" << required << ",\"available_quantity\":" << available
+                    << ",\"reserved_quantity\":0,\"state\":\"" << goalState << "\"}";
+            }
+            telemetry << "]}";
+            const std::string body = telemetry.str();
+            if (body != "{\"events\":[]}")
+                std::thread([body]()
+                {
+                    std::vector<std::string> debug;
+                    PlayerbotLLMInterface::Generate(body, 9, 1000000, debug, true, "/v2/guilds/events");
+                }).detach();
             continue;
+        }
         const std::string eventId = "society-" + std::to_string(guildId) + "-" + std::to_string(nowEpoch);
         CharacterDatabase.PExecute(
             "INSERT INTO guild_society_event (event_id,guild_id,event_type,state,title,target_id,organizer_guid,scheduled_at,minimum_members,maximum_members,tank_slots,healer_slots,damage_slots,failure_reason,created_at,updated_at) "
@@ -3821,7 +4009,11 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             << ",\"eligible\":" << (recruitmentGap ? "true" : "false") << "}"
             << ",{\"candidate_id\":\"officers:" << guildId << ":" << members
             << "\",\"type\":\"review_officer_coverage\",\"utility\":12,\"eligible\":"
-            << (members >= 10 ? "true" : "false") << "}]}";
+            << (members >= 2 ? "true" : "false") << "}"
+            << ",{\"candidate_id\":\"supply:" << guildId << ':' << (guildId % 2 ? 117 : 159)
+            << ':' << std::max<uint32>(10, online * 2)
+            << "\",\"type\":\"stock_guild_supplies\",\"utility\":14,\"eligible\":"
+            << (online >= 2 ? "true" : "false") << "}]}";
         events << "{\"event_id\":\"snapshot-" << guildId << '-' << nowEpoch
             << "\",\"type\":\"guild_snapshot\",\"guild_id\":" << guildId << ",\"guild_name\":\"" << name
             << "\",\"bot_led\":" << (botLed ? "true" : "false") << ",\"faction\":\"" << faction
