@@ -455,6 +455,7 @@ bool ShouldTravelNamedValue::Calculate()
         }
         if (name == "trainer pet")
         {
+            if (bot->getClass() != CLASS_HUNTER) return false;
             trainerType = TRAINER_TYPE_PETS;
             budgetType = NeedMoneyFor::anything;
         }

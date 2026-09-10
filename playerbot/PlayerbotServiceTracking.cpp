@@ -63,7 +63,13 @@ namespace
         // Context, not an invented reason why this particular service is delayed.
         std::string state = !needed ? "not_needed" : !bot->IsAlive() ? "dead" :
             bot->IsInCombat() ? "combat" : !condition.empty() ? condition :
-            ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) && who.group && who.leader != bot->GetGUIDLow() ?
+            !ai->AllowActivity(TRAVEL_ACTIVITY) ? "activity_throttled" :
+            bot->GetTradeData() ? "trade_in_progress" :
+            !AI_VALUE(bool, "group ready") ? "group_not_ready" :
+            AI_VALUE2(bool, "trigger active", "castnc") ? "casting_or_crafting" :
+            ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT) &&
+                AI_VALUE2(float, "distance", "master target") > ai->GetRange("wandermax") ? "outside_party_wander_range" :
+            who.group && who.leader != bot->GetGUIDLow() && AI_VALUE(bool, "following party") ?
                 "following_party" : target && target->GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL ?
                     "traveling_current_destination" : "pending_service_selection";
         CharacterDatabase.PExecute(

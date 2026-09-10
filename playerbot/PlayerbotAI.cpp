@@ -1,3 +1,4 @@
+#include "playerbot/LivingActivityRotation.h"
 #include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
 #include <stdarg.h>
@@ -6574,7 +6575,10 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
 
     activePerc *= (priorityBracket.second == 100) ? sPlayerbotAIConfig.botActiveAlone : 100;
 
-    uint32 ActivityNumber = GetFixedBotNumber(BotTypeNumber::ACTIVITY_TYPE_NUMBER, 100, activePerc * 0.01f); //The last number if the amount it cycles per min. Currently set to 1% of the active bots.
+    // Keep the adaptive active fraction, but rotate its recipients independently
+    // of that fraction. At 28% the old rate took six hours to visit all slots.
+    uint32 ActivityNumber = LivingActivitySlot(
+        GetFixedBotNumber(BotTypeNumber::ACTIVITY_TYPE_NUMBER, 100, 0), WorldTimer::getMSTime() / 1000);
 
     return ActivityNumber <= (activePerc);           //The given percentage of bots should be active and rotate 1% of those active bots each minute.
 }

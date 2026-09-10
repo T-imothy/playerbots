@@ -79,7 +79,7 @@ void TravelStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     const std::vector<std::tuple<std::string, std::string, float>> StringActions =
     {
         {"val::should travel named::trainer class","request named travel target::trainer class", 6.89f},      // See isAllowed   25%
-        //{"val::should travel named::trainer pet","request named travel target::trainer pet", 6.88f},        // 25%
+        {"val::should travel named::trainer pet","request named travel target::trainer pet", 6.88f},          // Eligible living hunter pet; ordinary travel.
         {"val::should travel named::trainer mount","request named travel target::trainer mount", 6.87f},      // 25%
         {"val::should travel named::mount","request named travel target::mount", 6.86f},                      // 25%
         {"val::should travel named::city","request named travel target::city", 6.85f},                        // 10%
