@@ -269,14 +269,69 @@ static void PopulateGuildState(Player* bot, Player* speaker, ChatDirectorCandida
     candidate.guildMemberCount = guild->GetMemberSize();
     candidate.isGuildLeader = guild->GetLeaderGuid() == bot->GetObjectGuid();
 
-    if (!candidate.isGuildLeader || speaker == bot || speaker->GetGuildId() != candidate.guildId)
+    if (speaker == bot)
         return;
-    std::ostringstream ref;
-    ref << "guild:transfer-leader:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow()
-        << ':' << candidate.guildId;
-    AddSocialCapability(candidate, ref.str(), "transfer_guild_leadership", 0,
-        bot->GetGUIDLow(), 0, "Transfer leadership of this exact guild to the requesting guild member. "
-        "This consequential action always requires a second scoped confirmation.");
+
+    uint32 botRank = bot->GetRank();
+    uint32 speakerRank = speaker->GetRank();
+    if (!speaker->GetGuildId() && !speaker->GetGuildIdInvited() &&
+        guild->HasRankRight(botRank, GR_RIGHT_INVITE) && guild->GetMemberSize() < 1000)
+    {
+        std::ostringstream ref;
+        ref << "guild:invite:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow()
+            << ':' << candidate.guildId;
+        AddSocialCapability(candidate, ref.str(), "invite_to_guild", 0, bot->GetGUIDLow(), 0,
+            "Invite the requesting player to this exact guild after a scoped confirmation.");
+    }
+
+    if (speaker->GetGuildId() == candidate.guildId)
+    {
+        if (candidate.isGuildLeader)
+        {
+            std::ostringstream ref;
+            ref << "guild:transfer-leader:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow()
+                << ':' << candidate.guildId;
+            AddSocialCapability(candidate, ref.str(), "transfer_guild_leadership", 0,
+                bot->GetGUIDLow(), 0, "Transfer leadership of this exact guild to the requesting guild member. "
+                "This consequential action always requires a second scoped confirmation.");
+        }
+        if (guild->HasRankRight(botRank, GR_RIGHT_PROMOTE) && speakerRank > botRank + 1)
+        {
+            std::ostringstream ref;
+            ref << "guild:promote:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow()
+                << ':' << candidate.guildId;
+            AddSocialCapability(candidate, ref.str(), "promote_guild_member", 0, bot->GetGUIDLow(), 0,
+                "Promote the requesting member by one rank under this guild's current rank rules.");
+        }
+        if (guild->HasRankRight(botRank, GR_RIGHT_DEMOTE) && speakerRank > botRank &&
+            speakerRank < guild->GetLowestRank())
+        {
+            std::ostringstream ref;
+            ref << "guild:demote:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow()
+                << ':' << candidate.guildId;
+            AddSocialCapability(candidate, ref.str(), "demote_guild_member", 0, bot->GetGUIDLow(), 0,
+                "Demote the requesting member by one rank under this guild's current rank rules.");
+        }
+        if (guild->HasRankRight(botRank, GR_RIGHT_REMOVE) && speakerRank > botRank)
+        {
+            std::ostringstream ref;
+            ref << "guild:remove:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow()
+                << ':' << candidate.guildId;
+            AddSocialCapability(candidate, ref.str(), "remove_guild_member", 0, bot->GetGUIDLow(), 0,
+                "Remove the requesting member from this exact guild after a scoped confirmation.");
+        }
+    }
+
+    bool contextualRequester = speaker->GetGuildId() == candidate.guildId ||
+        (bot->GetGroup() && bot->GetGroup() == speaker->GetGroup());
+    if (!candidate.isGuildLeader && contextualRequester)
+    {
+        std::ostringstream ref;
+        ref << "guild:leave:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow()
+            << ':' << candidate.guildId;
+        AddSocialCapability(candidate, ref.str(), "leave_guild", 0, bot->GetGUIDLow(), 0,
+            "Leave this exact guild after a scoped confirmation and normal server security checks.");
+    }
 }
 
 static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandidate& candidate)

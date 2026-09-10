@@ -34,6 +34,9 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
         type == "leave_ai_party_for_player" ||
         type == "solicit_petition_signatures" ||
         type == "transfer_guild_leadership" ||
+        type == "invite_to_guild" || type == "promote_guild_member" ||
+        type == "demote_guild_member" || type == "remove_guild_member" ||
+        type == "leave_guild" ||
         type == "perform_emote" || type == "wait_here" || type == "use_hearthstone" ||
         type == "share_quest" || type == "accept_party_quest_plan" || type == "meet_player" ||
         type == "vendor_bags" || type == "gather_node" || type == "decline_gather_node" ||
@@ -722,6 +725,91 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
                     guildId, bot->GetGUIDLow(), player->GetGUIDLow(), player->GetGUIDLow());
             else
                 action.failureReason = "normal guild rank rules did not permit that leadership transfer";
+        }
+    }
+    else if ((proposal.type == "invite_to_guild" || proposal.type == "promote_guild_member" ||
+              proposal.type == "demote_guild_member" || proposal.type == "remove_guild_member") &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(guild:(invite|promote|demote|remove):([0-9]+):([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[2].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[3].str()) == player->GetGUIDLow())
+    {
+        std::string operation = match[1].str();
+        uint32 guildId = (uint32)std::stoul(match[4].str());
+        Guild* guild = sGuildMgr.GetGuildById(guildId);
+        if (!guild || bot->GetGuildId() != guildId)
+            action.failureReason = "the bound guild is no longer available to this character";
+        else if (operation == "invite")
+        {
+            if (player->GetGuildId())
+                action.failureReason = "the requested player is already in a guild";
+            else if (player->GetGuildIdInvited())
+                action.failureReason = "the requested player already has a pending guild invitation";
+            else if (!guild->HasRankRight(bot->GetRank(), GR_RIGHT_INVITE))
+                action.failureReason = "this character no longer has permission to invite guild members";
+            else if (guild->GetMemberSize() >= 1000)
+                action.failureReason = "the guild is full";
+            else
+            {
+                completed = bot->GetPlayerbotAI()->DoSpecificAction("guild invite",
+                    Event("living guild invitation", player->GetObjectGuid(), player), true);
+                completed = completed && player->GetGuildIdInvited() == guildId;
+                if (!completed)
+                    action.failureReason = "normal guild invitation rules rejected the request";
+            }
+        }
+        else
+        {
+            uint32 oldRank = player->GetRank();
+            bool sameGuild = player->GetGuildId() == guildId;
+            uint32 right = operation == "promote" ? GR_RIGHT_PROMOTE :
+                operation == "demote" ? GR_RIGHT_DEMOTE : GR_RIGHT_REMOVE;
+            bool rankAllowed = operation == "promote" ? oldRank > bot->GetRank() + 1 :
+                operation == "demote" ? oldRank > bot->GetRank() && oldRank < guild->GetLowestRank() :
+                oldRank > bot->GetRank();
+            if (!sameGuild)
+                action.failureReason = "the requested character is no longer a member of this guild";
+            else if (!guild->HasRankRight(bot->GetRank(), right))
+                action.failureReason = "this character no longer has the required guild rank right";
+            else if (!rankAllowed)
+                action.failureReason = "the guild rank hierarchy does not permit that change";
+            else
+            {
+                std::string playerbotAction = operation == "promote" ? "guild promote" :
+                    operation == "demote" ? "guild demote" : "guild remove";
+                completed = bot->GetPlayerbotAI()->DoSpecificAction(playerbotAction,
+                    Event("living guild governance", player->GetObjectGuid(), player), true);
+                if (operation == "promote") completed = completed && player->GetGuildId() == guildId && player->GetRank() < oldRank;
+                else if (operation == "demote") completed = completed && player->GetGuildId() == guildId && player->GetRank() > oldRank;
+                else completed = completed && !player->GetGuildId();
+                if (!completed)
+                    action.failureReason = "normal guild rank rules rejected the requested change";
+            }
+        }
+    }
+    else if (proposal.type == "leave_guild" &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(guild:leave:([0-9]+):([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[1].str()) == bot->GetGUIDLow() &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow())
+    {
+        uint32 guildId = (uint32)std::stoul(match[3].str());
+        Guild* guild = sGuildMgr.GetGuildById(guildId);
+        bool contextualRequester = player->GetGuildId() == guildId ||
+            (bot->GetGroup() && bot->GetGroup() == player->GetGroup());
+        if (!guild || bot->GetGuildId() != guildId)
+            action.failureReason = "this character is no longer a member of the bound guild";
+        else if (guild->GetLeaderGuid() == bot->GetObjectGuid())
+            action.failureReason = "a guild leader must transfer leadership or disband the guild before leaving";
+        else if (!contextualRequester)
+            action.failureReason = "the requester no longer has the relationship required for this request";
+        else
+        {
+            completed = bot->GetPlayerbotAI()->DoSpecificAction("guild leave",
+                Event("living guild departure", "", player), true);
+            completed = completed && !bot->GetGuildId();
+            if (!completed)
+                action.failureReason = "normal guild security rules rejected the request to leave";
         }
     }
     else if (proposal.type == "perform_emote" &&

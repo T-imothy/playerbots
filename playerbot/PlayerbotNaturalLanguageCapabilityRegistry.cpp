@@ -39,6 +39,11 @@ PlayerbotNaturalLanguageCapabilityRegistry::PlayerbotNaturalLanguageCapabilityRe
             LivingCapabilityExecutor::social);
     Register("transfer_guild_leadership", "socialGovernance", "consequential", "guild_leader",
         "explicit_confirmation", LivingCapabilityExecutor::social);
+    const char* guildConsequential[] = {"invite_to_guild", "promote_guild_member",
+        "demote_guild_member", "remove_guild_member", "leave_guild"};
+    for (const char* key : guildConsequential)
+        Register(key, "socialGovernance", "consequential", "guild_rights_or_self",
+            "explicit_confirmation", LivingCapabilityExecutor::social);
     Register("perform_emote", "socialGovernance", "routine", "unrestricted_social_request",
         "low_risk", LivingCapabilityExecutor::social);
     Register("wait_here", "travel", "routine", "contextual_party_authority",
