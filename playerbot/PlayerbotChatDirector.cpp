@@ -1133,7 +1133,12 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // recovery step on the world thread. Resetting the travel target makes
         // normal quest/travel strategies choose again without teleporting or
         // modifying authoritative quest state.
-        if (suspected && sPlayerbotAIConfig.chatDirectorBotRecoveryMode >= 2)
+        bool recoveryCanary = std::find(sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.begin(),
+            sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.end(), guid) !=
+            sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.end();
+        bool recoveryAllowed = sPlayerbotAIConfig.chatDirectorBotRecoveryMode >= 2 ||
+            (sPlayerbotAIConfig.chatDirectorBotRecoveryMode == 1 && recoveryCanary);
+        if (suspected && recoveryAllowed)
         {
             const auto oneHourAgo = now - std::chrono::hours(1);
             state.recoveryAttempts.erase(std::remove_if(state.recoveryAttempts.begin(), state.recoveryAttempts.end(),
@@ -1234,6 +1239,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"last_movement_seconds\":" << stillSeconds << ",\"last_progress_seconds\":" << progressSeconds
              << ",\"oldest_completed_quest_seconds\":" << oldestCompleteSeconds
              << ",\"recovery_mode\":" << sPlayerbotAIConfig.chatDirectorBotRecoveryMode
+             << ",\"recovery_canary\":" << (recoveryCanary ? "true" : "false")
              << ",\"recovery_result\":\"" << PlayerbotLLMInterface::SanitizeForJson(state.recoveryResult) << "\""
              << ",\"recoveries_last_hour\":" << state.recoveryAttempts.size()
              << ",\"recovery_step\":" << state.recoveryStep
@@ -1269,6 +1275,65 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 PlayerbotLLMInterface::Generate(payload, 3, 2, debug, true, "/v2/bot-health");
         }).detach();
     }
+}
+
+void PlayerbotChatDirector::MaybeReportProgressionTrace(std::chrono::steady_clock::time_point now)
+{
+    if (sPlayerbotAIConfig.chatDirectorDeepTraceBotGuids.empty()) return;
+    if (nextProgressionTraceSample.time_since_epoch().count() != 0 && now < nextProgressionTraceSample) return;
+    nextProgressionTraceSample = now + std::chrono::seconds(
+        std::max<uint32>(5, sPlayerbotAIConfig.chatDirectorDeepTraceSampleSeconds));
+
+    std::ostringstream body;
+    body << "{\"samples\":[";
+    bool first = true;
+    for (uint32 guid : sPlayerbotAIConfig.chatDirectorDeepTraceBotGuids)
+    {
+        Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
+        if (!bot || !bot->GetPlayerbotAI() || !bot->IsInWorld()) continue;
+        BotHealthState& state = botHealth[guid];
+        ProgressionQuestSnapshot quests = GetProgressionQuestSnapshot(bot);
+        std::string action = bot->GetPlayerbotAI()->HandleRemoteCommand("action");
+        uint8 bagUsed = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
+        long movementAge = state.lastMoved.time_since_epoch().count() == 0 ? 0 :
+            std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMoved).count();
+        long progressAge = state.lastMeaningfulProgress.time_since_epoch().count() == 0 ? 0 :
+            std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMeaningfulProgress).count();
+        if (!first) body << ',';
+        first = false;
+        body << "{\"deep_trace\":true,\"trace_kind\":\"world_action_evaluation\",\"bot_guid\":" << guid
+             << ",\"bot_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(bot->GetName())
+             << "\",\"level\":" << (uint32)bot->GetLevel() << ",\"xp\":" << bot->GetUInt32Value(PLAYER_XP)
+             << ",\"alive\":" << (bot->IsAlive() ? "true" : "false")
+             << ",\"in_combat\":" << (bot->IsInCombat() ? "true" : "false")
+             << ",\"grouped\":" << (bot->GetGroup() ? "true" : "false")
+             << ",\"bag_used_percent\":" << (uint32)bagUsed
+             << ",\"travel_target_active\":" << (bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<bool>("travel target active")->Get() ? "true" : "false")
+             << ",\"can_move_around\":" << (bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<bool>("can move around")->Get() ? "true" : "false")
+             << ",\"no_quest_destinations\":" << (bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<bool>("no active travel destinations", "quest")->Get() ? "true" : "false")
+             << ",\"has_focus_travel_target\":" << (bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<bool>("has focus travel target")->Get() ? "true" : "false")
+             << ",\"last_movement_seconds\":" << movementAge << ",\"last_progress_seconds\":" << progressAge
+             << ",\"x\":" << bot->GetPositionX() << ",\"y\":" << bot->GetPositionY() << ",\"z\":" << bot->GetPositionZ()
+             << ",\"objective_counters\":" << quests.objectiveJson << ",\"completed_quest_ids\":[";
+        bool firstQuest = true;
+        for (uint32 questId : quests.completed)
+        {
+            if (!firstQuest) body << ',';
+            firstQuest = false;
+            body << questId;
+        }
+        body << "],\"recovery_result\":\"" << PlayerbotLLMInterface::SanitizeForJson(state.recoveryResult)
+             << "\",\"recovery_step\":" << state.recoveryStep
+             << ",\"recovery_target_quest_id\":" << state.recoveryQuestId
+             << ",\"action_trace\":\"" << PlayerbotLLMInterface::SanitizeForJson(action) << "\"}";
+    }
+    body << "]}";
+    if (first) return;
+    const std::string payload = body.str();
+    std::thread([payload]() {
+        std::vector<std::string> debug;
+        PlayerbotLLMInterface::Generate(payload, 3, 2, debug, true, "/v2/bot-health");
+    }).detach();
 }
 
 std::string PlayerbotChatDirector::ChannelType(uint32 msgType, const std::string& channelName) const
@@ -1865,6 +1930,7 @@ void PlayerbotChatDirector::Update()
     MaybeCreateAmbientEvent(now);
     MaybeCreateProactiveGroupEvent(now);
     MaybeReportBotHealth(now);
+    MaybeReportProgressionTrace(now);
     sPlayerbotOrganicEconomy.Update();
     sPlayerbotActionBroker.Update();
     sPlayerbotSocialActionBroker.Update();
