@@ -111,8 +111,16 @@ struct LivingActivityCoordinator::State {
     bool ioPending = false, schemaReady = false, loaded = false;
     unsigned importFamily = 0;
     uint64_t acknowledged = 0, persistenceFailures = 0, invalidRecords = 0, transitionCount = 0;
+    uint64_t maximumDispatchUs = 0, overBudgetUpdates = 0;
     struct Pending { Task task; WritePlan plan; };
+    struct Incoming {
+        bool restored = false;
+        unsigned family = 0;
+        uint32_t actor = 0;
+        std::string id, source, key, payload;
+    };
     std::deque<Pending> pending;
+    std::deque<Incoming> incoming;
     std::map<std::string, Task> cache;
     std::map<uint32_t, std::string> preferred;
 
@@ -159,13 +167,17 @@ struct LivingActivityCoordinator::State {
         pending.push_back({std::move(task), std::move(plan)});
     }
     void Flush() {
-        const unsigned count = std::min<unsigned>(batch, pending.size());
-        if (!count || !CharacterDatabase.BeginTransaction()) return;
+        const unsigned maximum = std::min<unsigned>(batch, pending.size());
+        if (!maximum || !CharacterDatabase.BeginTransaction()) return;
+        const auto started = std::chrono::steady_clock::now();
+        unsigned count = 0;
         std::string query;
-        for (unsigned i = 0; i < count; ++i) {
-            for (const auto& sql : pending[i].plan.statements) CharacterDatabase.Execute(sql.c_str());
+        for (; count < maximum;) {
+            for (const auto& sql : pending[count].plan.statements) CharacterDatabase.Execute(sql.c_str());
             if (!query.empty()) query += " UNION ALL ";
-            query += pending[i].plan.receiptQuery;
+            query += pending[count].plan.receiptQuery;
+            ++count;
+            if (std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(2)) break;
         }
         // One ordered native DB transaction followed by its receipt query. No
         // synchronous DB query or extra worker on the world thread.
@@ -226,14 +238,7 @@ struct LivingActivityCoordinator::State {
             unsigned count = 0;
             do {
                 auto* f = result->Fetch(); const std::string id = f[0].GetCppString(); if (id.empty()) continue;
-                if (cache.size() + pending.size() >= maxCache) { blocker = "task_cache_backpressure"; return; }
-                Task task;
-                if (!ReadTask(f[1].GetCppString(), task)) { ++invalidRecords; blocker = "invalid_persisted_task"; return; }
-                loadCursor = id; ++count;
-                // Active tasks are not silently downgraded or executed by an
-                // observe-only release. They require compatible reconciliation.
-                if (task.mode == Mode::Active) { Remember(task); blocker = "active_task_requires_executor"; continue; }
-                Queue(AfterRestart(task, NowMs()), task.revision, "restart_revalidation");
+                incoming.push_back({true, 0, 0, id, "", "", f[1].GetCppString()}); ++count;
             } while (result->NextRow());
             if (count < loadBatch) loaded = true;
         }, sql.c_str())) { ioPending = false; nextWork = NowMs() + 5000; }
@@ -248,23 +253,53 @@ struct LivingActivityCoordinator::State {
             unsigned count = 0;
             do {
                 auto* f = result->Fetch(); std::string source = f[0].GetCppString(); if (source.empty()) continue;
-                Task task; task.source = source; task.sourceKey = f[1].GetCppString();
-                task.id = task.root = SourceId(task.source, task.sourceKey);
-                task.actor = task.context.actor = f[2].GetUInt32();
-                task.kind = family == 0 ? Kind::Profession : family == 1 ? Kind::GuildDelivery :
-                    family == 2 ? Kind::Commission : Kind::GuildEvent;
-                task.priority = family == 3 ? Priority::Scheduled : Priority::Delivery;
-                task.context.policyRevision = policyRevision;
-                task.createdAtMs = task.updatedAtMs = NowMs();
-                task.checkpoint.data = f[3].GetCppString();
-                task.checkpoint.blocker = "legacy_work_requires_native_reconciliation";
-                Queue(std::move(task), 0, "legacy_observed"); ++count;
+                incoming.push_back({false, family, f[2].GetUInt32(), "", source,
+                    f[1].GetCppString(), f[3].GetCppString()}); ++count;
             } while (result->NextRow());
             // One domain cannot monopolize admission. A full rotation pauses
             // one minute only when there is no backlog in the observed domain.
             importFamily = (family + 1) % 4;
             if (importFamily == 0 && count == 0) nextWork = NowMs() + 60000;
         }, query.c_str())) { ioPending = false; nextWork = NowMs() + 5000; }
+    }
+    void DecodeIncoming() {
+        const auto started = std::chrono::steady_clock::now();
+        do {
+            if (cache.size() + pending.size() >= maxCache) {
+                blocker = "task_cache_backpressure"; nextWork = NowMs() + 60000; return;
+            }
+            const auto& row = incoming.front(); Task task;
+            if (row.restored) {
+                if (!ReadTask(row.payload, task)) {
+                    ++invalidRecords; blocker = "invalid_persisted_task"; nextWork = NowMs() + 60000; return;
+                }
+                // Active tasks are never downgraded or executed by this observer.
+                if (task.mode == Mode::Active) { Remember(task); blocker = "active_task_requires_executor"; }
+                else Queue(AfterRestart(task, NowMs()), task.revision, "restart_revalidation");
+                loadCursor = row.id;
+            } else {
+                task.source = row.source; task.sourceKey = row.key;
+                task.id = task.root = SourceId(task.source, task.sourceKey);
+                task.actor = task.context.actor = row.actor;
+                task.kind = row.family == 0 ? Kind::CollectionReconciliation : row.family == 1 ? Kind::GuildDelivery :
+                    row.family == 2 ? Kind::Commission : Kind::GuildEvent;
+                if (row.family == 0) {
+                    boost::property_tree::ptree p; std::istringstream in(row.payload);
+                    boost::property_tree::read_json(in, p);
+                    const auto type = p.get<std::string>("goal_type", "");
+                    if (type == "profession_skill_up") task.kind = Kind::Profession;
+                    else if (type == "storage_pressure" || type == "maintain_supplies") task.kind = Kind::Maintenance;
+                    else if (type == "gear_upgrade") task.kind = Kind::Progression;
+                }
+                task.priority = row.family == 3 ? Priority::Scheduled : Priority::Delivery;
+                task.context.policyRevision = policyRevision;
+                task.createdAtMs = task.updatedAtMs = NowMs();
+                task.checkpoint.data = row.payload;
+                task.checkpoint.blocker = "legacy_work_requires_native_reconciliation";
+                Queue(std::move(task), 0, "legacy_observed");
+            }
+            incoming.pop_front();
+        } while (!incoming.empty() && std::chrono::steady_clock::now() - started < std::chrono::milliseconds(2));
     }
 };
 
@@ -274,9 +309,26 @@ LivingActivityCoordinator& LivingActivityCoordinator::instance() {
 LivingActivityCoordinator::LivingActivityCoordinator() : state(new State) {}
 LivingActivityCoordinator::~LivingActivityCoordinator() = default;
 void LivingActivityCoordinator::Update() {
+    const auto started = std::chrono::steady_clock::now();
+    struct Measure {
+        State& state; std::chrono::steady_clock::time_point start;
+        ~Measure() {
+            const auto us = uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - start).count());
+            state.maximumDispatchUs = std::max(state.maximumDispatchUs, us);
+            if (us > 2000) ++state.overBudgetUpdates;
+        }
+    } measure{*state, started};
     const uint64_t now = NowMs();
     state->Policy(now);
-    if (state->effective == Mode::Off || state->ioPending || now < state->nextWork) return;
+    if (state->effective == Mode::Off || state->ioPending) return;
+    if (!state->incoming.empty()) {
+        if (now < state->nextWork) return;
+        try { state->DecodeIncoming(); }
+        catch (const std::exception&) { ++state->invalidRecords; state->blocker = "invalid_source_record"; state->nextWork = now + 60000; }
+        return;
+    }
+    if (now < state->nextWork) return;
     state->nextWork = now + 1000;
     if (!state->schemaReady) state->Probe();
     else if (state->transitionCount + state->pending.size() >= 200000) state->blocker = "transition_outbox_backpressure";
@@ -296,6 +348,8 @@ std::string LivingActivityCoordinator::StatusJson() const {
     p.put("cached_tasks", state->cache.size()); p.put("pending_writes", state->pending.size());
     p.put("receipt_count", state->acknowledged); p.put("persistence_failures", state->persistenceFailures);
     p.put("retained_transitions", state->transitionCount);
+    p.put("pending_decode", state->incoming.size()); p.put("maximum_dispatch_us", state->maximumDispatchUs);
+    p.put("over_budget_updates", state->overBudgetUpdates); p.put("next_import_family", state->importFamily);
     p.put("invalid_records", state->invalidRecords); p.put("gameplay_mutations", 0);
     p.put("snapshot_at_ms", NowMs()); return Json(p);
 }
