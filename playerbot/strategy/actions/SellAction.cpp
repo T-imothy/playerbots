@@ -32,6 +32,7 @@ bool SellAction::Execute(Event& event)
 
 
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    announceOperations = !(sPlayerbotAIConfig.chatDirectorV2 && sPlayerbotAIConfig.chatDirectorSuppressLegacyOperationalChat && event.getSource() == "rpg action");
 
     std::string text = event.getParam();
 
@@ -116,7 +117,8 @@ bool SellAction::Sell(Player* requester, Item* item)
 
         didSell = true;
 
-        ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+        if (announceOperations)
+            ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         break;
     }
 

@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotSocialActionBroker.h"
 #include "playerbot/LootObjectStack.h"
 #include "ChooseTravelTargetAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -336,6 +337,26 @@ bool ChooseTravelTargetAction::SetBestTarget(Player* requester, TravelTarget* ta
     std::unordered_map<TravelDestination*, bool> isActive;
 
     bool hasTarget = false;
+
+    // An accepted natural-language party plan is a temporary preference, not
+    // a forced command. Prefer an active destination for that quest when one
+    // exists; otherwise retain the normal autonomous selection below.
+    uint32 preferredQuest = sPlayerbotSocialActionBroker.PreferredQuest(bot->GetGUIDLow());
+    if (preferredQuest)
+    {
+        for (auto& [partition, travelPointList] : partitionedList)
+        {
+            for (auto& [destination, position, distance] : travelPointList)
+            {
+                QuestTravelDestination* questDestination = dynamic_cast<QuestTravelDestination*>(destination);
+                if (!questDestination || questDestination->GetQuestId() != preferredQuest ||
+                    (!target->IsForced() && !destination->IsActive(bot, PlayerTravelInfo(bot))))
+                    continue;
+                target->SetTarget(destination, position);
+                return true;
+            }
+        }
+    }
 
     for (auto& [partition, travelPointList] : partitionedList)
     {

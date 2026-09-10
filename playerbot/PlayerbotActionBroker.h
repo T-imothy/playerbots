@@ -29,7 +29,7 @@ public:
     bool Create(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event);
     bool Authorizes(Player* bot, Player* trader) const;
     bool PopulateTrade(Player* bot, Player* trader);
-    bool ValidateTrade(Player* bot, Player* trader) const;
+    bool ValidateTrade(Player* bot, Player* trader);
     void CompleteTrade(Player* bot, Player* trader);
     void CancelTrade(Player* bot, Player* trader, const std::string& reason);
     void Update();

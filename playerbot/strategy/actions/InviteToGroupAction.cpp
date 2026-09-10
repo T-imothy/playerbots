@@ -325,6 +325,13 @@ namespace ai
             if (!sPlayerbotAIConfig.randomBotInvitePlayer && player->isRealPlayer())
                 continue;
 
+            // Chat Director v2 owns proactive invitations to real players so
+            // they require sustained shared activity and conversational opt-in.
+            // Keep legacy autonomous bot-to-bot grouping unchanged.
+            if (player->isRealPlayer() && sPlayerbotAIConfig.chatDirectorV2 &&
+                sPlayerbotAIConfig.chatDirectorSocialActions)
+                continue;
+
             Group* group = bot->GetGroup();
 
             if (player->isDND())

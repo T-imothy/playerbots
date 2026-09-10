@@ -161,6 +161,13 @@ bool PlayerbotActionBroker::Create(const ChatDirectorActionProposal& proposal, c
         return false;
     if (!conjure && !crafting && !buying && proposal.delivery == "mail" && item->IsConjuredConsumable())
         return false;
+    if (!conjure && !crafting && !buying && proposal.delivery != "mail")
+    {
+        ItemPosCountVec destination;
+        uint8 bagSlot = 0;
+        if (player->CanStoreItem(NULL_BAG, NULL_SLOT, destination, item, bagSlot, false) != EQUIP_ERR_OK)
+            return false;
+    }
     if (conjure && (bot->getClass() != CLASS_MAGE || proposal.quantity > 5 ||
         !bot->GetPlayerbotAI()->CanCastSpell(spellId, bot, 0))) return false;
 
@@ -279,9 +286,9 @@ bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
     return true;
 }
 
-bool PlayerbotActionBroker::ValidateTrade(Player* bot, Player* trader) const
+bool PlayerbotActionBroker::ValidateTrade(Player* bot, Player* trader)
 {
-    const Transaction* transaction = bot && trader ? Find(bot->GetGUIDLow(), trader->GetGUIDLow()) : nullptr;
+    Transaction* transaction = bot && trader ? Find(bot->GetGUIDLow(), trader->GetGUIDLow()) : nullptr;
     if (!transaction || !bot->GetTradeData() || !trader->GetTradeData())
         return false;
     if (transaction->type == "buy_item")
@@ -303,6 +310,19 @@ bool PlayerbotActionBroker::ValidateTrade(Player* bot, Player* trader) const
     Item* offered = bot->GetTradeData()->GetItem((TradeSlots)0);
     if (!offered || offered->GetGUIDLow() != transaction->itemGuid || offered->GetCount() != transaction->quantity)
         return false;
+    ItemPosCountVec destination;
+    uint8 bagSlot = 0;
+    if (trader->CanStoreItem(NULL_BAG, NULL_SLOT, destination, offered, bagSlot, false) != EQUIP_ERR_OK)
+    {
+        if (transaction->failureReason != "player inventory has no room")
+        {
+            transaction->failureReason = "player inventory has no room";
+            bot->Whisper("Your bags look full. Make some room and try accepting again.",
+                LANG_UNIVERSAL, trader->GetObjectGuid());
+            Report(*transaction);
+        }
+        return false;
+    }
     for (uint32 slot = 1; slot < TRADE_SLOT_TRADED_COUNT; ++slot)
         if (bot->GetTradeData()->GetItem((TradeSlots)slot))
             return false;

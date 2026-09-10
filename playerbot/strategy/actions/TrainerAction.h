@@ -15,5 +15,6 @@ namespace ai
         void Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, TrainerSpell const* tSpell, std::ostringstream& msg);
         void TellHeader(Player* requester, Creature* creature);
         void TellFooter(Player* requester, uint32 totalCost);
+        bool suppressOperationalChat = false;
     };
 }

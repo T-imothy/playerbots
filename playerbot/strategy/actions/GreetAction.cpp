@@ -23,8 +23,10 @@ bool GreetAction::Execute(Event& event)
 
     ObjectGuid oldSel = bot->GetSelectionGuid();
     bot->SetSelectionGuid(guid);
-    //bot->HandleEmote(EMOTE_ONESHOT_WAVE);
-    ai->PlayEmote(TEXTEMOTE_HELLO);
+    if (sPlayerbotAIConfig.chatDirectorV2)
+        bot->HandleEmote(EMOTE_ONESHOT_WAVE);
+    else
+        ai->PlayEmote(TEXTEMOTE_HELLO);
     bot->SetSelectionGuid(oldSel);
 
     std::set<ObjectGuid>& alreadySeenPlayers = ai->GetAiObjectContext()->GetValue<std::set<ObjectGuid>& >("already seen players")->Get();

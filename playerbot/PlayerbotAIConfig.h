@@ -400,9 +400,13 @@ public:
     std::string llmApiEndpoint, llmApiKey, llmApiJson, llmPrePrompt, llmPreRpgPrompt, llmPrompt, llmPostPrompt, llmResponseStartPattern, llmResponseEndPattern, llmResponseDeletePattern, llmResponseSplitPattern;
     std::string chatDirectorEndpoint, chatDirectorApiKey;
     uint32 llmEnabled, llmContextLength, llmBotToBotChatChance, llmGenerationTimeout, llmMaxSimultaniousGenerations, llmRpgAIChatChance;
-    bool llmGlobalContext, chatDirectorV2;
+    bool llmGlobalContext, chatDirectorV2, chatDirectorSocialActions, chatDirectorProactiveGrouping;
+    bool chatDirectorSuppressLegacyOperationalChat;
     uint32 chatDirectorBotRecoveryMode, chatDirectorMovementStuckSeconds, chatDirectorQuestStuckSeconds;
     uint32 chatDirectorRecoveryCooldownSeconds, chatDirectorMaxRecoveriesPerHour;
+    uint32 chatDirectorSocialOfferSeconds, chatDirectorProactivePlayerCooldownSeconds;
+    uint32 chatDirectorProactivePairCooldownSeconds, chatDirectorSharedActivitySeconds;
+    uint32 chatDirectorSharedActivityWindowSeconds, chatDirectorSharedActivityDistance, chatDirectorMaximumLevelDifference;
     ParsedUrl llmEndPointUrl, chatDirectorEndPointUrl;
     std::set<uint32> llmBlockedReplyChannels;
     //LM END

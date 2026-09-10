@@ -3,6 +3,7 @@
 
 #include "PlayerbotAI.h"
 #include "PlayerbotActionBroker.h"
+#include "PlayerbotSocialActionBroker.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotLLMInterface.h"
 #include "RandomPlayerbotMgr.h"
@@ -45,8 +46,63 @@ static void PopulateQuestLog(Player* bot, ChatDirectorCandidate& candidate)
         quests << quest->GetTitle();
         if (bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
             quests << " [complete]";
+        ChatDirectorQuest structured;
+        structured.questId = questId;
+        structured.title = quest->GetTitle();
+        structured.status = bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE ? "complete" : "in_progress";
+        structured.shareable = bot->CanShareQuest(questId);
+        QuestStatusMap const& statusMap = bot->getQuestStatusMap();
+        QuestStatusMap::const_iterator status = statusMap.find(questId);
+        if (status != statusMap.end())
+        {
+            for (uint8 objective = 0; objective < QUEST_ITEM_OBJECTIVES_COUNT; ++objective)
+            {
+                if (!quest->ReqItemId[objective] || !quest->ReqItemCount[objective])
+                    continue;
+                ItemPrototype const* item = sObjectMgr.GetItemPrototype(quest->ReqItemId[objective]);
+                ChatDirectorQuest::Objective detail;
+                detail.type = "item";
+                detail.name = item ? item->Name1 : quest->ObjectiveText[objective];
+                detail.current = status->second.m_itemcount[objective];
+                detail.required = quest->ReqItemCount[objective];
+                structured.objectives.push_back(detail);
+            }
+            for (uint8 objective = 0; objective < QUEST_OBJECTIVES_COUNT; ++objective)
+            {
+                int32 entry = quest->ReqCreatureOrGOId[objective];
+                if (!entry || !quest->ReqCreatureOrGOCount[objective])
+                    continue;
+                ChatDirectorQuest::Objective detail;
+                detail.type = entry < 0 ? "gameobject" : "creature";
+                if (entry < 0)
+                {
+                    GameObjectInfo const* object = sObjectMgr.GetGameObjectInfo((uint32)-entry);
+                    detail.name = object ? object->name : quest->ObjectiveText[objective];
+                }
+                else
+                {
+                    CreatureInfo const* creature = sObjectMgr.GetCreatureTemplate((uint32)entry);
+                    detail.name = creature ? creature->Name : quest->ObjectiveText[objective];
+                }
+                detail.current = status->second.m_creatureOrGOcount[objective];
+                detail.required = quest->ReqCreatureOrGOCount[objective];
+                structured.objectives.push_back(detail);
+            }
+        }
+        candidate.quests.push_back(std::move(structured));
     }
     candidate.questLog = quests.str();
+}
+
+static void PopulateSpeakerQuestState(Player* player, ChatDirectorEvent& event)
+{
+    if (!player)
+        return;
+    ChatDirectorCandidate state;
+    PopulateQuestLog(player, state);
+    event.speakerQuestLog = std::move(state.questLog);
+    event.speakerQuestLogTruncated = state.questLogTruncated;
+    event.speakerQuests = std::move(state.quests);
 }
 
 class ChatCapabilityItemVisitor : public ai::IterateItemsVisitor
@@ -80,6 +136,123 @@ static std::set<std::string> InventorySearchTerms(const std::string& text)
         terms.insert(token);
     }
     return terms;
+}
+
+static void AddSocialCapability(ChatDirectorCandidate& candidate, const std::string& ref,
+    const std::string& type, uint32 groupId, uint32 actorGuid, uint32 questId, const std::string& description)
+{
+    ChatDirectorCapability capability;
+    capability.capabilityRef = ref;
+    capability.type = type;
+    capability.itemKind = "social";
+    capability.quantity = 1;
+    capability.minQuantity = 1;
+    capability.maxQuantity = 1;
+    capability.groupId = groupId;
+    capability.actorGuid = actorGuid;
+    capability.questId = questId;
+    capability.description = description;
+    capability.deliveries.push_back("immediate");
+    candidate.actionCapabilities.push_back(std::move(capability));
+}
+
+static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandidate& candidate)
+{
+    if (!sPlayerbotAIConfig.chatDirectorSocialActions || !bot || !speaker)
+        return;
+    Group* group = bot->GetGroup();
+    candidate.groupState.pendingInvite = bot->GetGroupInvite() != nullptr;
+    if (!group)
+    {
+        if (!speaker->GetGroup() && !speaker->GetGroupInvite() && !bot->GetGroupInvite())
+        {
+            std::ostringstream ref;
+            ref << "group:create:" << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow();
+            AddSocialCapability(candidate, ref.str(), "create_group_and_invite", 0, bot->GetGUIDLow(), 0,
+                "Create a new party and invite the player.");
+        }
+        if (Group* invite = bot->GetGroupInvite())
+        {
+            std::ostringstream ref;
+            ref << "group:accept:" << invite->GetLeaderGuid().GetCounter();
+            AddSocialCapability(candidate, ref.str(), "accept_group_invite", 0, bot->GetGUIDLow(), 0,
+                "Accept the current pending party invitation.");
+        }
+        return;
+    }
+
+    ChatDirectorGroupState& state = candidate.groupState;
+    state.groupId = group->GetId();
+    state.leaderGuid = group->GetLeaderGuid().GetCounter();
+    state.memberCount = group->GetMembersCount();
+    state.raid = group->IsRaidGroup();
+    state.capacity = state.raid ? 40 : 5;
+    state.isLeader = group->IsLeader(bot->GetObjectGuid());
+    state.isAssistant = group->IsAssistant(bot->GetObjectGuid());
+    state.full = group->IsFull();
+    if (Player* leader = sObjectAccessor.FindPlayer(group->GetLeaderGuid()))
+        state.leaderName = leader->GetName();
+    for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (member && member->IsInWorld() && member->isRealPlayer())
+            state.humanMembers.push_back(member->GetName());
+    }
+
+    if (!speaker->GetGroup() && !speaker->GetGroupInvite() && !state.full)
+    {
+        std::ostringstream ref;
+        if (state.isLeader)
+        {
+            ref << "group:invite:" << state.groupId << ':' << state.leaderGuid << ':' << speaker->GetGUIDLow();
+            AddSocialCapability(candidate, ref.str(), "invite_to_existing_group", state.groupId,
+                state.leaderGuid, 0, "Invite the player to this existing party.");
+        }
+        else
+        {
+            Player* leader = sObjectAccessor.FindPlayer(group->GetLeaderGuid());
+            if (leader && leader->GetPlayerbotAI() && !leader->isRealPlayer())
+            {
+                ref << "group:request-leader:" << state.groupId << ':' << state.leaderGuid << ':' << speaker->GetGUIDLow();
+                AddSocialCapability(candidate, ref.str(), "request_leader_invite", state.groupId,
+                    state.leaderGuid, 0, "Ask the AI party leader to invite the player.");
+            }
+        }
+    }
+
+    if (state.isLeader && group->IsMember(speaker->GetObjectGuid()) && speaker != bot)
+    {
+        std::ostringstream ref;
+        ref << "group:pass:" << state.groupId << ':' << speaker->GetGUIDLow();
+        AddSocialCapability(candidate, ref.str(), "pass_leadership", state.groupId, bot->GetGUIDLow(), 0,
+            "Pass party leadership to the requesting player.");
+    }
+
+    if (!bot->IsInCombat() && !bot->GetMap()->IsDungeon())
+    {
+        std::ostringstream ref;
+        ref << "group:leave:" << state.groupId;
+        AddSocialCapability(candidate, ref.str(), "leave_group", state.groupId, bot->GetGUIDLow(), 0,
+            "Leave the current party only after an explicit confirmed request.");
+    }
+
+    if (speaker->GetGroup() == group)
+    {
+        for (ChatDirectorQuest& quest : candidate.quests)
+        {
+            std::ostringstream planRef;
+            planRef << "quest:plan:" << quest.questId << ':' << state.groupId;
+            AddSocialCapability(candidate, planRef.str(), "accept_party_quest_plan", state.groupId,
+                bot->GetGUIDLow(), quest.questId, "Prefer this authoritative party quest when choosing the next objective.");
+            Quest const* questTemplate = sObjectMgr.GetQuestTemplate(quest.questId);
+            if (!quest.shareable || !questTemplate || !speaker->CanTakeQuest(questTemplate, false))
+                continue;
+            std::ostringstream shareRef;
+            shareRef << "quest:share:" << quest.questId << ':' << state.groupId;
+            AddSocialCapability(candidate, shareRef.str(), "share_quest", state.groupId,
+                bot->GetGUIDLow(), quest.questId, "Share this quest with the party.");
+        }
+    }
 }
 
 static uint32 InventoryRelevance(const std::string& message, const ChatDirectorCandidate& candidate)
@@ -316,6 +489,135 @@ void PlayerbotChatDirector::MaybeCreateAmbientEvent(std::chrono::steady_clock::t
         pending[event.eventId] = std::move(event);
 }
 
+static uint32 SharedQuestId(Player* left, Player* right)
+{
+    if (!left || !right)
+        return 0;
+    std::set<uint32> leftQuests;
+    for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+    {
+        uint32 questId = left->GetQuestSlotQuestId(slot);
+        if (questId && left->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE)
+            leftQuests.insert(questId);
+    }
+    for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+    {
+        uint32 questId = right->GetQuestSlotQuestId(slot);
+        if (questId && right->GetQuestStatus(questId) == QUEST_STATUS_INCOMPLETE && leftQuests.find(questId) != leftQuests.end())
+            return questId;
+    }
+    return 0;
+}
+
+void PlayerbotChatDirector::MaybeCreateProactiveGroupEvent(std::chrono::steady_clock::time_point now)
+{
+    static std::chrono::steady_clock::time_point nextCheck;
+    if (!sPlayerbotAIConfig.chatDirectorSocialActions || !sPlayerbotAIConfig.chatDirectorProactiveGrouping ||
+        (nextCheck.time_since_epoch().count() && now < nextCheck))
+        return;
+    nextCheck = now + std::chrono::seconds(5);
+
+    for (const auto& playerPair : sRandomPlayerbotMgr.GetPlayers())
+    {
+        Player* player = playerPair.second;
+        if (!player || !player->IsInWorld() || !player->isRealPlayer() || !player->IsAlive() || player->IsInCombat() ||
+            player->isAFK() || player->isDND() || player->InBattleGround() || player->GetGroup() || player->GetGroupInvite())
+            continue;
+        auto playerCooldown = proactivePlayerCooldowns.find(player->GetGUIDLow());
+        if (playerCooldown != proactivePlayerCooldowns.end() &&
+            std::chrono::duration_cast<std::chrono::seconds>(now - playerCooldown->second).count() <
+                sPlayerbotAIConfig.chatDirectorProactivePlayerCooldownSeconds)
+            continue;
+
+        for (uint32 botGuid : sRandomPlayerbotMgr.GetChatBotGuids())
+        {
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(botGuid);
+            if (!bot || !bot->GetPlayerbotAI() || !bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() ||
+                bot->InBattleGround() || bot->GetTeam() != player->GetTeam() || bot->GetMapId() != player->GetMapId() ||
+                bot->GetInstanceId() != player->GetInstanceId() || !bot->IsWithinDistInMap(player, (float)sPlayerbotAIConfig.chatDirectorSharedActivityDistance) ||
+                std::abs((int)bot->GetLevel() - (int)player->GetLevel()) > (int)sPlayerbotAIConfig.chatDirectorMaximumLevelDifference)
+                continue;
+            Group* group = bot->GetGroup();
+            if (group && (group->IsFull() || (!group->IsLeader(bot->GetObjectGuid()) &&
+                (!sObjectAccessor.FindPlayer(group->GetLeaderGuid()) ||
+                 !sObjectAccessor.FindPlayer(group->GetLeaderGuid())->GetPlayerbotAI()))))
+                continue;
+            uint32 sharedQuest = SharedQuestId(bot, player);
+            if (!sharedQuest)
+                continue;
+
+            std::ostringstream pairKey;
+            pairKey << player->GetGUIDLow() << ':' << botGuid;
+            SharedActivityState& state = sharedActivity[pairKey.str()];
+            if (state.firstSeen.time_since_epoch().count() == 0 ||
+                (state.lastSeen.time_since_epoch().count() &&
+                 std::chrono::duration_cast<std::chrono::seconds>(now - state.lastSeen).count() > 15))
+                state.firstSeen = now;
+            state.lastSeen = now;
+            if (state.lastOffer.time_since_epoch().count() &&
+                std::chrono::duration_cast<std::chrono::seconds>(now - state.lastOffer).count() <
+                    sPlayerbotAIConfig.chatDirectorProactivePairCooldownSeconds)
+                continue;
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - state.firstSeen).count() <
+                sPlayerbotAIConfig.chatDirectorSharedActivitySeconds)
+                continue;
+
+            Quest const* quest = sObjectMgr.GetQuestTemplate(sharedQuest);
+            ChatDirectorEvent event;
+            std::ostringstream id;
+            id << "wow-proactive-group-" << time(nullptr) << '-' << ++sequence;
+            event.eventId = id.str();
+            event.key = event.eventId;
+            event.channelType = "whisper";
+            event.channelName = "whisper";
+            event.speakerName = player->GetName();
+            event.speakerGuid = player->GetGUIDLow();
+            event.speakerLevel = player->GetLevel();
+            PopulateSpeakerQuestState(player, event);
+            event.zone = player->GetZoneId();
+            event.team = player->GetTeam();
+            event.ambient = true;
+            event.factualGrounding = true;
+            event.groundingType = "shared_quest_activity";
+            event.firstSeen = now;
+            event.message = "[authoritative proactive grouping opportunity] The player and this character have been working near each other on the shared quest " +
+                std::string(quest ? quest->GetTitle() : "the same objective") +
+                ". Ask naturally whether the player wants to group. Do not send or claim an invitation until the player agrees.";
+
+            ChatDirectorCandidate candidate;
+            candidate.guid = botGuid;
+            candidate.name = bot->GetName();
+            candidate.race = bot->getRace();
+            candidate.cls = bot->getClass();
+            candidate.level = bot->GetLevel();
+            candidate.zone = bot->GetZoneId();
+            candidate.grouped = group != nullptr;
+            candidate.inCombat = false;
+            candidate.available = true;
+            candidate.currentActivity = bot->GetPlayerbotAI()->HandleRemoteCommand("action");
+            PopulateQuestLog(bot, candidate);
+            PopulateGrounding(bot, player, event.message, candidate);
+            PopulateSocialState(bot, player, candidate);
+            if (PlayerbotAI::IsTank(bot, false)) candidate.role = "tank";
+            else if (PlayerbotAI::IsHeal(bot, false)) candidate.role = "healer";
+            else candidate.role = "damage";
+            bool canOfferGroup = false;
+            for (const ChatDirectorCapability& capability : candidate.actionCapabilities)
+                if (capability.type == "create_group_and_invite" || capability.type == "invite_to_existing_group" ||
+                    capability.type == "request_leader_invite") canOfferGroup = true;
+            event.candidates[botGuid] = std::move(candidate);
+            if (canOfferGroup)
+            {
+                std::lock_guard<std::mutex> guard(mutex);
+                pending[event.eventId] = std::move(event);
+                state.lastOffer = now;
+                proactivePlayerCooldowns[player->GetGUIDLow()] = now;
+                return;
+            }
+        }
+    }
+}
+
 static bool HasCompletedQuest(Player* bot)
 {
     for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
@@ -527,7 +829,10 @@ void PlayerbotChatDirector::Observe(Player* bot, uint32 msgType, uint32 speakerG
         id << "wow-" << time(nullptr) << '-' << ++sequence;
         event.eventId = id.str();
         if (Player* speaker = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, speakerGuid)))
+        {
             event.speakerLevel = speaker->GetLevel();
+            PopulateSpeakerQuestState(speaker, event);
+        }
         found = pending.emplace(key, std::move(event)).first;
     }
 
@@ -545,10 +850,58 @@ void PlayerbotChatDirector::Observe(Player* bot, uint32 msgType, uint32 speakerG
         PopulateQuestLog(bot, candidate);
         Player* speaker = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, speakerGuid));
         PopulateGrounding(bot, speaker, message, candidate);
+        PopulateSocialState(bot, speaker, candidate);
     if (PlayerbotAI::IsTank(bot, false)) candidate.role = "tank";
     else if (PlayerbotAI::IsHeal(bot, false)) candidate.role = "healer";
     else candidate.role = "damage";
     found->second.candidates[candidate.guid] = std::move(candidate);
+}
+
+void PlayerbotChatDirector::ObserveGroupInviteConflict(Player* bot, Player* initiator)
+{
+    if (!sPlayerbotAIConfig.chatDirectorV2 || !bot || !initiator || !bot->GetPlayerbotAI() || !bot->GetGroup())
+        return;
+
+    ChatDirectorEvent event;
+    std::ostringstream id;
+    id << "wow-group-conflict-" << time(nullptr) << '-' << ++sequence;
+    event.eventId = id.str();
+    event.key = event.eventId;
+    event.channelType = "whisper";
+    event.channelName = "whisper";
+    event.speakerName = initiator->GetName();
+    event.speakerGuid = initiator->GetGUIDLow();
+    event.speakerLevel = initiator->GetLevel();
+    PopulateSpeakerQuestState(initiator, event);
+    event.zone = initiator->GetZoneId();
+    event.team = initiator->GetTeam();
+    event.message = "[authoritative group invite conflict] The player tried to invite this character, but the character is already grouped. Explain the real group state and offer an existing-group invitation only if the supplied capability permits it.";
+    event.factualGrounding = true;
+    event.groundingType = "group_invite_conflict";
+    event.firstSeen = std::chrono::steady_clock::now();
+
+    ChatDirectorCandidate candidate;
+    candidate.guid = bot->GetGUIDLow();
+    candidate.name = bot->GetName();
+    candidate.race = bot->getRace();
+    candidate.cls = bot->getClass();
+    candidate.level = bot->GetLevel();
+    candidate.zone = bot->GetZoneId();
+    candidate.grouped = true;
+    candidate.inCombat = bot->IsInCombat();
+    candidate.available = bot->IsAlive();
+    candidate.currentActivity = bot->GetPlayerbotAI()->HandleRemoteCommand("action");
+    PopulateQuestLog(bot, candidate);
+    PopulateGrounding(bot, initiator, event.message, candidate);
+    PopulateSocialState(bot, initiator, candidate);
+    if (PlayerbotAI::IsTank(bot, false)) candidate.role = "tank";
+    else if (PlayerbotAI::IsHeal(bot, false)) candidate.role = "healer";
+    else candidate.role = "damage";
+    event.candidates[candidate.guid] = std::move(candidate);
+
+    std::lock_guard<std::mutex> guard(mutex);
+    lastConversation = std::chrono::steady_clock::now();
+    pending[event.eventId] = std::move(event);
 }
 
 void PlayerbotChatDirector::ObservePartyQuestPlan(Player* bot, uint32 questId, const std::string& questName,
@@ -596,10 +949,12 @@ void PlayerbotChatDirector::ObservePartyQuestPlan(Player* bot, uint32 questId, c
     event.speakerName = "Party quest state";
     event.speakerGuid = realPlayer->GetGUIDLow();
     event.speakerLevel = realPlayer->GetLevel();
+    PopulateSpeakerQuestState(realPlayer, event);
     event.zone = realPlayer->GetZoneId();
     event.team = realPlayer->GetTeam();
     event.ambient = true;
     event.factualGrounding = true;
+    event.groundingType = "party_quest_plan";
     event.firstSeen = now;
     std::ostringstream id;
     id << "wow-party-quest-" << time(nullptr) << '-' << ++sequence;
@@ -633,6 +988,7 @@ void PlayerbotChatDirector::ObservePartyQuestPlan(Player* bot, uint32 questId, c
         candidate.currentActivity = member->GetPlayerbotAI()->HandleRemoteCommand("action");
         PopulateQuestLog(member, candidate);
         PopulateGrounding(member, realPlayer, event.message, candidate);
+        PopulateSocialState(member, realPlayer, candidate);
         if (PlayerbotAI::IsTank(member, false)) candidate.role = "tank";
         else if (PlayerbotAI::IsHeal(member, false)) candidate.role = "healer";
         else candidate.role = "damage";
@@ -666,6 +1022,23 @@ static std::string JsonUnescape(const std::string& value)
     return output;
 }
 
+static void AppendQuestJson(std::ostringstream& json, const ChatDirectorQuest& quest)
+{
+    json << "{\"quest_id\":" << quest.questId << ",\"title\":\""
+         << PlayerbotLLMInterface::SanitizeForJson(quest.title) << "\",\"status\":\"" << quest.status
+         << "\",\"shareable\":" << (quest.shareable ? "true" : "false") << ",\"objectives\":[";
+    for (size_t objectiveIndex = 0; objectiveIndex < quest.objectives.size(); ++objectiveIndex)
+    {
+        if (objectiveIndex) json << ',';
+        const ChatDirectorQuest::Objective& objective = quest.objectives[objectiveIndex];
+        json << "{\"type\":\"" << objective.type << "\",\"name\":\""
+             << PlayerbotLLMInterface::SanitizeForJson(objective.name) << "\",\"current\":" << objective.current
+             << ",\"required\":" << objective.required << ",\"complete\":"
+             << (objective.current >= objective.required ? "true" : "false") << "}";
+    }
+    json << "]}";
+}
+
 std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) const
 {
     std::vector<ChatDirectorCandidate> choices;
@@ -696,11 +1069,36 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
          << PlayerbotLLMInterface::SanitizeForJson(event.channelName) << "\",\"zone\":" << event.zone << "},";
     json << "\"faction\":\"" << (event.team == ALLIANCE ? "alliance" : "horde") << "\",";
     json << "\"speaker\":{\"guid\":" << event.speakerGuid << ",\"name\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.speakerName)
-         << "\",\"kind\":\"" << (event.ambient ? "system" : "player") << "\",\"level\":" << (uint32)event.speakerLevel << "},";
+         << "\",\"kind\":\"" << (event.ambient ? "system" : "player") << "\",\"level\":" << (uint32)event.speakerLevel
+         << ",\"quest_log\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.speakerQuestLog)
+         << "\",\"quest_log_truncated\":" << (event.speakerQuestLogTruncated ? "true" : "false") << ",\"quests\":[";
+    for (size_t questIndex = 0; questIndex < event.speakerQuests.size(); ++questIndex)
+    {
+        if (questIndex) json << ',';
+        const ChatDirectorQuest& quest = event.speakerQuests[questIndex];
+        AppendQuestJson(json, quest);
+    }
+    json << "]},";
     json << "\"message\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.message) << "\",";
+    json << "\"requested_items\":[";
+    bool firstRequestedItem = true;
+    uint32 requestedItemCount = 0;
+    for (uint32 itemId : ChatHelper::parseItems(event.message, true))
+    {
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
+        if (!proto || requestedItemCount >= 6)
+            continue;
+        if (!firstRequestedItem) json << ',';
+        firstRequestedItem = false;
+        json << "{\"item_id\":" << itemId << ",\"item_name\":\""
+             << PlayerbotLLMInterface::SanitizeForJson(proto->Name1) << "\"}";
+        ++requestedItemCount;
+    }
+    json << "],";
     json << "\"grounding_events\":[";
     if (event.factualGrounding)
-        json << "{\"type\":\"party_quest_plan\",\"authoritative\":true}";
+        json << "{\"type\":\"" << (event.groundingType.empty() ? "server_event" : event.groundingType)
+             << "\",\"authoritative\":true}";
     json << "],\"candidates\":[";
     bool first = true;
     for (const ChatDirectorCandidate& candidate : choices)
@@ -716,6 +1114,29 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
              << ",\"current_activity\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.currentActivity) << "\""
              << ",\"quest_log\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.questLog) << "\""
              << ",\"quest_log_truncated\":" << (candidate.questLogTruncated ? "true" : "false")
+             << ",\"group_state\":{\"group_id\":" << candidate.groupState.groupId
+             << ",\"leader_guid\":" << candidate.groupState.leaderGuid << ",\"leader_name\":\""
+             << PlayerbotLLMInterface::SanitizeForJson(candidate.groupState.leaderName)
+             << "\",\"member_count\":" << candidate.groupState.memberCount << ",\"capacity\":" << candidate.groupState.capacity
+             << ",\"raid\":" << (candidate.groupState.raid ? "true" : "false")
+             << ",\"is_leader\":" << (candidate.groupState.isLeader ? "true" : "false")
+             << ",\"is_assistant\":" << (candidate.groupState.isAssistant ? "true" : "false")
+             << ",\"full\":" << (candidate.groupState.full ? "true" : "false")
+             << ",\"pending_invite\":" << (candidate.groupState.pendingInvite ? "true" : "false")
+             << ",\"human_members\":[";
+        for (size_t humanIndex = 0; humanIndex < candidate.groupState.humanMembers.size(); ++humanIndex)
+        {
+            if (humanIndex) json << ',';
+            json << "\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.groupState.humanMembers[humanIndex]) << "\"";
+        }
+        json << "]},\"quests\":[";
+        for (size_t questIndex = 0; questIndex < candidate.quests.size(); ++questIndex)
+        {
+            if (questIndex) json << ',';
+            const ChatDirectorQuest& quest = candidate.quests[questIndex];
+            AppendQuestJson(json, quest);
+        }
+        json << "]"
              << ",\"inCombat\":" << (candidate.inCombat ? "true" : "false")
              << ",\"available\":" << (candidate.available ? "true" : "false") << ",\"action_capabilities\":[";
         bool firstCapability = true;
@@ -729,6 +1150,9 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
                  << "\",\"min_quantity\":" << (capability.minQuantity ? capability.minQuantity : capability.quantity)
                  << ",\"max_quantity\":" << (capability.maxQuantity ? capability.maxQuantity : capability.quantity)
                  << ",\"price_copper\":" << capability.priceCopper << ",\"value_copper\":" << capability.valueCopper
+                 << ",\"quest_id\":" << capability.questId << ",\"group_id\":" << capability.groupId
+                 << ",\"actor_guid\":" << capability.actorGuid << ",\"description\":\""
+                 << PlayerbotLLMInterface::SanitizeForJson(capability.description) << "\""
                  << ",\"deliveries\":[";
             for (size_t deliveryIndex = 0; deliveryIndex < capability.deliveries.size(); ++deliveryIndex)
             {
@@ -805,8 +1229,10 @@ void PlayerbotChatDirector::Update()
         return;
     const auto now = std::chrono::steady_clock::now();
     MaybeCreateAmbientEvent(now);
+    MaybeCreateProactiveGroupEvent(now);
     MaybeReportBotHealth(now);
     sPlayerbotActionBroker.Update();
+    sPlayerbotSocialActionBroker.Update();
 
     std::vector<ChatDirectorEvent> ready;
     {
@@ -849,7 +1275,9 @@ void PlayerbotChatDirector::Update()
         std::vector<ChatDirectorActionProposal> proposals = ParseActionProposals(response);
         std::map<std::string, bool> created;
         for (const ChatDirectorActionProposal& proposal : proposals)
-            created[proposal.proposalId] = sPlayerbotActionBroker.Create(proposal, it->event);
+            created[proposal.proposalId] = sPlayerbotSocialActionBroker.Supports(proposal.type) ?
+                sPlayerbotSocialActionBroker.Create(proposal, it->event) :
+                sPlayerbotActionBroker.Create(proposal, it->event);
         for (ChatDirectorReply& reply : replies)
         {
             if (it->event.candidates.find(reply.botGuid) == it->event.candidates.end())

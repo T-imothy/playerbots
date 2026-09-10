@@ -1373,7 +1373,18 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 {
     std::string filtered = text;
 
-    if (!IsAllowedCommand(filtered) && !GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, type != CHAT_MSG_WHISPER, &fromPlayer))
+    // Observe human whispers at the direct server handoff. An autonomous bot can
+    // be in Playerbots' minimal/AFK activity state, where its queued chat packet
+    // is not processed promptly. Pending conversations and transactions must not
+    // disappear merely because the target bot is temporarily passive.
+    if (sPlayerbotAIConfig.chatDirectorV2 && type == CHAT_MSG_WHISPER && lang != LANG_ADDON)
+        sPlayerbotChatDirector.Observe(bot, type, fromPlayer.GetObjectGuid().GetCounter(),
+            fromPlayer.GetName(), text, "");
+
+    if (!IsAllowedCommand(filtered) && !GetSecurity()->CheckLevelFor(
+        PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE,
+        type != CHAT_MSG_WHISPER || sPlayerbotAIConfig.chatDirectorV2,
+        &fromPlayer))
         return;
 
     if (type == CHAT_MSG_ADDON)

@@ -1127,6 +1127,18 @@ AiPlayerbot.LLMDefaultPromptsFile = llm_character_card.txt
 # Channels that bots are not allowed to use ai-chat to reply on. Channels: guild,world,general,trade,lfg,ldefence,wdefence,grecruitement,say,whisper,emote,temote,yell,party,raid
 # AiPlayerbot.LLMBlockedReplyChannels = 
 
+# Chat v2 social action bridge. Group/quest state remains authoritative in the world server.
+# AiPlayerbot.ChatDirectorSocialActions = 1
+# AiPlayerbot.ChatDirectorProactiveGrouping = 1
+# AiPlayerbot.ChatDirectorSuppressLegacyOperationalChat = 1
+# AiPlayerbot.ChatDirectorSocialOfferSeconds = 90
+# AiPlayerbot.ChatDirectorProactivePlayerCooldownSeconds = 600
+# AiPlayerbot.ChatDirectorProactivePairCooldownSeconds = 1800
+# AiPlayerbot.ChatDirectorSharedActivitySeconds = 60
+# AiPlayerbot.ChatDirectorSharedActivityWindowSeconds = 120
+# AiPlayerbot.ChatDirectorSharedActivityDistance = 45
+# AiPlayerbot.ChatDirectorMaximumLevelDifference = 3
+
 # OPEN-AI (chat completions) example:
 # AiPlayerbot.LLMApiEndpoint = http://IP/URL:PORT/v1/chat/completions
 # AiPlayerbot.LLMApiKey = YOUR_API_KEY

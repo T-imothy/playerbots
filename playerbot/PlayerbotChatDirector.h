@@ -22,7 +22,43 @@ struct ChatDirectorCapability
     uint32 maxQuantity = 0;
     uint32 priceCopper = 0;
     uint32 valueCopper = 0;
+    uint32 questId = 0;
+    uint32 groupId = 0;
+    uint32 actorGuid = 0;
+    std::string description;
     std::vector<std::string> deliveries;
+};
+
+struct ChatDirectorQuest
+{
+    struct Objective
+    {
+        std::string type;
+        std::string name;
+        uint32 current = 0;
+        uint32 required = 0;
+    };
+
+    uint32 questId = 0;
+    std::string title;
+    std::string status;
+    bool shareable = false;
+    std::vector<Objective> objectives;
+};
+
+struct ChatDirectorGroupState
+{
+    uint32 groupId = 0;
+    uint32 leaderGuid = 0;
+    std::string leaderName;
+    uint32 memberCount = 0;
+    uint32 capacity = 5;
+    bool raid = false;
+    bool isLeader = false;
+    bool isAssistant = false;
+    bool full = false;
+    bool pendingInvite = false;
+    std::vector<std::string> humanMembers;
 };
 
 struct ChatDirectorCandidate
@@ -40,6 +76,8 @@ struct ChatDirectorCandidate
     std::string currentActivity;
     std::string questLog;
     bool questLogTruncated = false;
+    ChatDirectorGroupState groupState;
+    std::vector<ChatDirectorQuest> quests;
     bool grouped = false;
     bool inCombat = false;
     bool available = true;
@@ -55,11 +93,15 @@ struct ChatDirectorEvent
     std::string speakerName;
     uint32 speakerGuid = 0;
     uint8 speakerLevel = 1;
+    std::string speakerQuestLog;
+    bool speakerQuestLogTruncated = false;
+    std::vector<ChatDirectorQuest> speakerQuests;
     uint32 zone = 0;
     uint32 team = 0;
     std::string message;
     bool ambient = false;
     bool factualGrounding = false;
+    std::string groundingType;
     std::map<uint32, ChatDirectorCandidate> candidates;
     std::chrono::steady_clock::time_point firstSeen;
 };
@@ -80,6 +122,7 @@ public:
         const std::string& message, const std::string& channelName);
     void ObservePartyQuestPlan(Player* bot, uint32 questId, const std::string& questName,
         const std::string& objective, const std::string& areaName, uint32 distanceYards);
+    void ObserveGroupInviteConflict(Player* bot, Player* initiator);
     void Update();
 
 private:
@@ -102,6 +145,7 @@ private:
     std::vector<ChatDirectorActionProposal> ParseActionProposals(const std::string& response) const;
     void Dispatch(const ScheduledReply& scheduled);
     void MaybeCreateAmbientEvent(std::chrono::steady_clock::time_point now);
+    void MaybeCreateProactiveGroupEvent(std::chrono::steady_clock::time_point now);
     void MaybeReportBotHealth(std::chrono::steady_clock::time_point now);
 
     struct BotHealthState
@@ -127,6 +171,14 @@ private:
     std::chrono::steady_clock::time_point nextHealthSample;
     std::map<uint32, BotHealthState> botHealth;
     std::map<std::string, std::chrono::steady_clock::time_point> questPlanCooldowns;
+    struct SharedActivityState
+    {
+        std::chrono::steady_clock::time_point firstSeen;
+        std::chrono::steady_clock::time_point lastSeen;
+        std::chrono::steady_clock::time_point lastOffer;
+    };
+    std::map<std::string, SharedActivityState> sharedActivity;
+    std::map<uint32, std::chrono::steady_clock::time_point> proactivePlayerCooldowns;
 };
 
 #define sPlayerbotChatDirector PlayerbotChatDirector::instance()
