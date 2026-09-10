@@ -300,12 +300,19 @@ bool BankAction::AutoDeposit()
         InventoryResult msg = bot->CanBankItem(NULL_BAG, NULL_SLOT, dest, item, false, bagSlot);
 
         if (msg != EQUIP_ERR_OK)
+        {
+            PlayerbotServiceTracking::Result(bot, "bank_deposit", 0, proto->ItemId, "bank_item_count", 0, 0,
+                true, ("inventory_error_" + std::to_string(unsigned(msg))).c_str());
             continue;
+        }
 
+        const uint32 beforeCount = bot->GetItemCount(proto->ItemId, true) - bot->GetItemCount(proto->ItemId, false);
         bot->RemoveItem(item->GetBagSlot(), item->GetSlot(), true);
         bot->BankItem(dest, item, true);
+        const bool verified = PlayerbotServiceTracking::Result(bot, "bank_deposit", 0, proto->ItemId, "bank_item_count",
+            beforeCount, bot->GetItemCount(proto->ItemId, true) - bot->GetItemCount(proto->ItemId, false));
         ResetBankActionItemCaches(ai, itemId, itemQualifier, itemusageQualifier);
-        deposited = true;
+        deposited |= verified;
     }
 
     return deposited;
@@ -339,12 +346,19 @@ bool BankAction::AutoWithdraw()
         InventoryResult msg = bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, pItem, bagSlot, false);
 
         if (msg != EQUIP_ERR_OK)
+        {
+            PlayerbotServiceTracking::Result(bot, "bank_withdraw", 0, proto->ItemId, "bag_item_count", 0, 0,
+                true, ("inventory_error_" + std::to_string(unsigned(msg))).c_str());
             return false;
+        }
 
+        const uint32 beforeCount = bot->GetItemCount(proto->ItemId, false);
         bot->RemoveItem(pItem->GetBagSlot(), pItem->GetSlot(), true);
         bot->StoreItem(dest, pItem, true);
+        const bool verified = PlayerbotServiceTracking::Result(bot, "bank_withdraw", 0, proto->ItemId, "bag_item_count",
+            beforeCount, bot->GetItemCount(proto->ItemId, false));
         ResetBankActionItemCaches(ai, itemId, itemQualifier);
-        return true;
+        return verified;
     };
 
     for (auto& item : AI_VALUE2(std::list<Item*>, "bank items", "all"))
