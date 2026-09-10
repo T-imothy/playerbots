@@ -1,5 +1,6 @@
-
 #include "playerbot/playerbot.h"
+#include "playerbot/LivingTrainingGroupPriority.h"
+
 #include "InviteToGroupAction.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/PlayerbotSocialActionBroker.h"
@@ -15,6 +16,9 @@ namespace ai
             return false;
 
         if (inviter == player)
+            return false;
+
+        if (LivingWowDeferBotPartyForTraining(player, inviter))
             return false;
 
         if (!inviter->isRealPlayer() && !player->isRealPlayer() &&

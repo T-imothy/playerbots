@@ -1,6 +1,7 @@
 #pragma once
 
 #include "playerbot/strategy/Action.h"
+#include "playerbot/LivingTrainingGroupPriority.h"
 #include "playerbot/PlayerbotChatDirector.h"
 #include "playerbot/PlayerbotRendezvousManager.h"
 #include "playerbot/PlayerbotSocialActionBroker.h"
@@ -52,6 +53,12 @@ namespace ai
                 return false;
             }
             
+            if (LivingWowDeferBotPartyForTraining(bot, inviter, grp))
+            {
+                bot->UninviteFromGroup();
+                return false;
+            }
+
             if (bot->isAFK())
                 bot->ToggleAFK();
 
