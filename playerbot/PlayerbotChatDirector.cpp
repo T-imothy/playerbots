@@ -3556,6 +3556,63 @@ static uint32 GuildEventAssembledSize(Player* organizer)
     return members;
 }
 
+static std::vector<Player*> GuildEventCommittedRoster(const std::string& eventId, uint32 guildId)
+{
+    std::vector<Player*> roster;
+    auto rows = CharacterDatabase.PQuery(
+        "SELECT character_guid FROM guild_society_rsvp WHERE event_id='%s' "
+        "AND response IN ('accepted','attended') ORDER BY character_guid", eventId.c_str());
+    if (!rows)
+        return roster;
+    do
+    {
+        Player* member = sRandomPlayerbotMgr.GetPlayerBot(rows->Fetch()[0].GetUInt32());
+        if (member && member->IsInWorld() && member->GetSession() && member->GetGuildId() == guildId)
+            roster.push_back(member);
+    }
+    while (rows->NextRow());
+    return roster;
+}
+
+static uint32 GuildEventCommittedGroupSize(Player* organizer, const std::vector<Player*>& roster,
+    bool assembledOnly)
+{
+    if (!organizer || !organizer->GetGroup())
+        return 0;
+    uint32 members = 0;
+    for (Player* member : roster)
+    {
+        if (!member || member->GetGroup() != organizer->GetGroup())
+            continue;
+        if (assembledOnly && (member->GetMapId() != organizer->GetMapId() ||
+            member->GetInstanceId() != organizer->GetInstanceId() ||
+            !member->IsWithinDistInMap(organizer, 60.0f)))
+            continue;
+        ++members;
+    }
+    return members;
+}
+
+static void RepairGuildEventRoster(Player* organizer, uint32 guildId,
+    const std::vector<Player*>& roster)
+{
+    if (!organizer || !SafeGuildEventParticipant(organizer, guildId))
+        return;
+    for (Player* member : roster)
+    {
+        if (!member || member == organizer || member->GetGroup() == organizer->GetGroup())
+            continue;
+        if (!SafeGuildEventParticipant(member, guildId))
+            continue;
+        if (member->GetGroup())
+            member->GetPlayerbotAI()->DoSpecificAction(
+                "leave", Event("guild society roster repair", "", organizer), true);
+        if (!member->GetGroup())
+            member->GetPlayerbotAI()->DoSpecificAction(
+                "join", Event("create group", "", organizer), true);
+    }
+}
+
 void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock::time_point now)
 {
     if (nextGuildLifecycleUpdate.time_since_epoch().count() && now < nextGuildLifecycleUpdate)
@@ -3566,7 +3623,7 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
 
     auto events = CharacterDatabase.PQuery(
         "SELECT event_id,guild_id,event_type,state,title,organizer_guid,scheduled_at,minimum_members,"
-        "maximum_members,tank_slots,healer_slots,damage_slots,created_at FROM guild_society_event "
+        "maximum_members,tank_slots,healer_slots,damage_slots,created_at,updated_at FROM guild_society_event "
         "WHERE state IN ('forming','traveling','active') ORDER BY created_at LIMIT 24");
     if (!events)
         return;
@@ -3588,13 +3645,22 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
         const uint32 healerSlots = fields[10].GetUInt32();
         const uint32 damageSlots = fields[11].GetUInt32();
         const uint32 createdAt = fields[12].GetUInt32();
+        const uint32 updatedAt = fields[13].GetUInt32();
         if (!SafeGuildWireId(eventId, 100) ||
             !GuildExecutionEnabled(guildPolicyMode, guildRolloutScope, guildCanaryIds, guildId))
             continue;
 
         Player* organizer = sRandomPlayerbotMgr.GetPlayerBot(organizerGuid);
-        const uint32 groupSize = GuildEventGroupSize(organizer);
+        std::vector<Player*> committedRoster = GuildEventCommittedRoster(eventId, guildId);
+        if (!committedRoster.empty())
+            RepairGuildEventRoster(organizer, guildId, committedRoster);
+        const uint32 groupSize = committedRoster.empty() ? GuildEventGroupSize(organizer) :
+            GuildEventCommittedGroupSize(organizer, committedRoster, false);
+        const uint32 assembledSize = committedRoster.empty() ? GuildEventAssembledSize(organizer) :
+            GuildEventCommittedGroupSize(organizer, committedRoster, true);
+        const uint32 intendedSize = committedRoster.empty() ? groupSize : committedRoster.size();
         const uint32 age = nowEpoch > createdAt ? nowEpoch - createdAt : 0;
+        const uint32 stateAge = nowEpoch > updatedAt ? nowEpoch - updatedAt : 0;
         std::string nextState, failureReason;
         if (state == "forming" || state == "traveling")
         {
@@ -3623,11 +3689,11 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
                 // the party can remain permanently split. Offline members are
                 // excluded by GuildEventGroupSize, so require every currently
                 // participating member to be physically assembled.
-                if (GuildEventAssembledSize(organizer) >= groupSize)
+                if (assembledSize >= intendedSize)
                     nextState = "active";
                 else if (state == "forming")
                     nextState = "traveling";
-                else if (age >= 300)
+                else if (stateAge >= 300)
                 {
                     nextState = "failed";
                     failureReason = "assembly_timeout";
@@ -3643,11 +3709,12 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
         {
             if (groupSize < minimumMembers)
             {
-                nextState = age >= 300 ? "completed" : "failed";
-                if (nextState == "failed")
-                    failureReason = "group_disbanded_early";
+                // Bot-only grouping may briefly reclaim a committed member.
+                // Return to the assembly state and repair the persisted roster
+                // rather than declaring a new event dead after one tick.
+                nextState = "traveling";
             }
-            else if (GuildEventAssembledSize(organizer) < minimumMembers && age < 1800)
+            else if (assembledSize < minimumMembers && age < 1800)
             {
                 // Recover events persisted across a restart (or split by a
                 // transport) through the same assembly path. Membership must
@@ -3775,6 +3842,7 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
         std::string state = "rejected", rejection = groupEvent ? "no_safe_roster" : "executor_not_available";
         std::string eventState = "failed", eventType, title;
         uint32 organizerGuid = 0, accepted = 0;
+        std::vector<uint32> committedRosterGuids;
         if (groupEvent)
         {
             std::vector<Player*> eligible;
@@ -3936,9 +4004,13 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
                         if (member == organizer || !organizer->GetGroup() ||
                             member->GetGroup() != organizer->GetGroup())
                             continue;
+                        sRandomPlayerbotMgr.SetValue(member->GetGUIDLow(), "create group", 0);
+                        committedRosterGuids.push_back(member->GetGUIDLow());
                         sPlayerbotRendezvousManager.Request(
                             member, organizer, "guild-event:" + candidateId, false);
                     }
+                    sRandomPlayerbotMgr.SetValue(organizer->GetGUIDLow(), "create group", 0);
+                    committedRosterGuids.push_back(organizer->GetGUIDLow());
                 }
             }
             eventType = effectiveDecisionType == "schedule_dungeon" ? "dungeon" :
@@ -4080,6 +4152,15 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
             nowEpoch, eventType == "dungeon" ? 5 : 2,
             eventType == "dungeon" ? 1 : 0, eventType == "dungeon" ? 1 : 0,
             eventType == "dungeon" ? 3 : 0, rejection.c_str(), nowEpoch, nowEpoch);
+        if (!committedRosterGuids.empty())
+        {
+            CharacterDatabase.PExecute(
+                "DELETE FROM guild_society_rsvp WHERE event_id='%s'", eventId.c_str());
+            for (uint32 memberGuid : committedRosterGuids)
+                CharacterDatabase.PExecute(
+                    "INSERT INTO guild_society_rsvp (event_id,character_guid,response,role,human,updated_at) "
+                    "VALUES ('%s',%u,'accepted','',0,%u)", eventId.c_str(), memberGuid, nowEpoch);
+        }
         std::ostringstream telemetry;
         telemetry << "{\"events\":[{\"event_id\":\"execution-" << decisionId
             << "\",\"type\":\"guild_event\",\"guild_event_id\":\"" << eventId
