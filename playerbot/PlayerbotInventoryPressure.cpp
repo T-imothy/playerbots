@@ -27,6 +27,16 @@ LivingWowItemDisposition PlayerbotInventoryPressure::Classify(Player* bot, Item*
         return LivingWowItemDisposition::Keep;
     }
 
+    // TBC throwing weapons are non-stackable. ItemUsage may call every bag
+    // copy an equipment candidate rather than ammunition, so recognize the
+    // redundant copies before consulting that mutable classification.
+    ItemPrototype const* proto = item->GetProto();
+    Item* equippedRanged = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
+    if (proto && proto->InventoryType == INVTYPE_THROWN && proto->SellPrice && equippedRanged &&
+        equippedRanged != item && equippedRanged->GetProto() &&
+        equippedRanged->GetProto()->ItemId == proto->ItemId)
+        return LivingWowItemDisposition::Vendor;
+
     ItemQualifier qualifier(item);
     ItemUsage usage = bot->GetPlayerbotAI()->GetAiObjectContext()->
         GetValue<ItemUsage>("item usage", qualifier.GetQualifier())->Get();
@@ -46,18 +56,7 @@ LivingWowItemDisposition PlayerbotInventoryPressure::Classify(Player* bot, Item*
     case ItemUsage::ITEM_USAGE_DISENCHANT:
         return LivingWowItemDisposition::Craft;
     case ItemUsage::ITEM_USAGE_AMMO:
-    {
-        // TBC throwing weapons are non-stackable and Playerbots can accumulate
-        // many identical bag copies while treating every copy as ammunition.
-        // One equipped, repairable throwing weapon is sufficient; retaining a
-        // dozen identical copies can consume an entire backpack indefinitely.
-        ItemPrototype const* proto = item->GetProto();
-        Item* equipped = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
-        if (proto && proto->InventoryType == INVTYPE_THROWN && proto->SellPrice && equipped &&
-            equipped != item && equipped->GetProto() && equipped->GetProto()->ItemId == proto->ItemId)
-            return LivingWowItemDisposition::Vendor;
         return LivingWowItemDisposition::Keep;
-    }
     case ItemUsage::ITEM_USAGE_NONE:
         // Unknown is not permission to liquidate. The normal autonomous AI may
         // revisit it later after a goal or market snapshot supplies a reason.
