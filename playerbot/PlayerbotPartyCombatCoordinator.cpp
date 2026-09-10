@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <limits>
 #include <sstream>
 
 using namespace ai;
@@ -180,6 +181,10 @@ LivingPartyRoleState PlayerbotPartyCombatCoordinator::InferRole(Player* member, 
     { result.primary = forced->second; result.source = "explicit"; result.locked = true; return result; }
     if ((member->getClass() == CLASS_WARRIOR || member->getClass() == CLASS_PALADIN) && HasShield(member))
     { result.primary = LivingPartyRole::Tank; result.secondary = LivingPartyRole::Damage; result.source = "equipment"; return result; }
+    if (member->GetPlayerbotAI() && member->getClass() == CLASS_DRUID && member->GetLevel() >= 10 &&
+        (member->HasSpell(5487) || member->HasSpell(9634)) &&
+        sPlayerbotBuildProfiles.GetActiveWeightName(member) == "feraltank")
+    { result.primary = LivingPartyRole::Tank; result.secondary = LivingPartyRole::Damage; result.source = "build"; return result; }
     if (member->GetLevel() >= 10)
     {
         BotRoles roles = AiFactory::GetPlayerRoles(member);
@@ -274,15 +279,19 @@ std::string PlayerbotPartyCombatCoordinator::ApplyRoleTalents(Player* member, Li
 
     BotRoles desired = role == LivingPartyRole::Tank ? BOT_ROLE_TANK :
         role == LivingPartyRole::Healer ? BOT_ROLE_HEALER : BOT_ROLE_DPS;
-    std::string specialization = sPlayerbotBuildProfiles.BestSpecializationForRole(member, (uint32)desired);
-    if (specialization.empty())
+    const uint32 pathId = sPlayerbotBuildProfiles.BestPathForRole(member, (uint32)desired);
+    if (pathId == std::numeric_limits<uint32>::max())
         return "role_not_supported_by_class";
     std::string outcome;
     uint32 groupId = member->GetGroup() ? member->GetGroup()->GetId() : 0;
-    if (!sPlayerbotBuildProfiles.ActivateTemporary(member, specialization, groupId,
-        std::string("party_role_") + RoleName(role), outcome)) return outcome;
+    const LivingBotBuildProfile& preferred = sPlayerbotBuildProfiles.Get(member);
+    std::string reason = std::string("party_role_") + RoleName(role);
+    if (pathId != preferred.mainPathId && pathId != preferred.offPathId)
+        reason += "_ability_fallback";
+    if (!sPlayerbotBuildProfiles.ActivateTemporaryPath(member, pathId, groupId, reason, outcome)) return outcome;
     sLog.outString("Living WoW temporary role build bot=%u name=%s role=%s specialization=%s party=%u",
-        member->GetGUIDLow(), member->GetName(), RoleName(role), specialization.c_str(), groupId);
+        member->GetGUIDLow(), member->GetName(), RoleName(role),
+        ChangeTalentsAction::GetPathSpecialization(member->getClass(), pathId).c_str(), groupId);
     return "completed";
 }
 
@@ -312,6 +321,13 @@ bool PlayerbotPartyCombatCoordinator::RoleMatchesTalents(Player* member, LivingP
     if (member->GetFreeTalentPoints() > 0) return false;
     BotRoles desired = role == LivingPartyRole::Tank ? BOT_ROLE_TANK :
         role == LivingPartyRole::Healer ? BOT_ROLE_HEALER : BOT_ROLE_DPS;
+    const LivingBotBuildProfile& profile = sPlayerbotBuildProfiles.Get(member);
+    const uint32 preferredPath = sPlayerbotBuildProfiles.BestPathForRole(member, (uint32)desired);
+    if (preferredPath != std::numeric_limits<uint32>::max() &&
+        profile.activeReason.find("ability_fallback") != std::string::npos &&
+        profile.activePathId != preferredPath) return false;
+    if (member->GetPlayerbotAI() && !profile.activeSpecialization.empty())
+        return sPlayerbotBuildProfiles.IsPathUsableForRole(member, profile.activePathId, (uint32)desired);
     return (AiFactory::GetPlayerRoles(member) & desired) != 0;
 }
 
@@ -990,7 +1006,8 @@ void PlayerbotPartyCombatCoordinator::SendSnapshot(Group* group, GroupState& sta
                             << build.offSpecialization << "\t" << build.activeSpecialization << "\t"
                             << (build.partySessionId ? 1 : 0) << "\t" << (build.offPathId != build.mainPathId ? 1 : 0)
                             << "\t" << ((member->GetLevel() < 10 || member->GetFreeTalentPoints() == 0) ? 1 : 0)
-                            << "\t" << (member->IsAlive() ? "ready" : "dead");
+                            << "\t" << (member->IsAlive() ? "ready" : "dead")
+                            << "\t" << build.activeReason;
                         SendAddon(source, receiver, buildRow.str());
                     }
                 }

@@ -320,6 +320,15 @@ BotRoles ChangeTalentsAction::GetPathRole(uint8 cls, uint32 pathId)
 {
     TalentPath* path = getPremadePath(cls, pathId);
     if (!path || (uint32)path->id != pathId || path->talentSpec.empty()) return BOT_ROLE_NONE;
+    if (cls == CLASS_DRUID && path->talentSpec.back().highestTree() == 1)
+    {
+        std::string name = path->name;
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+        // Feral cat and bear builds share one talent tree in TBC, but they do
+        // not fill the same party role. Preserve the premade archetype instead
+        // of collapsing both to generic damage.
+        return name.find("tank") != std::string::npos ? BOT_ROLE_TANK : BOT_ROLE_DPS;
+    }
     return AiFactory::GetPlayerRoles(cls, path->talentSpec.back().highestTree());
 }
 

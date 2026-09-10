@@ -245,6 +245,73 @@ uint32 PlayerbotBuildProfileMgr::PathForSpecialization(Player* bot, const std::s
     return fallback;
 }
 
+bool PlayerbotBuildProfileMgr::IsPathUsableForRole(Player* bot, uint32 pathId, uint32 roleMask) const
+{
+    if (!bot) return false;
+    const uint32 pathRole = PathRole(bot->getClass(), pathId);
+    if (roleMask && !(pathRole & roleMask)) return false;
+    if (bot->getClass() != CLASS_DRUID) return true;
+
+    // In TBC the Feral tree contains two mechanically different builds whose
+    // specialization label is identical.  A cat build without Cat Form and a
+    // tank build without Bear Form are not executable builds, even if their
+    // talents are otherwise valid.
+    const std::string weight = Lower(ChangeTalentsAction::GetPathWeightName(bot->getClass(), pathId));
+    const std::string name = Lower(ChangeTalentsAction::GetPathName(bot->getClass(), pathId));
+    const bool catBuild = weight == "feraldps" || name.find("feral cat") != std::string::npos;
+    const bool bearBuild = weight == "feraltank" || name.find("feral tank") != std::string::npos;
+    if (catBuild) return bot->HasSpell(768);                    // Cat Form
+    if (bearBuild) return bot->HasSpell(5487) || bot->HasSpell(9634); // Bear / Dire Bear Form
+    return true;
+}
+
+uint32 PlayerbotBuildProfileMgr::BestPathForRole(Player* bot, uint32 roleMask)
+{
+    if (!bot) return std::numeric_limits<uint32>::max();
+    const LivingBotBuildProfile& profile = Get(bot);
+    const uint32 preferred[] = {profile.mainPathId, profile.offPathId};
+    for (uint32 pathId : preferred)
+        if (IsPathUsableForRole(bot, pathId, roleMask)) return pathId;
+
+    // Prefer a PvE archetype for ordinary world and party play, then accept
+    // another valid premade path if the configured catalog has no PvE label.
+    for (uint8 pass = 0; pass < 2; ++pass)
+        for (TalentPath& path : sPlayerbotAIConfig.classSpecs[bot->getClass()].talentPath)
+        {
+            const bool pve = Lower(path.name).find("pve") != std::string::npos;
+            if ((pass == 0) != pve) continue;
+            if (IsPathUsableForRole(bot, path.id, roleMask)) return path.id;
+        }
+    return std::numeric_limits<uint32>::max();
+}
+
+uint32 PlayerbotBuildProfileMgr::EffectiveMainPath(Player* bot, const LivingBotBuildProfile& profile) const
+{
+    if (!bot) return std::numeric_limits<uint32>::max();
+    const uint32 preferredRole = PathRole(bot->getClass(), profile.mainPathId);
+    if (IsPathUsableForRole(bot, profile.mainPathId, preferredRole)) return profile.mainPathId;
+
+    for (uint8 pass = 0; pass < 2; ++pass)
+        for (TalentPath& path : sPlayerbotAIConfig.classSpecs[bot->getClass()].talentPath)
+        {
+            const bool pve = Lower(path.name).find("pve") != std::string::npos;
+            if ((pass == 0) != pve) continue;
+            if (IsPathUsableForRole(bot, path.id, preferredRole)) return path.id;
+        }
+
+    // A preferred tank form may not have been learned yet.  In that case a
+    // druid levels as ranged damage instead of pretending it can tank.
+    if (bot->getClass() == CLASS_DRUID)
+        for (uint8 pass = 0; pass < 2; ++pass)
+            for (TalentPath& path : sPlayerbotAIConfig.classSpecs[bot->getClass()].talentPath)
+            {
+                const bool pve = Lower(path.name).find("pve") != std::string::npos;
+                if ((pass == 0) != pve) continue;
+                if (IsPathUsableForRole(bot, path.id, BOT_ROLE_DPS)) return path.id;
+            }
+    return profile.mainPathId;
+}
+
 LivingBotBuildProfile PlayerbotBuildProfileMgr::Create(Player* bot)
 {
     LivingBotBuildProfile result;
@@ -346,7 +413,12 @@ void PlayerbotBuildProfileMgr::LoadEquipment(uint32 characterGuid)
 void PlayerbotBuildProfileMgr::CaptureEquipment(Player* bot, const LivingBotBuildProfile& profile)
 {
     if (!bot || mode == "off") return;
-    const char* build = profile.activePathId == profile.offPathId ? "off" : "main";
+    const char* build = profile.activePathId == profile.offPathId ? "off" :
+        profile.activePathId == profile.mainPathId ? "main" : NULL;
+    // A form-aware leveling fallback is intentionally not a third permanent
+    // equipment set. Do not let its temporary gear overwrite the saved main
+    // set merely because it is currently active.
+    if (!build) return;
     uint64 signature = 1469598103934665603ULL;
     for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
     {
@@ -403,23 +475,73 @@ void PlayerbotBuildProfileMgr::Update(Player* bot)
         lastPolicyLoad = now;
     }
     if (mode == "off" || !persistentProfiles) return;
+    Get(bot);
+    if (nextAvailabilitySync[bot->GetGUIDLow()] <= now)
+    {
+        ReconcileAvailableBuild(bot);
+        nextAvailabilitySync[bot->GetGUIDLow()] = now + 10;
+    }
     const LivingBotBuildProfile& profile = Get(bot);
     if (nextSnapshot[bot->GetGUIDLow()] > now) return;
     CaptureEquipment(bot, profile);
     nextSnapshot[bot->GetGUIDLow()] = now + 60;
 }
 
+void PlayerbotBuildProfileMgr::ReconcileAvailableBuild(Player* bot)
+{
+    if (!bot || !IsActive() || bot->GetLevel() < 10 || bot->IsInCombat() || !bot->IsAlive() ||
+        bot->IsTaxiFlying() || bot->InBattleGround() || (bot->GetMap() && bot->GetMap()->IsDungeon())) return;
+    LivingBotBuildProfile profile = Get(bot);
+    if (profile.partySessionId || (profile.activeReason != "main" && profile.activeReason != "ability_fallback"))
+        return;
+
+    const uint32 desiredPath = EffectiveMainPath(bot, profile);
+    if (desiredPath == std::numeric_limits<uint32>::max()) return;
+    const std::string desiredReason = desiredPath == profile.mainPathId ? "main" : "ability_fallback";
+    if (profile.activePathId == desiredPath && profile.activeReason == desiredReason &&
+        bot->GetFreeTalentPoints() == 0) return;
+
+    CaptureEquipment(bot, profile);
+    std::ostringstream details;
+    if (!ChangeTalentsAction::ApplyPremadePath(bot, desiredPath, &details)) return;
+    profile.activePathId = desiredPath;
+    profile.activeSpecialization = ChangeTalentsAction::GetPathSpecialization(bot->getClass(), desiredPath);
+    profile.activeArchetype = ChangeTalentsAction::GetPathName(bot->getClass(), desiredPath);
+    profile.activeReason = desiredReason;
+    ++profile.revision;
+    profiles[profile.characterGuid] = profile;
+    Save(profile);
+    if (desiredPath == profile.mainPathId) EquipSavedSet(bot, "main");
+    else if (desiredPath == profile.offPathId) EquipSavedSet(bot, "off");
+    sLog.outString("Living WoW available build sync bot=%u name=%s preferred=%s active=%s reason=%s",
+        bot->GetGUIDLow(), bot->GetName(), profile.mainSpecialization.c_str(),
+        profile.activeSpecialization.c_str(), profile.activeReason.c_str());
+}
+
 bool PlayerbotBuildProfileMgr::ActivateTemporary(Player* bot, const std::string& specialization,
+    uint32 partySessionId, const std::string& reason, std::string& outcome)
+{
+    LivingBotBuildProfile profile = Get(bot);
+    // Prefer the main identity when two archetypes share one specialization
+    // label (notably Feral cat and Feral tank). Role-driven callers use the
+    // path-specific entry point below and therefore remain unambiguous.
+    uint32 pathId = specialization == profile.mainSpecialization ? profile.mainPathId :
+        specialization == profile.offSpecialization ? profile.offPathId : PathForSpecialization(bot, specialization);
+    if (pathId == std::numeric_limits<uint32>::max())
+    { outcome = "specialization_not_supported_by_class"; return false; }
+    return ActivateTemporaryPath(bot, pathId, partySessionId, reason, outcome);
+}
+
+bool PlayerbotBuildProfileMgr::ActivateTemporaryPath(Player* bot, uint32 pathId,
     uint32 partySessionId, const std::string& reason, std::string& outcome)
 {
     if (!IsActive()) { outcome = "build_profiles_observe_only"; return false; }
     if (!temporaryPartyBuilds) { outcome = "temporary_party_builds_disabled"; return false; }
     LivingBotBuildProfile profile = Get(bot);
+    const std::string specialization = ChangeTalentsAction::GetPathSpecialization(bot->getClass(), pathId);
+    if (specialization.empty()) { outcome = "specialization_not_supported_by_class"; return false; }
+    if (!IsPathUsableForRole(bot, pathId)) { outcome = "required_form_not_learned"; return false; }
     CaptureEquipment(bot, profile);
-    uint32 pathId = specialization == profile.offSpecialization ? profile.offPathId :
-        specialization == profile.mainSpecialization ? profile.mainPathId : PathForSpecialization(bot, specialization);
-    if (pathId == std::numeric_limits<uint32>::max())
-    { outcome = "specialization_not_supported_by_class"; return false; }
     std::ostringstream details;
     if (!ChangeTalentsAction::ApplyPremadePath(bot, pathId, &details))
     { outcome = "talent_assignment_incomplete"; return false; }
@@ -427,7 +549,8 @@ bool PlayerbotBuildProfileMgr::ActivateTemporary(Player* bot, const std::string&
     profile.activeArchetype = ChangeTalentsAction::GetPathName(bot->getClass(), pathId);
     profile.activeReason = reason; profile.partySessionId = partySessionId; ++profile.revision;
     profiles[profile.characterGuid] = profile; Save(profile);
-    EquipSavedSet(bot, pathId == profile.offPathId ? "off" : "main");
+    if (pathId == profile.offPathId) EquipSavedSet(bot, "off");
+    else if (pathId == profile.mainPathId) EquipSavedSet(bot, "main");
     outcome = "completed"; return true;
 }
 
@@ -444,13 +567,19 @@ bool PlayerbotBuildProfileMgr::SetMain(Player* bot, const std::string& specializ
     profile.offPathId = ChooseOffPath(bot, pathId, profile.roleFlexibility);
     profile.offSpecialization = ChangeTalentsAction::GetPathSpecialization(bot->getClass(), profile.offPathId);
     profile.offArchetype = ChangeTalentsAction::GetPathName(bot->getClass(), profile.offPathId);
-    profile.activePathId = pathId; profile.activeSpecialization = specialization; profile.activeReason = "main";
-    profile.activeArchetype = profile.mainArchetype;
+    const uint32 effectivePath = EffectiveMainPath(bot, profile);
+    profile.activePathId = effectivePath;
+    profile.activeSpecialization = ChangeTalentsAction::GetPathSpecialization(bot->getClass(), effectivePath);
+    profile.activeReason = effectivePath == pathId ? "main" : "ability_fallback";
+    profile.activeArchetype = ChangeTalentsAction::GetPathName(bot->getClass(), effectivePath);
     profile.partySessionId = 0; ++profile.revision;
     std::ostringstream details;
-    if (!ChangeTalentsAction::ApplyPremadePath(bot, pathId, &details))
+    if (!ChangeTalentsAction::ApplyPremadePath(bot, effectivePath, &details))
     { outcome = "talent_assignment_incomplete"; return false; }
-    profiles[profile.characterGuid] = profile; Save(profile); EquipSavedSet(bot, "main"); outcome = "completed"; return true;
+    profiles[profile.characterGuid] = profile; Save(profile);
+    if (effectivePath == profile.mainPathId) EquipSavedSet(bot, "main");
+    else if (effectivePath == profile.offPathId) EquipSavedSet(bot, "off");
+    outcome = "completed"; return true;
 }
 
 bool PlayerbotBuildProfileMgr::SetOffspec(Player* bot, const std::string& specialization, std::string& outcome)
@@ -471,14 +600,20 @@ bool PlayerbotBuildProfileMgr::ClearTemporary(Player* bot, uint32 partySessionId
     LivingBotBuildProfile profile = Get(bot);
     if (!profile.partySessionId) { outcome = "completed"; return true; }
     if (partySessionId && profile.partySessionId != partySessionId) { outcome = "stale_party_session"; return false; }
+    const uint32 effectivePath = EffectiveMainPath(bot, profile);
     std::ostringstream details;
-    if (!ChangeTalentsAction::ApplyPremadePath(bot, profile.mainPathId, &details))
+    if (!ChangeTalentsAction::ApplyPremadePath(bot, effectivePath, &details))
     { outcome = "talent_assignment_incomplete"; return false; }
     CaptureEquipment(bot, profile);
-    profile.activePathId = profile.mainPathId; profile.activeSpecialization = profile.mainSpecialization;
-    profile.activeArchetype = profile.mainArchetype;
-    profile.activeReason = "main"; profile.partySessionId = 0; ++profile.revision;
-    profiles[profile.characterGuid] = profile; Save(profile); EquipSavedSet(bot, "main"); outcome = "completed"; return true;
+    profile.activePathId = effectivePath;
+    profile.activeSpecialization = ChangeTalentsAction::GetPathSpecialization(bot->getClass(), effectivePath);
+    profile.activeArchetype = ChangeTalentsAction::GetPathName(bot->getClass(), effectivePath);
+    profile.activeReason = effectivePath == profile.mainPathId ? "main" : "ability_fallback";
+    profile.partySessionId = 0; ++profile.revision;
+    profiles[profile.characterGuid] = profile; Save(profile);
+    if (effectivePath == profile.mainPathId) EquipSavedSet(bot, "main");
+    else if (effectivePath == profile.offPathId) EquipSavedSet(bot, "off");
+    outcome = "completed"; return true;
 }
 
 std::string PlayerbotBuildProfileMgr::GetMainSpecialization(Player* bot) { return Get(bot).mainSpecialization; }
@@ -494,14 +629,9 @@ std::string PlayerbotBuildProfileMgr::GetActiveWeightName(Player* bot)
 
 std::string PlayerbotBuildProfileMgr::BestSpecializationForRole(Player* bot, uint32 roleMask)
 {
-    if (!bot) return "";
-    const LivingBotBuildProfile& p = Get(bot);
-    if ((uint32)ChangeTalentsAction::GetPathRole(bot->getClass(), p.mainPathId) & roleMask) return p.mainSpecialization;
-    if ((uint32)ChangeTalentsAction::GetPathRole(bot->getClass(), p.offPathId) & roleMask) return p.offSpecialization;
-    for (TalentPath& path : sPlayerbotAIConfig.classSpecs[bot->getClass()].talentPath)
-        if ((uint32)ChangeTalentsAction::GetPathRole(bot->getClass(), path.id) & roleMask)
-            return ChangeTalentsAction::GetPathSpecialization(bot->getClass(), path.id);
-    return "";
+    const uint32 pathId = BestPathForRole(bot, roleMask);
+    return pathId == std::numeric_limits<uint32>::max() ? "" :
+        ChangeTalentsAction::GetPathSpecialization(bot->getClass(), pathId);
 }
 
 uint8 PlayerbotBuildProfileMgr::PreferredArmorSubclass(Player* bot)

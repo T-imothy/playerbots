@@ -78,6 +78,8 @@ namespace ai
         uint8 PreferredArmorReplacementPercent() const { return preferredArmorReplacementPercent; }
         bool ActivateTemporary(Player* bot, const std::string& specialization, uint32 partySessionId,
             const std::string& reason, std::string& outcome);
+        bool ActivateTemporaryPath(Player* bot, uint32 pathId, uint32 partySessionId,
+            const std::string& reason, std::string& outcome);
         bool SetMain(Player* bot, const std::string& specialization, std::string& outcome);
         bool SetOffspec(Player* bot, const std::string& specialization, std::string& outcome);
         bool ClearTemporary(Player* bot, uint32 partySessionId, std::string& outcome);
@@ -88,7 +90,9 @@ namespace ai
         std::string GetMainWeightName(Player* bot);
         std::string GetOffWeightName(Player* bot);
         std::string GetActiveWeightName(Player* bot);
+        uint32 BestPathForRole(Player* bot, uint32 roleMask);
         std::string BestSpecializationForRole(Player* bot, uint32 roleMask);
+        bool IsPathUsableForRole(Player* bot, uint32 pathId, uint32 roleMask = 0) const;
         LivingGearScores Evaluate(Player* bot, ItemPrototype const* proto);
         bool IsOffspecUpgrade(Player* bot, ItemPrototype const* proto, ItemPrototype const* comparison = NULL);
         bool CanCarryOffspecItem(Player* bot, ItemPrototype const* proto);
@@ -112,6 +116,8 @@ namespace ai
         uint32 PathForSpecialization(Player* bot, const std::string& specialization,
             uint32 avoidPath = std::numeric_limits<uint32>::max()) const;
         uint32 PairScore(Player* bot, uint32 mainPathId, uint32 candidatePathId, uint8 roleFlexibility) const;
+        uint32 EffectiveMainPath(Player* bot, const LivingBotBuildProfile& profile) const;
+        void ReconcileAvailableBuild(Player* bot);
         static uint32 StableValue(uint32 guid, uint32 salt);
         static std::string GearProfileName(uint32 bucket);
         static uint8 PreferredArmorSubclass(Player* bot);
@@ -136,6 +142,7 @@ namespace ai
         time_t lastPolicyLoad = 0;
         std::map<uint32, LivingBotBuildProfile> profiles;
         std::map<uint32, time_t> nextSnapshot;
+        std::map<uint32, time_t> nextAvailabilitySync;
         std::map<uint32, std::map<std::string, uint64> > equipmentSignatures;
         std::map<uint32, std::map<std::string, std::map<uint8, uint32> > > savedEquipment;
         std::map<uint32, std::map<std::string, std::map<uint8, uint32> > > savedEquipmentEntries;
