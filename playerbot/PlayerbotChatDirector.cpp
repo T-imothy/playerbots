@@ -113,10 +113,14 @@ static void PopulateQuestLog(Player* bot, ChatDirectorCandidate& candidate)
                             continue;
                         detail.useSpellId = item->Spells[spell].SpellId;
                         SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(detail.useSpellId);
-                        detail.usableNow = spellInfo && !bot->IsInCombat() &&
-                            bot->GetPlayerbotAI()->CanCastSpell(detail.useSpellId, bot, 0, false);
+                        // This helper also snapshots the real human speaker. A
+                        // real player deliberately has no PlayerbotAI, so never
+                        // dereference it while grounding the player's quest log.
+                        PlayerbotAI* playerbotAi = bot->GetPlayerbotAI();
+                        detail.usableNow = spellInfo && playerbotAi && !bot->IsInCombat() &&
+                            playerbotAi->CanCastSpell(detail.useSpellId, bot, 0, false);
                         if (!detail.usableNow)
-                            detail.blocker = bot->IsInCombat() ? "in_combat" :
+                            detail.blocker = !playerbotAi ? "player_controlled" : bot->IsInCombat() ? "in_combat" :
                                 (spellInfo && spellInfo->RequiresSpellFocus ? "required_location_or_object_not_nearby" : "cast_requirements_not_met");
                         break;
                     }
