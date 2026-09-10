@@ -6,6 +6,7 @@
 #include "PlayerbotSocialActionBroker.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotOrganicEconomy.h"
+#include "PlayerbotInventoryPressure.h"
 #include "PlayerbotChatJson.h"
 #include "PlayerbotLLMInterface.h"
 #include "PlayerbotRendezvousManager.h"
@@ -779,15 +780,25 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
 
     // A full party member can truthfully offer a scoped vendor trip.  The
     // action broker, not the language model, owns the travel and return.
-    if (speaker && sameZone && bot->GetGroup() && bot->GetGroup() == speaker->GetGroup() &&
+    if (speaker && bot->GetGroup() && bot->GetGroup() == speaker->GetGroup() &&
         !bot->IsInCombat())
     {
         uint8 bagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
-        AddSocialCapability(candidate,
-            "bags:report:" + std::to_string(bot->GetGUIDLow()) + ':' + std::to_string(speaker->GetGUIDLow()),
-            "report_bag_state", bot->GetGroup()->GetId(), bot->GetGUIDLow(), 0,
-            "Report authoritative inventory usage of " + std::to_string((uint32)bagUsage) + " percent.");
-        if (bagUsage > 80)
+        ChatDirectorCapability report;
+        report.capabilityRef = "bags:report:" + std::to_string(bot->GetGUIDLow()) + ':' +
+            std::to_string(speaker->GetGUIDLow());
+        report.type = "report_bag_state";
+        report.itemKind = "inventory_status";
+        report.currentQuantity = bagUsage;
+        report.desiredQuantity = 100 - bagUsage;
+        report.groupId = bot->GetGroup()->GetId();
+        report.actorGuid = bot->GetGUIDLow();
+        report.description = "Inventory is " + std::to_string((uint32)bagUsage) +
+            " percent full with " + std::to_string((uint32)(100 - bagUsage)) + " percent free.";
+        report.deliveries.push_back("immediate");
+        candidate.actionCapabilities.push_back(std::move(report));
+        LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
+        if (bagUsage > 80 && pressure.HasQuickMaintenance())
         {
             ChatDirectorCapability capability;
             capability.capabilityRef = "vendor:" + std::to_string(bot->GetGUIDLow()) + ':' +
@@ -798,7 +809,8 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
             capability.maxQuantity = 1;
             capability.deliveries.push_back("immediate");
             capability.description = "Inventory is " + std::to_string((uint32)bagUsage) +
-                " percent full and contains items safe to sell to a normal vendor.";
+                " percent full; quick maintenance has " + std::to_string(pressure.vendorStacks) +
+                " vendor stacks and " + std::to_string(pressure.bankStacks) + " bank stacks.";
             candidate.actionCapabilities.push_back(std::move(capability));
         }
         sPlayerbotSocialActionBroker.AddGatheringCapabilities(bot, speaker, candidate);

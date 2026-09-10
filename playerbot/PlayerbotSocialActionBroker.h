@@ -37,6 +37,7 @@ private:
         uint32 questId = 0;
         uint8 initialBagUsage = 0;
         uint8 sellAttempts = 0;
+        std::string maintenanceType;
         bool outboundRelocated = false;
         bool restoreFollow = false;
         std::string state;
@@ -65,6 +66,9 @@ private:
     bool HasActiveVendorTrip(uint32 botGuid) const;
     bool StartVendorTrip(Player* bot, Player* player, const std::string& actionId,
         const std::string& eventId, const std::string& proposalId, bool announce);
+    bool SetMaintenanceTarget(Player* bot, const std::string& maintenanceType) const;
+    void QueuePartyReturn(Action& action, Player* bot, Player* player,
+        const std::string& reason, bool success);
     void Report(const Action& action) const;
     std::map<std::string, Action> actions;
     std::map<uint32, std::pair<uint32, std::chrono::steady_clock::time_point>> preferredQuests;

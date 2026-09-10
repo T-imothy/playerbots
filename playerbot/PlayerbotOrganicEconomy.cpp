@@ -1,5 +1,6 @@
 #include "botpch.h"
 #include "PlayerbotOrganicEconomy.h"
+#include "PlayerbotInventoryPressure.h"
 
 #include "PlayerbotAI.h"
 #include "PlayerbotAIConfig.h"
@@ -117,7 +118,7 @@ std::map<uint32, PlayerbotOrganicEconomy::Profile> PlayerbotOrganicEconomy::Load
         "COALESCE(profile.intended_profession_two,0),COALESCE(goal.capability_ref,''),"
         "COALESCE(goal.goal_type,''),COALESCE(goal.state,'') FROM organic_economy_profile profile "
         "LEFT JOIN organic_economy_goal goal ON goal.goal_id=(SELECT MAX(candidate.goal_id) FROM organic_economy_goal candidate "
-        "WHERE candidate.character_guid=profile.character_guid AND candidate.state IN ('active','proposed') "
+        "WHERE candidate.character_guid=profile.character_guid AND candidate.state IN ('active','proposed','candidate') "
         "AND (candidate.expires_at IS NULL OR candidate.expires_at>NOW()))");
     if (!result)
         return profiles;
@@ -227,6 +228,9 @@ bool PlayerbotOrganicEconomy::Submit(const Policy& currentPolicy)
         if (!outputs.empty())
             plans << ",{\"goal_id\":\"profession:" << guid << ':' << outputs.front()
                 << "\",\"type\":\"profession_skill_up\",\"utility\":30,\"eligible\":true,\"duration_seconds\":5400}";
+        if (profile.currentGoalType == "storage_pressure")
+            plans << ",{\"goal_id\":\"storage:" << guid
+                << "\",\"type\":\"storage_pressure\",\"utility\":100,\"eligible\":true,\"duration_seconds\":1800}";
         if (surplus)
             plans << ",{\"goal_id\":\"auction:" << guid
                 << "\",\"type\":\"list_surplus\",\"utility\":20,\"eligible\":true,\"duration_seconds\":3600}";
@@ -304,6 +308,25 @@ void PlayerbotOrganicEconomy::ApplyPlans(const std::string& response, const Poli
         bool executed = false;
         if (goalType == "profession_skill_up" && currentPolicy.careers)
             executed = bot->GetPlayerbotAI()->DoSpecificAction("rpg craft", Event("organic economy", "", bot), true);
+        else if (goalType == "storage_pressure" && currentPolicy.careers)
+        {
+            LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
+            if (pressure.vendorStacks)
+                executed = bot->GetPlayerbotAI()->DoSpecificAction(
+                    "request progression vendor travel target", Event("organic economy storage", "", bot), true);
+            else if (pressure.bankStacks && pressure.bankUsage < 80)
+            {
+                bot->GetPlayerbotAI()->ChangeStrategy("nc +travel", BotState::BOT_STATE_NON_COMBAT);
+                executed = true;
+            }
+            else if (pressure.craftStacks)
+                executed = bot->GetPlayerbotAI()->DoSpecificAction("rpg craft", Event("organic economy storage", "", bot), true);
+            else if (pressure.auctionStacks && currentPolicy.posting)
+            {
+                bot->GetPlayerbotAI()->ChangeStrategy("nc +travel", BotState::BOT_STATE_NON_COMBAT);
+                executed = true;
+            }
+        }
         else if (goalType == "list_surplus" && currentPolicy.posting)
             executed = bot->GetPlayerbotAI()->DoSpecificAction("ah", Event("organic economy", "vendor", bot), true);
         else if (goalType == "profession_advertisement" && currentPolicy.advertising)

@@ -6,6 +6,7 @@
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotChatDirector.h"
 #include "PlayerbotLLMInterface.h"
+#include "PlayerbotInventoryPressure.h"
 #include "PlayerbotRendezvousManager.h"
 #include "LootObjectStack.h"
 #include "RandomPlayerbotMgr.h"
@@ -13,6 +14,7 @@
 #include "strategy/values/TravelValues.h"
 
 #include <regex>
+#include <limits>
 #include <sstream>
 #include <thread>
 
@@ -89,6 +91,23 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     if (bagUsage <= 80)
         return false;
 
+    LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
+    std::string maintenanceType;
+    if (pressure.vendorStacks)
+        maintenanceType = "vendor";
+    else if (pressure.bankStacks && pressure.bankUsage < 80)
+        maintenanceType = "bank";
+    else
+    {
+        std::string reason = pressure.bankStacks && pressure.bankUsage >= 80 ?
+            "bank_full" : "no_quick_disposition";
+        sPlayerbotInventoryPressure.Defer(bot, pressure, reason);
+        if (announce)
+            bot->GetPlayerbotAI()->SayToParty(
+                "My bags are packed, but everything left is protected for quests, crafting, banking, or the auction house. I'll sort it out after the group.", true);
+        return false;
+    }
+
     PlayerbotAI* ai = bot->GetPlayerbotAI();
     AiObjectContext* context = ai->GetAiObjectContext();
     TravelTarget* currentTarget = context->GetValue<TravelTarget*>("travel target")->Get();
@@ -97,11 +116,11 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     // This scoped broker owns the replacement and clears it directly.
     sTravelMgr.SetNullTravelTarget(currentTarget);
     context->ClearValues("no active travel destinations");
-    if (!ai->DoSpecificAction("request progression vendor travel target",
-        Event("living vendor bags", "", player), true))
+    if (!SetMaintenanceTarget(bot, maintenanceType))
     {
-        sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=request_rejected bag=%u",
-            bot->GetGUIDLow(), bot->GetName(), (uint32)bagUsage);
+        sPlayerbotInventoryPressure.Defer(bot, pressure, "no_same_map_maintenance_destination");
+        sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=target_rejected kind=%s bag=%u",
+            bot->GetGUIDLow(), bot->GetName(), maintenanceType.c_str(), (uint32)bagUsage);
         return false;
     }
 
@@ -116,6 +135,7 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     action.playerGuid = player->GetGUIDLow();
     action.groupId = bot->GetGroup()->GetId();
     action.initialBagUsage = bagUsage;
+    action.maintenanceType = maintenanceType;
     action.state = "vendor_travel";
     action.stateSince = std::chrono::steady_clock::now();
     action.expires = std::chrono::steady_clock::now() + std::chrono::minutes(5);
@@ -132,7 +152,9 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=requested bag=%u player=%u",
         bot->GetGUIDLow(), bot->GetName(), (uint32)bagUsage, player->GetGUIDLow());
     if (announce)
-        bot->GetPlayerbotAI()->SayToParty("My bags are full. I need to make a quick vendor run; I'll catch back up.", true);
+        bot->GetPlayerbotAI()->SayToParty(maintenanceType == "bank" ?
+            "My bags are full of things I need to keep. I'll put them in the bank and catch back up." :
+            "My bags are full. I need to make a quick vendor run; I'll catch back up.", true);
     return true;
 }
 
@@ -195,6 +217,79 @@ bool PlayerbotSocialActionBroker::CanGatherNode(Player* bot, Player* player, Obj
     sLog.outString("Living WoW gathering permission bot=%u player=%u node=%u skill=%u required=%u result=offered",
         offer.botGuid, offer.playerGuid, offer.objectEntry, offer.skillId, offer.requiredSkill);
     return false;
+}
+
+bool PlayerbotSocialActionBroker::SetMaintenanceTarget(Player* bot, const std::string& maintenanceType) const
+{
+    if (!bot || !bot->GetPlayerbotAI())
+        return false;
+    TravelDestinationPurpose purpose = maintenanceType == "bank" ?
+        TravelDestinationPurpose::Bank : TravelDestinationPurpose::Vendor;
+    PlayerTravelInfo info(bot);
+    DestinationList destinations = sTravelMgr.GetDestinations(
+        info, (uint32)purpose, {}, true, 50000.0f, false);
+    WorldPosition center(bot);
+    TravelDestination* bestDestination = nullptr;
+    WorldPosition* bestPosition = nullptr;
+    float bestDistance = std::numeric_limits<float>::max();
+    for (TravelDestination* destination : destinations)
+    {
+        if (!destination)
+            continue;
+        std::list<uint8> chances = { 100 };
+        WorldPosition* position = destination->GetNextPoint(center, chances, true);
+        if (!position || position->getMapId() != bot->GetMapId())
+            continue;
+        float distance = center.distance(*position);
+        if (distance < bestDistance)
+        {
+            bestDistance = distance;
+            bestDestination = destination;
+            bestPosition = position;
+        }
+    }
+    if (!bestDestination || !bestPosition)
+        return false;
+    TravelTarget* target = bot->GetPlayerbotAI()->GetAiObjectContext()->
+        GetValue<TravelTarget*>("travel target")->Get();
+    sTravelMgr.SetNullTravelTarget(target);
+    target->SetTarget(bestDestination, bestPosition);
+    target->SetForced(true);
+    target->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
+    bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("no active travel destinations");
+    sLog.outString("Living WoW vendor maintenance bot=%u result=target_selected kind=%s map=%u area=%s distance=%.1f",
+        bot->GetGUIDLow(), maintenanceType.c_str(), bestPosition->getMapId(),
+        bestPosition->getAreaName().c_str(), bestDistance);
+    return true;
+}
+
+void PlayerbotSocialActionBroker::QueuePartyReturn(Action& action, Player* bot, Player* player,
+    const std::string& reason, bool success)
+{
+    if (!bot || !bot->GetPlayerbotAI())
+        return;
+    bot->GetPlayerbotAI()->ChangeStrategy("nc -travel once", BotState::BOT_STATE_NON_COMBAT);
+    TravelTarget* completedTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
+        GetValue<TravelTarget*>("travel target")->Get();
+    sTravelMgr.SetNullTravelTarget(completedTarget);
+    bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("no active travel destinations");
+    vendorPressureNotified.erase(bot->GetGUIDLow());
+    if (player && sPlayerbotRendezvousManager.ResumePartyAssist(bot, player, reason))
+    {
+        action.state = "returning";
+        action.expires = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+    }
+    else
+    {
+        if (action.restoreFollow)
+            bot->GetPlayerbotAI()->ChangeStrategy("nc +follow", BotState::BOT_STATE_NON_COMBAT);
+        action.restoreFollow = false;
+        action.state = success ? "completed" : "failed";
+        action.completedAt = std::chrono::steady_clock::now();
+        if (action.failureReason.empty())
+            action.failureReason = "party return could not be queued";
+    }
+    Report(action);
 }
 
 void PlayerbotSocialActionBroker::AddGatheringCapabilities(Player* bot, Player* player,
@@ -567,9 +662,6 @@ void PlayerbotSocialActionBroker::Update()
             }
             else
             {
-                // The destination request resolves asynchronously. Re-running
-                // choose is cheap and becomes effective as soon as it is ready.
-                bot->GetPlayerbotAI()->DoSpecificAction("choose travel target", Event("living vendor bags", "", player), true);
                 TravelTarget* target = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
                 bool targetReady = target && target->GetPosition() &&
                     (target->GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL ||
@@ -586,16 +678,10 @@ void PlayerbotSocialActionBroker::Update()
                     {
                         WorldPosition* destination = target->GetPosition();
                         bot->GetPlayerbotAI()->StopMoving();
-                        bool relocated = false;
-                        if (destination->getMapId() == bot->GetMapId())
-                        {
+                        bool relocated = destination->getMapId() == bot->GetMapId();
+                        if (relocated)
                             bot->NearTeleportTo(destination->getX(), destination->getY(),
                                 destination->getZ(), destination->getO());
-                            relocated = true;
-                        }
-                        else
-                            relocated = bot->TeleportTo(destination->getMapId(), destination->getX(),
-                                destination->getY(), destination->getZ(), destination->getO());
                         action.outboundRelocated = relocated;
                         if (relocated)
                             sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=relocated map=%u area=%s",
@@ -615,67 +701,45 @@ void PlayerbotSocialActionBroker::Update()
                     {
                         action.lastSellAttempt = now;
                         ++action.sellAttempts;
-                        bool sold = bot->GetPlayerbotAI()->DoSpecificAction("sell",
-                            Event("rpg action", "vendor", player), true);
+                        bool sold = action.maintenanceType == "bank" ?
+                            bot->GetPlayerbotAI()->DoSpecificAction("bank",
+                                Event("rpg action", "usage 16", nullptr), true) :
+                            bot->GetPlayerbotAI()->DoSpecificAction("sell",
+                                Event("rpg action", "usage 12", player), true);
                         // Bag-space is a cached Playerbots value. Invalidate it
                         // after each real sell attempt so completion observes
                         // the changed inventory instead of the pre-trip value.
                         bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("bag space");
                         sLog.outString("Living WoW vendor maintenance bot=%u name=%s result=%s attempt=%u distance=%.1f",
-                            bot->GetGUIDLow(), bot->GetName(), sold ? "sell_action" : "nothing_safe_to_sell",
+                            bot->GetGUIDLow(), bot->GetName(), sold ?
+                                (action.maintenanceType == "bank" ? "bank_action" : "sell_action") :
+                                (action.maintenanceType == "bank" ? "nothing_safe_to_bank" : "nothing_safe_to_sell"),
                             (uint32)action.sellAttempts, target->Distance(bot));
                     }
                 }
                 uint8 usage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
                 if (usage < action.initialBagUsage)
                 {
-                    bot->GetPlayerbotAI()->ChangeStrategy("nc -travel once", BotState::BOT_STATE_NON_COMBAT);
-                    TravelTarget* completedTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
-                        GetValue<TravelTarget*>("travel target")->Get();
-                    sTravelMgr.SetNullTravelTarget(completedTarget);
-                    bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("no active travel destinations");
-                    if (action.restoreFollow)
-                        bot->GetPlayerbotAI()->ChangeStrategy("nc +follow", BotState::BOT_STATE_NON_COMBAT);
-                    action.restoreFollow = false;
-                    vendorPressureNotified.erase(bot->GetGUIDLow());
-                    if (sPlayerbotRendezvousManager.ResumePartyAssist(bot, player, "vendor_trip_complete"))
-                        action.state = "returning";
-                    else
-                    {
-                        action.state = "completed";
-                        action.completedAt = now;
-                        action.failureReason = "items sold; party return could not be queued";
-                    }
-                    Report(action);
+                    bot->GetPlayerbotAI()->SayToParty(action.maintenanceType == "bank" ?
+                        "I put the things I need to keep in the bank. Heading back now." :
+                        "I cleared some bag space. Heading back now.", true);
+                    QueuePartyReturn(action, bot, player, "vendor_trip_complete", true);
                 }
                 else if (action.sellAttempts >= 5)
                 {
-                    TravelTarget* completedTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
-                        GetValue<TravelTarget*>("travel target")->Get();
-                    sTravelMgr.SetNullTravelTarget(completedTarget);
-                    bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("no active travel destinations");
-                    if (action.restoreFollow)
-                        bot->GetPlayerbotAI()->ChangeStrategy("nc +follow", BotState::BOT_STATE_NON_COMBAT);
-                    action.restoreFollow = false;
                     action.failureReason = "no additional safe vendor items freed a bag slot";
-                    if (sPlayerbotRendezvousManager.ResumePartyAssist(bot, player, "vendor_trip_no_space_freed"))
-                        action.state = "returning";
-                    else
-                    {
-                        action.state = "failed";
-                        action.completedAt = now;
-                    }
-                    Report(action);
+                    LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
+                    sPlayerbotInventoryPressure.Defer(bot, pressure, "quick_maintenance_freed_no_slot");
+                    bot->GetPlayerbotAI()->SayToParty(
+                        "I couldn't free another slot without using something I need. I'm coming back and I'll sort the rest out later.", true);
+                    QueuePartyReturn(action, bot, player, "vendor_trip_no_space_freed", false);
                 }
                 else if (now >= action.expires)
                 {
-                    action.state = "expired";
                     action.failureReason = "vendor trip did not free bag space in time";
-                    Report(action);
-                    bot->GetPlayerbotAI()->ChangeStrategy("nc -travel once", BotState::BOT_STATE_NON_COMBAT);
-                    if (action.restoreFollow)
-                        bot->GetPlayerbotAI()->ChangeStrategy("nc +follow", BotState::BOT_STATE_NON_COMBAT);
-                    action.restoreFollow = false;
+                    LivingWowInventoryPressureSummary pressure = sPlayerbotInventoryPressure.Analyze(bot);
+                    sPlayerbotInventoryPressure.Defer(bot, pressure, "party_maintenance_timeout");
+                    QueuePartyReturn(action, bot, player, "vendor_trip_timeout", false);
                 }
             }
         }
@@ -685,8 +749,20 @@ void PlayerbotSocialActionBroker::Update()
             Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
             if (bot && player && bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
             {
-                sPlayerbotRendezvousManager.BeginDeparture(action.botGuid, action.playerGuid, "vendor_return_complete");
+                if (action.restoreFollow)
+                    bot->GetPlayerbotAI()->ChangeStrategy("nc +follow", BotState::BOT_STATE_NON_COMBAT);
+                action.restoreFollow = false;
                 action.state = "completed";
+                action.completedAt = now;
+                Report(action);
+            }
+            else if (now >= action.expires)
+            {
+                if (bot && bot->GetPlayerbotAI() && action.restoreFollow)
+                    bot->GetPlayerbotAI()->ChangeStrategy("nc +follow", BotState::BOT_STATE_NON_COMBAT);
+                action.restoreFollow = false;
+                action.state = "failed";
+                action.failureReason = "party return timed out";
                 action.completedAt = now;
                 Report(action);
             }

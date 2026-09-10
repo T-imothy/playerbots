@@ -44,10 +44,12 @@ bool BankAction::Execute(Event& event)
         if (!npc || !npc->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_BANKER))
             continue;
 
-        return ExecuteCommand(requester, text, npc);
+        bool result = ExecuteCommand(requester, text, npc);
+        return result;
     }
 
-    ai->TellError(requester, "Cannot find banker nearby");
+    if (event.getSource() != "rpg action")
+        ai->TellError(requester, "Cannot find banker nearby");
     return false;
 }
 
@@ -66,7 +68,7 @@ bool BankAction::ExecuteCommand(Player* requester, const std::string& text, Unit
         for (std::list<Item*>::iterator i = found.begin(); i != found.end(); i++)
         {
             Item* item = *i;
-            result &= Withdraw(requester, item->GetProto()->ItemId);
+            result |= Withdraw(requester, item->GetProto()->ItemId);
         }
     }
     else
@@ -81,7 +83,7 @@ bool BankAction::ExecuteCommand(Player* requester, const std::string& text, Unit
             if (!item)
                 continue;
 
-            result &= Deposit(requester, item);
+            result |= Deposit(requester, item);
         }
     }
 
@@ -120,7 +122,8 @@ bool BankAction::Withdraw(Player* requester, const uint32 itemid)
 
     std::ostringstream out;
     out << "got " << itemText << " from bank";
-    ai->TellPlayer(requester, out.str());
+    if (requester)
+        ai->TellPlayer(requester, out.str());
     return true;
 }
 
@@ -153,7 +156,8 @@ bool BankAction::Deposit(Player* requester, Item* pItem)
     ResetBankActionItemCaches(ai, itemId, itemQualifier);
 
     out << "put " << itemText << " to bank";
-    ai->TellPlayer(requester, out.str());
+    if (requester)
+        ai->TellPlayer(requester, out.str());
 	return true;
 }
 

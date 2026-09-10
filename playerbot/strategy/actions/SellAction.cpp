@@ -3,6 +3,7 @@
 #include "SellAction.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
+#include "playerbot/PlayerbotInventoryPressure.h"
 
 using namespace ai;
 
@@ -50,6 +51,9 @@ bool SellAction::Execute(Event& event)
     uint32 shouldSell = std::max(minAutoSellItems, uint32(items.size() * urand(minAutoSellPercentageOfBag, maxAutoSellPercentageOfBag) / 100));
     for (std::list<Item*>::iterator i = items.begin(); i != items.end(); ++i)
     {
+        if (event.getSource() == "rpg action" &&
+            sPlayerbotInventoryPressure.Classify(bot, *i) != LivingWowItemDisposition::Vendor)
+            continue;
         if (Sell(requester, *i))
             soldItems++;
 
