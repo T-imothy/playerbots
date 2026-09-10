@@ -53,7 +53,9 @@ PlayerbotNaturalLanguageCapabilityRegistry::PlayerbotNaturalLanguageCapabilityRe
     Register("use_hearthstone", "travel", "routine", "contextual_party_authority",
         "low_risk", LivingCapabilityExecutor::social);
 
-    const char* combat[] = {"set_party_role", "set_party_specialization", "clear_party_role", "set_puller", "hold_attacks",
+    const char* combat[] = {"set_party_role", "set_party_specialization", "activate_party_specialization",
+        "set_main_specialization", "set_off_specialization", "clear_party_specialization",
+        "report_build_preferences", "clear_party_role", "set_puller", "hold_attacks",
         "resume_assist", "set_tactical_rule", "assign_marker_manager", "clear_tactical_rule"};
     for (const char* key : combat)
         Register(key, "combat", "routine", "party_leader_or_assistant", "low_risk",

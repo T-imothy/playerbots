@@ -7,6 +7,7 @@
 #include "GuildValues.h"
 
 #include "playerbot/RandomItemMgr.h"
+#include "playerbot/PlayerbotBuildProfile.h"
 #include "playerbot/ServerFacade.h"
 
 using namespace ai;
@@ -305,6 +306,13 @@ ItemUsage ItemUsageValue::Calculate()
     ItemUsage equip = QueryItemUsageForEquip(itemQualifier, bot);
     if (equip != ItemUsage::ITEM_USAGE_NONE)
         return equip;
+
+    // Preserve only a bounded compact off-spec kit after the active/main
+    // build has declined the item. Bag-pressure limits prevent vendor loops.
+    if (sPlayerbotBuildProfiles.IsActive() && proto->InventoryType != INVTYPE_NON_EQUIP &&
+        bot->CanUseItem(proto) == EQUIP_ERR_OK && sPlayerbotBuildProfiles.IsOffspecUpgrade(bot, proto))
+        return sPlayerbotBuildProfiles.CanCarryOffspecItem(bot, proto) ?
+            ItemUsage::ITEM_USAGE_KEEP : ItemUsage::ITEM_USAGE_BANK;
 
 #ifdef MANGOSBOT_TWO
     if (proto->Class == ITEM_CLASS_GLYPH)
@@ -698,6 +706,8 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
     }
 
     uint32 oldStatWeight = sRandomItemMgr.ItemStatWeight(bot, oldItem);
+    LivingGearScores newGear = sPlayerbotBuildProfiles.Evaluate(bot, itemProto);
+    LivingGearScores oldGear = sPlayerbotBuildProfiles.Evaluate(bot, oldItem->GetProto());
     if (statWeight && oldStatWeight)
     {
         shouldEquip = statWeight >= oldStatWeight;
@@ -733,7 +743,15 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
         switch (itemProto->Class)
         {
         case ITEM_CLASS_ARMOR:
-            if (oldItemProto->SubClass <= itemProto->SubClass) {
+        {
+            const bool preferredReplacement = sPlayerbotBuildProfiles.ArmorPreferenceEnabled() &&
+                !oldGear.preferredArmor && newGear.preferredArmor &&
+                uint64(newGear.activeScore) * 100 >= uint64(oldGear.activeScore) *
+                    sPlayerbotBuildProfiles.PreferredArmorReplacementPercent();
+            const bool exceptionalLowerArmor = sPlayerbotBuildProfiles.ArmorPreferenceEnabled() &&
+                oldGear.preferredArmor && !newGear.preferredArmor &&
+                uint64(newGear.activeScore) * 100 >= uint64(oldGear.activeScore) * 125;
+            if (oldItemProto->SubClass <= itemProto->SubClass || preferredReplacement || exceptionalLowerArmor) {
                 if (itemIsBroken && !oldItemIsBroken)
                     return ItemUsage::ITEM_USAGE_BROKEN_EQUIP;
                 else
@@ -743,6 +761,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
                         return ItemUsage::ITEM_USAGE_BAD_EQUIP;
             }
             break;
+        }
         default:
             if (itemIsBroken && !oldItemIsBroken)
                 return ItemUsage::ITEM_USAGE_BROKEN_EQUIP;

@@ -3,6 +3,7 @@
 #include "LootRollAction.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/LootValues.h"
+#include "playerbot/PlayerbotBuildProfile.h"
 
 using namespace ai;
 
@@ -14,27 +15,61 @@ namespace
         return loot ? loot->GetRollForSlot(slot) : NULL;
     }
 
-    RollVote ApplyMixedPartyLootPolicy(Player* bot, ItemUsage usage, RollVote vote, GroupLootRoll* roll)
+    bool OtherBotMainNeeds(Player* bot, ItemQualifier& itemQualifier)
     {
+        if (!bot || !bot->GetGroup()) return false;
+        Group::MemberSlotList const& slots = bot->GetGroup()->GetMemberSlots();
+        for (Group::MemberSlotList::const_iterator i = slots.begin(); i != slots.end(); ++i)
+            if (Player* member = sObjectAccessor.FindPlayer(i->guid))
+                if (member != bot && member->GetPlayerbotAI())
+                {
+                    ItemUsage other = member->GetPlayerbotAI()->GetAiObjectContext()->
+                        GetValue<ItemUsage>("item usage", itemQualifier.GetQualifier())->Get();
+                    if (other == ItemUsage::ITEM_USAGE_EQUIP || other == ItemUsage::ITEM_USAGE_FORCE_NEED)
+                        return true;
+                }
+        return false;
+    }
+
+    RollVote ApplyMixedPartyLootPolicy(Player* bot, ItemQualifier& itemQualifier, ItemUsage usage,
+        RollVote vote, GroupLootRoll* roll, bool& offspecNeed)
+    {
+        offspecNeed = false;
         if (!bot || !roll || !sPlayerbotPartyCombatCoordinator.IsActiveMixedParty(bot))
             return vote;
 
         if (sPlayerbotPartyCombatCoordinator.HumanNeededLoot(bot, roll))
             return vote == ROLL_NEED ? ROLL_GREED : vote;
 
-        if (sPlayerbotPartyCombatCoordinator.BotCanNeedForUsage(usage))
+        const bool mainNeed = usage == ItemUsage::ITEM_USAGE_EQUIP || usage == ItemUsage::ITEM_USAGE_FORCE_NEED;
+        if (mainNeed)
             return ROLL_NEED;
+
+        if (OtherBotMainNeeds(bot, itemQualifier))
+            return vote == ROLL_NEED ? ROLL_GREED : vote;
+
+        ItemPrototype const* proto = itemQualifier.GetProto();
+        if (proto && sPlayerbotBuildProfiles.OffspecLootEnabled() &&
+            sPlayerbotBuildProfiles.IsOffspecUpgrade(bot, proto) &&
+            sPlayerbotBuildProfiles.CanCarryOffspecItem(bot, proto))
+        {
+            offspecNeed = true;
+            return ROLL_NEED;
+        }
+
+        if (sPlayerbotPartyCombatCoordinator.BotCanNeedForUsage(usage)) return ROLL_NEED;
 
         return vote == ROLL_NEED ? ROLL_GREED : vote;
     }
 
-    void AnnounceMixedPartyNeed(PlayerbotAI* ai, ItemQualifier& itemQualifier, ItemUsage usage)
+    void AnnounceMixedPartyNeed(PlayerbotAI* ai, ItemQualifier& itemQualifier, ItemUsage usage, bool offspecNeed)
     {
         if (!ai || !sPlayerbotPartyCombatCoordinator.ShouldAnnounceLootNeed())
             return;
 
-        std::string reason = ItemUsageValue::ReasonForNeed(usage, itemQualifier, 1, ai->GetBot());
-        ai->SayToParty("I'll need on " + ChatHelper::formatItem(itemQualifier) + " " + reason, true,
+        std::string reason = offspecNeed ? "That would be a strong upgrade for my off-spec set." :
+            ItemUsageValue::ReasonForNeed(usage, itemQualifier, 1, ai->GetBot());
+        ai->SayToParty((offspecNeed ? "" : "I'll need on " + ChatHelper::formatItem(itemQualifier) + " ") + reason, true,
             PlayerbotAI::ChatMessageClass::social);
     }
 }
@@ -322,11 +357,12 @@ bool LootRollAction::Execute(Event& event)
         return false;
 
     ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", itemQualifier.GetQualifier());
-    RollVote vote = ApplyMixedPartyLootPolicy(bot, usage, CalculateRollVote(itemQualifier), lootRoll);
+    bool offspecNeed = false;
+    RollVote vote = ApplyMixedPartyLootPolicy(bot, itemQualifier, usage, CalculateRollVote(itemQualifier), lootRoll, offspecNeed);
 
     bool rolled = RollOnItemInSlot(vote, guid, slot);
     if (rolled && vote == ROLL_NEED)
-        AnnounceMixedPartyNeed(ai, itemQualifier, usage);
+        AnnounceMixedPartyNeed(ai, itemQualifier, usage, offspecNeed);
     return rolled;
 }
 
@@ -353,11 +389,12 @@ bool AutoLootRollAction::Execute(Event& event)
 
     GroupLootRoll* lootRoll = GetGroupLootRoll(bot, currentRoll.first, currentRoll.second);
     ItemUsage usage = AI_VALUE2(ItemUsage, "item usage", itemQualifier.GetQualifier());
-    RollVote vote = ApplyMixedPartyLootPolicy(bot, usage, CalculateRollVote(itemQualifier), lootRoll);
+    bool offspecNeed = false;
+    RollVote vote = ApplyMixedPartyLootPolicy(bot, itemQualifier, usage, CalculateRollVote(itemQualifier), lootRoll, offspecNeed);
 
     bool rolled = RollOnItemInSlot(vote, currentRoll.first, currentRoll.second);
     if (rolled && vote == ROLL_NEED)
-        AnnounceMixedPartyNeed(ai, itemQualifier, usage);
+        AnnounceMixedPartyNeed(ai, itemQualifier, usage, offspecNeed);
     return rolled;
 }
 

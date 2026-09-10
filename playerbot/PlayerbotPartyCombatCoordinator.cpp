@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotPartyCombatCoordinator.h"
+#include "playerbot/PlayerbotBuildProfile.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/strategy/values/LootValues.h"
 #include "playerbot/AiFactory.h"
@@ -211,14 +212,36 @@ void PlayerbotPartyCombatCoordinator::RefreshRoles(Group* group, GroupState& sta
     // explicitly assigns another healer.
     const uint32 desiredHealers = std::max<uint32>(1, (onlineMembers + 4) / 5);
     uint32 automaticHealers = desiredHealers > lockedHealers ? desiredHealers - lockedHealers : 0;
+    std::vector<std::pair<uint32, ObjectGuid> > healerCandidates;
+    for (Group::MemberSlotList::const_iterator i = slots.begin(); i != slots.end(); ++i)
+        if (Player* p = sObjectAccessor.FindPlayer(i->guid))
+        {
+            LivingPartyRoleState& role = state.roles[p->GetObjectGuid()];
+            if (role.primary != LivingPartyRole::Healer || role.locked) continue;
+            uint32 score = role.source == "talents" ? 750 : 250;
+            if (p->GetPlayerbotAI() && p->GetLevel() >= 10)
+            {
+                const LivingBotBuildProfile& build = sPlayerbotBuildProfiles.Get(p);
+                if ((uint32)ChangeTalentsAction::GetPathRole(p->getClass(), build.mainPathId) & BOT_ROLE_HEALER)
+                    score = 1000 + build.performanceDrive;
+                else if ((uint32)ChangeTalentsAction::GetPathRole(p->getClass(), build.offPathId) & BOT_ROLE_HEALER)
+                    score = 500 + build.roleFlexibility;
+            }
+            healerCandidates.push_back(std::make_pair(score, p->GetObjectGuid()));
+        }
+    std::sort(healerCandidates.begin(), healerCandidates.end(),
+        [](const std::pair<uint32, ObjectGuid>& left, const std::pair<uint32, ObjectGuid>& right)
+        { return left.first != right.first ? left.first > right.first : left.second < right.second; });
+    std::set<ObjectGuid> selectedAutomaticHealers;
+    for (uint32 i = 0; i < automaticHealers && i < healerCandidates.size(); ++i)
+        selectedAutomaticHealers.insert(healerCandidates[i].second);
     for (Group::MemberSlotList::const_iterator i = slots.begin(); i != slots.end(); ++i)
         if (Player* p = sObjectAccessor.FindPlayer(i->guid))
         {
             LivingPartyRoleState& role = state.roles[p->GetObjectGuid()];
             if (role.primary == LivingPartyRole::Healer && !role.locked)
             {
-                if (automaticHealers) --automaticHealers;
-                else
+                if (!selectedAutomaticHealers.count(p->GetObjectGuid()))
                 {
                     role.primary = LivingPartyRole::Damage;
                     role.secondary = LivingPartyRole::Healer;
@@ -237,76 +260,46 @@ void PlayerbotPartyCombatCoordinator::RefreshRoles(Group* group, GroupState& sta
 std::string PlayerbotPartyCombatCoordinator::ApplyRoleTalents(Player* member, LivingPartyRole role) const
 {
     if (!member || !member->GetPlayerbotAI()) return "completed";
-    if (role == LivingPartyRole::Auto || member->GetLevel() < 10) return "completed";
+    if (member->GetLevel() < 10) return "completed";
     if (member->IsInCombat() || !member->IsAlive() || member->IsTaxiFlying() || member->InBattleGround() ||
         (member->GetMap() && member->GetMap()->IsDungeon()))
         return "respec_unsafe_now";
 
+    if (role == LivingPartyRole::Auto)
+    {
+        std::string outcome;
+        uint32 groupId = member->GetGroup() ? member->GetGroup()->GetId() : 0;
+        return sPlayerbotBuildProfiles.ClearTemporary(member, groupId, outcome) ? "completed" : outcome;
+    }
+
     BotRoles desired = role == LivingPartyRole::Tank ? BOT_ROLE_TANK :
         role == LivingPartyRole::Healer ? BOT_ROLE_HEALER : BOT_ROLE_DPS;
-    if (!ChangeTalentsAction::HasPremadeRole(member->getClass(), desired))
+    std::string specialization = sPlayerbotBuildProfiles.BestSpecializationForRole(member, (uint32)desired);
+    if (specialization.empty())
         return "role_not_supported_by_class";
-
-    // A leader role assignment is an explicit party-scoped preference. Clear
-    // the old path before selecting so AutoSelectTalents cannot continue a
-    // contradictory build, and reset at no cost as bots do not use trainers.
-    sRandomPlayerbotMgr.SetValue(member->GetGUIDLow(), "specNo", 0, "", kPersistentSpecSeconds);
-    sRandomPlayerbotMgr.SetValue(member->GetGUIDLow(), "specLink", 0, "", kPersistentSpecSeconds);
-    member->resetTalents(true);
-    std::ostringstream details;
-    ChangeTalentsAction::AutoSelectTalents(member, &details, desired);
-    PlayerbotAI* memberAi = member->GetPlayerbotAI();
-    memberAi->DoSpecificAction("auto learn spell");
-    memberAi->UpdateTalentSpec();
-
-    // Talent assignment alone does not replace the combat engine that was
-    // built from the previous specialization.  Rebuild from the newly applied
-    // spec so a restoration assignment cannot keep enhancement/feral melee
-    // strategies.  Do not reload persisted strategy toggles from the old role.
-    if (policy.roleStrategySync)
-        memberAi->RequestStrategyReset(false);
-
-    const uint32 freePoints = member->GetFreeTalentPoints();
-    const uint32 totalPoints = member->CalculateTalentsPoints();
-    const std::string specName = ChangeTalentsAction::GetPremadeSpecName(member);
-    sLog.outString("Living WoW role respec bot=%u name=%s role=%s spec=%s used=%u free=%u",
-        member->GetGUIDLow(), member->GetName(), RoleName(role), specName.c_str(),
-        totalPoints >= freePoints ? totalPoints - freePoints : 0, freePoints);
-    if (policy.roleStrategySync)
-        sLog.outString("Living WoW role strategy synchronization queued bot=%u name=%s role=%s",
-            member->GetGUIDLow(), member->GetName(), RoleName(role));
-    return freePoints == 0 ? "completed" : "talent_assignment_incomplete";
+    std::string outcome;
+    uint32 groupId = member->GetGroup() ? member->GetGroup()->GetId() : 0;
+    if (!sPlayerbotBuildProfiles.ActivateTemporary(member, specialization, groupId,
+        std::string("party_role_") + RoleName(role), outcome)) return outcome;
+    sLog.outString("Living WoW temporary role build bot=%u name=%s role=%s specialization=%s party=%u",
+        member->GetGUIDLow(), member->GetName(), RoleName(role), specialization.c_str(), groupId);
+    return "completed";
 }
 
 std::string PlayerbotPartyCombatCoordinator::ApplySpecialization(Player* member,
-    const std::string& specialization) const
+    const std::string& specialization, const std::string& mode, uint32 partySessionId) const
 {
     if (!member || !member->GetPlayerbotAI()) return "bot_required";
     if (member->GetLevel() < 10) return "specialization_not_available_yet";
     if (member->IsInCombat() || !member->IsAlive() || member->IsTaxiFlying() || member->InBattleGround() ||
-        (member->GetMap() && member->GetMap()->IsDungeon()))
-        return "respec_unsafe_now";
-
-    std::vector<std::string> available = ChangeTalentsAction::GetPremadeSpecializations(member->getClass());
-    if (std::find(available.begin(), available.end(), specialization) == available.end())
-        return "specialization_not_supported_by_class";
-
-    std::ostringstream details;
-    if (!ChangeTalentsAction::ApplyPremadeSpecialization(member, specialization, &details))
-        return "talent_assignment_incomplete";
-
-    PlayerbotAI* memberAi = member->GetPlayerbotAI();
-    memberAi->DoSpecificAction("auto learn spell");
-    memberAi->UpdateTalentSpec();
-    if (policy.roleStrategySync) memberAi->RequestStrategyReset(false);
-
-    // The stored premade specialization is now the durable gearing identity.
-    // RandomItemMgr derives item weights from this preference, while the role
-    // overlay follows the actual tree that was just applied.
-    const BotRoles roles = AiFactory::GetPlayerRoles(member);
-    sLog.outString("Living WoW exact specialization bot=%u name=%s specialization=%s roles=%u",
-        member->GetGUIDLow(), member->GetName(), specialization.c_str(), (uint32)roles);
-    return "completed";
+        (member->GetMap() && member->GetMap()->IsDungeon())) return "respec_unsafe_now";
+    std::string outcome;
+    bool ok = mode == "main" ? sPlayerbotBuildProfiles.SetMain(member, specialization, outcome) :
+        mode == "off" ? sPlayerbotBuildProfiles.SetOffspec(member, specialization, outcome) :
+        mode == "clear" ? sPlayerbotBuildProfiles.ClearTemporary(member, partySessionId, outcome) :
+        sPlayerbotBuildProfiles.ActivateTemporary(member, specialization, partySessionId,
+            "party_specialization", outcome);
+    return ok ? "completed" : outcome;
 }
 
 bool PlayerbotPartyCombatCoordinator::RoleMatchesTalents(Player* member, LivingPartyRole role) const
@@ -562,11 +555,26 @@ PlayerbotPartyCombatCoordinator::GroupState* PlayerbotPartyCombatCoordinator::En
 
 void PlayerbotPartyCombatCoordinator::Update(Player* bot)
 {
-    ReloadPolicy(); GroupState* state = EnsureState(bot);
+    ReloadPolicy();
+    sPlayerbotBuildProfiles.Update(bot);
+    GroupState* state = EnsureState(bot);
     if (!state)
     {
+        const LivingBotBuildProfile& build = sPlayerbotBuildProfiles.Get(bot);
+        if (build.partySessionId && !bot->IsInCombat() && bot->IsAlive() && !bot->IsTaxiFlying() &&
+            !bot->InBattleGround() && (!bot->GetMap() || !bot->GetMap()->IsDungeon()))
+        {
+            std::string outcome;
+            sPlayerbotBuildProfiles.ClearTemporary(bot, build.partySessionId, outcome);
+        }
         SynchronizeHunterPetThreat(bot, NULL);
         return;
+    }
+    const LivingBotBuildProfile& build = sPlayerbotBuildProfiles.Get(bot);
+    if (build.partySessionId && build.partySessionId != state->groupId && !bot->IsInCombat() && bot->IsAlive())
+    {
+        std::string outcome;
+        sPlayerbotBuildProfiles.ClearTemporary(bot, build.partySessionId, outcome);
     }
     SynchronizeAutomaticRole(bot, *state);
     SynchronizeRoleCombatStrategy(bot, *state);
@@ -965,7 +973,20 @@ void PlayerbotPartyCombatCoordinator::SendSnapshot(Group* group, GroupState& sta
             SendAddon(source, receiver, head.str());
             for (Group::MemberSlotList::const_iterator m = slots.begin(); m != slots.end(); ++m)
                 if (Player* member = sObjectAccessor.FindPlayer(m->guid))
-                { LivingPartyRoleState r = state.roles[member->GetObjectGuid()]; std::ostringstream row; row << "LWOWP1\tR\t" << state.revision << "\t" << Escape(member->GetName()) << "\t" << RoleName(r.primary) << "\t" << r.source; SendAddon(source, receiver, row.str()); }
+                {
+                    LivingPartyRoleState r = state.roles[member->GetObjectGuid()]; std::ostringstream row;
+                    row << "LWOWP1\tR\t" << state.revision << "\t" << Escape(member->GetName()) << "\t"
+                        << RoleName(r.primary) << "\t" << r.source; SendAddon(source, receiver, row.str());
+                    if (member->GetPlayerbotAI())
+                    {
+                        const LivingBotBuildProfile& build = sPlayerbotBuildProfiles.Get(member);
+                        std::ostringstream buildRow; buildRow << "LWOWP1\tB\t" << build.revision << "\t"
+                            << Escape(member->GetName()) << "\t" << build.mainSpecialization << "\t"
+                            << build.offSpecialization << "\t" << build.activeSpecialization << "\t"
+                            << (build.partySessionId ? 1 : 0) << "\t" << (build.offPathId != build.mainPathId ? 1 : 0);
+                        SendAddon(source, receiver, buildRow.str());
+                    }
+                }
             if (state.threatClients.count(receiver->GetObjectGuid()))
                 if (Unit* target = sObjectAccessor.GetUnit(*receiver, receiver->GetSelectionGuid())) if (target->IsAlive() && receiver->IsWithinDistInMap(target, 100.0f))
                 {
@@ -1034,8 +1055,10 @@ bool PlayerbotPartyCombatCoordinator::HandleAddonMessage(Player* receiverBot, Pl
 
 bool PlayerbotPartyCombatCoordinator::SupportsProposal(const std::string& type) const
 {
-    return type == "set_party_role" || type == "set_party_specialization" ||
-        type == "clear_party_role" || type == "set_puller" ||
+    return type == "set_party_role" || type == "clear_party_role" || type == "set_puller" ||
+        type == "set_party_specialization" || type == "activate_party_specialization" ||
+        type == "set_main_specialization" || type == "set_off_specialization" ||
+        type == "clear_party_specialization" || type == "report_build_preferences" ||
         type == "hold_attacks" || type == "resume_assist" || type == "set_tactical_rule" ||
         type == "assign_marker_manager" || type == "clear_tactical_rule";
 }
@@ -1044,6 +1067,7 @@ std::string PlayerbotPartyCombatCoordinator::ExecuteProposal(Player* bot, Player
     const std::string& capabilityRef, const std::string& intent)
 {
     GroupState* state = EnsureState(bot); if (!state || !requester || requester->GetGroup() != bot->GetGroup()) return "party_state_changed";
+    if (type == "report_build_preferences") return "completed";
     if (!IsLeader(requester)) return "leader_required";
     if (type == "hold_attacks") state->hold = true;
     else if (type == "resume_assist") state->hold = false;
@@ -1076,23 +1100,45 @@ std::string PlayerbotPartyCombatCoordinator::ExecuteProposal(Player* bot, Player
         Player* p = FindMember(bot->GetGroup(), ObjectGuid(HIGHGUID_PLAYER, guid)); if (!p) return "member_not_found";
         for (std::vector<LivingPartyTacticalRule>::iterator rule = state->rules.begin(); rule != state->rules.end(); ++rule) rule->assignee = p->GetObjectGuid();
     }
-    else if (type == "set_party_role" || type == "clear_party_role" || type == "set_party_specialization")
+    else if (type == "set_party_specialization" || type == "activate_party_specialization" ||
+        type == "set_main_specialization" || type == "set_off_specialization" ||
+        type == "clear_party_specialization")
+    {
+        std::vector<std::string> parts; std::stringstream input(capabilityRef); std::string part;
+        while (std::getline(input, part, ':')) parts.push_back(part);
+        const bool legacyTemporary = parts.size() == 4 && parts[0] == "party" && parts[1] == "spec" &&
+            type == "set_party_specialization";
+        if (!legacyTemporary && (parts.size() < 4 || parts[0] != "party" || parts[1] != "build"))
+            return "invalid_capability";
+        uint32 guid = std::strtoul(parts[2].c_str(), NULL, 10);
+        Player* p = FindMember(bot->GetGroup(), ObjectGuid(HIGHGUID_PLAYER, guid)); if (!p) return "member_not_found";
+        std::string mode = type == "set_main_specialization" ? "main" :
+            type == "set_off_specialization" ? "off" : type == "clear_party_specialization" ? "clear" : "temporary";
+        std::string specialization = legacyTemporary ? parts[3] : parts.size() > 4 ? parts[4] : "";
+        std::string outcome = ApplySpecialization(p, specialization, mode, state->groupId);
+        if (outcome != "completed") return outcome;
+        if (mode == "temporary" || mode == "main")
+        {
+            BotRoles roles = AiFactory::GetPlayerRoles(p);
+            LivingPartyRole role = (roles & BOT_ROLE_TANK) ? LivingPartyRole::Tank :
+                (roles & BOT_ROLE_HEALER) ? LivingPartyRole::Healer : LivingPartyRole::Damage;
+            state->overrides[p->GetObjectGuid()] = role;
+        }
+        else if (mode == "clear") state->overrides.erase(p->GetObjectGuid());
+        RefreshRoles(bot->GetGroup(), *state);
+    }
+    else if (type == "set_party_role" || type == "clear_party_role")
     {
         std::vector<std::string> fields = Fields(std::string(capabilityRef.begin(), capabilityRef.end()));
         size_t first = capabilityRef.find(':'); size_t second = first == std::string::npos ? first : capabilityRef.find(':', first + 1);
         size_t third = second == std::string::npos ? second : capabilityRef.find(':', second + 1);
         uint32 guid = second == std::string::npos ? 0 : std::strtoul(capabilityRef.c_str() + second + 1, NULL, 10);
         Player* p = FindMember(bot->GetGroup(), ObjectGuid(HIGHGUID_PLAYER, guid)); if (!p) return "member_not_found";
-        if (type == "clear_party_role") state->overrides.erase(p->GetObjectGuid());
-        else if (type == "set_party_specialization")
+        if (type == "clear_party_role")
         {
-            std::string specialization = third == std::string::npos ? "" : capabilityRef.substr(third + 1);
-            std::string outcome = ApplySpecialization(p, specialization);
+            std::string outcome = ApplyRoleTalents(p, LivingPartyRole::Auto);
             if (outcome != "completed") return outcome;
-            BotRoles roles = AiFactory::GetPlayerRoles(p);
-            LivingPartyRole role = (roles & BOT_ROLE_TANK) ? LivingPartyRole::Tank :
-                (roles & BOT_ROLE_HEALER) ? LivingPartyRole::Healer : LivingPartyRole::Damage;
-            state->overrides[p->GetObjectGuid()] = role;
+            state->overrides.erase(p->GetObjectGuid());
         }
         else
         {
@@ -1116,8 +1162,16 @@ std::string PlayerbotPartyCombatCoordinator::GetCandidateJson(Player* bot, Playe
         << (IsLeader(speaker) ? "true" : "false") << ",\"hold\":" << (state->hold ? "true" : "false")
         << ",\"capabilities\":[";
     bool first = true;
+    if (bot->GetPlayerbotAI() && bot->GetLevel() >= 10)
+    {
+        out << "{\"type\":\"report_build_preferences\",\"capability_ref\":\"party:build:"
+            << bot->GetGUIDLow() << ":report\",\"member\":\"" << Escape(bot->GetName())
+            << "\",\"build_profile\":" << sPlayerbotBuildProfiles.DiagnosticsJson(bot) << "}";
+        first = false;
+    }
     if (IsLeader(speaker))
     {
+        if (!first) out << ',';
         out << "{\"type\":\"hold_attacks\",\"capability_ref\":\"party:hold\"},"
             << "{\"type\":\"resume_assist\",\"capability_ref\":\"party:assist\"},"
             << "{\"type\":\"clear_tactical_rule\",\"capability_ref\":\"party:rules:clear\"}";
@@ -1131,11 +1185,23 @@ std::string PlayerbotPartyCombatCoordinator::GetCandidateJson(Player* bot, Playe
                     << member->GetGUIDLow() << ':' << roles[r] << "\",\"member\":\"" << Escape(member->GetName()) << "\"}";
                 if (member->GetPlayerbotAI() && member->GetLevel() >= 10)
                 {
+                    const LivingBotBuildProfile& build = sPlayerbotBuildProfiles.Get(member);
                     std::vector<std::string> specs = ChangeTalentsAction::GetPremadeSpecializations(member->getClass());
                     for (const std::string& spec : specs)
-                        out << ",{\"type\":\"set_party_specialization\",\"capability_ref\":\"party:spec:"
-                            << member->GetGUIDLow() << ':' << spec << "\",\"member\":\""
+                    {
+                        out << ",{\"type\":\"activate_party_specialization\",\"capability_ref\":\"party:build:"
+                            << member->GetGUIDLow() << ":temporary:" << spec << "\",\"member\":\""
+                            << Escape(member->GetName()) << "\",\"specialization\":\"" << spec << "\"}"
+                            << ",{\"type\":\"set_main_specialization\",\"capability_ref\":\"party:build:"
+                            << member->GetGUIDLow() << ":main:" << spec << "\",\"member\":\""
+                            << Escape(member->GetName()) << "\",\"specialization\":\"" << spec << "\"}"
+                            << ",{\"type\":\"set_off_specialization\",\"capability_ref\":\"party:build:"
+                            << member->GetGUIDLow() << ":off:" << spec << "\",\"member\":\""
                             << Escape(member->GetName()) << "\",\"specialization\":\"" << spec << "\"}";
+                    }
+                    if (build.partySessionId)
+                        out << ",{\"type\":\"clear_party_specialization\",\"capability_ref\":\"party:build:"
+                            << member->GetGUIDLow() << ":clear\",\"member\":\"" << Escape(member->GetName()) << "\"}";
                 }
                 out << ",{\"type\":\"clear_party_role\",\"capability_ref\":\"party:role:" << member->GetGUIDLow()
                     << ":auto\",\"member\":\"" << Escape(member->GetName()) << "\"}"

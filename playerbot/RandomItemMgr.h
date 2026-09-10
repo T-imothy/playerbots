@@ -155,6 +155,7 @@ class RandomItemMgr
         bool HasSameQuestRewards(Player* player, uint32 itemId);
         uint32 GetMinLevelFromCache(uint32 itemId);
         uint32 GetStatWeight(Player* player, uint32 itemId);
+        uint32 GetStatWeightForName(uint8 playerClass, uint32 itemId, const std::string& weightName);
         uint32 GetLiveStatWeight(Player* player, uint32 itemId, uint32 specId = 0);
         uint32 GetStatWeight(uint32 itemId, uint32 specId);
         uint32 GetBestRandomEnchantStatWeight(uint32 itemId, uint32 specId);
@@ -188,6 +189,7 @@ class RandomItemMgr
         std::vector<uint32> GetQuestIdsForItem(uint32 itemId);
         std::string GetPlayerSpecName(Player* player);
         uint32 GetPlayerSpecId(Player* player);
+        uint32 GetSpecIdForWeightName(uint8 playerClass, const std::string& weightName);
         std::vector<uint32> GetGlyphs(uint8 playerClass) { return glyphCache.at(playerClass); }
     private:
         void BuildRandomItemCache();

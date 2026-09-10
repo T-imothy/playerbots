@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PlayerbotBuildProfile.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomPlayerbotMgr.h"
 #include "RandomItemMgr.h"
@@ -2498,7 +2499,15 @@ uint32 RandomItemMgr::ItemStatWeight(Player* player, ItemQualifier& qualifier)
 
     weight += CalculateSocketWeight(player->getClass(), qualifier, GetPlayerSpecId(player));
 
-    return weight;
+    if (!player || !qualifier.GetProto()) return weight;
+    if (!sPlayerbotBuildProfiles.IsActive()) return weight;
+    LivingGearScores scores = sPlayerbotBuildProfiles.Evaluate(player, qualifier.GetProto());
+    if (!scores.effectiveScore) return weight;
+    // Preserve qualifier-specific enchants/gems while replacing only the base
+    // active-build value with the persistent dual-build score.
+    uint32 base = GetStatWeightForName(player->getClass(), qualifier.GetProto()->ItemId,
+        sPlayerbotBuildProfiles.GetActiveWeightName(player));
+    return scores.effectiveScore + (weight > base ? weight - base : 0);
 }
 
 uint32 RandomItemMgr::ItemStatWeight(Player* player, Item* item)
@@ -2610,6 +2619,11 @@ std::vector<uint32> RandomItemMgr::GetQuestIdsForItem(uint32 itemId)
 
 std::string RandomItemMgr::GetPlayerSpecName(Player* player)
 {
+    if (player && player->GetPlayerbotAI() && sPlayerbotBuildProfiles.IsActive())
+    {
+        std::string active = sPlayerbotBuildProfiles.GetActiveWeightName(player);
+        if (!active.empty()) return active;
+    }
     std::string specName;
     int tab = AiFactory::GetPlayerSpecTab(player);
     // A premade spec is a persistent character preference, not merely a
@@ -2734,6 +2748,21 @@ uint32 RandomItemMgr::GetPlayerSpecId(Player* player)
             return itr.second.info.id;
     }
     return 0;
+}
+
+uint32 RandomItemMgr::GetSpecIdForWeightName(uint8 playerClass, const std::string& weightName)
+{
+    if (weightName.empty()) return 0;
+    for (std::map<uint32, WeightScale>::const_iterator i = m_weightScales.begin(); i != m_weightScales.end(); ++i)
+        if (i->second.info.classId == playerClass && i->second.info.name == weightName)
+            return i->second.info.id;
+    return 0;
+}
+
+uint32 RandomItemMgr::GetStatWeightForName(uint8 playerClass, uint32 itemId, const std::string& weightName)
+{
+    uint32 specId = GetSpecIdForWeightName(playerClass, weightName);
+    return specId ? GetStatWeight(itemId, specId) : 0;
 }
 
 uint32 RandomItemMgr::GetUpgrade(Player* player, std::string spec, uint8 slot, uint32 quality, uint32 itemId)

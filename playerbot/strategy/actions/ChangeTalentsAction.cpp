@@ -4,6 +4,8 @@
 #include "ChangeTalentsAction.h"
 #include "playerbot/AiFactory.h"
 
+#include <limits>
+
 using namespace ai;
 
 bool ChangeTalentsAction::Execute(Event& event)
@@ -181,101 +183,6 @@ bool ChangeTalentsAction::HasPremadeRole(uint8 cls, BotRoles role)
     return !getPremadePaths(cls, "", role).empty();
 }
 
-namespace
-{
-    std::vector<std::string> CanonicalSpecializations(uint8 cls)
-    {
-        switch (cls)
-        {
-            case CLASS_WARRIOR: return {"arms", "fury", "protection"};
-            case CLASS_PALADIN: return {"holy", "protection", "retribution"};
-            case CLASS_HUNTER: return {"beast_mastery", "marksmanship", "survival"};
-            case CLASS_ROGUE: return {"assassination", "combat", "subtlety"};
-            case CLASS_PRIEST: return {"discipline", "holy", "shadow"};
-            case CLASS_SHAMAN: return {"elemental", "enhancement", "restoration"};
-            case CLASS_MAGE: return {"arcane", "fire", "frost"};
-            case CLASS_WARLOCK: return {"affliction", "demonology", "destruction"};
-            case CLASS_DRUID: return {"balance", "feral", "restoration"};
-#ifdef MANGOSBOT_TWO
-            case CLASS_DEATH_KNIGHT: return {"blood", "frost", "unholy"};
-#endif
-            default: return {};
-        }
-    }
-
-    std::string NormalizeSpecialization(std::string name)
-    {
-        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
-        std::replace(name.begin(), name.end(), ' ', '_');
-        if (name == "prot") return "protection";
-        if (name == "ret") return "retribution";
-        if (name == "bm" || name == "beast") return "beast_mastery";
-        if (name == "marks") return "marksmanship";
-        if (name == "surv") return "survival";
-        if (name == "assass") return "assassination";
-        if (name == "sub") return "subtlety";
-        if (name == "disc") return "discipline";
-        if (name == "elem") return "elemental";
-        if (name == "enhance") return "enhancement";
-        if (name == "resto") return "restoration";
-        if (name == "afflic") return "affliction";
-        if (name == "demo") return "demonology";
-        if (name == "destro") return "destruction";
-        return name;
-    }
-}
-
-std::vector<std::string> ChangeTalentsAction::GetPremadeSpecializations(uint8 cls)
-{
-    std::vector<std::string> result;
-    std::vector<std::string> names = CanonicalSpecializations(cls);
-    for (uint8 tree = 0; tree < names.size(); ++tree)
-        for (TalentPath& path : sPlayerbotAIConfig.classSpecs[cls].talentPath)
-            if (!path.talentSpec.empty() && path.talentSpec.back().highestTree() == tree)
-            {
-                result.push_back(names[tree]);
-                break;
-            }
-    return result;
-}
-
-bool ChangeTalentsAction::ApplyPremadeSpecialization(Player* bot, const std::string& specialization,
-    std::ostringstream* out)
-{
-    if (!bot || bot->GetLevel() < 10) return false;
-    std::vector<std::string> names = CanonicalSpecializations(bot->getClass());
-    std::string requested = NormalizeSpecialization(specialization);
-    int requestedTree = -1;
-    for (uint8 tree = 0; tree < names.size(); ++tree)
-        if (names[tree] == requested) requestedTree = tree;
-    if (requestedTree < 0) return false;
-
-    TalentPath* selected = NULL;
-    for (TalentPath& path : sPlayerbotAIConfig.classSpecs[bot->getClass()].talentPath)
-    {
-        if (path.talentSpec.empty() || path.talentSpec.back().highestTree() != requestedTree) continue;
-        if (!selected) selected = &path;
-        std::string pathName = path.name;
-        std::transform(pathName.begin(), pathName.end(), pathName.begin(), ::tolower);
-        if (pathName.find("pve") != std::string::npos)
-        {
-            selected = &path;
-            break;
-        }
-    }
-    if (!selected) return false;
-
-    bot->resetTalents(true);
-    TalentSpec newSpec = *GetBestPremadeSpec(bot, selected->id);
-    newSpec.CropTalents(bot);
-    newSpec.ApplyTalents(bot, out);
-    const int32 persistentSpecSeconds = 10 * 365 * 24 * 60 * 60;
-    sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specNo", selected->id + 1, "", persistentSpecSeconds);
-    sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 0, "", persistentSpecSeconds);
-    if (bot->GetPlayerbotAI()) bot->GetPlayerbotAI()->UpdateTalentSpec();
-    return bot->GetFreeTalentPoints() == 0;
-}
-
 std::string ChangeTalentsAction::GetPremadeSpecName(Player* bot)
 {
     if (!bot) return "";
@@ -283,6 +190,137 @@ std::string ChangeTalentsAction::GetPremadeSpecName(Player* bot)
     if (!specNo) return "";
     TalentPath* path = getPremadePath(bot->getClass(), (int)specNo - 1);
     return path ? path->name : "";
+}
+
+bool ChangeTalentsAction::ApplyPremadePath(Player* bot, uint32 pathId, std::ostringstream* out)
+{
+    if (!bot || bot->GetLevel() < 10) return false;
+    TalentPath* path = getPremadePath(bot->getClass(), pathId);
+    if (!path || (uint32)path->id != pathId) return false;
+    TalentSpec* best = GetBestPremadeSpec(bot, path->id);
+    if (!best) return false;
+    std::ostringstream ignored;
+    std::ostringstream* details = out ? out : &ignored;
+    bot->resetTalents(true);
+    TalentSpec spec = *best;
+    spec.CropTalents(bot);
+    spec.ApplyTalents(bot, details);
+    const int32 persistentSpecSeconds = 10 * 365 * 24 * 60 * 60;
+    sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specNo", path->id + 1, "", persistentSpecSeconds);
+    sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 0, "", persistentSpecSeconds);
+    if (PlayerbotAI* ai = bot->GetPlayerbotAI())
+    {
+        ai->DoSpecificAction("auto learn spell");
+        ai->UpdateTalentSpec();
+        ai->RequestStrategyReset(false);
+    }
+    return bot->GetFreeTalentPoints() == 0;
+}
+
+std::vector<std::string> ChangeTalentsAction::GetPremadeSpecializations(uint8 cls)
+{
+    std::vector<std::string> result;
+    for (TalentPath& path : sPlayerbotAIConfig.classSpecs[cls].talentPath)
+    {
+        const std::string value = GetPathSpecialization(cls, path.id);
+        if (!value.empty() && std::find(result.begin(), result.end(), value) == result.end()) result.push_back(value);
+    }
+    return result;
+}
+
+bool ChangeTalentsAction::ApplyPremadeSpecialization(Player* bot, const std::string& specialization,
+    std::ostringstream* out)
+{
+    if (!bot) return false;
+    std::string requested = specialization;
+    std::transform(requested.begin(), requested.end(), requested.begin(), ::tolower);
+    std::replace(requested.begin(), requested.end(), ' ', '_');
+    if (requested == "prot") requested = "protection";
+    else if (requested == "ret") requested = "retribution";
+    else if (requested == "bm" || requested == "beast") requested = "beast_mastery";
+    else if (requested == "marks") requested = "marksmanship";
+    else if (requested == "surv") requested = "survival";
+    else if (requested == "assass") requested = "assassination";
+    else if (requested == "sub") requested = "subtlety";
+    else if (requested == "disc") requested = "discipline";
+    else if (requested == "elem") requested = "elemental";
+    else if (requested == "enhance") requested = "enhancement";
+    else if (requested == "resto") requested = "restoration";
+    else if (requested == "afflic") requested = "affliction";
+    else if (requested == "demo") requested = "demonology";
+    else if (requested == "destro") requested = "destruction";
+    uint32 fallback = std::numeric_limits<uint32>::max();
+    for (TalentPath& path : sPlayerbotAIConfig.classSpecs[bot->getClass()].talentPath)
+        if (GetPathSpecialization(bot->getClass(), path.id) == requested)
+        {
+            if (fallback == std::numeric_limits<uint32>::max()) fallback = path.id;
+            std::string name = path.name;
+            std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+            if (name.find("pve") != std::string::npos) return ApplyPremadePath(bot, path.id, out);
+        }
+    return fallback != std::numeric_limits<uint32>::max() && ApplyPremadePath(bot, fallback, out);
+}
+
+std::string ChangeTalentsAction::GetPathSpecialization(uint8 cls, uint32 pathId)
+{
+    TalentPath* path = getPremadePath(cls, pathId);
+    if (!path || (uint32)path->id != pathId || path->talentSpec.empty()) return "";
+    switch (cls)
+    {
+        case CLASS_DRUID: return path->talentSpec.back().highestTree() == 0 ? "balance" :
+            path->talentSpec.back().highestTree() == 1 ? "feral" : "restoration";
+        case CLASS_HUNTER: return path->talentSpec.back().highestTree() == 0 ? "beast_mastery" :
+            path->talentSpec.back().highestTree() == 1 ? "marksmanship" : "survival";
+        case CLASS_MAGE: return path->talentSpec.back().highestTree() == 0 ? "arcane" :
+            path->talentSpec.back().highestTree() == 1 ? "fire" : "frost";
+        case CLASS_PALADIN: return path->talentSpec.back().highestTree() == 0 ? "holy" :
+            path->talentSpec.back().highestTree() == 1 ? "protection" : "retribution";
+        case CLASS_PRIEST: return path->talentSpec.back().highestTree() == 0 ? "discipline" :
+            path->talentSpec.back().highestTree() == 1 ? "holy" : "shadow";
+        case CLASS_ROGUE: return path->talentSpec.back().highestTree() == 0 ? "assassination" :
+            path->talentSpec.back().highestTree() == 1 ? "combat" : "subtlety";
+        case CLASS_SHAMAN: return path->talentSpec.back().highestTree() == 0 ? "elemental" :
+            path->talentSpec.back().highestTree() == 1 ? "enhancement" : "restoration";
+        case CLASS_WARLOCK: return path->talentSpec.back().highestTree() == 0 ? "affliction" :
+            path->talentSpec.back().highestTree() == 1 ? "demonology" : "destruction";
+        case CLASS_WARRIOR: return path->talentSpec.back().highestTree() == 0 ? "arms" :
+            path->talentSpec.back().highestTree() == 1 ? "fury" : "protection";
+        default: return "";
+    }
+}
+
+std::string ChangeTalentsAction::GetPathName(uint8 cls, uint32 pathId)
+{
+    TalentPath* path = getPremadePath(cls, pathId);
+    return path && (uint32)path->id == pathId ? path->name : "";
+}
+
+std::string ChangeTalentsAction::GetPathWeightName(uint8 cls, uint32 pathId)
+{
+    const std::string spec = GetPathSpecialization(cls, pathId);
+    if (cls == CLASS_PRIEST) return spec == "discipline" ? "disc" : spec;
+    if (cls == CLASS_SHAMAN) return spec == "elemental" ? "elem" : spec == "enhancement" ? "enhance" : "resto";
+    if (cls == CLASS_PALADIN) return spec == "protection" ? "prot" : spec == "retribution" ? "retrib" : spec;
+    if (cls == CLASS_DRUID)
+    {
+        TalentPath* path = getPremadePath(cls, pathId);
+        std::string name = path ? path->name : "";
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+        return spec == "restoration" ? "resto" : spec == "feral" && name.find("tank") != std::string::npos ? "feraltank" :
+            spec == "feral" ? "feraldps" : spec;
+    }
+    if (cls == CLASS_ROGUE) return spec == "assassination" ? "assas" : spec == "subtlety" ? "subtle" : spec;
+    if (cls == CLASS_HUNTER) return spec == "beast_mastery" ? "beast" : spec == "marksmanship" ? "marks" : "surv";
+    if (cls == CLASS_WARLOCK) return spec == "affliction" ? "afflic" : spec == "demonology" ? "demo" : "destro";
+    if (cls == CLASS_WARRIOR) return spec == "protection" ? "prot" : spec;
+    return spec;
+}
+
+BotRoles ChangeTalentsAction::GetPathRole(uint8 cls, uint32 pathId)
+{
+    TalentPath* path = getPremadePath(cls, pathId);
+    if (!path || (uint32)path->id != pathId || path->talentSpec.empty()) return BOT_ROLE_NONE;
+    return AiFactory::GetPlayerRoles(cls, path->talentSpec.back().highestTree());
 }
 
 std::vector<TalentPath*> ChangeTalentsAction::getPremadePaths(Player* bot, TalentSpec* oldSpec)

@@ -17,9 +17,15 @@ namespace ai
         virtual bool Execute(Event& event) override;
         static bool AutoSelectTalents(Player* bot, std::ostringstream* out, BotRoles role = BotRoles::BOT_ROLE_NONE);
         static bool HasPremadeRole(uint8 cls, BotRoles role);
-        static std::vector<std::string> GetPremadeSpecializations(uint8 cls);
-        static bool ApplyPremadeSpecialization(Player* bot, const std::string& specialization, std::ostringstream* out);
         static std::string GetPremadeSpecName(Player* bot);
+        static std::vector<std::string> GetPremadeSpecializations(uint8 cls);
+        static bool ApplyPremadeSpecialization(Player* bot, const std::string& specialization,
+            std::ostringstream* out = NULL);
+        static bool ApplyPremadePath(Player* bot, uint32 pathId, std::ostringstream* out = NULL);
+        static std::string GetPathSpecialization(uint8 cls, uint32 pathId);
+        static std::string GetPathName(uint8 cls, uint32 pathId);
+        static std::string GetPathWeightName(uint8 cls, uint32 pathId);
+        static BotRoles GetPathRole(uint8 cls, uint32 pathId);
     private:
         static std::vector<TalentPath*> getPremadePaths(uint8 cls, std::string findName, BotRoles role = BotRoles::BOT_ROLE_NONE);
         static std::vector<TalentPath*> getPremadePaths(Player* bot, TalentSpec* oldSpec);

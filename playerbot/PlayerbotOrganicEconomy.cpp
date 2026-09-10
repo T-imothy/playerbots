@@ -3,6 +3,7 @@
 #include "PlayerbotInventoryPressure.h"
 
 #include "PlayerbotAI.h"
+#include "PlayerbotBuildProfile.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotLLMInterface.h"
 #include "PlayerbotRendezvousManager.h"
@@ -270,23 +271,39 @@ bool PlayerbotOrganicEconomy::Submit(const Policy& currentPolicy)
             << ",\"known_recipe_outputs\":[";
         for (size_t i = 0; i < outputs.size(); ++i) { if (i) events << ','; events << outputs[i]; }
         events << "],\"auction_surplus\":" << (surplus ? "true" : "false") << '}';
-        if (!profile.career || currentPolicy.mode == "off")
+        const bool gearingNeed = sPlayerbotBuildProfiles.GearingGoalsEnabled() &&
+            sPlayerbotBuildProfiles.HasGearingDeficiency(bot);
+        if ((!profile.career && !gearingNeed) || currentPolicy.mode == "off")
             continue;
         if (!firstBot) plans << ',';
         firstBot = false;
-        plans << "{\"character_guid\":" << guid << ",\"candidate_goals\":["
-            << "{\"goal_id\":\"supplies:" << guid
-            << "\",\"type\":\"maintain_supplies\",\"utility\":10,\"eligible\":true,\"duration_seconds\":3600}";
-        if (!outputs.empty())
+        plans << "{\"character_guid\":" << guid << ",\"candidate_goals\":[";
+        bool firstGoal = true;
+        if (gearingNeed)
+        {
+            plans << "{\"goal_id\":\"gear:" << guid
+                << "\",\"type\":\"equipment_upgrade\",\"utility\":"
+                << sPlayerbotBuildProfiles.GearingGoalUtility(bot)
+                << ",\"eligible\":true,\"duration_seconds\":3600}";
+            firstGoal = false;
+        }
+        if (profile.career)
+        {
+            if (!firstGoal) plans << ',';
+            plans << "{\"goal_id\":\"supplies:" << guid
+                << "\",\"type\":\"maintain_supplies\",\"utility\":10,\"eligible\":true,\"duration_seconds\":3600}";
+            firstGoal = false;
+        }
+        if (profile.career && !outputs.empty())
             plans << ",{\"goal_id\":\"profession:" << guid << ':' << outputs.front()
                 << "\",\"type\":\"profession_skill_up\",\"utility\":30,\"eligible\":true,\"duration_seconds\":5400}";
-        if (profile.currentGoalType == "storage_pressure")
+        if (profile.career && profile.currentGoalType == "storage_pressure")
             plans << ",{\"goal_id\":\"storage:" << guid
                 << "\",\"type\":\"storage_pressure\",\"utility\":100,\"eligible\":true,\"duration_seconds\":1800}";
-        if (surplus)
+        if (profile.career && surplus)
             plans << ",{\"goal_id\":\"auction:" << guid
                 << "\",\"type\":\"list_surplus\",\"utility\":20,\"eligible\":true,\"duration_seconds\":3600}";
-        if (currentPolicy.advertising && IsCity(bot->GetZoneId()) && !outputs.empty())
+        if (profile.career && currentPolicy.advertising && IsCity(bot->GetZoneId()) && !outputs.empty())
             plans << ",{\"goal_id\":\"advertise:" << guid << ':' << outputs.front()
                 << "\",\"type\":\"profession_advertisement\",\"utility\":4,\"eligible\":true,\"duration_seconds\":1800}";
         plans << "]}";
@@ -395,6 +412,36 @@ bool PlayerbotOrganicEconomy::ExecuteGoal(Player* bot, Profile& profile,
     PlayerbotAI* ai = bot->GetPlayerbotAI();
     const std::string& goalType = profile.currentGoalType;
     const std::string& goalId = profile.currentGoalId;
+    if (goalType == "equipment_upgrade" && sPlayerbotBuildProfiles.GearingGoalsEnabled())
+    {
+        if (!sPlayerbotBuildProfiles.HasGearingDeficiency(bot)) return true;
+        if (ai->DoSpecificAction("equip upgrades", Event("organic economy gearing", "", bot), true))
+        {
+            failureReason = "equipping_owned_upgrade";
+            return false;
+        }
+        if (currentPolicy.buying &&
+            ai->DoSpecificAction("rpg ah buy", Event("organic economy gearing", "", bot), true))
+        {
+            failureReason = "purchased_character_owned_upgrade";
+            return false;
+        }
+        if (currentPolicy.buying)
+        {
+            std::ostringstream action;
+            action << "request travel target::" << (uint32)TravelDestinationPurpose::AH;
+            if (ai->DoSpecificAction(action.str(), Event("organic economy gearing", "", bot), true))
+                failureReason = "traveling_to_character_auction_upgrade";
+            else
+                failureReason = "awaiting_organic_upgrade_source";
+        }
+        else
+        {
+            ai->ChangeStrategy("nc +travel", BotState::BOT_STATE_NON_COMBAT);
+            failureReason = "awaiting_quest_vendor_craft_or_loot_upgrade";
+        }
+        return false;
+    }
     if (goalType == "profession_skill_up" && currentPolicy.careers)
     {
         if (ai->DoSpecificAction("craft random item", Event("organic economy", "", bot), true))
