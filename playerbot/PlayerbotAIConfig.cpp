@@ -672,6 +672,7 @@ bool PlayerbotAIConfig::Initialize()
     chatDirectorRendezvousTriggerSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousTriggerSeconds", 30);
     chatDirectorRendezvousCooldownSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousCooldownSeconds", 300);
     chatDirectorRendezvousDepartureSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRendezvousDepartureSeconds", 90);
+    chatDirectorPartyDisconnectGraceSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorPartyDisconnectGraceSeconds", 300);
     chatDirectorSocialOfferSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorSocialOfferSeconds", 90);
     chatDirectorProactivePlayerCooldownSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorProactivePlayerCooldownSeconds", 600);
     chatDirectorProactivePairCooldownSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorProactivePairCooldownSeconds", 1800);

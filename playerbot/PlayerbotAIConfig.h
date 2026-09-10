@@ -410,7 +410,7 @@ public:
     bool chatDirectorQuestInteraction;
     uint32 chatDirectorRendezvousTargetSeconds, chatDirectorRendezvousMaximumSeconds;
     uint32 chatDirectorRendezvousTriggerSeconds, chatDirectorRendezvousCooldownSeconds;
-    uint32 chatDirectorRendezvousDepartureSeconds;
+    uint32 chatDirectorRendezvousDepartureSeconds, chatDirectorPartyDisconnectGraceSeconds;
     uint32 chatDirectorSocialOfferSeconds, chatDirectorProactivePlayerCooldownSeconds;
     uint32 chatDirectorProactivePairCooldownSeconds, chatDirectorSharedActivitySeconds;
     uint32 chatDirectorSharedActivityWindowSeconds, chatDirectorSharedActivityDistance, chatDirectorMaximumLevelDifference;

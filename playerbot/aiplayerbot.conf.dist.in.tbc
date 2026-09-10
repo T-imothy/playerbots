@@ -1208,3 +1208,6 @@ AiPlayerbot.ChatDirectorRendezvousMaximumSeconds = 30
 AiPlayerbot.ChatDirectorRendezvousTriggerSeconds = 30
 AiPlayerbot.ChatDirectorRendezvousCooldownSeconds = 300
 AiPlayerbot.ChatDirectorRendezvousDepartureSeconds = 90
+# Keep a human-created mixed party intact while its human is temporarily
+# disconnected. An intentional group leave still starts departure immediately.
+AiPlayerbot.ChatDirectorPartyDisconnectGraceSeconds = 300

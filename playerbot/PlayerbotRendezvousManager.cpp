@@ -500,6 +500,33 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
             Group* group = bot->GetGroup();
             bool originalParty = group && group->GetId() == session.groupId;
             Player* human = originalParty ? FindPartyHuman(bot) : nullptr;
+            bool waitingForReconnect = false;
+
+            // Group membership persists while a real player is temporarily
+            // disconnected. Keep the bots and their party-assist state intact
+            // for a bounded reconnect window, but do not delay an intentional
+            // leave because the player's group membership is then already gone.
+            ObjectGuid assistedHuman(HIGHGUID_PLAYER, session.playerGuid);
+            bool assistedHumanStillMember = originalParty && group->IsMember(assistedHuman);
+            if (!human && assistedHumanStillMember)
+            {
+                if (session.humanAbsentSince.time_since_epoch().count() == 0)
+                {
+                    session.humanAbsentSince = now;
+                    session.reason = "waiting_for_human_reconnect";
+                    LogPartyEvent(session, "reconnect_grace_started");
+                }
+                uint32 graceSeconds = std::max<uint32>(60, std::min<uint32>(900,
+                    sPlayerbotAIConfig.chatDirectorPartyDisconnectGraceSeconds));
+                waitingForReconnect = std::chrono::duration_cast<std::chrono::seconds>(
+                    now - session.humanAbsentSince).count() < graceSeconds;
+            }
+            else if (human && session.humanAbsentSince.time_since_epoch().count() != 0)
+            {
+                session.humanAbsentSince = std::chrono::steady_clock::time_point();
+                session.reason.clear();
+                LogPartyEvent(session, "human_reconnected");
+            }
 
             if (session.state == "departing")
             {
@@ -516,7 +543,7 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                     }
                 }
             }
-            else if (!originalParty || !human)
+            else if ((!originalParty || !human) && !waitingForReconnect)
             {
                 if (session.state != "departing" && PartySafeToRelease(bot))
                 {

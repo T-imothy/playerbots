@@ -46,6 +46,7 @@ private:
         uint32 approachAttempts = 0;
         std::chrono::steady_clock::time_point stateSince;
         std::chrono::steady_clock::time_point nextApproachAttempt;
+        std::chrono::steady_clock::time_point humanAbsentSince;
     };
 
     struct Session
