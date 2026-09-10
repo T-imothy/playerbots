@@ -1068,10 +1068,20 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         return;
     const uint32 fullSampleSeconds = std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorHealthSampleSeconds);
     const bool canarySampling = !sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.empty();
-    nextHealthSample = now + std::chrono::seconds(canarySampling ? std::min<uint32>(10, fullSampleSeconds) : fullSampleSeconds);
+    const bool globalRecovery = sPlayerbotAIConfig.chatDirectorBotRecoveryMode >= 2;
+    const bool recoverySampling = canarySampling || globalRecovery;
+    nextHealthSample = now + std::chrono::seconds(recoverySampling ? std::min<uint32>(10, fullSampleSeconds) : fullSampleSeconds);
     static std::chrono::steady_clock::time_point nextFullHealthSample;
     const bool fullSample = nextFullHealthSample.time_since_epoch().count() == 0 || now >= nextFullHealthSample;
     if (fullSample) nextFullHealthSample = now + std::chrono::seconds(fullSampleSeconds);
+    // A global recovery rollout must not start hundreds of asynchronous route
+    // searches during the same world update. Cover the population once per
+    // full telemetry interval in stable, small GUID buckets instead.
+    static uint32 recoverySweepBucket = 0;
+    static constexpr uint32 recoverySweepBuckets = 30;
+    const uint32 currentRecoverySweepBucket = recoverySweepBucket;
+    if (globalRecovery)
+        recoverySweepBucket = (recoverySweepBucket + 1) % recoverySweepBuckets;
 
     std::vector<std::string> samples;
     for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
@@ -1082,8 +1092,12 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         const bool recoveryCanary = std::find(sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.begin(),
             sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.end(), guid) !=
             sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.end();
-        if (!fullSample && !recoveryCanary) continue;
         BotHealthState& state = botHealth[guid];
+        const bool recoverySweepMember = globalRecovery &&
+            guid % recoverySweepBuckets == currentRecoverySweepBucket;
+        const bool activeGlobalRecovery = globalRecovery && state.recoveryStep > 0;
+        const bool emitHealthSample = fullSample || recoveryCanary;
+        if (!fullSample && !recoveryCanary && !recoverySweepMember && !activeGlobalRecovery) continue;
         if (state.lastMeaningfulProgress.time_since_epoch().count() == 0)
             state.lastMeaningfulProgress = now;
         bool levelChanged = state.lastLevel != 0 && state.lastLevel != bot->GetLevel();
@@ -1199,8 +1213,10 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // recovery step on the world thread. Resetting the travel target makes
         // normal quest/travel strategies choose again without teleporting or
         // modifying authoritative quest state.
-        bool recoveryAllowed = sPlayerbotAIConfig.chatDirectorBotRecoveryMode >= 2 ||
+        const bool recoveryExecutionScope = globalRecovery ||
             (sPlayerbotAIConfig.chatDirectorBotRecoveryMode == 1 && recoveryCanary);
+        const bool recoveryAttemptEligible = recoveryExecutionScope &&
+            (!globalRecovery || recoveryCanary || recoverySweepMember);
         TravelTarget* inFlightRecoveryTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
             GetValue<TravelTarget*>("travel target")->Get();
         TravelStatus inFlightRecoveryStatus = inFlightRecoveryTarget ?
@@ -1213,7 +1229,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              inFlightRecoveryStatus == TravelStatus::TRAVEL_STATUS_WORK);
         // Do not let the hourly recovery cooldown replace a still-valid exact
         // turn-in with a newer completed quest just before the first one arrives.
-        if (suspected && recoveryAllowed && !turninRecoveryInFlight)
+        if (suspected && recoveryAttemptEligible && !turninRecoveryInFlight)
         {
             const auto oneHourAgo = now - std::chrono::hours(1);
             state.recoveryAttempts.erase(std::remove_if(state.recoveryAttempts.begin(), state.recoveryAttempts.end(),
@@ -1295,15 +1311,15 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         // Recovery destination searches finish asynchronously. The ordinary
         // Playerbots scheduler can retain a validated READY/TRAVEL target yet
         // never select its low-relevance movement action under a busy 600-bot
-        // workload. Advance only canary recovery targets and still execute the
-        // normal MoveToTravelTargetAction safety checks on the world thread.
+        // workload. Advance every in-scope recovery target while still using
+        // the normal MoveToTravelTargetAction safety checks on the world thread.
         TravelTarget* recoveryTarget = bot->GetPlayerbotAI()->GetAiObjectContext()->
             GetValue<TravelTarget*>("travel target")->Get();
         bool boundedRecoveryTarget = false;
         bool recoveryMoveUseful = false;
         bool recoveryMovePossible = false;
         std::string recoveryMoveResult = "not_applicable";
-        if (recoveryCanary && state.recoveryStep > 0 && recoveryTarget)
+        if (recoveryExecutionScope && state.recoveryStep > 0 && recoveryTarget)
         {
             for (std::string const& condition : recoveryTarget->GetConditions())
             {
@@ -1317,7 +1333,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         TravelStatus recoveryStatus = recoveryTarget ? recoveryTarget->GetStatus() :
             TravelStatus::TRAVEL_STATUS_NONE;
         std::string recoveryPrepareResult = "not_applicable";
-        if (!excluded && recoveryCanary && state.recoveryStep > 0 && recoveryTarget &&
+        if (!excluded && recoveryExecutionScope && state.recoveryStep > 0 && recoveryTarget &&
             recoveryStatus == TravelStatus::TRAVEL_STATUS_PREPARE)
         {
             // Prepared recovery searches are futures. Under the 600-bot
@@ -1341,14 +1357,14 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 recoveryPrepareResult = "target_finalize_impossible";
         }
         bool exactTurninTarget = false;
-        if (recoveryCanary && state.recoveryStep == 3 && state.recoveryQuestId && recoveryTarget)
+        if (recoveryExecutionScope && state.recoveryStep == 3 && state.recoveryQuestId && recoveryTarget)
         {
             // Async travel requests share legacy metadata slots with ordinary
             // Playerbots travel. If another request updates those slots while
             // an exact turn-in route is being calculated, the finished target
             // can lose its recovery condition and priority. Re-establish them
             // only when the installed world-authoritative destination is the
-            // exact QuestTaker for this canary's recorded completed quest.
+            // exact QuestTaker for this recovery's recorded completed quest.
             QuestTravelDestination* questDestination =
                 dynamic_cast<QuestTravelDestination*>(recoveryTarget->GetDestination());
             if (questDestination && questDestination->GetQuestId() == state.recoveryQuestId &&
@@ -1518,7 +1534,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"recovery_interaction_result\":\"" << recoveryInteractionResult << "\""
              << ",\"recovery_interaction_attempts\":" << state.recoveryInteractionAttempts
              << ",\"grouped\":" << (bot->GetGroup() ? "true" : "false") << "}";
-        samples.push_back(json.str());
+        if (emitHealthSample)
+            samples.push_back(json.str());
     }
 
     std::vector<std::string> payloads;
