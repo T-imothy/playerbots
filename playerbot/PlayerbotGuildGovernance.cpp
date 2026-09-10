@@ -278,9 +278,9 @@ void PlayerbotGuildGovernance::Snapshot(Player* actor,Guild* guild,Policy& p,con
             if(++count>5) break;
             Field* f=rows->Fetch();const auto* item=sObjectMgr.GetItemPrototype(f[1].GetUInt32());
             auto found=bank.find(f[1].GetUInt32());
-            const bool money=f[9].GetString()=="money";
+            const bool money=f[9].GetCppString()=="money";
             const uint32 available=money?uint32(std::min(uint64(0xFFFFFFFF),guild->GetGuildBankMoney())):found==bank.end()?0:found->second;
-            const std::string goalState=f[7].GetString()=="legacy_needs_review"?"needs_review":f[5].GetString();
+            const std::string goalState=f[7].GetCppString()=="legacy_needs_review"?"needs_review":f[5].GetString();
             std::ostringstream out;out<<"GOAL\t"<<op<<'\t'<<f[0].GetString()<<'\t'<<f[1].GetUInt32()<<'\t'
                 <<Wire(money?"Gold (copper units)":item?item->Name1:"Unknown item",32)<<'\t'<<f[2].GetUInt32()<<'\t'<<available<<'\t'
                 <<f[4].GetUInt32()<<'\t'<<Wire(goalState,20)<<'\t'<<f[6].GetUInt32()<<'\t'<<(money?"money":"item");
@@ -292,7 +292,7 @@ void PlayerbotGuildGovernance::Snapshot(Player* actor,Guild* guild,Policy& p,con
             else if(!Allows(guild,"supplies")) deliveryStatus="supply_automation_paused";
             else if(money&&!sGuildSupplies.MoneyEnabled(id)) deliveryStatus="money_donations_disabled";
             else if(uint64(available)>=uint64(f[2].GetUInt32())+f[4].GetUInt32()) deliveryStatus="stock_target_met";
-            if(money&&f[5].GetString()=="completed") deliveryStatus="fundraiser_completed";
+            if(money&&f[5].GetCppString()=="completed") deliveryStatus="fundraiser_completed";
             else if(money&&!transit&&deliveryStatus=="searching_for_spare_items") deliveryStatus="waiting_for_willing_donors_with_spare_gold";
             Send(actor,"GOALDELIVERY\t"+op+"\t"+f[0].GetString()+"\t"+std::to_string(transit)+"\t"+Wire(deliveryStatus,48));
         } while(rows->NextRow());
@@ -316,7 +316,7 @@ void PlayerbotGuildGovernance::Snapshot(Player* actor,Guild* guild,Policy& p,con
             if(++count>5) break;
             Field* f=rows->Fetch();
             const auto reason=PromotionBlocker(p,uint32(time(nullptr)),f[2].GetUInt32(),f[3].GetUInt32(),
-                f[4].GetUInt32(),f[5].GetUInt32(),f[6].GetString()=="member",0);
+                f[4].GetUInt32(),f[5].GetUInt32(),f[6].GetCppString()=="member",0);
             Send(actor,"EVIDENCE\t"+op+"\t"+std::to_string(f[0].GetUInt32())+"\t"+Wire(f[1].GetString(),24)+"\t"+
                 std::to_string(f[2].GetUInt32())+"\t"+std::to_string(f[3].GetUInt32())+"\t"+
                 std::to_string(f[4].GetUInt32())+"\t"+std::to_string(f[5].GetUInt32())+"\t"+reason+"\t"+Wire(f[7].GetString(),24));
@@ -375,7 +375,7 @@ bool PlayerbotGuildGovernance::Handle(Player* actor,const std::string& message) 
         if(row[0].GetString()!=digest) Send(actor,"RESULT\t"+op+"\trejected\toperation_id_reused");
         else {
             Send(actor,"RESULT\t"+op+"\t"+row[1].GetString()+"\t"+Wire(row[2].GetString()));
-            if(row[1].GetString()=="completed") Snapshot(actor,guild,p,op,"policy",0);
+            if(row[1].GetCppString()=="completed") Snapshot(actor,guild,p,op,"policy",0);
         }
         return true;
     }
@@ -401,7 +401,7 @@ bool PlayerbotGuildGovernance::Handle(Player* actor,const std::string& message) 
                     Field* row=existing->Fetch();
                     if(row[0].GetUInt32()!=id) reason="event_scope";
                     else if(row[1].GetUInt32()!=e.revision) reason="stale_event_revision";
-                    else if(row[2].GetString()!="draft"&&row[2].GetString()!="announced") reason="event_already_committed";
+                    else if(row[2].GetCppString()!="draft"&&row[2].GetCppString()!="announced") reason="event_already_committed";
                     else {
                         EventDefinition before;before.starts=row[3].GetUInt32();before.ends=row[4].GetUInt32();before.kind=row[5].GetString();before.target=row[6].GetUInt32();
                         renew=NeedsRenewedAcceptance(before,e);
@@ -485,8 +485,8 @@ bool PlayerbotGuildGovernance::Handle(Player* actor,const std::string& message) 
         else if(guild->GetGuildBankMoney()>=target) reason="bank_already_has_target_funds";
         else {
             auto existing=CharacterDatabase.PQuery("SELECT guild_id,request_kind,state,purpose,required_quantity FROM guild_society_supply_goal WHERE goal_id='%s'",f[4].c_str());
-            if(existing&&(existing->Fetch()[0].GetUInt32()!=id||existing->Fetch()[1].GetString()!="money")) reason="goal_scope_or_kind";
-            else if(existing&&existing->Fetch()[2].GetString()!="active") reason="fundraiser_is_closed";
+            if(existing&&(existing->Fetch()[0].GetUInt32()!=id||existing->Fetch()[1].GetCppString()!="money")) reason="goal_scope_or_kind";
+            else if(existing&&existing->Fetch()[2].GetCppString()!="active") reason="fundraiser_is_closed";
             else if(existing&&(existing->Fetch()[3].GetString()!=f[7]||target>existing->Fetch()[4].GetUInt32())&&CharacterDatabase.PQuery("SELECT delivery_id FROM guild_society_supply_delivery WHERE guild_id=%u AND goal_id='%s' LIMIT 1",id,f[4].c_str())) reason="committed_fundraiser_cannot_change_purpose_or_increase";
             else if(CharacterDatabase.PQuery("SELECT goal_id FROM guild_society_supply_goal WHERE guild_id=%u AND request_kind='money' AND state='active' AND goal_id<>'%s' LIMIT 1",id,f[4].c_str())) reason="one_active_fundraiser_per_guild";
             else if(existing) sql="UPDATE guild_society_supply_goal SET required_quantity="+std::to_string(target)+",priority="+std::to_string(priority)+",purpose='"+Esc(f[7])+"',updated_at="+std::to_string(now)+" WHERE goal_id='"+f[4]+"' AND guild_id="+std::to_string(id)+" AND request_kind='money' AND state='active'";

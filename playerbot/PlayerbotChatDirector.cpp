@@ -4434,7 +4434,7 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             do {
                 Field* fields=officerRows->Fetch();
                 MemberSlot* member=guild->GetMemberSlot(ObjectGuid(HIGHGUID_PLAYER,fields[0].GetUInt32()));
-                const uint32 required=fields[1].GetString()=="recruiter"?GR_RIGHT_INVITE:GR_RIGHT_MODIFY_GUILD_INFO;
+                const uint32 required=fields[1].GetCppString()=="recruiter"?GR_RIGHT_INVITE:GR_RIGHT_MODIFY_GUILD_INFO;
                 if(member&&guild->HasRankRight(member->RankId,required)) ++activeOfficers;
             } while(officerRows->NextRow());
         const uint32 desiredOfficers = std::min<uint32>(3, members > 0 ? members - 1 : 0);
@@ -4558,12 +4558,12 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             {
                 Field* fields = supplySnapshots->Fetch();
                 const uint32 itemEntry = fields[1].GetUInt32();
-                const bool moneyRequest=fields[7].GetString()=="money";
+                const bool moneyRequest=fields[7].GetCppString()=="money";
                 const ItemPrototype* item = sObjectMgr.GetItemPrototype(itemEntry);
                 const auto bankEntry=bankContents.find(itemEntry);
                 const uint32 banked=moneyRequest?uint32(std::min(uint64(0xFFFFFFFF),guild->GetGuildBankMoney())):bankEntry==bankContents.end()?0:bankEntry->second;
-                const std::string goalState=fields[6].GetString()=="legacy_needs_review" &&
-                    fields[5].GetString()!="cancelled" ? "needs_review" : fields[5].GetString();
+                const std::string goalState=fields[6].GetCppString()=="legacy_needs_review" &&
+                    fields[5].GetCppString()!="cancelled" ? "needs_review" : fields[5].GetString();
                 events << ",{\"event_id\":\"supply-state-" << guildId << '-' << itemEntry
                     << "\",\"type\":\"supply_goal\",\"goal_id\":\""
                     << PlayerbotLLMInterface::SanitizeForJson(fields[0].GetString())

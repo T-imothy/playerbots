@@ -28,15 +28,25 @@ using Phase=PlayerbotRendezvousManager::PartyActivityPhase;
 Player* Online(uint32 guid) {return sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER,guid));}
 bool Bot(Player* p) {return p&&p->GetSession()&&!p->isRealPlayer()&&p->GetPlayerbotAI()&&
     sPlayerbotAIConfig.IsInRandomAccountList(p->GetSession()->GetAccountId());}
-bool Safe(Player* p) {
-    if(!sPlayerbotAIConfig.chatDirectorPartyActivityOwnership||!Bot(p)||!p->IsInWorld()||!p->GetMap()||!p->GetSession()||!p->IsAlive()||p->IsInCombat()||
-        p->IsBeingTeleported()||p->IsTaxiFlying()||p->GetTransport()||p->InBattleGround()||
-        p->GetMap()->IsDungeon()||p->IsNonMeleeSpellCasted(false)||p->GetTradeData()||sGuildEventExecutor.Reserved(p->GetGUIDLow())) return false;
+const char* SafetyBlocker(Player* p) {
+    if(!sPlayerbotAIConfig.chatDirectorPartyActivityOwnership) return "activity_ownership_disabled";
+    if(!Bot(p)||!p->IsInWorld()||!p->GetMap()) return "carrier_offline_or_loading";
+    if(!p->IsAlive()) return "recovering_from_death";
+    if(p->IsInCombat()) return "in_combat";
+    if(p->IsBeingTeleported()) return "map_transfer_in_progress";
+    if(p->IsTaxiFlying()||p->GetTransport()) return "aboard_transport";
+    if(p->InBattleGround()||p->GetMap()->IsDungeon()) return "in_dungeon_or_battleground";
+    if(p->IsNonMeleeSpellCasted(false)||p->GetTradeData()) return "finishing_cast_or_trade";
+    if(sGuildEventExecutor.Reserved(p->GetGUIDLow())) return "committed_to_guild_event";
     if(p->GetGroup()) for(const auto& slot:p->GetGroup()->GetMemberSlots())
-        if(!sPlayerbotAIConfig.IsInRandomAccountList(sObjectMgr.GetPlayerAccountIdByGUID(slot.guid))) return false;
+        if(!sPlayerbotAIConfig.IsInRandomAccountList(sObjectMgr.GetPlayerAccountIdByGUID(slot.guid))) return "with_human_party";
     const auto owner=sPlayerbotRendezvousManager.GetPartyActivityOwner(p->GetGUIDLow());
-    return owner==Owner::none||owner==Owner::guild_supply;
+    // Stale ordinary follow may yield once there is no human party. Explicit
+    // actions, errands and guild commitments retain their higher priority.
+    if(owner==Owner::none||owner==Owner::guild_supply||owner==Owner::party_follow) return "";
+    return "another_activity_owns_movement";
 }
+bool Safe(Player* p) {return !*SafetyBlocker(p);}
 bool MayDeposit(Guild* guild,uint32 member) {
     for(uint8 tab=0;tab<guild->GetPurchasedTabs();++tab)
         if(guild->IsMemberHaveRights(member,tab,GUILD_BANK_RIGHT_DEPOSIT_ITEM)) return true;
@@ -113,7 +123,7 @@ struct PlayerbotGuildSupplies::State {
         load=now+15;enabled.clear();
         goals.clear();
         auto goalRows=CharacterDatabase.PQuery("SELECT DISTINCT g.goal_id,g.guild_id,g.required_quantity,g.reserved_quantity,g.request_kind FROM guild_society_supply_goal g JOIN guild_society_supply_delivery d ON d.goal_id=g.goal_id AND d.guild_id=g.guild_id WHERE g.state='active' AND d.phase NOT IN ('completed','cancelled','failed') ORDER BY g.guild_id,g.goal_id LIMIT 256");
-        if(goalRows) do {auto* f=goalRows->Fetch();if(Id(f[0].GetString())) goals[f[0].GetString()]={f[1].GetUInt32(),f[2].GetUInt32(),f[3].GetUInt32(),f[4].GetString()=="money"};} while(goalRows->NextRow());
+        if(goalRows) do {auto* f=goalRows->Fetch();if(Id(f[0].GetString())) goals[f[0].GetString()]={f[1].GetUInt32(),f[2].GetUInt32(),f[3].GetUInt32(),f[4].GetCppString()=="money"};} while(goalRows->NextRow());
         moneyEnabled.clear();
         auto settings=CharacterDatabase.PQuery("SELECT guild_id,money_enabled FROM guild_society_supply_execution WHERE enabled=1");
         if(settings) do {auto* f=settings->Fetch();enabled[f[0].GetUInt32()]=true;if(f[1].GetBool()) moneyEnabled.insert(f[0].GetUInt32());} while(settings->NextRow());
@@ -280,7 +290,8 @@ void PlayerbotGuildSupplies::Update() {
         Player* p=Online(d.carrier);Guild* guild=sGuildMgr.GetGuildById(d.guild);
         if(!guild||!s.enabled[d.guild]||!sGuildGovernance.Allows(guild,"supplies")) {s.Block(d,"supply_automation_paused",now);continue;}
         if(!guild->GetMemberSlot(ObjectGuid(HIGHGUID_PLAYER,d.carrier))) {s.Block(d,"recipient_no_longer_member",now);continue;}
-        if(!Safe(p)) {d.last=0;s.Block(d,"waiting_for_safe_availability",now);continue;}
+        const char* safety=SafetyBlocker(p);
+        if(*safety) {d.last=0;s.Block(d,safety,now);continue;}
         if(now<d.retry) continue;
         d.active+=d.last?std::min(now-d.last,32u):0;d.last=now;
         auto goal=s.goals.find(d.goal);
@@ -350,14 +361,21 @@ void PlayerbotGuildSupplies::Update() {
             Player* recipient=nullptr;float distance=1e30f;
             for(uint32 guid:sRandomPlayerbotMgr.GetChatBotGuids()) {
                 Player* candidate=Online(guid);
-                if(!candidate||candidate==p||candidate->GetGuildId()!=d.guild||s.Busy(guid)||!Safe(candidate)||
+                // Receiving ordinary mail does not interrupt the recipient's
+                // current party/combat/event. Safe() still gates collection and
+                // deposit after receipt; keep the one-delivery courier bound.
+                if(!Bot(candidate)||!candidate->IsInWorld()||!candidate->GetMap()||candidate==p||candidate->GetGuildId()!=d.guild||s.Busy(guid)||
                     !MayDeposit(guild,guid)||guild->FindSupplyDepositTab(guid,item,amount)<0||candidate->GetMailSize()>=50||
                     candidate->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get()>70) continue;
                 const Service* bankService=s.Destination(candidate,false);if(!bankService) continue;
                 float score=candidate->GetMapId()==bankService->map?candidate->GetDistance(bankService->x,bankService->y,bankService->z):100000;
                 if(score<distance) {recipient=candidate;distance=score;}
             }
-            if(!recipient) {s.Block(d,"no_available_deposit_recipient",now,true);continue;}
+            if(!recipient) {
+                s.Block(d,"no_available_deposit_recipient",now);
+                d.retry=now+30;d.last=0; // Recheck capacity/availability, not a failed route.
+                continue;
+            }
             if(amount<d.quantity) {
                 if(!CharacterDatabase.DirectPExecute("UPDATE guild_society_supply_delivery SET quantity=%u,updated_at=%u WHERE delivery_id=%llu AND phase='carried'",amount,now,(unsigned long long)d.id)) continue;
                 d.quantity=amount;
@@ -413,7 +431,7 @@ void PlayerbotGuildSupplies::Update() {
     const auto bank=guild->GetBankItemCounts();
     do {
         Field* f=goals->Fetch();const uint32 entry=f[1].GetUInt32();uint32 transit=0;
-        if(f[4].GetString()=="money") {
+        if(f[4].GetCppString()=="money") {
             if(!s.moneyEnabled.count(guild->GetId())||entry) continue;
             std::string goalId=f[0].GetString();if(!Id(goalId)) continue;
             const uint32 target=f[2].GetUInt32();
