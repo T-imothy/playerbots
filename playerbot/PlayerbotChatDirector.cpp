@@ -1548,7 +1548,8 @@ void PlayerbotChatDirector::Update()
             }
             created[proposal.proposalId] = made;
             if (made || social || (proposal.type != "give_item" && proposal.type != "sell_item" &&
-                proposal.type != "buy_item" && proposal.type != "conjure_water"))
+                proposal.type != "buy_item" && proposal.type != "accept_player_gift" &&
+                proposal.type != "conjure_water"))
                 continue;
 
             sPlayerbotActionBroker.ReportRejected(proposal, it->event, actionResult.reasonCode);

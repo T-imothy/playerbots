@@ -235,7 +235,7 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
 
     std::smatch match;
     bool conjure = proposal.type == "conjure_water";
-    bool buying = proposal.type == "buy_item";
+    bool buying = proposal.type == "buy_item" || proposal.type == "accept_player_gift";
     uint32 itemEntry = 0, itemGuid = 0, spellId = 0;
     if (buying)
     {
@@ -295,7 +295,12 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
     if (!proto) return reject("unknown_item", "That item is no longer valid.");
     uint32 value = (conjure || buying) ? 0 : proposal.quantity * ItemUsageValue::GetBotSellPrice(proto, bot);
     uint32 minimumUnitPrice = 0, maximumUnitPrice = 0;
-    if (offeredCapability)
+    if (quote)
+    {
+        minimumUnitPrice = quote->limitPrice / std::max<uint32>(1, quote->quantity);
+        maximumUnitPrice = quote->openingPrice / std::max<uint32>(1, quote->quantity);
+    }
+    else if (offeredCapability)
     {
         minimumUnitPrice = offeredCapability->minimumUnitPriceCopper;
         maximumUnitPrice = offeredCapability->maximumUnitPriceCopper;
@@ -316,7 +321,14 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
         maximumUnitPrice = std::max<uint32>(unitPrice * 5, marketPrice * 2);
     }
     uint32 price = 0;
-    if (buying)
+    if (quote)
+    {
+        // The quote was already bounded and committed on the world thread.
+        // Reuse that exact total instead of independently recalculating a
+        // per-unit range that can disagree because of integer rounding.
+        price = proposal.type == "accept_player_gift" ? 0 : proposal.priceCopper;
+    }
+    else if (buying)
     {
         uint64 minimum = uint64(minimumUnitPrice) * proposal.quantity;
         uint64 maximum = uint64(maximumUnitPrice) * proposal.quantity;
@@ -349,7 +361,7 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
         if (proposal.quantity > missingQuantity)
             return reject("buyer_quantity_changed", "I don't need that many anymore.");
     }
-    if (buying && !price)
+    if (buying && proposal.type != "accept_player_gift" && !price)
         return reject("invalid_price", "That purchase needs a valid price.");
     if (buying && reservedMoney[bot->GetGUIDLow()] + price > freeMoney)
         return reject("insufficient_bot_spendable_money", "I can't afford that from my available spending money.");
@@ -403,6 +415,13 @@ PlayerbotActionResult PlayerbotActionBroker::Create(const ChatDirectorActionProp
     transactions[transaction.transactionId] = transaction;
     if (itemGuid) reservedItems[itemGuid] = transaction.transactionId;
     if (buying) reservedMoney[bot->GetGUIDLow()] += price;
+    if (quote) quote->state = "accepted";
+    if (crafting)
+        CharacterDatabase.PExecute(
+            "INSERT INTO organic_economy_commission (commission_id,bot_guid,player_guid,recipe_spell_id,output_item_entry,quantity,materials_source,service_fee_copper,state,authoritative_payload,expires_at) "
+            "VALUES ('%s','%u','%u','%u','%u','1','bot','%u','crafting','{}',DATE_ADD(NOW(),INTERVAL 30 MINUTE))",
+            transaction.commissionId.c_str(), transaction.botGuid, transaction.playerGuid, transaction.spellId,
+            transaction.itemEntry, transaction.priceCopper);
     Report(transactions[transaction.transactionId]);
 
     if (conjure)
@@ -453,7 +472,7 @@ bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
     if (!transaction || !bot->GetTradeData() || bot->GetTrader() != trader)
         return false;
     TradeData* trade = bot->GetTradeData();
-    if (transaction->type == "buy_item")
+    if (transaction->type == "buy_item" || transaction->type == "accept_player_gift")
     {
         if (bot->GetMoney() < transaction->priceCopper)
         {
@@ -537,7 +556,7 @@ bool PlayerbotActionBroker::ValidateTrade(Player* bot, Player* trader)
     Transaction* transaction = bot && trader ? Find(bot->GetGUIDLow(), trader->GetGUIDLow()) : nullptr;
     if (!transaction || !bot->GetTradeData() || !trader->GetTradeData())
         return false;
-    if (transaction->type == "buy_item")
+    if (transaction->type == "buy_item" || transaction->type == "accept_player_gift")
     {
         uint32 received = 0;
         for (uint32 slot = 0; slot < TRADE_SLOT_TRADED_COUNT; ++slot)
@@ -608,7 +627,7 @@ void PlayerbotActionBroker::CompleteTrade(Player* bot, Player* trader)
     if (!transaction) return;
     transaction->state = "completed";
     reservedItems.erase(transaction->itemGuid);
-    if (transaction->type == "buy_item") reservedMoney[transaction->botGuid] -= std::min(reservedMoney[transaction->botGuid], transaction->priceCopper);
+    if (transaction->type == "buy_item" || transaction->type == "accept_player_gift") reservedMoney[transaction->botGuid] -= std::min(reservedMoney[transaction->botGuid], transaction->priceCopper);
     Report(*transaction);
     sPlayerbotRendezvousManager.BeginDeparture(transaction->botGuid, transaction->playerGuid, "trade_completed");
 }
@@ -620,7 +639,7 @@ void PlayerbotActionBroker::CancelTrade(Player* bot, Player* trader, const std::
     transaction->state = "cancelled";
     transaction->failureReason = reason;
     reservedItems.erase(transaction->itemGuid);
-    if (transaction->type == "buy_item") reservedMoney[transaction->botGuid] -= std::min(reservedMoney[transaction->botGuid], transaction->priceCopper);
+    if (transaction->type == "buy_item" || transaction->type == "accept_player_gift") reservedMoney[transaction->botGuid] -= std::min(reservedMoney[transaction->botGuid], transaction->priceCopper);
     Report(*transaction);
     sPlayerbotRendezvousManager.BeginDeparture(transaction->botGuid, transaction->playerGuid, reason);
 }
@@ -636,7 +655,7 @@ void PlayerbotActionBroker::Update()
             continue;
         Player* bot = sRandomPlayerbotMgr.GetPlayerBot(transaction.botGuid);
         Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, transaction.playerGuid));
-        bool buying = transaction.type == "buy_item";
+        bool buying = transaction.type == "buy_item" || transaction.type == "accept_player_gift";
         Item* item = bot && transaction.itemGuid ? FindBrokerItem(bot, transaction.itemEntry, transaction.itemGuid) : nullptr;
         if (bot && !buying && transaction.state != "preparing" &&
             (!item || item->GetCount() < transaction.quantity || !item->CanBeTraded()))
