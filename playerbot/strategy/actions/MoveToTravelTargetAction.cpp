@@ -6,6 +6,7 @@
 #include "playerbot/LootObjectStack.h"
 #include "MotionGenerators/PathFinder.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/PlayerbotRendezvousManager.h"
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include <iomanip>
 
@@ -117,7 +118,10 @@ bool MoveToTravelTargetAction::Execute(Event& event)
 
     if (botLocation.getMapId() == location.getMapId() && botLocation.sqDistance2d(location) < 10000.0f)
     {
-        float maxDistance = target->GetDestination()->GetRadiusMin();
+        // A service interaction needs the actual mailbox/vendor, not a random
+        // point on the broad RPG arrival radius.
+        float maxDistance = sPlayerbotRendezvousManager.HasVerifiedErrandRoute(bot->GetGUIDLow()) ?
+            0.0f : target->GetDestination()->GetRadiusMin();
 
         float angle = 2 * M_PI * urand(0, 100) / 100.0;
         float mod = urand(50, 100) / 100.0;
@@ -219,7 +223,7 @@ bool MoveToTravelTargetAction::isUseful()
     // stalled must be allowed to act on its bounded recovery route. All of the
     // normal taxi, movement, group, loot, and CanFreeMove guards below remain
     // authoritative.
-    if (!progressionRecoveryTarget && !ai->AllowActivity(TRAVEL_ACTIVITY))
+    if (!progressionRecoveryTarget && !sPlayerbotRendezvousManager.HasVerifiedErrandRoute(bot->GetGUIDLow()) && !ai->AllowActivity(TRAVEL_ACTIVITY))
         return false;
 
     if (!AI_VALUE(bool, "travel target traveling") && AI_VALUE(TravelTarget*, "travel target")->GetStatus() != TravelStatus::TRAVEL_STATUS_READY)
@@ -237,7 +241,11 @@ bool MoveToTravelTargetAction::isUseful()
             return false;
 #endif
 
-    if (!AI_VALUE(bool, "can move around"))
+    const bool verifiedErrand = sPlayerbotRendezvousManager.HasVerifiedErrandRoute(bot->GetGUIDLow());
+    // A released party member need not wait for somebody else's mana or loot.
+    // Its own combat, trade, and spell still prevent service travel.
+    if (verifiedErrand ? (bot->IsInCombat() || bot->GetTradeData() || bot->IsNonMeleeSpellCasted(false)) :
+        !AI_VALUE(bool, "can move around"))
         return false;
 
     if (ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT))
@@ -262,7 +270,7 @@ bool MoveToTravelTargetAction::isUseful()
     if (travelPos.isDungeon() && bot->GetGroup() && bot->GetGroup()->IsLeader(bot->GetObjectGuid()) && sTravelMgr.MapTransDistance(bot, travelPos, true) < sPlayerbotAIConfig.sightDistance && !AI_VALUE2(bool, "group and", "near leader"))
         return false;
      
-    if (AI_VALUE(bool, "has available loot"))
+    if (!verifiedErrand && AI_VALUE(bool, "has available loot"))
     {
         LootObject lootObject = AI_VALUE(LootObjectStack*, "available loot")->GetLoot(sPlayerbotAIConfig.lootDistance);
         if (lootObject.IsLootPossible(bot))

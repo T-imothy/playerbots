@@ -1,4 +1,5 @@
 #include "playerbot/TravelMgr.h"
+#include "PlayerbotRendezvousManager.h"
 #include <numeric>
 #include <iomanip>
 
@@ -985,7 +986,9 @@ void TravelTarget::CheckStatus()
         }
     }
 
-    if (!ai->HasStrategy("travel", BotState::BOT_STATE_NON_COMBAT) && !ai->HasStrategy("travel once", BotState::BOT_STATE_NON_COMBAT))
+    // The verified errand manager owns this route even with autonomous travel disabled.
+    const bool verifiedErrand = sPlayerbotRendezvousManager.HasVerifiedErrandRoute(bot->GetGUIDLow());
+    if (!verifiedErrand && !ai->HasStrategy("travel", BotState::BOT_STATE_NON_COMBAT) && !ai->HasStrategy("travel once", BotState::BOT_STATE_NON_COMBAT))
     {
         ai->TellDebug(ai->GetMaster(), "The target is clearing because it was a travel once destination.", "debug travel");
         sTravelMgr.SetNullTravelTarget(this);
@@ -1002,11 +1005,11 @@ void TravelTarget::CheckStatus()
 
     if (GetStatus() == TravelStatus::TRAVEL_STATUS_TRAVEL)
     {
-        bool HasArrived = tDestination->IsIn(bot);
+        bool HasArrived = verifiedErrand ? Distance(bot) <= INTERACTION_DISTANCE : tDestination->IsIn(bot);
 
         if (HasArrived)
         {
-            if (ai->HasStrategy("travel once", BotState::BOT_STATE_NON_COMBAT))
+            if (!verifiedErrand && ai->HasStrategy("travel once", BotState::BOT_STATE_NON_COMBAT))
             {
                 ai->TellDebug(ai->GetMaster(), "The target is clearing because it was a travel once destination.", "debug travel");
                 ai->ChangeStrategy("nc -travel once", BotState::BOT_STATE_NON_COMBAT);

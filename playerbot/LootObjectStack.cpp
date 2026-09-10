@@ -235,7 +235,7 @@ bool LootObject::IsLootPossible(Player* bot)
         if (creature && sServerFacade.GetDeathState(creature) == CORPSE)
         {
             if (creature->m_loot && skillId != SKILL_SKINNING)
-                if (!creature->m_loot->CanLoot(bot))
+                if (!creature->m_loot->CanLoot(bot) || creature->m_loot->IsLootedFor(bot))
                     return false;
         }
     }

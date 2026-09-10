@@ -2,6 +2,7 @@
 #include "PlayerbotRendezvousManager.h"
 #include "PlayerbotGuildEventExecutor.h"
 #include "PlayerbotPartyCatchup.h"
+#include "LootObjectStack.h"
 #include "strategy/actions/FollowActions.h"
 #include "strategy/values/Formations.h"
 
@@ -1067,6 +1068,8 @@ bool PlayerbotRendezvousManager::AllowsOwnedMovement(uint32 botGuid, const std::
     if (!sPlayerbotAIConfig.chatDirectorPartyActivityOwnership || !OwnsPartyMovement(botGuid))
         return true;
     PartyActivityOwner owner = GetPartyActivityOwner(botGuid);
+    if (actionName == "move to loot" && owner == PartyActivityOwner::party_errand)
+        return false;
     if (actionName == "follow" && owner == PartyActivityOwner::party_follow)
         return true;
     if (actionName == "move to travel target" &&
@@ -1499,6 +1502,43 @@ bool PlayerbotRendezvousManager::IsPartyFreeTime(uint32 botGuid) const
 {
     auto found = partySessions.find(botGuid);
     return found != partySessions.end() && found->second.state == "free_time";
+}
+
+bool PlayerbotRendezvousManager::HasVerifiedErrandRoute(uint32 botGuid) const
+{
+    auto found = partySessions.find(botGuid);
+    return sPlayerbotAIConfig.chatDirectorPartyVerifiedErrands && found != partySessions.end() &&
+        found->second.state == "free_time" && found->second.currentErrand &&
+        !found->second.currentErrandLocal && !found->second.freeTimeRecallRequested;
+}
+
+bool PlayerbotRendezvousManager::YieldPartyFollowToLoot(Player* bot)
+{
+    if (!bot || !bot->GetPlayerbotAI()) return false;
+    auto found = partySessions.find(bot->GetGUIDLow());
+    if (found == partySessions.end() || found->second.state != "active") return false;
+    PartySession& session = found->second;
+    AiObjectContext* context = bot->GetPlayerbotAI()->GetAiObjectContext();
+    LootObject loot = context->GetValue<LootObject>("loot target")->Get();
+    Player* human = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, session.playerGuid));
+    WorldObject* object = loot.GetWorldObject(bot);
+    bool safe = human && human->IsInWorld() && human->IsAlive() && bot->IsAlive() &&
+        !human->IsInCombat() && !bot->IsInCombat() && !bot->IsTaxiFlying() && !bot->GetTransport() &&
+        human->GetMapId() == bot->GetMapId() && human->GetInstanceId() == bot->GetInstanceId() &&
+        bot->IsWithinDistInMap(human, 60.0f) && object && human->IsWithinDistInMap(object, 60.0f) &&
+        loot.IsLootPossible(bot);
+    int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (safe && session.lootWindow.Observe(loot.guid.GetRawValue(), bot->GetDistance(object), now))
+        return true;
+    session.lootWindow.Observe(0, 0, now);
+    if (!loot.IsEmpty() && !bot->IsInCombat())
+    {
+        context->GetValue<LootObjectStack*>("available loot")->Get()->Remove(loot.guid);
+        context->GetValue<LootObject>("loot target")->Set(LootObject());
+        context->ClearValues("has available loot");
+    }
+    return false;
 }
 
 std::string PlayerbotRendezvousManager::PartyState(uint32 botGuid) const
@@ -2594,7 +2634,7 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
     }
     float distance = session.currentErrandLocal ? 0.0f : target->Distance(bot);
     bool reached = session.currentErrandLocal ||
-        target->GetStatus() == TravelStatus::TRAVEL_STATUS_WORK || distance <= INTERACTION_DISTANCE;
+        distance <= INTERACTION_DISTANCE;
     if (now >= session.currentErrandDeadline)
     {
         if (session.errandOperationAccepted && bot->IsNonMeleeSpellCasted(false))
@@ -3934,7 +3974,11 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                 {
                     RecoverStalePartyCombat(session, bot, human);
 
-                    bool followBlocked = bot->IsInCombat() || bot->IsBeingTeleported() ||
+                    // Loot progress owns a short local detour. Do not accumulate
+                    // a catch-up timeout while it is making useful progress.
+                    bool looting = YieldPartyFollowToLoot(bot);
+                    if (looting) session.lastFollowProgress = now;
+                    bool followBlocked = looting || bot->IsInCombat() || bot->IsBeingTeleported() ||
                         bot->IsTaxiFlying() || bot->GetTransport() ||
                         bot->IsNonMeleeSpellCasted(false) || !bot->GetPlayerbotAI()->CanMove();
                     if (!followBlocked)

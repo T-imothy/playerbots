@@ -2436,6 +2436,11 @@ bool RunAwayAction::Execute(Event& event)
 
 bool MoveToLootAction::Execute(Event& event)
 {
+    if (!bot->IsInCombat() &&
+        (!sPlayerbotRendezvousManager.AllowsOwnedMovement(bot->GetGUIDLow(), getName()) ||
+         (sPlayerbotRendezvousManager.PartyState(bot->GetGUIDLow()) == "active" &&
+          !sPlayerbotRendezvousManager.YieldPartyFollowToLoot(bot))))
+        return false;
     LootObject loot = AI_VALUE(LootObject, "loot target");
     if (!loot.IsLootPossible(bot))
     {

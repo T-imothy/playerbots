@@ -2,6 +2,7 @@
 #define _PLAYERBOT_RENDEZVOUS_MANAGER_H
 
 #include <chrono>
+#include "PartyLootWindow.h"
 #include <deque>
 #include <map>
 #include <string>
@@ -40,6 +41,8 @@ public:
     // remains in the party and can be recalled through ResumePartyAssist.
     bool BeginPartyFreeTime(Player* bot, Player* player, const std::string& reason);
     bool IsPartyFreeTime(uint32 botGuid) const;
+    bool HasVerifiedErrandRoute(uint32 botGuid) const;
+    bool YieldPartyFollowToLoot(Player* bot);
     std::string PartyState(uint32 botGuid) const;
     std::string PartyReason(uint32 botGuid) const;
     uint32 PartyDeadRecoveryAttempts(uint32 botGuid) const;
@@ -145,6 +148,7 @@ private:
         float lastHumanDistance = 0.0f;
         float followLastX = 0.0f, followLastY = 0.0f;
         bool followPositionKnown = false;
+        ai::PartyLootWindow lootWindow;
         uint32 hearthStartMapId = 0;
         uint32 freeTimePlayerZoneId = 0;
         uint32 freeTimePlayerAreaId = 0;

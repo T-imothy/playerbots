@@ -14,6 +14,9 @@ using namespace ai;
 bool FollowAction::Execute(Event& event)
 {
     // Defend against a strategy-reset race between planning and execution.
+    if (!bot->IsInCombat() && sPlayerbotRendezvousManager.YieldPartyFollowToLoot(bot))
+        return false;
+
     if (sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow()))
         return false;
 
@@ -40,6 +43,9 @@ bool FollowAction::Execute(Event& event)
 
 bool FollowAction::isUseful()
 {
+    if (!bot->IsInCombat() && sPlayerbotRendezvousManager.YieldPartyFollowToLoot(bot))
+        return false;
+
     if (sPlayerbotRendezvousManager.IsPartyFreeTime(bot->GetGUIDLow()))
         return false;
 
