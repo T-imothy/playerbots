@@ -37,13 +37,16 @@ private:
         uint32 questId = 0;
         uint8 initialBagUsage = 0;
         uint8 bestBagUsage = 100;
+        uint8 targetBagUsage = 75;
         uint8 sellAttempts = 0;
         std::string maintenanceType;
         bool outboundRelocated = false;
         bool restoreFollow = false;
+        bool repairAttempted = false;
         std::string state;
         std::string failureReason;
         std::chrono::steady_clock::time_point expires;
+        std::chrono::steady_clock::time_point serviceReadyAt;
         std::chrono::steady_clock::time_point stateSince;
         std::chrono::steady_clock::time_point lastSellAttempt;
         std::chrono::steady_clock::time_point completedAt;

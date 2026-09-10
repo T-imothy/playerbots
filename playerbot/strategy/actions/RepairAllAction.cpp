@@ -8,6 +8,8 @@ using namespace ai;
 
 bool RepairAllAction::Execute(Event& event)
 {
+    bool silentMaintenance = event.getSource() == "rpg action" &&
+        event.getParam() == "living-wow-maintenance";
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     std::list<ObjectGuid> npcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
     for (std::list<ObjectGuid>::iterator i = npcs.begin(); i != npcs.end(); i++)
@@ -70,10 +72,13 @@ bool RepairAllAction::Execute(Event& event)
 
         if (totalCost > 0)
         {
-            std::ostringstream out;
-            out << "Repair: " << chat->formatMoney(totalCost) << " (" << unit->GetName() << ")";
-            ai->TellPlayerNoFacing(requester, out.str(),PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
-            if (sPlayerbotAIConfig.globalSoundEffects)      
+            if (!silentMaintenance)
+            {
+                std::ostringstream out;
+                out << "Repair: " << chat->formatMoney(totalCost) << " (" << unit->GetName() << ")";
+                ai->TellPlayerNoFacing(requester, out.str(),PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            }
+            if (!silentMaintenance && sPlayerbotAIConfig.globalSoundEffects)
                 bot->PlayDistanceSound(7994);
 
             sPlayerbotAIConfig.logEvent(ai, "RepairAllAction", std::to_string(durability), std::to_string(totalCost));
@@ -87,6 +92,7 @@ bool RepairAllAction::Execute(Event& event)
         return durability < 100 && AI_VALUE(uint8, "durability inventory") > durability;
     }
 
-    ai->TellPlayerNoFacing(requester, "Cannot find any npc to repair at");
+    if (!silentMaintenance)
+        ai->TellPlayerNoFacing(requester, "Cannot find any npc to repair at");
     return false;
 }

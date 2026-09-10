@@ -138,6 +138,10 @@ bool PlayerbotSocialActionBroker::StartVendorTrip(Player* bot, Player* player, c
     action.groupId = bot->GetGroup()->GetId();
     action.initialBagUsage = bagUsage;
     action.bestBagUsage = bagUsage;
+    // Four free backpack slots is a useful maintenance result for an active
+    // party, rather than declaring success after selling a single stack.
+    action.targetBagUsage = 75;
+    action.serviceReadyAt = std::chrono::steady_clock::now() + std::chrono::seconds(10 + action.botGuid % 51);
     action.maintenanceType = maintenanceType;
     action.state = "vendor_travel";
     action.stateSince = std::chrono::steady_clock::now();
@@ -768,6 +772,12 @@ void PlayerbotSocialActionBroker::Update()
                         // Refresh it before the vendor/banker interaction so
                         // preflight and execution see the same destination.
                         bot->GetPlayerbotAI()->GetAiObjectContext()->ClearValues("nearest npcs");
+                        if (action.maintenanceType == "vendor" && !action.repairAttempted)
+                        {
+                            action.repairAttempted = true;
+                            bot->GetPlayerbotAI()->DoSpecificAction("repair",
+                                Event("rpg action", "living-wow-maintenance", player), true);
+                        }
                         bool sold = action.maintenanceType == "bank" ?
                             bot->GetPlayerbotAI()->DoSpecificAction("bank",
                                 Event("rpg action", "living-wow-safe-storage", nullptr), true) :
@@ -788,18 +798,33 @@ void PlayerbotSocialActionBroker::Update()
                 uint8 usage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
                 action.bestBagUsage = std::min(action.bestBagUsage, usage);
                 LivingWowInventoryPressureSummary remaining = sPlayerbotInventoryPressure.Analyze(bot);
-                if (usage < 80 || (!remaining.vendorStacks && !remaining.HasBankableStorage() &&
-                    usage < action.initialBagUsage))
+                bool serviceTimeElapsed = now >= action.serviceReadyAt;
+                bool targetReached = usage <= action.targetBagUsage;
+                bool noSafeMaintenance = !remaining.vendorStacks && !remaining.HasBankableStorage();
+                if (serviceTimeElapsed && (targetReached ||
+                    (noSafeMaintenance && usage < action.initialBagUsage)))
                 {
-                    bot->GetPlayerbotAI()->SayToParty(action.maintenanceType == "bank" ?
-                        "I put the things I need to keep in the bank. Heading back now." :
-                        "I cleared some bag space. Heading back now.", true);
-                    QueuePartyReturn(action, bot, player, "vendor_trip_complete", true);
+                    if (targetReached)
+                        bot->GetPlayerbotAI()->SayToParty(action.maintenanceType == "bank" ?
+                            "I put the things I need to keep in the bank. Heading back now." :
+                            "I cleared enough bag space to keep going. Heading back now.", true);
+                    else
+                    {
+                        std::ostringstream notice;
+                        notice << "I freed what I safely could. My bags are still " << (uint32)usage
+                            << "% full because the rest is protected, so I'm heading back.";
+                        bot->GetPlayerbotAI()->SayToParty(notice.str(), true);
+                    }
+                    QueuePartyReturn(action, bot, player,
+                        targetReached ? "vendor_trip_complete" : "vendor_trip_partial",
+                        targetReached);
                 }
                 else if (action.sellAttempts >= 5)
                 {
                     if (!ContinueAtBank(action, bot))
                     {
+                        if (!serviceTimeElapsed)
+                            continue;
                         action.failureReason = "no additional safe maintenance items freed a bag slot";
                         sPlayerbotInventoryPressure.Defer(bot, remaining, "quick_maintenance_freed_no_slot");
                         bot->GetPlayerbotAI()->SayToParty(action.bestBagUsage < action.initialBagUsage ?
