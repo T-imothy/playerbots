@@ -156,6 +156,9 @@ namespace ai
         void SendSnapshot(Group* group, GroupState& state) const;
         void SendAddon(Player* source, Player* target, const std::string& payload) const;
         std::string ApplyRoleTalents(Player* member, LivingPartyRole role) const;
+        bool RoleMatchesTalents(Player* member, LivingPartyRole role) const;
+        void SynchronizeAutomaticRole(Player* bot, GroupState& state) const;
+        void SynchronizeHunterPetThreat(Player* bot, const GroupState* state) const;
         LivingPartyRoleState InferRole(Player* member, const GroupState& state) const;
         bool HasShield(Player* member) const;
         bool HasHealingSpell(Player* member) const;

@@ -8,6 +8,7 @@
 #include "playerbot/RandomPlayerbotMgr.h"
 
 #include "Chat/Chat.h"
+#include "Entities/Pet.h"
 #include "Entities/Player.h"
 #include "Entities/Unit.h"
 #include "Globals/ObjectAccessor.h"
@@ -258,6 +259,92 @@ std::string PlayerbotPartyCombatCoordinator::ApplyRoleTalents(Player* member, Li
         member->GetGUIDLow(), member->GetName(), RoleName(role), specName.c_str(),
         totalPoints >= freePoints ? totalPoints - freePoints : 0, freePoints);
     return freePoints == 0 ? "completed" : "talent_assignment_incomplete";
+}
+
+bool PlayerbotPartyCombatCoordinator::RoleMatchesTalents(Player* member, LivingPartyRole role) const
+{
+    if (!member || member->GetLevel() < 10 || role == LivingPartyRole::Auto) return true;
+    BotRoles desired = role == LivingPartyRole::Tank ? BOT_ROLE_TANK :
+        role == LivingPartyRole::Healer ? BOT_ROLE_HEALER : BOT_ROLE_DPS;
+    return (AiFactory::GetPlayerRoles(member) & desired) != 0;
+}
+
+void PlayerbotPartyCombatCoordinator::SynchronizeAutomaticRole(Player* bot, GroupState& state) const
+{
+    if (!bot || !bot->GetPlayerbotAI() || bot->GetLevel() < 10) return;
+    std::map<ObjectGuid, LivingPartyRoleState>::const_iterator assigned = state.roles.find(bot->GetObjectGuid());
+    if (assigned == state.roles.end() || assigned->second.locked ||
+        RoleMatchesTalents(bot, assigned->second.primary))
+        return;
+
+    const uint32 now = WorldTimer::getMSTime();
+    uint32& lastAttempt = lastAutomaticRoleTalentAttempt[bot->GetGUIDLow()];
+    if (lastAttempt && WorldTimer::getMSTimeDiff(lastAttempt, now) < 5000) return;
+    lastAttempt = now;
+
+    const LivingPartyRole role = assigned->second.primary;
+    const std::string outcome = ApplyRoleTalents(bot, role);
+    sLog.outString("Living WoW automatic role sync bot=%u name=%s role=%s result=%s",
+        bot->GetGUIDLow(), bot->GetName(), RoleName(role), outcome.c_str());
+    if (outcome == "completed")
+    {
+        state.lastRoleSignature = 0;
+        RefreshRoles(bot->GetGroup(), state);
+    }
+}
+
+void PlayerbotPartyCombatCoordinator::SynchronizeHunterPetThreat(Player* bot, const GroupState* state) const
+{
+    if (!bot || bot->getClass() != CLASS_HUNTER) return;
+    Pet* pet = bot->GetPet();
+    if (!pet) return;
+
+    bool hasTank = false;
+    if (state)
+        for (std::map<ObjectGuid, LivingPartyRoleState>::const_iterator i = state->roles.begin();
+            i != state->roles.end(); ++i)
+            if (i->second.primary == LivingPartyRole::Tank && FindMember(bot->GetGroup(), i->first))
+            {
+                hasTank = true;
+                break;
+            }
+
+    static const uint32 growlRanks[] = {2649, 14916, 14917, 14918, 14919, 14920, 14921, 27047};
+    const bool wasSuppressed = hunterGrowlSuppressed.count(bot->GetGUIDLow()) != 0;
+    bool changed = false;
+    if (hasTank)
+    {
+        for (uint32 i = 0; i < sizeof(growlRanks) / sizeof(growlRanks[0]); ++i)
+        {
+            const uint32 spellId = growlRanks[i];
+            if (!pet->HasSpell(spellId)) continue;
+            if (std::find(pet->m_autospells.begin(), pet->m_autospells.end(), spellId) != pet->m_autospells.end())
+            {
+                pet->ToggleAutocast(spellId, false);
+                changed = true;
+            }
+        }
+        if (changed) hunterGrowlSuppressed.insert(bot->GetGUIDLow());
+    }
+    else if (wasSuppressed)
+    {
+        // Restore only a Growl state that this coordinator disabled. Enable the
+        // highest rank the current pet knows rather than overriding an owner or
+        // prior Playerbots preference that was already off.
+        for (int32 i = (int32)(sizeof(growlRanks) / sizeof(growlRanks[0])) - 1; i >= 0; --i)
+            if (pet->HasSpell(growlRanks[i]))
+            {
+                if (std::find(pet->m_autospells.begin(), pet->m_autospells.end(), growlRanks[i]) == pet->m_autospells.end())
+                    pet->ToggleAutocast(growlRanks[i], true);
+                changed = true;
+                break;
+            }
+        hunterGrowlSuppressed.erase(bot->GetGUIDLow());
+    }
+
+    if (changed)
+        sLog.outString("Living WoW hunter pet threat bot=%u name=%s growl=%s tank_present=%u",
+            bot->GetGUIDLow(), bot->GetName(), hasTank ? "disabled" : "restored", hasTank ? 1 : 0);
 }
 
 bool PlayerbotPartyCombatCoordinator::IsApprovedTarget(const GroupState& state, Unit* target) const
