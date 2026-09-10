@@ -19,6 +19,7 @@
 #include "TravelMgr.h"
 #include "strategy/ItemVisitors.h"
 #include "strategy/values/TravelValues.h"
+#include "strategy/values/LastMovementValue.h"
 
 #include <cmath>
 #include <cctype>
@@ -2334,6 +2335,9 @@ bool PlayerbotRendezvousManager::StartNextVerifiedErrand(PartySession& session, 
             InventoryItemCount(bot, session.currentErrandOutput);
     }
     session.errandFallbackUsed = false;
+    session.errandCatchupUsed = false;
+    session.errandTravelStarted = std::chrono::steady_clock::now();
+    session.nextErrandCatchupAttempt = session.errandTravelStarted;
     session.errandBefore = ObserveErrandState(bot);
     taskRecord.before = session.errandBefore;
     QueueActivityTelemetry(session.botGuid, session.playerGuid, session.groupId,
@@ -2397,6 +2401,99 @@ bool PlayerbotRendezvousManager::StartNextVerifiedErrand(PartySession& session, 
         "task_traveling", "service_travel_route",
         session.currentErrand, &session.errandBefore, nullptr);
     return true;
+}
+
+bool PlayerbotRendezvousManager::TryErrandServiceCatchup(PartySession& session, Player* bot,
+    TravelTarget* target, std::chrono::steady_clock::time_point now)
+{
+    // Preserve the visible departure and final approach. Only the long leg is
+    // handled by catch-up; service execution and its postcondition are unchanged.
+    if (!sPlayerbotAIConfig.chatDirectorRendezvousCatchup || session.errandCatchupUsed ||
+        session.freeTimeRecallRequested || session.errandOperationAttempts || !target || !target->GetPosition() ||
+        !bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() ||
+        bot->IsBeingTeleported() || bot->IsTaxiFlying() || bot->GetTransport() ||
+        bot->IsInWater() || bot->IsFlying() ||
+        (bot->m_movementInfo.GetMovementFlags() & (MOVEFLAG_FALLING | MOVEFLAG_FALLINGFAR)) ||
+        bot->IsNonMeleeSpellCasted(false) || bot->GetTradeData() ||
+        bot->InBattleGround() || bot->duel || now < session.nextErrandCatchupAttempt)
+        return false;
+    session.nextErrandCatchupAttempt = now + std::chrono::seconds(5);
+    WorldPosition* service = target->GetPosition();
+    if (!service->isOverworld() || !WorldPosition(bot).isOverworld()) return false;
+    const uint32 triggerSeconds = std::max<uint32>(10, std::min<uint32>(300,
+        sPlayerbotAIConfig.chatDirectorRendezvousTriggerSeconds));
+    const uint32 maximumSeconds = std::max<uint32>(10, std::min<uint32>(60,
+        sPlayerbotAIConfig.chatDirectorRendezvousMaximumSeconds));
+    const long elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        now - session.errandTravelStarted).count();
+    const bool sameMap = bot->GetMapId() == service->getMapId();
+    const float distance = target->Distance(bot);
+    if (!LivingWowServiceCatchupNeeded(sameMap, distance, elapsed, triggerSeconds, maximumSeconds))
+        return false;
+    if (!IsPointUnobserved(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+        return false;
+
+    Map* destinationMap = service->getMap(0);
+    if (!destinationMap) return false;
+    const uint32 targetSeconds = std::max<uint32>(5, std::min<uint32>(30,
+        sPlayerbotAIConfig.chatDirectorRendezvousTargetSeconds));
+    const float desired = std::min(140.0f, kRunSpeedYardsPerSecond * targetSeconds);
+    const float radii[] = {desired, desired * 0.75f, desired * 0.5f};
+    for (float radius : radii)
+    {
+        for (uint32 step = 0; step < 8; ++step)
+        {
+            const float angle = float((step + session.botGuid) % 8) * float(M_PI) / 4.0f;
+            WorldPosition candidate(service->getMapId(),
+                service->getX() + std::cos(angle) * radius,
+                service->getY() + std::sin(angle) * radius, service->getZ());
+            service->loadMapAndVMaps(candidate, 0);
+            PathFinder path(service->getMapId(), 0);
+            if (!path.calculate(service->getVector3(), candidate.getVector3(), false)) continue;
+            const PathType invalid = PathType(PATHFIND_NOPATH | PATHFIND_SHORTCUT |
+                PATHFIND_INCOMPLETE | PATHFIND_NOT_USING_PATH | PATHFIND_SHORT);
+            if (!(path.getPathType() & PATHFIND_NORMAL) || (path.getPathType() & invalid)) continue;
+            std::vector<WorldPosition> points = service->fromPointsArray(path.getPath());
+            if (points.size() < 2 || points.front().distance(*service) > INTERACTION_DISTANCE) continue;
+            WorldPosition landing = points.back();
+            const float finalDistance = landing.distance(*service);
+            if (!landing.isValid() || finalDistance < 15.0f || finalDistance > 180.0f ||
+                landing.distance(candidate) > 10.0f || service->getPathLength(points) > 210.0f) continue;
+            // Validate the return direction too, including the precise trainer
+            // floor. Never choose a raw terrain height or an incomplete shortcut.
+            if (!path.calculate(landing.getVector3(), service->getVector3(), false) ||
+                !(path.getPathType() & PATHFIND_NORMAL) || (path.getPathType() & invalid)) continue;
+            points = service->fromPointsArray(path.getPath());
+            if (points.size() < 2 || points.back().distance(*service) > INTERACTION_DISTANCE ||
+                points.front().distance(landing) > 2.0f || service->getPathLength(points) > 210.0f) continue;
+            if (!CanRelocateUnobserved(bot, destinationMap, landing.getX(), landing.getY(), landing.getZ()))
+                continue;
+            if (!ClaimRelocationSlot()) return false;
+            PlayerbotAI* ai = bot->GetPlayerbotAI();
+            ai->StopMoving();
+            ai->GetAiObjectContext()->GetValue<LastMovement&>("last movement")->Get().clear();
+            if (sameMap)
+                bot->NearTeleportTo(landing.getX(), landing.getY(), landing.getZ() + 0.1f, bot->GetOrientation());
+            else if (!bot->TeleportTo(service->getMapId(), landing.getX(), landing.getY(),
+                landing.getZ() + 0.1f, bot->GetOrientation())) return false;
+            session.errandCatchupUsed = true;
+            session.errandWorldportSince = now;
+            session.errandTravel.Reset(now, service->getMapId(), landing.getX(), landing.getY(), landing.getZ());
+            session.errandLastDistance = finalDistance;
+            session.nextErrandStep = now + std::chrono::seconds(1);
+            target->SetForced(true);
+            target->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);
+            ai->GetAiObjectContext()->ClearValues("no active travel destinations");
+            sLog.outString("Living WoW errand event=service_catchup bot=%u task=%s entry=%d map=%u remaining=%.0f",
+                bot->GetGUIDLow(), ErrandName(session.currentErrand), target->GetEntry(),
+                service->getMapId(), finalDistance);
+            QueueActivityTelemetry(session.botGuid, session.playerGuid, session.groupId,
+                PartyActivityOwner::party_errand, PartyActivityPhase::traveling,
+                "service_catchup", "final_service_approach", session.currentErrand);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool PlayerbotRendezvousManager::ExecuteVerifiedErrand(PartySession& session, Player* bot)
@@ -2516,6 +2613,9 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
     Player* player, std::chrono::steady_clock::time_point now)
 {
     if (!bot || !player) { session.freeTimeRecallRequested = true; return; }
+    // Both same-map and cross-map teleports await an acknowledgement. Do not
+    // issue movement or service interactions against the pre-transfer position.
+    if (bot->IsBeingTeleported()) return;
     if (session.freeTimeRecallRequested)
     {
         // Recall never begins another operation. An already accepted atomic
@@ -2620,6 +2720,8 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
         FinishCurrentErrand(session, bot, false, "route_lost");
         return;
     }
+    if (!session.currentErrandLocal && TryErrandServiceCatchup(session, bot, target, now))
+        return;
     if (session.errandRelocationPending)
     {
         WorldPosition* position = target->GetPosition();
@@ -2685,6 +2787,11 @@ void PlayerbotRendezvousManager::UpdateVerifiedErrand(PartySession& session, Pla
                 TravelDestination* destination = nullptr; WorldPosition* position = nullptr;
                 if (FindSettlementErrandDestination(bot, session.currentErrand, destination, position))
                 {
+                    // A retry must discard the path that failed, not only
+                    // reinstall the same destination over its cached waypoints.
+                    bot->GetPlayerbotAI()->StopMoving();
+                    bot->GetPlayerbotAI()->GetAiObjectContext()->
+                        GetValue<LastMovement&>("last movement")->Get().clear();
                     sTravelMgr.SetNullTravelTarget(target);
                     target->SetTarget(destination, position); target->SetForced(true);
                     target->SetStatus(TravelStatus::TRAVEL_STATUS_TRAVEL);

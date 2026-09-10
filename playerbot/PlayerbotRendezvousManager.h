@@ -4,6 +4,7 @@
 #include <chrono>
 #include "PartyLootWindow.h"
 #include "PlayerbotErrandTravel.h"
+#include "PlayerbotServiceCatchup.h"
 #include <deque>
 #include <map>
 #include <set>
@@ -12,7 +13,7 @@
 
 class Player;
 class Map;
-namespace ai { class TravelDestination; class WorldPosition; }
+namespace ai { class TravelDestination; class WorldPosition; class TravelTarget; }
 
 class PlayerbotRendezvousManager
 {
@@ -174,6 +175,9 @@ private:
         uint32 errandOperationAttempts = 0;
         bool errandOperationAccepted = false;
         bool errandFallbackUsed = false;
+        bool errandCatchupUsed = false;
+        std::chrono::steady_clock::time_point errandTravelStarted;
+        std::chrono::steady_clock::time_point nextErrandCatchupAttempt;
         bool errandRelocationPending = false;
         bool errandSummarySent = false;
         float errandLastDistance = -1.0f;
@@ -280,6 +284,8 @@ private:
     ErrandObservation ObserveErrandState(Player* bot) const;
     bool StartNextVerifiedErrand(PartySession& session, Player* bot);
     void UpdateVerifiedErrand(PartySession& session, Player* bot, Player* player,
+        std::chrono::steady_clock::time_point now);
+    bool TryErrandServiceCatchup(PartySession& session, Player* bot, ai::TravelTarget* target,
         std::chrono::steady_clock::time_point now);
     bool ExecuteVerifiedErrand(PartySession& session, Player* bot);
     bool VerifyErrand(const PartySession& session, const ErrandObservation& after) const;

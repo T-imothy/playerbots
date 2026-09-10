@@ -112,7 +112,7 @@ namespace
                 const CreatureInfo* trainer = sObjectMgr.GetCreatureTemplate(destination->GetEntry());
                 std::string trainerName = trainer ? trainer->Name : "Class trainer";
                 Row(body, "training", "Training destination", trainerName + " - " + point->getAreaName());
-                Row(body, "training", "Town errand", "Training has first priority. Uses the travel system to reach the trainer, including other regions and continents.");
+                Row(body, "training", "Town errand", "Training has first priority. Long trips use catch-up travel near the trainer, followed by a short run and normal training.");
             }
             else
                 Row(body, "training", "Town errand", "Needs training; no usable trainer route is currently available in the travel system.");
