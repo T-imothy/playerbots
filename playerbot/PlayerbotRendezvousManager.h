@@ -43,7 +43,9 @@ private:
         std::string reason;
         bool relocated = false;
         bool approachIssued = false;
+        uint32 approachAttempts = 0;
         std::chrono::steady_clock::time_point stateSince;
+        std::chrono::steady_clock::time_point nextApproachAttempt;
     };
 
     struct Session

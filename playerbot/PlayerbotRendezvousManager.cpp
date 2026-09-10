@@ -358,9 +358,37 @@ bool PlayerbotRendezvousManager::PartySafeToRelease(Player* bot) const
 
 bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Player* bot, Player* player)
 {
-    if (!bot || !player || !PartySafeToRelease(bot) || !player->IsAlive() || player->InBattleGround() ||
-        player->GetMap()->IsDungeon())
+    if (!bot || !player || !bot->IsInWorld() || !player->IsInWorld())
+    {
+        session.reason = "participant_unavailable";
         return false;
+    }
+    if (!bot->IsAlive())
+    {
+        session.reason = "bot_dead";
+        return false;
+    }
+    if (bot->IsInCombat())
+    {
+        session.reason = "bot_in_combat";
+        return false;
+    }
+    if (bot->GetTransport() || bot->IsTaxiFlying())
+    {
+        session.reason = "bot_in_transit";
+        return false;
+    }
+    if (bot->InBattleGround() || bot->GetMap()->IsDungeon() || player->InBattleGround() ||
+        player->GetMap()->IsDungeon())
+    {
+        session.reason = "restricted_map";
+        return false;
+    }
+    if (!player->IsAlive())
+    {
+        session.reason = "player_dead";
+        return false;
+    }
 
     const auto now = std::chrono::steady_clock::now();
     bool sameMap = bot->GetMapId() == player->GetMapId() && bot->GetInstanceId() == player->GetInstanceId();
@@ -371,25 +399,41 @@ bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Playe
 
     if (needsCatchup)
     {
-        if (!sPlayerbotAIConfig.chatDirectorRendezvousCatchup ||
-            !IsPointUnobserved(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+        if (!sPlayerbotAIConfig.chatDirectorRendezvousCatchup)
+        {
+            session.reason = "catchup_disabled";
             return false;
+        }
+        if (!IsPointUnobserved(bot, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()))
+        {
+            session.reason = "origin_observed";
+            return false;
+        }
         auto cooldown = lastRelocation.find(bot->GetGUIDLow());
         if (cooldown != lastRelocation.end() &&
             std::chrono::duration_cast<std::chrono::seconds>(now - cooldown->second).count() <
                 std::max<uint32>(60, sPlayerbotAIConfig.chatDirectorRendezvousCooldownSeconds))
+        {
+            session.reason = "relocation_cooldown";
             return false;
+        }
 
         // FindStagingPoint uses the target player's map and authoritative path
         // data. This also permits a /who invite from another outdoor zone.
         float stageX = 0.0f, stageY = 0.0f, stageZ = 0.0f;
         if (!FindStagingPoint(bot, player, stageX, stageY, stageZ))
+        {
+            session.reason = "no_hidden_staging_point";
             return false;
+        }
         bot->GetPlayerbotAI()->StopMoving();
         if (sameMap)
             bot->NearTeleportTo(stageX, stageY, stageZ, bot->GetAngle(player));
         else if (!bot->TeleportTo(player->GetMapId(), stageX, stageY, stageZ, player->GetOrientation()))
+        {
+            session.reason = "cross_map_teleport_rejected";
             return false;
+        }
         session.relocated = true;
         lastRelocation[bot->GetGUIDLow()] = now;
         LogPartyEvent(session, "relocated_for_arrival");
@@ -397,6 +441,7 @@ bool PlayerbotRendezvousManager::StartPartyApproach(PartySession& session, Playe
     else
         LogPartyEvent(session, "ordinary_arrival");
 
+    session.reason.clear();
     session.state = "approaching";
     session.stateSince = now;
     session.approachIssued = false;
@@ -507,14 +552,21 @@ void PlayerbotRendezvousManager::UpdatePartyAssists()
                         break;
                     }
                 }
-                if (!arrivalInProgress && !StartPartyApproach(session, bot, human) &&
-                    std::chrono::duration_cast<std::chrono::seconds>(now - session.stateSince).count() >= 30)
+                if (!arrivalInProgress &&
+                    (session.nextApproachAttempt.time_since_epoch().count() == 0 || now >= session.nextApproachAttempt))
                 {
-                    // If a safe hidden catch-up is not available, ordinary
-                    // Playerbots party travel remains in control.
-                    session.state = "active";
-                    session.stateSince = now;
-                    LogPartyEvent(session, "ordinary_party_travel_fallback");
+                    // Combat, source visibility, and terrain can make a valid
+                    // hidden arrival temporarily unavailable. Do not silently
+                    // abandon a distant persisted party member after one
+                    // timeout. Retry at a bounded cadence while allowing other
+                    // members of the same party to complete first.
+                    session.nextApproachAttempt = now + std::chrono::seconds(5);
+                    ++session.approachAttempts;
+                    if (!StartPartyApproach(session, bot, human) &&
+                        (session.approachAttempts == 1 || session.approachAttempts % 6 == 0))
+                    {
+                        LogPartyEvent(session, "arrival_retry_wait");
+                    }
                 }
             }
             else if (session.state == "approaching")
