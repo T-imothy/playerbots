@@ -1,5 +1,6 @@
 #include "botpch.h"
 #include "PlayerbotRendezvousManager.h"
+#include "PlayerbotGuildEventExecutor.h"
 #include "PlayerbotPartyCatchup.h"
 #include "strategy/actions/FollowActions.h"
 #include "strategy/values/Formations.h"
@@ -953,7 +954,7 @@ PlayerbotRendezvousManager::GetPartyActivityOwner(uint32 botGuid) const
         rendezvous->second.actionId.find("guild-event:") == 0;
     if (rendezvousActive && !guildRendezvous) return PartyActivityOwner::rendezvous;
     if (party == partySessions.end())
-        return guildRendezvous || IsGuildEventAssemblyOrganizer(botGuid) ?
+        return guildRendezvous || IsGuildEventAssemblyOrganizer(botGuid) || sGuildEventExecutor.OwnsMovement(botGuid) ?
             PartyActivityOwner::guild_event :
             (lease != externalLeases.end() && lease->second.expires > std::chrono::steady_clock::now() ?
                 lease->second.owner : PartyActivityOwner::none);
@@ -1059,6 +1060,9 @@ bool PlayerbotRendezvousManager::FindSafeStagingPoint(Player* bot, Player* playe
 
 bool PlayerbotRendezvousManager::AllowsOwnedMovement(uint32 botGuid, const std::string& actionName)
 {
+    if (sGuildEventExecutor.OwnsMovement(botGuid) &&
+        GetPartyActivityOwner(botGuid) == PartyActivityOwner::guild_event)
+        return sGuildEventExecutor.AllowsMovement(botGuid,actionName);
     if (!sPlayerbotAIConfig.chatDirectorPartyActivityOwnership || !OwnsPartyMovement(botGuid))
         return true;
     PartyActivityOwner owner = GetPartyActivityOwner(botGuid);
@@ -1806,6 +1810,17 @@ void PlayerbotRendezvousManager::Cancel(uint32 botGuid, uint32 playerGuid, const
                 "-stay,+follow,-wander", BotState::BOT_STATE_NON_COMBAT);
     }
     BeginDeparture(botGuid, playerGuid, reason);
+}
+
+bool PlayerbotRendezvousManager::CancelGuildEvent(uint32 botGuid, const std::string& eventId, const std::string& reason)
+{
+    auto found = sessions.find(botGuid);
+    if (found == sessions.end() || found->second.actionId != "guild-event:" + eventId)
+        return false;
+    // A human-party arrival, newer event or unrelated errand must never be
+    // cancelled by a delayed cleanup record from an older guild event.
+    Cancel(botGuid, found->second.playerGuid, reason);
+    return true;
 }
 
 void PlayerbotRendezvousManager::Update()

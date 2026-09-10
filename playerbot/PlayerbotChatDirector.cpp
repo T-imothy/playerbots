@@ -1,5 +1,9 @@
 #include "botpch.h"
 #include "PlayerbotChatDirector.h"
+#include "PlayerbotGuildGovernance.h"
+#include "PlayerbotGuildEventExecutor.h"
+#include "PlayerbotGuildEventReporter.h"
+#include "GuildPlanLease.h"
 
 #include "PlayerbotAI.h"
 #include "PlayerbotActionBroker.h"
@@ -37,6 +41,7 @@ struct GuildPolicySnapshot
     std::string mode = "observe";
     std::string rolloutScope = "canary";
     std::set<uint32> canaryGuildIds;
+    bool recruitment=false,events=false,supplies=false;
 };
 
 static bool GuildExecutionEnabled(const std::string& mode, const std::string& scope,
@@ -51,25 +56,18 @@ static GuildPolicySnapshot ReadGuildPolicy()
     std::ifstream input("/srv/living-wow/config/guilds.json");
     if (!input.good())
         return policy;
-    std::ostringstream value;
-    value << input.rdbuf();
-    std::smatch match;
-    const std::string text = value.str();
-    if (std::regex_search(text, match, std::regex("\\\"mode\\\"\\s*:\\s*\\\"(off|observe|active)\\\"")))
-        policy.mode = match[1].str();
-    if (std::regex_search(text, match, std::regex("\\\"scope\\\"\\s*:\\s*\\\"(canary|global)\\\"")))
-        policy.rolloutScope = match[1].str();
-    if (std::regex_search(text, match, std::regex("\\\"canaryGuildIds\\\"\\s*:\\s*\\[([^\\]]*)\\]")))
-    {
-        const std::string ids = match[1].str();
-        const std::regex number("[0-9]+");
-        for (std::sregex_iterator it(ids.begin(), ids.end(), number), end; it != end; ++it)
-        {
-            uint32 guildId = uint32(std::stoul(it->str()));
-            if (guildId)
-                policy.canaryGuildIds.insert(guildId);
-        }
-    }
+    try {
+        boost::property_tree::ptree root;boost::property_tree::read_json(input,root);
+        if(root.get<uint32>("schemaVersion",0)!=1) return policy;
+        const std::string mode=root.get<std::string>("mode","observe");
+        if(mode!="off"&&mode!="observe"&&mode!="active") return policy;
+        policy.mode=mode;policy.rolloutScope=root.get<std::string>("rollout.scope","canary");
+        if(auto ids=root.get_child_optional("rollout.canaryGuildIds"))
+            for(const auto& id:*ids) if(id.second.get_value<uint32>()) policy.canaryGuildIds.insert(id.second.get_value<uint32>());
+        policy.recruitment=root.get<bool>("featureFlags.recruitment",false)&&root.get<bool>("recruitment.enabled",false);
+        policy.events=root.get<bool>("featureFlags.events",false);
+        policy.supplies=root.get<bool>("featureFlags.resources",false)&&root.get<bool>("resources.enabled",false);
+    } catch(...) {return GuildPolicySnapshot();}
     return policy;
 }
 
@@ -3451,6 +3449,7 @@ void PlayerbotChatDirector::ReloadGuildPolicy(std::chrono::steady_clock::time_po
     guildPolicyMode = policy.mode;
     guildRolloutScope = policy.rolloutScope;
     guildCanaryIds = policy.canaryGuildIds;
+    sGuildGovernance.ConfigureServer(policy.rolloutScope=="global",policy.canaryGuildIds,policy.recruitment,policy.events,policy.supplies);
 }
 
 static std::string EscapeGuildAddon(const std::string& value)
@@ -3568,6 +3567,7 @@ void PlayerbotChatDirector::SendGuildAddonSnapshot(Player* source, Player* recei
     if (!guild)
         return;
     const uint32 revision = uint32(time(nullptr));
+    sGuildGovernance.RememberLegacySnapshot(receiver,revision);
     std::ostringstream snapshot;
     snapshot << "LWOWG1\tSNAP\t" << revision << '\t' << GuildAddonText(guild->GetName(), 48)
         << '\t' << GuildFocus(guild->GetId(), 0) << '\t' << GuildFocus(guild->GetId(), 1)
@@ -3581,20 +3581,22 @@ void PlayerbotChatDirector::SendGuildAddonSnapshot(Player* source, Player* recei
     SendGuildAddon(source, receiver, officer.str());
 
     auto officers = CharacterDatabase.PQuery(
-        "SELECT character_guid,duty FROM guild_society_officer WHERE guild_id=%u AND state='active' ORDER BY duty LIMIT 8",
+        "SELECT guid FROM guild_member WHERE guildid=%u ORDER BY `rank`,guid LIMIT 100",
         guild->GetId());
     if (officers)
     {
         do
         {
             Field* fields = officers->Fetch();
-            std::string name;
-            sObjectMgr.GetPlayerNameByGUID(ObjectGuid(HIGHGUID_PLAYER, fields[0].GetUInt32()), name);
-            if (name.empty() || name == leaderName)
+            MemberSlot* member=guild->GetMemberSlot(ObjectGuid(HIGHGUID_PLAYER,fields[0].GetUInt32()));
+            if (!member || member->Name == leaderName ||
+                (!guild->HasRankRight(member->RankId,GR_RIGHT_PROMOTE) &&
+                 !guild->HasRankRight(member->RankId,GR_RIGHT_DEMOTE) &&
+                 !guild->HasRankRight(member->RankId,GR_RIGHT_MODIFY_GUILD_INFO)))
                 continue;
             std::ostringstream payload;
-            payload << "LWOWG1\tOFF\t" << revision << '\t' << GuildAddonText(name, 32)
-                << '\t' << GuildAddonText(fields[1].GetString(), 32);
+            payload << "LWOWG1\tOFF\t" << revision << '\t' << GuildAddonText(member->Name, 32)
+                << '\t' << GuildAddonText(guild->GetRankName(member->RankId), 32);
             SendGuildAddon(source, receiver, payload.str());
         }
         while (officers->NextRow());
@@ -3692,67 +3694,10 @@ bool PlayerbotChatDirector::HandleGuildAddonMessage(Player* receiverBot, Player*
     };
     if (message.find("LWOWG1\tHELLO") == 0 || message.find("LWOWG1\tGET") == 0)
         SendGuildAddonSnapshot(receiverBot, sender);
-    else if (fields.size() >= 5 && fields[1] == "RSVP")
+    else if (fields.size() >= 3 && (fields[1] == "RSVP" || fields[1] == "CREATE"))
     {
-        const std::string eventId = fields[3];
-        const std::string response = fields[4];
-        if (!SafeGuildWireId(eventId, 64) ||
-            (response != "accepted" && response != "tentative" && response != "declined"))
-        {
-            SendGuildAddon(receiverBot, sender, "LWOWG1\tERR\t0\tThat RSVP is not valid.");
-            return true;
-        }
-        auto event = CharacterDatabase.PQuery(
-            "SELECT event_id FROM guild_society_event WHERE event_id='%s' AND guild_id=%u "
-            "AND state IN ('draft','announced','forming') LIMIT 1", eventId.c_str(), guild->GetId());
-        if (!event)
-        {
-            SendGuildAddon(receiverBot, sender, "LWOWG1\tERR\t0\tThat guild event is no longer accepting RSVPs.");
-            return true;
-        }
-        const uint32 nowEpoch = uint32(time(nullptr));
-        CharacterDatabase.PExecute(
-            "INSERT INTO guild_society_rsvp (event_id,character_guid,response,role,human,updated_at) "
-            "VALUES ('%s',%u,'%s','',1,%u) ON DUPLICATE KEY UPDATE response=VALUES(response),human=1,updated_at=VALUES(updated_at)",
-            eventId.c_str(), sender->GetGUIDLow(), response.c_str(), nowEpoch);
-        SendGuildAddon(receiverBot, sender, "LWOWG1\tACK\t0\tYour RSVP was saved.");
-        notifyCalendarClients();
-    }
-    else if (fields.size() >= 8 && fields[1] == "CREATE")
-    {
-        if (guildPolicyMode != "active" || !CanManageGuildCalendar(guild, sender))
-        {
-            SendGuildAddon(receiverBot, sender, "LWOWG1\tERR\t0\tOnly the guild master or an authorized officer can add guild events.");
-            return true;
-        }
-        std::string title = fields[3], eventType = fields[4], details = fields[7];
-        const uint32 starts = uint32(std::strtoul(fields[5].c_str(), nullptr, 10));
-        const uint32 ends = uint32(std::strtoul(fields[6].c_str(), nullptr, 10));
-        const uint32 nowEpoch = uint32(time(nullptr));
-        const bool allowedType = eventType == "social" || eventType == "quest" || eventType == "dungeon" ||
-            eventType == "supply" || eventType == "leveling";
-        if (title.empty() || title.size() > 80 || details.size() > 80 || !allowedType ||
-            starts + 3600 < nowEpoch || starts > nowEpoch + 370 * DAY || ends < starts + 30 * MINUTE || ends > starts + 7 * DAY)
-        {
-            SendGuildAddon(receiverBot, sender, "LWOWG1\tERR\t0\tThat guild event has an invalid name, type, date, or duration.");
-            return true;
-        }
-        title = EscapeGuildAddon(title); details = EscapeGuildAddon(details);
-        CharacterDatabase.escape_string(title); CharacterDatabase.escape_string(details);
-        std::ostringstream eventId;
-        eventId << "calendar-" << guild->GetId() << '-' << sender->GetGUIDLow() << '-' << starts;
-        const uint32 minimum = eventType == "dungeon" ? 5 : 1;
-        const uint32 maximum = eventType == "dungeon" || eventType == "quest" || eventType == "leveling" ? 5 : 40;
-        CharacterDatabase.PExecute(
-            "INSERT INTO guild_society_event (event_id,guild_id,event_type,state,title,details,target_id,organizer_guid,scheduled_at,ends_at,"
-            "minimum_members,maximum_members,tank_slots,healer_slots,damage_slots,failure_reason,created_at,updated_at) "
-            "VALUES ('%s',%u,'%s','announced','%s','%s',0,%u,%u,%u,%u,%u,%u,%u,%u,'',%u,%u) "
-            "ON DUPLICATE KEY UPDATE title=VALUES(title),details=VALUES(details),event_type=VALUES(event_type),ends_at=VALUES(ends_at),updated_at=VALUES(updated_at)",
-            eventId.str().c_str(), guild->GetId(), eventType.c_str(), title.c_str(), details.c_str(), sender->GetGUIDLow(),
-            starts, ends, minimum, maximum, eventType == "dungeon" ? 1 : 0, eventType == "dungeon" ? 1 : 0,
-            eventType == "dungeon" ? 3 : 0, nowEpoch, nowEpoch);
-        SendGuildAddon(receiverBot, sender, "LWOWG1\tACK\t0\tGuild event added to the shared calendar.");
-        notifyCalendarClients();
+        if (sGuildGovernance.HandleLegacy(sender, message))
+            notifyCalendarClients();
     }
     else if (fields.size() >= 5 && fields[1] == "CALENDAR")
     {
@@ -3780,6 +3725,7 @@ static bool GuildGroupHasRealPlayer(Player* bot)
 static bool SafeGuildEventParticipant(Player* bot, uint32 guildId)
 {
     return bot && bot->GetPlayerbotAI() && bot->IsInWorld() && bot->GetSession() &&
+        bot->GetMap() && !bot->GetMap()->IsDungeon() && !sGuildEventExecutor.Reserved(bot->GetGUIDLow()) &&
         bot->GetGuildId() == guildId && bot->IsAlive() && !bot->IsInCombat() &&
         !bot->IsBeingTeleported() && !bot->IsTaxiFlying() && !bot->GetTransport() &&
         !bot->InBattleGround() && !bot->GetPlayerbotAI()->HasRealPlayerMaster() &&
@@ -3829,8 +3775,8 @@ static std::vector<Player*> GuildEventCommittedRoster(const std::string& eventId
 {
     std::vector<Player*> roster;
     auto rows = CharacterDatabase.PQuery(
-        "SELECT character_guid FROM guild_society_rsvp WHERE event_id='%s' "
-        "AND response IN ('accepted','attended') ORDER BY character_guid", eventId.c_str());
+        "SELECT r.character_guid FROM guild_society_rsvp r JOIN guild_society_event e ON e.event_id=r.event_id WHERE r.event_id='%s' "
+        "AND r.response IN ('accepted','attended') AND r.accepted_revision=e.revision ORDER BY r.character_guid", eventId.c_str());
     if (!rows)
         return roster;
     do
@@ -3892,13 +3838,26 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
     if (nextGuildLifecycleUpdate.time_since_epoch().count() && now < nextGuildLifecycleUpdate)
         return;
     nextGuildLifecycleUpdate = now + std::chrono::seconds(10);
+    if (!sGuildGovernance.IsAvailable()) return;
+    sGuildEventExecutor.Update();
+    UpdateGuildEventReporting();
+    // Durable, event-scoped cleanup survives a restart and runs even if event
+    // automation was just disabled. It releases no unrelated movement owner.
+    auto cleanup = CharacterDatabase.PQuery("SELECT event_id FROM guild_society_event WHERE state IN ('completed','failed','cancelled') AND cleanup_at=0 ORDER BY updated_at LIMIT 24");
+    if (cleanup) do {
+        const std::string eventId=cleanup->Fetch()[0].GetString();
+        if (!SafeGuildWireId(eventId,64)) continue;
+        auto roster=CharacterDatabase.PQuery("SELECT character_guid FROM guild_society_rsvp WHERE event_id='%s'",eventId.c_str());
+        if (roster) do {sPlayerbotRendezvousManager.CancelGuildEvent(roster->Fetch()[0].GetUInt32(),eventId,"guild_event_terminal");} while(roster->NextRow());
+        CharacterDatabase.PExecute("UPDATE guild_society_event SET cleanup_at=%u WHERE event_id='%s'",uint32(time(nullptr)),eventId.c_str());
+    } while(cleanup->NextRow());
     if (guildPolicyMode != "active")
         return;
 
     auto events = CharacterDatabase.PQuery(
         "SELECT event_id,guild_id,event_type,state,title,organizer_guid,scheduled_at,minimum_members,"
         "maximum_members,tank_slots,healer_slots,damage_slots,created_at,updated_at FROM guild_society_event "
-        "WHERE state IN ('forming','traveling','active') ORDER BY created_at LIMIT 24");
+        "WHERE origin='legacy' AND state IN ('forming','traveling','active') ORDER BY created_at LIMIT 24");
     if (!events)
         return;
 
@@ -3923,6 +3882,19 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
         if (!SafeGuildWireId(eventId, 100) ||
             !GuildExecutionEnabled(guildPolicyMode, guildRolloutScope, guildCanaryIds, guildId))
             continue;
+
+        Guild* guild=sGuildMgr.GetGuildById(guildId);
+        if(!guild || !sGuildGovernance.Allows(guild,"events"))
+        {
+            // Do not keep repairing/moving a roster after authority has been
+            // withdrawn. The existing party itself is left intact.
+            CharacterDatabase.PExecute("UPDATE guild_society_event SET state='cancelled',failure_reason='authority_revoked',finished_at=%u,updated_at=%u WHERE event_id='%s' AND state='%s'",
+                nowEpoch,nowEpoch,eventId.c_str(),state.c_str());
+            for(Player* member:GuildEventCommittedRoster(eventId,guildId))
+                if(member && sPlayerbotRendezvousManager.IsGuildEventAssemblyParticipant(member->GetGUIDLow()))
+                    sPlayerbotRendezvousManager.CancelGuildEvent(member->GetGUIDLow(),eventId,"guild_authority_revoked");
+            continue;
+        }
 
         Player* organizer = sRandomPlayerbotMgr.GetPlayerBot(organizerGuid);
         std::vector<Player*> committedRoster = GuildEventCommittedRoster(eventId, guildId);
@@ -4000,15 +3972,21 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
                 nextState = "traveling";
             }
             else if (age >= 1800)
-                nextState = "completed";
+            {
+                // A timer only proves elapsed time, not a completed dungeon,
+                // quest or useful guild contribution. Legacy events without
+                // objective evidence must never mint promotion credit.
+                nextState = "failed";
+                failureReason = "outcome_not_verified";
+            }
         }
         if (nextState.empty())
             continue;
 
         const bool terminal = nextState == "completed" || nextState == "failed";
-        const std::string endsAt = terminal ? std::to_string(nowEpoch) : "NULL";
+        const std::string endsAt = terminal ? std::to_string(nowEpoch) : "0";
         CharacterDatabase.PExecute(
-            "UPDATE guild_society_event SET state='%s',failure_reason='%s',ends_at=%s,updated_at=%u "
+            "UPDATE guild_society_event SET state='%s',failure_reason='%s',finished_at=%s,updated_at=%u "
             "WHERE event_id='%s' AND state='%s'", nextState.c_str(), failureReason.c_str(),
             endsAt.c_str(), nowEpoch, eventId.c_str(), state.c_str());
 
@@ -4024,10 +4002,11 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
                 Player* member = reference->getSource();
                 if (!member || member == organizer)
                     continue;
-                sPlayerbotRendezvousManager.Cancel(
-                    member->GetGUIDLow(), organizer->GetGUIDLow(),
+                sPlayerbotRendezvousManager.CancelGuildEvent(
+                    member->GetGUIDLow(), eventId,
                     nextState == "active" ? "guild_event_started" : "guild_event_terminal");
-                if (nextState == "active" && !member->IsInCombat())
+                if (nextState == "active" && member->GetPlayerbotAI() && !member->isRealPlayer() &&
+                    !member->IsInCombat() && !GuildGroupHasRealPlayer(member))
                     member->GetMotionMaster()->MoveFollow(
                         organizer, 2.0f, member->GetAngle(organizer), true, false);
             }
@@ -4063,6 +4042,9 @@ void PlayerbotChatDirector::UpdateGuildEventLifecycle(std::chrono::steady_clock:
     while (events->NextRow());
 }
 
+namespace {
+livingguild::GuildPlanLeases& GuildEventPlanLeases() {static livingguild::GuildPlanLeases leases;return leases;}
+}
 void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
     std::chrono::steady_clock::time_point /*now*/)
 {
@@ -4094,7 +4076,7 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
             continue;
         Guild* guild = sGuildMgr.GetGuildById(guildId);
         const uint32 leaderAccount = guild ? sObjectMgr.GetPlayerAccountIdByGUID(guild->GetLeaderGuid()) : 0;
-        if (!guild || !sPlayerbotAIConfig.IsInRandomAccountList(leaderAccount))
+        if (!guild)
             continue;
 
         const bool groupEvent = decisionType == "schedule_quest_group" ||
@@ -4103,10 +4085,31 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
         const bool supplyDecision = decisionType == "stock_guild_supplies";
         if (!groupEvent && !officerDecision && !supplyDecision)
             continue;
+        const bool botLed=sPlayerbotAIConfig.IsInRandomAccountList(leaderAccount);
+        const auto authority=sGuildGovernance.ReadPolicy(guild);
+        // Human ownership is opt-in. Every queued decision is bound to the
+        // leader and policy that supplied its candidates, then revalidated now.
+        if(!botLed && (officerDecision ||
+            child.second.get<uint32>("policy_revision",0)!=authority.revision ||
+            child.second.get<uint32>("leader_guid",0)!=authority.leader)) continue;
+        if((groupEvent&&!sGuildGovernance.Allows(guild,"events")) ||
+            (supplyDecision&&!sGuildGovernance.Allows(guild,"supplies"))) continue;
         const uint32 decisionEpoch = uint32(time(nullptr));
+        if(groupEvent&&!GuildEventPlanLeases().Consume(candidateId,guildId,decisionType,
+            authority.revision,authority.leader,decisionEpoch)) continue;
+        const std::string eventId = "society-" + std::to_string(guildId) + "-" + std::to_string(decisionEpoch);
+        if(groupEvent && CharacterDatabase.PQuery(
+            "SELECT event_id FROM guild_society_event WHERE guild_id=%u AND created_at>%u AND origin IN ('legacy','spontaneous') LIMIT 1",
+            guildId,decisionEpoch>14400?decisionEpoch-14400:0))
+        {
+            CharacterDatabase.PExecute("INSERT INTO guild_society_decision (decision_id,guild_id,decision_type,candidate_id,state,source,rejection_code,created_at,updated_at) VALUES ('%s',%u,'%s','%s','rejected','%s','spontaneous_cooldown',%u,%u)",
+                decisionId.c_str(),guildId,decisionType.c_str(),candidateId.c_str(),source.c_str(),decisionEpoch,decisionEpoch);
+            continue;
+        }
         auto activeEvent = CharacterDatabase.PQuery(
             "SELECT event_id FROM guild_society_event WHERE guild_id=%u "
-            "AND state IN ('announced','forming','traveling','active') LIMIT 1", guildId);
+            "AND state IN ('announced','forming','traveling','active') AND scheduled_at<=%u "
+            "AND COALESCE(ends_at,scheduled_at+3600)>%u LIMIT 1", guildId,decisionEpoch+3660,decisionEpoch);
         if (activeEvent && groupEvent)
         {
             CharacterDatabase.PExecute(
@@ -4119,182 +4122,74 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
 
         std::string state = "rejected", rejection = groupEvent ? "no_safe_roster" : "executor_not_available";
         std::string eventState = "failed", eventType, title;
-        uint32 organizerGuid = 0, accepted = 0;
-        std::vector<uint32> committedRosterGuids;
+        uint32 organizerGuid = 0;
+        uint32 eventTarget = 0;
         if (groupEvent)
         {
+            // Propose a concrete objective only. The shared calendar executor
+            // alone accepts members, forms groups, travels and verifies work.
             std::vector<Player*> eligible;
-            Player* leader = sRandomPlayerbotMgr.GetPlayerBot(guild->GetLeaderGuid().GetCounter());
-            if (SafeGuildEventParticipant(leader, guildId))
-                eligible.push_back(leader);
             for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
             {
                 Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
-                if (!SafeGuildEventParticipant(bot, guildId) || bot == leader)
-                    continue;
-                eligible.push_back(bot);
+                if (SafeGuildEventParticipant(bot, guildId))
+                    eligible.push_back(bot);
             }
-            // Prefer characters that are already free. Reclaiming an AI-only
-            // group is valid, but it should be the fallback rather than the
-            // first source of every event roster.
-            std::stable_sort(eligible.begin(), eligible.end(), [](Player* left, Player* right)
+            std::sort(eligible.begin(), eligible.end(), [](Player* a, Player* b) { return a->GetGUIDLow() < b->GetGUIDLow(); });
+            eventType = decisionType == "schedule_dungeon" ? "dungeon" : "quest";
+            if (eventType == "quest")
             {
-                if ((left->GetGroup() == nullptr) != (right->GetGroup() == nullptr))
-                    return left->GetGroup() == nullptr;
-                return left->GetGUIDLow() < right->GetGUIDLow();
-            });
-            std::vector<Player*> roster;
-            auto addUnique = [&roster](Player* bot)
-            {
-                if (bot && std::find(roster.begin(), roster.end(), bot) == roster.end())
-                    roster.push_back(bot);
-            };
-            std::string effectiveDecisionType = decisionType;
-            uint32 minimum = decisionType == "schedule_dungeon" ? 5 : 2;
-            if (decisionType == "schedule_dungeon")
-            {
-                // Do not take the first five online members and then discover
-                // that they have no healer. Build the authoritative roster by
-                // role before any existing AI-only groups are disturbed.
+                // A leveling proposal becomes a named shared quest, never an
+                // unlabeled generic grind or an invented completion timer.
+                std::map<uint32, uint32> shared;
                 for (Player* bot : eligible)
-                    if (PlayerbotAI::IsTank(bot, false)) { addUnique(bot); break; }
-                for (Player* bot : eligible)
-                    if (PlayerbotAI::IsHeal(bot, false) &&
-                        std::find(roster.begin(), roster.end(), bot) == roster.end())
-                    { addUnique(bot); break; }
-                for (Player* bot : eligible)
-                {
-                    addUnique(bot);
-                    if (roster.size() >= 5) break;
-                }
+                    for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
+                    {
+                        const uint32 quest = bot->GetQuestSlotQuestId(slot);
+                        if (quest && bot->GetQuestStatus(quest) == QUEST_STATUS_INCOMPLETE &&
+                            !bot->GetQuestRewardStatus(quest) && sObjectMgr.GetQuestTemplate(quest))
+                            ++shared[quest];
+                    }
+                uint32 best = 1;
+                for (const auto& quest : shared)
+                    if (quest.second > best) { best = quest.second; eventTarget = quest.first; }
+                title = "Guild shared quest";
+                if (eventTarget) title += ": " + std::string(sObjectMgr.GetQuestTemplate(eventTarget)->GetTitle());
             }
             else
-                for (Player* bot : eligible)
-                {
-                    addUnique(bot);
-                    if (roster.size() >= 5) break;
-                }
-            uint32 tanks = 0, healers = 0;
-            for (Player* bot : roster)
             {
-                if (PlayerbotAI::IsTank(bot, false)) ++tanks;
-                if (PlayerbotAI::IsHeal(bot, false)) ++healers;
+                uint32 bestFit = 0;
+                for (uint32 mapId = 0; mapId < sMapStore.GetNumRows(); ++mapId)
+                {
+                    if (!PlayerbotGuildEventExecutor::DungeonSupported(mapId)) continue;
+                    uint32 level = 0;
+                    auto encounters = sObjectMgr.GetDungeonEncounterBoundsByMap(mapId);
+                    for (auto it = encounters.first; it != encounters.second; ++it)
+                        if (it->second.dbcEntry && it->second.dbcEntry->Difficulty == 0)
+                            if (const auto* creature = sObjectMgr.GetCreatureTemplate(it->second.creditEntry))
+                                level = std::max(level, uint32(creature->MaxLevel));
+                    uint32 tanks = 0, healers = 0, damage = 0;
+                    for (Player* bot : eligible)
+                    {
+                        if (bot->GetLevel() + 3 < level || bot->GetLevel() > level + 8) continue;
+                        if (PlayerbotAI::IsTank(bot, false)) ++tanks;
+                        else if (PlayerbotAI::IsHeal(bot, false)) ++healers;
+                        else ++damage;
+                    }
+                    const uint32 fit = tanks + healers + damage;
+                    if (tanks && healers && damage >= 3 && fit > bestFit) { bestFit = fit; eventTarget = mapId; }
+                }
+                title = "Guild dungeon";
+                if (eventTarget) title += ": " + std::string(sMapStore.LookupEntry(eventTarget)->name[0]);
             }
-            bool rolesReady = decisionType != "schedule_dungeon" || (tanks > 0 && healers > 0);
-            if (decisionType == "schedule_dungeon" &&
-                (roster.size() < minimum || !rolesReady) && eligible.size() >= 2)
+            if (eventTarget)
             {
-                // A guild should not manufacture a doomed dungeon event when
-                // its currently safe members cannot fill the required roles.
-                // Preserve the planner's social intent by forming a truthful
-                // leveling group from the same validated participants.
-                effectiveDecisionType = "schedule_leveling_group";
-                minimum = 2;
-                rolesReady = true;
-                roster.clear();
-                for (Player* bot : eligible)
-                {
-                    addUnique(bot);
-                    if (roster.size() >= 5) break;
-                }
+                state = "completed"; // The proposal, not the gameplay event.
+                rejection.clear();
+                eventState = "announced";
+                organizerGuid = eligible.empty() ? 0 : eligible.front()->GetGUIDLow();
             }
-            if (roster.size() >= minimum && rolesReady)
-            {
-                // Guild events may reclaim bots only from AI-only groups; the
-                // safety predicate above has already excluded every group with
-                // a real player. Free bots deliberately refuse a self-authored
-                // leave request, so use another validated roster member as the
-                // requester and retain only characters confirmed ungrouped.
-                std::vector<Player*> releasedRoster;
-                for (size_t index = 0; index < roster.size(); ++index)
-                {
-                    Player* member = roster[index];
-                    if (!member->GetGroup()) continue;
-                    Player* requester = roster[(index + 1) % roster.size()];
-                    member->GetPlayerbotAI()->DoSpecificAction(
-                        "leave", Event("guild society event", "", requester), true);
-                }
-                for (Player* member : roster)
-                {
-                    if (!member->GetGroup())
-                        releasedRoster.push_back(member);
-                }
-                roster.swap(releasedRoster);
-                if (effectiveDecisionType == "schedule_dungeon")
-                {
-                    uint32 releasedTanks = 0, releasedHealers = 0;
-                    for (Player* member : roster)
-                    {
-                        if (PlayerbotAI::IsTank(member, false)) ++releasedTanks;
-                        if (PlayerbotAI::IsHeal(member, false)) ++releasedHealers;
-                    }
-                    if ((roster.size() < 5 || !releasedTanks || !releasedHealers) &&
-                        roster.size() >= 2)
-                    {
-                        effectiveDecisionType = "schedule_leveling_group";
-                        minimum = 2;
-                        rolesReady = true;
-                    }
-                }
-            }
-            if (roster.size() >= minimum && rolesReady)
-            {
-                Player* organizer = roster.front();
-                organizerGuid = organizer->GetGUIDLow();
-                accepted = organizer->GetGroup() ? 0 : 1;
-                for (size_t index = 1; index < roster.size(); ++index)
-                {
-                    Player* member = roster[index];
-                    if (member->GetGroup() == organizer->GetGroup() && organizer->GetGroup())
-                    {
-                        ++accepted;
-                        continue;
-                    }
-                    member->GetPlayerbotAI()->DoSpecificAction(
-                        "join", Event("create group", "", organizer), true);
-                    if (organizer->GetGroup() && member->GetGroup() == organizer->GetGroup())
-                        ++accepted;
-                }
-                if (accepted >= minimum)
-                {
-                    state = "completed";
-                    rejection.clear();
-                    eventState = "traveling";
-                }
-                else if (accepted >= 2)
-                {
-                    // A partially formed dungeon roster is still a legitimate
-                    // guild leveling group. Keep the real group and report the
-                    // activity it can actually perform instead of declaring a
-                    // failed dungeon while leaving a stray party behind.
-                    effectiveDecisionType = "schedule_leveling_group";
-                    minimum = 2;
-                    state = "completed";
-                    rejection.clear();
-                    eventState = "traveling";
-                }
-                else
-                    rejection = "group_formation_failed";
-                if (eventState == "traveling")
-                {
-                    for (Player* member : roster)
-                    {
-                        if (member == organizer || !organizer->GetGroup() ||
-                            member->GetGroup() != organizer->GetGroup())
-                            continue;
-                        sRandomPlayerbotMgr.SetValue(member->GetGUIDLow(), "create group", 0);
-                        committedRosterGuids.push_back(member->GetGUIDLow());
-                        sPlayerbotRendezvousManager.Request(
-                            member, organizer, "guild-event:" + candidateId, false);
-                    }
-                    sRandomPlayerbotMgr.SetValue(organizer->GetGUIDLow(), "create group", 0);
-                    committedRosterGuids.push_back(organizer->GetGUIDLow());
-                }
-            }
-            eventType = effectiveDecisionType == "schedule_dungeon" ? "dungeon" :
-                effectiveDecisionType == "schedule_quest_group" ? "quest" : "leveling";
-            title = effectiveDecisionType == "schedule_dungeon" ? "Guild dungeon group" :
-                effectiveDecisionType == "schedule_quest_group" ? "Guild quest group" : "Guild leveling group";
+            else rejection = "no_supported_shared_objective";
         }
         else if (officerDecision)
         {
@@ -4319,12 +4214,20 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
             {
                 for (uint32 index = 0; index < 3; ++index)
                 {
-                    Player* officer = eligible[index % eligible.size()];
+                    // A duty is not a promotion and cannot manufacture rank
+                    // rights. Assign an already-authorized officer, or the bot
+                    // guild master when nobody else has the required right.
+                    const uint32 required=index==0?GR_RIGHT_INVITE:GR_RIGHT_MODIFY_GUILD_INFO;
+                    uint32 officerGuid=guild->GetLeaderGuid().GetCounter();
+                    for(Player* candidate:eligible) {
+                        MemberSlot* slot=guild->GetMemberSlot(candidate->GetObjectGuid());
+                        if(slot&&guild->HasRankRight(slot->RankId,required)) {officerGuid=candidate->GetGUIDLow();break;}
+                    }
                     CharacterDatabase.PExecute(
                         "INSERT INTO guild_society_officer (guild_id,duty,character_guid,state,assigned_at,updated_at) "
                         "VALUES (%u,'%s',%u,'active',%u,%u) ON DUPLICATE KEY UPDATE "
                         "character_guid=VALUES(character_guid),state='active',updated_at=VALUES(updated_at)",
-                        guildId, duties[index], officer->GetGUIDLow(), decisionEpoch, decisionEpoch);
+                        guildId, duties[index], officerGuid, decisionEpoch, decisionEpoch);
                 }
                 state = "completed";
                 rejection.clear();
@@ -4334,32 +4237,13 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
         }
         else if (supplyDecision)
         {
-            uint32 candidateGuild = 0, itemEntry = 0, required = 0;
-            if (std::sscanf(candidateId.c_str(), "supply:%u:%u:%u", &candidateGuild, &itemEntry, &required) == 3 &&
-                candidateGuild == guildId && required >= 1 && required <= 200 && sObjectMgr.GetItemPrototype(itemEntry))
-            {
-                uint32 available = 0;
-                auto bank = CharacterDatabase.PQuery(
-                    "SELECT COALESCE(SUM(ii.count),0) FROM guild_bank_item bi "
-                    "JOIN item_instance ii ON ii.guid=bi.item_guid WHERE bi.guildid=%u AND bi.item_entry=%u",
-                    guildId, itemEntry);
-                if (bank)
-                    available = bank->Fetch()[0].GetUInt32();
-                const std::string goalId = "supply-" + std::to_string(guildId) + "-" + std::to_string(itemEntry);
-                const char* goalState = available >= required ? "completed" : "active";
-                CharacterDatabase.PExecute(
-                    "INSERT INTO guild_society_supply_goal (goal_id,guild_id,goal_type,item_entry,required_quantity,available_quantity,reserved_quantity,state,source_event_id,created_at,updated_at) "
-                    "VALUES ('%s',%u,'event_consumables',%u,%u,%u,0,'%s',NULL,%u,%u) "
-                    "ON DUPLICATE KEY UPDATE required_quantity=VALUES(required_quantity),available_quantity=VALUES(available_quantity),"
-                    "state=VALUES(state),updated_at=VALUES(updated_at)", goalId.c_str(), guildId, itemEntry,
-                    required, available, goalState, decisionEpoch, decisionEpoch);
-                state = "completed";
-                rejection.clear();
-            }
-            else
-                rejection = "invalid_supply_candidate";
+            // Old gateway choices name an item and quantity, not a demonstrated
+            // need or a currently executable delivery. Never turn those into a
+            // new goal, including responses queued before a gateway upgrade.
+            rejection = "approved_supply_goal_required";
         }
         const uint32 nowEpoch = uint32(time(nullptr));
+        if (groupEvent && !CharacterDatabase.BeginTransaction()) continue;
         CharacterDatabase.PExecute(
             "INSERT INTO guild_society_decision (decision_id,guild_id,decision_type,candidate_id,state,source,rejection_code,created_at,updated_at) "
             "VALUES ('%s',%u,'%s','%s','%s','%s','%s',%u,%u)", decisionId.c_str(), guildId,
@@ -4421,48 +4305,27 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
                 }).detach();
             continue;
         }
-        const std::string eventId = "society-" + std::to_string(guildId) + "-" + std::to_string(nowEpoch);
+        std::string titleSql=title.substr(0,150);CharacterDatabase.escape_string(titleSql);
         CharacterDatabase.PExecute(
-            "INSERT INTO guild_society_event (event_id,guild_id,event_type,state,title,target_id,organizer_guid,scheduled_at,minimum_members,maximum_members,tank_slots,healer_slots,damage_slots,failure_reason,created_at,updated_at) "
-            "VALUES ('%s',%u,'%s','%s','%s',0,%u,%u,%u,5,%u,%u,%u,'%s',%u,%u) "
-            "ON DUPLICATE KEY UPDATE state=VALUES(state),organizer_guid=VALUES(organizer_guid),failure_reason=VALUES(failure_reason),updated_at=VALUES(updated_at)",
-            eventId.c_str(), guildId, eventType.c_str(), eventState.c_str(), title.c_str(), organizerGuid,
-            nowEpoch, eventType == "dungeon" ? 5 : 2,
+            "INSERT INTO guild_society_event (event_id,guild_id,event_type,state,title,target_id,organizer_guid,scheduled_at,ends_at,minimum_members,maximum_members,tank_slots,healer_slots,damage_slots,failure_reason,created_at,updated_at,origin,revision) "
+            "VALUES ('%s',%u,'%s','%s','%s',%u,%u,%u,%u,%u,5,%u,%u,%u,'%s',%u,%u,'spontaneous',1)",
+            eventId.c_str(), guildId, eventType.c_str(), eventState.c_str(), titleSql.c_str(), eventTarget, organizerGuid,
+            nowEpoch+60, nowEpoch+3660, eventType == "dungeon" ? 5 : 2,
             eventType == "dungeon" ? 1 : 0, eventType == "dungeon" ? 1 : 0,
             eventType == "dungeon" ? 3 : 0, rejection.c_str(), nowEpoch, nowEpoch);
-        if (!committedRosterGuids.empty())
-        {
-            CharacterDatabase.PExecute(
-                "DELETE FROM guild_society_rsvp WHERE event_id='%s'", eventId.c_str());
-            for (uint32 memberGuid : committedRosterGuids)
-                CharacterDatabase.PExecute(
-                    "INSERT INTO guild_society_rsvp (event_id,character_guid,response,role,human,updated_at) "
-                    "VALUES ('%s',%u,'accepted','',0,%u)", eventId.c_str(), memberGuid, nowEpoch);
-        }
+        if (!CharacterDatabase.CommitTransactionDirect()) continue;
         std::ostringstream telemetry;
         telemetry << "{\"events\":[{\"event_id\":\"execution-" << decisionId
             << "\",\"type\":\"guild_event\",\"guild_event_id\":\"" << eventId
             << "\",\"guild_id\":" << guildId << ",\"event_type\":\"" << eventType
-            << "\",\"title\":\"" << title << "\",\"scheduled_at\":" << nowEpoch
+            << "\",\"title\":\"" << PlayerbotLLMInterface::SanitizeForJson(title) << "\",\"scheduled_at\":" << (nowEpoch+60)
+            << ",\"ends_at\":" << (nowEpoch+3660)
             << ",\"state\":\"" << eventState << "\",\"organizer_guid\":" << organizerGuid
             << ",\"minimum_members\":" << (eventType == "dungeon" ? 5 : 2)
             << ",\"maximum_members\":5,\"tank_slots\":" << (eventType == "dungeon" ? 1 : 0)
             << ",\"healer_slots\":" << (eventType == "dungeon" ? 1 : 0)
             << ",\"damage_slots\":" << (eventType == "dungeon" ? 3 : 0)
             << ",\"failure_reason\":\"" << rejection << "\"}";
-        for (uint32 memberGuid : committedRosterGuids)
-        {
-            Player* member = sRandomPlayerbotMgr.GetPlayerBot(memberGuid);
-            std::string memberName;
-            sObjectMgr.GetPlayerNameByGUID(ObjectGuid(HIGHGUID_PLAYER, memberGuid), memberName);
-            const char* role = member && PlayerbotAI::IsTank(member, false) ? "tank" :
-                member && PlayerbotAI::IsHeal(member, false) ? "healer" : "damage";
-            telemetry << ",{\"event_id\":\"rsvp-" << eventId << '-' << memberGuid
-                << "\",\"type\":\"guild_rsvp\",\"guild_event_id\":\"" << eventId
-                << "\",\"guild_id\":" << guildId << ",\"character_guid\":" << memberGuid
-                << ",\"character_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(memberName)
-                << "\",\"response\":\"accepted\",\"role\":\"" << role << "\",\"human\":false}";
-        }
         telemetry << "]}";
         const std::string body = telemetry.str();
         std::thread([body]()
@@ -4476,6 +4339,7 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
 void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock::time_point now)
 {
     ReloadGuildPolicy(now);
+    sGuildGovernance.Update(guildPolicyMode == "active");
     UpdateGuildEventLifecycle(now);
     if (pendingGuildPlans.valid() && pendingGuildPlans.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
         ApplyGuildPlans(pendingGuildPlans.get(), now);
@@ -4563,17 +4427,30 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             tankCandidates[guildId] > 0 && healerCandidates[guildId] > 0;
         const uint32 recruitmentGap = target > members ? target - members : 0;
         uint32 activeOfficers = 0;
-        if (auto officerCount = CharacterDatabase.PQuery(
-                "SELECT COUNT(*) FROM guild_society_officer WHERE guild_id=%u AND state='active'", guildId))
-            activeOfficers = officerCount->Fetch()[0].GetUInt32();
+        if (auto officerRows = CharacterDatabase.PQuery(
+                "SELECT character_guid,duty FROM guild_society_officer WHERE guild_id=%u AND state='active'", guildId))
+            do {
+                Field* fields=officerRows->Fetch();
+                MemberSlot* member=guild->GetMemberSlot(ObjectGuid(HIGHGUID_PLAYER,fields[0].GetUInt32()));
+                const uint32 required=fields[1].GetString()=="recruiter"?GR_RIGHT_INVITE:GR_RIGHT_MODIFY_GUILD_INFO;
+                if(member&&guild->HasRankRight(member->RankId,required)) ++activeOfficers;
+            } while(officerRows->NextRow());
         const uint32 desiredOfficers = std::min<uint32>(3, members > 0 ? members - 1 : 0);
         const bool officerCoverageNeeded = activeOfficers < desiredOfficers;
-        const bool activeSupplyGoal = CharacterDatabase.PQuery(
-            "SELECT goal_id FROM guild_society_supply_goal WHERE guild_id=%u "
-            "AND state IN ('proposed','active') LIMIT 1", guildId) != nullptr;
         const bool executionEnabled = GuildExecutionEnabled(
             guildPolicyMode, guildRolloutScope, guildCanaryIds, guildId);
-        const std::string primary = GuildFocus(guildId, 0), secondary = GuildFocus(guildId, 1);
+        const auto authority=sGuildGovernance.ReadPolicy(guild);
+        const bool delegatedEvents=sGuildGovernance.Allows(guild,"events");
+        const bool delegatedSupplies=sGuildGovernance.Allows(guild,"supplies");
+        const bool delegatedRecruitment=sGuildGovernance.Allows(guild,"recruitment");
+        std::string primary = GuildFocus(guildId, 0), secondary = GuildFocus(guildId, 1);
+        if (auto profile=CharacterDatabase.PQuery(
+                "SELECT primary_focus,secondary_focus FROM guild_society_profile WHERE guild_id=%u",guildId))
+        {
+            primary=profile->Fetch()[0].GetString();secondary=profile->Fetch()[1].GetString();
+        }
+        const std::string primaryJson=PlayerbotLLMInterface::SanitizeForJson(primary);
+        const std::string secondaryJson=PlayerbotLLMInterface::SanitizeForJson(secondary);
         const std::string name = PlayerbotLLMInterface::SanitizeForJson(guild->GetName());
         const std::string leader = PlayerbotLLMInterface::SanitizeForJson(leaderName);
         if (!first)
@@ -4588,24 +4465,36 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             << "\",\"leader_guid\":" << guild->GetLeaderGuid().GetCounter() << ",\"leader_name\":\"" << leader
             << "\",\"member_count\":" << members
             << ",\"size_band\":\"" << band << "\",\"target_size\":" << target
-            << ",\"primary_focus\":\"" << primary << "\",\"secondary_focus\":\"" << secondary << "\""
+            << ",\"primary_focus\":\"" << primaryJson << "\",\"secondary_focus\":\"" << secondaryJson << "\""
             << ",\"identity_candidates\":{\"culture\":[\"friendly and dependable\",\"adventurous and helpful\"],"
                "\"motto\":[\"No one adventures alone\",\"Prepared for the road ahead\"],"
                "\"recruitment_style\":[\"welcoming\",\"organized but relaxed\"]}}";
+        const std::string questRef="quest:"+std::to_string(guildId)+":"+std::to_string(averageLevel)+":"+std::to_string(nowEpoch);
+        const std::string levelingRef="leveling:"+std::to_string(guildId)+":"+std::to_string(averageLevel)+":"+std::to_string(nowEpoch);
+        const std::string dungeonRef="dungeon:"+std::to_string(guildId)+":"+std::to_string(dungeonReady[guildId])+":"+std::to_string(nowEpoch);
+        if(online>=2) {
+            GuildEventPlanLeases().Publish(questRef,guildId,"schedule_quest_group",authority.revision,authority.leader,nowEpoch);
+            GuildEventPlanLeases().Publish(levelingRef,guildId,"schedule_leveling_group",authority.revision,authority.leader,nowEpoch);
+        }
+        if(dungeonEligible) GuildEventPlanLeases().Publish(dungeonRef,guildId,"schedule_dungeon",authority.revision,authority.leader,nowEpoch);
         plans << "{\"guild_id\":" << guildId << ",\"bot_led\":" << (botLed ? "true" : "false")
+            << ",\"policy_revision\":" << authority.revision << ",\"leader_guid\":" << authority.leader
+            << ",\"effective_delegation\":{\"events\":" << (delegatedEvents?"true":"false")
+            << ",\"supplies\":" << (delegatedSupplies?"true":"false")
+            << ",\"recruitment\":" << (delegatedRecruitment?"true":"false") << "}"
             << ",\"online_members\":" << online << ",\"average_level\":" << averageLevel
             << ",\"maximum_level\":" << maximumLevels[guildId]
             << ",\"dungeon_ready_members\":" << dungeonReady[guildId]
             << ",\"tank_candidates\":" << tankCandidates[guildId]
             << ",\"healer_candidates\":" << healerCandidates[guildId]
             << ",\"damage_candidates\":" << damageCandidates[guildId]
-            << ",\"candidate_decisions\":[{\"candidate_id\":\"quest:" << guildId
-            << ":" << averageLevel << "\",\"type\":\"schedule_quest_group\",\"utility\":20,"
+            << ",\"candidate_decisions\":[{\"candidate_id\":\"" << questRef
+            << "\",\"type\":\"schedule_quest_group\",\"utility\":20,"
                "\"eligible\":" << (online >= 2 ? "true" : "false") << "}"
-            << ",{\"candidate_id\":\"leveling:" << guildId << ":" << averageLevel
+            << ",{\"candidate_id\":\"" << levelingRef
             << "\",\"type\":\"schedule_leveling_group\",\"utility\":" << (averageLevel < 15 ? 24 : 16)
             << ",\"eligible\":" << (online >= 2 ? "true" : "false") << "}"
-            << ",{\"candidate_id\":\"dungeon:" << guildId << ":" << dungeonReady[guildId]
+            << ",{\"candidate_id\":\"" << dungeonRef
             << "\",\"type\":\"schedule_dungeon\",\"utility\":25,\"eligible\":"
             << (dungeonEligible ? "true" : "false") << "}"
             << ",{\"candidate_id\":\"recruit:" << guildId << ":" << recruitmentGap
@@ -4613,24 +4502,30 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
             << ",\"eligible\":" << (recruitmentGap ? "true" : "false") << "}"
             << ",{\"candidate_id\":\"officers:" << guildId << ":" << members
             << "\",\"type\":\"review_officer_coverage\",\"utility\":40,\"eligible\":"
-            << (officerCoverageNeeded ? "true" : "false") << "}"
-            << ",{\"candidate_id\":\"supply:" << guildId << ':' << (guildId % 2 ? 117 : 159)
-            << ':' << std::max<uint32>(10, online * 2)
-            << "\",\"type\":\"stock_guild_supplies\",\"utility\":30,\"eligible\":"
-            << (online >= 2 && !activeSupplyGoal ? "true" : "false") << "}]}";
+            << (officerCoverageNeeded ? "true" : "false") << "}]}";
+        // Do not invent a food/water need from the guild ID. Supply work is
+        // admitted only by the approved-goal executor, with an actual recipe,
+        // event or explicit request as provenance. Legacy goals remain visible.
         events << "{\"event_id\":\"snapshot-" << guildId << '-' << nowEpoch
             << "\",\"type\":\"guild_snapshot\",\"guild_id\":" << guildId << ",\"guild_name\":\"" << name
             << "\",\"bot_led\":" << (botLed ? "true" : "false") << ",\"faction\":\"" << faction
             << "\",\"leader_guid\":" << guild->GetLeaderGuid().GetCounter() << ",\"leader_name\":\"" << leader
             << "\",\"member_count\":" << members << ",\"size_band\":\"" << band
-            << "\",\"target_size\":" << target << ",\"primary_focus\":\"" << primary
-            << "\",\"secondary_focus\":\"" << secondary << "\",\"state\":\""
+            << "\",\"target_size\":" << target << ",\"primary_focus\":\"" << primaryJson
+            << "\",\"secondary_focus\":\"" << secondaryJson << "\",\"state\":\""
             << (executionEnabled ? "active" : "observed")
             << "\",\"online_members\":" << online << ",\"average_level\":" << averageLevel
             << ",\"maximum_level\":" << maximumLevels[guildId]
             << ",\"dungeon_ready_members\":" << dungeonReady[guildId]
             << ",\"tank_candidates\":" << tankCandidates[guildId]
-            << ",\"healer_candidates\":" << healerCandidates[guildId] << "}";
+            << ",\"healer_candidates\":" << healerCandidates[guildId]
+            << ",\"management\":{\"revision\":" << authority.revision
+            << ",\"leader_guid\":" << authority.leader
+            << ",\"desired\":{\"recruitment\":" << (authority.recruitment?"true":"false")
+            << ",\"events\":" << (authority.events?"true":"false") << ",\"supplies\":" << (authority.supplies?"true":"false")
+            << "},\"effective\":{\"recruitment\":" << (delegatedRecruitment?"true":"false")
+            << ",\"events\":" << (delegatedEvents?"true":"false") << ",\"supplies\":" << (delegatedSupplies?"true":"false")
+            << "},\"promotions\":\"recommendation_only\"}}";
 
         // Mirror authoritative persistent officers and supply goals through
         // the same single, retried status batch as the guild snapshot. The
@@ -4652,8 +4547,9 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
                     << PlayerbotLLMInterface::SanitizeForJson(fields[2].GetString()) << "\"}";
             } while (officerSnapshots->NextRow());
         }
+        const auto bankContents=guild->GetBankItemCounts();
         if (auto supplySnapshots = CharacterDatabase.PQuery(
-                "SELECT goal_id,item_entry,required_quantity,available_quantity,reserved_quantity,state "
+                "SELECT goal_id,item_entry,required_quantity,available_quantity,reserved_quantity,state,provenance "
                 "FROM guild_society_supply_goal WHERE guild_id=%u", guildId))
         {
             do
@@ -4661,6 +4557,10 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
                 Field* fields = supplySnapshots->Fetch();
                 const uint32 itemEntry = fields[1].GetUInt32();
                 const ItemPrototype* item = sObjectMgr.GetItemPrototype(itemEntry);
+                const auto bankEntry=bankContents.find(itemEntry);
+                const uint32 banked=bankEntry==bankContents.end()?0:bankEntry->second;
+                const std::string goalState=fields[6].GetString()=="legacy_needs_review" &&
+                    fields[5].GetString()!="cancelled" ? "needs_review" : fields[5].GetString();
                 events << ",{\"event_id\":\"supply-state-" << guildId << '-' << itemEntry
                     << "\",\"type\":\"supply_goal\",\"goal_id\":\""
                     << PlayerbotLLMInterface::SanitizeForJson(fields[0].GetString())
@@ -4668,19 +4568,22 @@ void PlayerbotChatDirector::MaybeReportGuildSocieties(std::chrono::steady_clock:
                     << itemEntry << ",\"item_name\":\""
                     << PlayerbotLLMInterface::SanitizeForJson(item ? item->Name1 : "")
                     << "\",\"required_quantity\":" << fields[2].GetUInt32()
-                    << ",\"available_quantity\":" << fields[3].GetUInt32()
+                    << ",\"available_quantity\":" << banked
                     << ",\"reserved_quantity\":" << fields[4].GetUInt32() << ",\"state\":\""
-                    << PlayerbotLLMInterface::SanitizeForJson(fields[5].GetString()) << "\"}";
+                    << PlayerbotLLMInterface::SanitizeForJson(goalState)
+                    << "\",\"provenance\":\"" << PlayerbotLLMInterface::SanitizeForJson(fields[6].GetString())
+                    << "\",\"snapshot_at\":" << nowEpoch << "}";
             } while (supplySnapshots->NextRow());
         }
 
+        std::string primarySql=primary,secondarySql=secondary;
+        CharacterDatabase.escape_string(primarySql);CharacterDatabase.escape_string(secondarySql);
         CharacterDatabase.PExecute(
             "INSERT INTO guild_society_profile (guild_id,bot_led,faction,leader_guid,size_band,target_size,primary_focus,secondary_focus,culture,motto,recruitment_style,state,created_at,updated_at) "
             "VALUES (%u,%u,'%s',%u,'%s',%u,'%s','%s','','','welcoming','%s',%u,%u) ON DUPLICATE KEY UPDATE "
             "bot_led=VALUES(bot_led),faction=VALUES(faction),leader_guid=VALUES(leader_guid),size_band=VALUES(size_band),"
-            "target_size=VALUES(target_size),primary_focus=VALUES(primary_focus),secondary_focus=VALUES(secondary_focus),"
             "state=VALUES(state),updated_at=VALUES(updated_at)", guildId, botLed ? 1 : 0, faction,
-            guild->GetLeaderGuid().GetCounter(), band, target, primary.c_str(), secondary.c_str(),
+            guild->GetLeaderGuid().GetCounter(), band, target, primarySql.c_str(), secondarySql.c_str(),
             executionEnabled ? "active" : "observed", nowEpoch, nowEpoch);
     }
     enrich << "]}";

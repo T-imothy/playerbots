@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "GuildManagementActions.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/PlayerbotGuildGovernance.h"
 
 using namespace ai;
 
@@ -83,28 +84,13 @@ bool GuildManageNearbyAction::Execute(Event& event)
             continue;
 
 
-        if(player->GetGuildId()) //Promote or demote nearby members based on chance.
-        {          
-            MemberSlot* member = guild->GetMemberSlot(player->GetObjectGuid());
-            uint32 dCount = AI_VALUE(uint32, "death count");
-
-            if (!urand(0, 30) && dCount < 2 && guild->HasRankRight(botMember->RankId, GR_RIGHT_PROMOTE) && bot->GetRank() + 1 < player->GetRank())
-            {
-                BroadcastHelper::BroadcastGuildMemberPromotion(ai, bot, player);
-
-                ai->DoSpecificAction("guild promote", Event("guild management", guid), true);
-                continue;
-            }
-
-            if (!urand(0, 30) && dCount > 2 && guild->HasRankRight(botMember->RankId, GR_RIGHT_DEMOTE) && bot->GetRank() < player->GetRank() && player->GetRank() > guild->GetLowestRank()) {
-                BroadcastHelper::BroadcastGuildMemberDemotion(ai, bot, player);
-
-                ai->DoSpecificAction("guild demote", Event("guild management", guid), true);
-                continue;
-            }
-
+        // Membership merit belongs to the authoritative evidence manager,
+        // never proximity, RNG, or this officer's personal death counter.
+        if (player->GetGuildId())
             continue;
-        }
+
+        if (!sGuildGovernance.Allows(guild, "recruitment", bot))
+            return false;
 
         if (!sPlayerbotAIConfig.randomBotGuildNearby)
             return false;

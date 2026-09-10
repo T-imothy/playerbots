@@ -6,6 +6,8 @@
 #include "Engine.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PerformanceMonitor.h"
+#include "playerbot/PlayerbotGuildEventExecutor.h"
+#include "playerbot/PlayerbotRendezvousManager.h"
 
 #ifdef BUILD_ELUNA
 #include "LuaEngine/LuaEngine.h"
@@ -689,6 +691,10 @@ Action* Engine::InitializeAction(ActionNode* actionNode)
 
 bool Engine::ListenAndExecute(Action* action, Event& event)
 {
+    if (state == BotState::BOT_STATE_NON_COMBAT &&
+        sGuildEventExecutor.OwnsMovement(ai->GetBot()->GetGUIDLow()) &&
+        !sPlayerbotRendezvousManager.AllowsOwnedMovement(ai->GetBot()->GetGUIDLow(), action->getName()))
+        return false;
     PlayerbotAI::ScopedChatAction chatActionScope(ai, action->getName(), event);
     bool actionExecuted = false;
     Action* prevExecutedAction = lastExecutedAction;

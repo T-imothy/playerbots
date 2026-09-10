@@ -46,6 +46,7 @@ public:
     uint32 PartyDeadRecoverySeconds(uint32 botGuid) const;
     void BeginDeparture(uint32 botGuid, uint32 playerGuid, const std::string& reason);
     void Cancel(uint32 botGuid, uint32 playerGuid, const std::string& reason);
+    bool CancelGuildEvent(uint32 botGuid, const std::string& eventId, const std::string& reason);
     void Update();
     bool IsActive(uint32 botGuid, uint32 playerGuid) const;
     bool WasRelocated(uint32 botGuid, uint32 playerGuid) const;

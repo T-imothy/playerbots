@@ -3,6 +3,7 @@
 #include "InviteToGroupAction.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/PlayerbotSocialActionBroker.h"
+#include "playerbot/PlayerbotGuildEventExecutor.h"
 #include "playerbot/strategy/values/Formations.h"
 #include "Guilds/GuildMgr.h"
 
@@ -14,6 +15,10 @@ namespace ai
             return false;
 
         if (inviter == player)
+            return false;
+
+        if (!inviter->isRealPlayer() && !player->isRealPlayer() &&
+            !sGuildEventExecutor.CanGroupWith(inviter->GetGUIDLow(),player->GetGUIDLow()))
             return false;
 
         // Keep a bot that just left an autonomous party available for the
