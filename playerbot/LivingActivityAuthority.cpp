@@ -197,8 +197,10 @@ namespace LivingActivity {
     }
     AuthorityCode ExecutionAuthority::Check(const AuthoritySnapshot& a, const Effects& effects,
         const WorldContext& current, uint64_t now, const Task* task,
-        const ActionContext* action, const NativePermit* permit) {
+        const ActionContext* action, const NativePermit* permit, uint32_t nativeSafety) {
         if (!ContextValid(current) || !(a.current == current)) return AuthorityCode::StaleContext;
+        if (nativeSafety & ~uint32_t(127)) return AuthorityCode::InvalidRequest;
+        const uint32_t safety = a.safety | nativeSafety; // A newly entered combat/transport pause cannot wait for publication.
         if (!effects.classified) return AuthorityCode::UnknownAction;
         if (effects.mask & ~AllEffects) return AuthorityCode::EffectsDenied;
         if (effects.lane == Lane::Inspection)
@@ -209,13 +211,13 @@ namespace LivingActivity {
             if (!permit || !permit->validated || permit->lane != effects.lane || !(permit->world == current) ||
                 (effects.mask & ~permit->effects) || (effects.mask & ~LaneEffects(effects.lane)))
                 return AuthorityCode::EffectsDenied;
-            if (a.safety & ~permit->allowedSafety) return AuthorityCode::SafetyPaused;
+            if (safety & ~permit->allowedSafety) return AuthorityCode::SafetyPaused;
             if (!a.operation.empty() && (effects.mask & (Mask(Effect::Inventory) | Mask(Effect::Money))))
                 return AuthorityCode::AtomicPending;
             return AuthorityCode::Allowed;
         }
         if (a.invalidated) return AuthorityCode::ReconciliationRequired;
-        if (a.safety) return AuthorityCode::SafetyPaused;
+        if (safety) return AuthorityCode::SafetyPaused;
         if (!a.operation.empty()) return AuthorityCode::AtomicPending;
         if (!task || !action || !Executable(*task) || !Fresh(*task, *action, current) ||
             !Matches(a.lease, {task->actor, task->root, action->ownerGeneration, current}) || now >= a.expires)

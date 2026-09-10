@@ -66,6 +66,7 @@ class RandomPlayerbotMgr : public PlayerbotHolder
             return instance;
         }
 
+        void UpdateAI(uint32 elapsed) override;
         virtual void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
 private:
         void ScaleBotActivity();

@@ -4,6 +4,7 @@
 #include <string>
 #include <cstdint>
 #include "LivingActivityEffects.h"
+class PlayerbotAI;
 
 class LivingActivityCoordinator {
 public:
@@ -15,8 +16,7 @@ public:
     std::string ActorJson(uint32_t guid) const;
     // Map-worker entry point: bounded immutable diagnostics only. Does not read
     // the coordinator's task/lease maps and never authorizes a native effect.
-    void ObserveAction(uint32_t guid, uint64_t actorEpoch, uint64_t mapEpoch,
-        const LivingActivity::Effects& effects, const std::string& action);
+    void ObserveAction(PlayerbotAI& ai, const LivingActivity::Effects& effects, const std::string& action);
     enum class LeaseBoundary { Acquire, Renew, Release };
     void ObserveLeaseBoundary(uint32_t guid, LeaseBoundary boundary);
 private:
@@ -24,6 +24,7 @@ private:
     ~LivingActivityCoordinator();
     struct State;
     std::unique_ptr<State> state;
+    void RefreshPermission(uint32_t guid, uint64_t actorEpoch);
 };
 #define sLivingActivityCoordinator LivingActivityCoordinator::instance()
 #endif

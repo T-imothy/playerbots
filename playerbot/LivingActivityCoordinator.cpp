@@ -6,6 +6,9 @@
 #include "LivingActivityCodec.h"
 #include "LivingActivityMailbox.h"
 #include "LivingActivityAuthority.h"
+#include "LivingActivityPermissions.h"
+#include "LivingActivityScope.h"
+#include "LivingActivityNativeContext.h"
 #include "PlayerbotRendezvousManager.h"
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -23,6 +26,16 @@
 
 using namespace LivingActivity;
 namespace {
+    uint32_t NativeSafety(Player* bot) {
+        uint32_t safety = 0;
+        if (!bot->IsAlive()) safety |= uint32_t(Safety::Death);
+        if (bot->IsInCombat()) safety |= uint32_t(Safety::Combat);
+        if (!bot->IsInWorld() || bot->IsBeingTeleported()) safety |= uint32_t(Safety::Transfer);
+        if (bot->IsTaxiFlying()) safety |= uint32_t(Safety::Taxi);
+        if (bot->GetTransport()) safety |= uint32_t(Safety::Transport);
+        if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_FALLING | MOVEFLAG_FALLINGFAR)) safety |= uint32_t(Safety::Falling);
+        return safety;
+    }
     uint64_t NowMs() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -82,12 +95,17 @@ namespace {
 
 struct LivingActivityCoordinator::State {
     ExecutionAuthority authority; // Only world-thread methods may access this book.
+    const std::string boot = NewId();
+    struct Binding { uint64_t actorEpoch = 0; PermissionPublisher publisher; };
+    std::map<uint32_t, Binding> bindings;
     struct ActionObservation {
         uint32_t actor;
         uint64_t actorEpoch, mapEpoch;
         Effects effects;
         std::string action;
         bool worldThread = false;
+        AuthorityCode check = AuthorityCode::NoOwner;
+        std::string scope = "unscoped";
     };
     struct ActionCount { uint64_t count = 0; uint32_t exampleActor = 0; };
     BoundedMailbox<ActionObservation> actionInbox{2048};
@@ -96,6 +114,7 @@ struct LivingActivityCoordinator::State {
     std::atomic<bool> worldThreadReady{false};
     std::map<std::string, ActionCount> actionCounts;
     uint64_t observedActions = 0, unknownActions = 0, actionCardinalityRejected = 0;
+    uint64_t nativeViewsPublished = 0, staleActorObservations = 0;
     Mode effective = Mode::Off;
     std::string desired = "off", blocker = "not_enabled", loadCursor;
     uint64_t policyRevision = 0, epoch = 0, nextPolicy = 0, nextWork = 0, nextLog = 0;
@@ -142,12 +161,12 @@ struct LivingActivityCoordinator::State {
                 boost::property_tree::ptree p; boost::property_tree::read_json(input, p);
                 desired = p.get<std::string>("mode", "off"); revision = p.get<uint64_t>("policyRevision", 0);
                 if (p.get<unsigned>("schemaVersion", 0) != 1 || !revision) throw std::invalid_argument("version");
-                // Stage 2 cannot accidentally become an executor through config.
+                // Diagnostics cannot accidentally become an executor through config.
                 bool execution = false;
                 for (const char* flag : {"activityOwnership", "serviceExecution", "resourceClaims", "operationJournal", "socialOutbox"})
                     execution |= p.get<bool>(std::string("features.") + flag, false);
                 if (desired != "off" && desired != "observe" && desired != "active") throw std::invalid_argument("mode");
-                if (desired == "active" || execution) why = "execution_not_implemented_stage2";
+                if (desired == "active" || execution) why = "execution_cutover_not_accepted";
                 else if (desired == "observe" && p.get<bool>("features.durableTasks", false)) {
                     batch = p.get<unsigned>("limits.persistenceBatch", 32);
                     loadBatch = p.get<unsigned>("limits.loadBatch", 64);
@@ -176,10 +195,9 @@ struct LivingActivityCoordinator::State {
         auto plan = TaskWrite(task, expected, NewId(), code);
         pending.push_back({std::move(task), std::move(plan)});
     }
-    void Flush() {
+    void Flush(std::chrono::steady_clock::time_point deadline) {
         const unsigned maximum = std::min<unsigned>(batch, pending.size());
         if (!maximum || !CharacterDatabase.BeginTransaction()) return;
-        const auto started = std::chrono::steady_clock::now();
         unsigned count = 0;
         std::string query;
         for (; count < maximum;) {
@@ -187,7 +205,7 @@ struct LivingActivityCoordinator::State {
             if (!query.empty()) query += " UNION ALL ";
             query += pending[count].plan.receiptQuery;
             ++count;
-            if (std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(2)) break;
+            if (std::chrono::steady_clock::now() >= deadline) break;
         }
         // One ordered native DB transaction followed by its receipt query. No
         // synchronous DB query or extra worker on the world thread.
@@ -266,8 +284,7 @@ struct LivingActivityCoordinator::State {
             if (importFamily == 0 && count == 0) nextWork = NowMs() + 60000;
         }, query.c_str())) { ioPending = false; nextWork = NowMs() + 5000; }
     }
-    void DecodeIncoming() {
-        const auto started = std::chrono::steady_clock::now();
+    void DecodeIncoming(std::chrono::steady_clock::time_point deadline) {
         do {
             if (cache.size() + quarantined.size() + pending.size() >= maxCache) {
                 blocker = "task_cache_backpressure"; nextWork = NowMs() + 60000; return;
@@ -318,7 +335,7 @@ struct LivingActivityCoordinator::State {
                 Queue(std::move(task), 0, "legacy_observed");
             }
             incoming.pop_front();
-        } while (!incoming.empty() && std::chrono::steady_clock::now() - started < std::chrono::milliseconds(2));
+        } while (!incoming.empty() && std::chrono::steady_clock::now() < deadline);
     }
 };
 
@@ -346,11 +363,13 @@ void LivingActivityCoordinator::Update() {
     const uint64_t now = NowMs();
     state->Policy(now);
     for (const auto& observation : state->actionInbox.Drain(16)) {
+        if (observation.actorEpoch) RefreshPermission(observation.actor, observation.actorEpoch);
         ++state->observedActions;
         if (!observation.effects.classified) ++state->unknownActions;
         const std::string key = std::to_string(observation.effects.mask) + ':' +
             std::to_string(static_cast<unsigned>(observation.effects.lane)) + ':' +
-            (observation.worldThread ? "world:" : "map:") + observation.action;
+            (observation.worldThread ? "world:" : "map:") + observation.action + ':' +
+            Name(observation.check) + ':' + observation.scope;
         const auto found = state->actionCounts.find(key);
         if (found == state->actionCounts.end() && state->actionCounts.size() >= 256) {
             ++state->actionCardinalityRejected; continue;
@@ -361,6 +380,8 @@ void LivingActivityCoordinator::Update() {
         state->nextLog = now + 60000;
         sLog.outString("Living activity shadow: %s", StatusJson().c_str());
     }
+    const auto deadline = started + std::chrono::milliseconds(2);
+    if (std::chrono::steady_clock::now() >= deadline) return;
     ObservationQueue queues;
     queues.enabled = state->effective != Mode::Off; queues.ioPending = state->ioPending;
     queues.due = now >= state->nextWork; queues.schemaReady = state->schemaReady; queues.loaded = state->loaded;
@@ -369,14 +390,14 @@ void LivingActivityCoordinator::Update() {
     const auto work = NextObservationWork(queues);
     if (work == ObservationWork::Wait) return;
     if (work == ObservationWork::Decode) {
-        try { state->DecodeIncoming(); }
+        try { state->DecodeIncoming(deadline); }
         catch (const std::exception&) { state->QuarantineIncoming("invalid_source_record"); state->nextWork = now + 1000; }
         return;
     }
     state->nextWork = now + 1000;
     switch (work) {
         case ObservationWork::Probe: state->Probe(); break;
-        case ObservationWork::Flush: state->Flush(); break;
+        case ObservationWork::Flush: state->Flush(deadline); break;
         case ObservationWork::Load: state->Load(); break;
         case ObservationWork::Import: state->Import(); break;
         case ObservationWork::HistoryPressure: state->blocker = "transition_outbox_backpressure"; break;
@@ -397,6 +418,9 @@ std::string LivingActivityCoordinator::StatusJson() const {
     p.put("observed_actions", state->observedActions); p.put("unknown_effect_actions", state->unknownActions);
     p.put("optional_action_observations_rejected", state->actionInbox.Rejected());
     p.put("action_cardinality_rejected", state->actionCardinalityRejected);
+    p.put("native_views_published", state->nativeViewsPublished);
+    p.put("stale_actor_observations", state->staleActorObservations);
+    p.put("execution_enforcement", false);
     boost::property_tree::ptree effects;
     for (const auto& entry : state->actionCounts) {
         boost::property_tree::ptree value; value.put("key", entry.first);
@@ -430,17 +454,58 @@ std::string LivingActivityCoordinator::ActorJson(uint32_t guid) const {
     return Json(p);
 }
 
-void LivingActivityCoordinator::ObserveAction(uint32_t guid, uint64_t actorEpoch, uint64_t mapEpoch,
-    const Effects& effects, const std::string& action) {
-    if (!state->observeEffects.load(std::memory_order_acquire) || !guid || !actorEpoch || !mapEpoch) return;
+void LivingActivityCoordinator::ObserveAction(PlayerbotAI& ai, const Effects& effects, const std::string& action) {
+    if (!state->observeEffects.load(std::memory_order_acquire)) return;
+    Player* bot = ai.GetBot();
+    const uint32_t guid = bot ? bot->GetGUIDLow() : 0;
+    const uint64_t actorEpoch = ai.GetActivityActorEpoch(), mapEpoch = ai.GetActivityMapEpoch();
+    if (!guid || !actorEpoch || !mapEpoch) return;
     // Fixed engine action identifiers only. Never include Event text, commands,
     // player names, model output, credentials or arbitrarily qualified strings.
-    std::string bounded = action;
+    std::string bounded = action.substr(0, action.find("::")); // Omit the qualifier, retain its fixed action family.
     if (bounded.empty() || bounded.size() > 64 || bounded.find_first_not_of(
         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-'") != std::string::npos)
         bounded = "dynamic_action_identifier";
+    AuthorityCode check = AuthorityCode::NoOwner;
+    if (const auto view = ai.activityPermissions.Inspect()) {
+        const auto current = ReadNativeContext(*bot, view->current.policyRevision, view->current.boot);
+        const uint64_t monotonic = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        check = ExecutionScope::Check(ai.activityPermissions, effects, current, monotonic, NativeSafety(bot));
+    }
     state->actionInbox.TryPush({guid, actorEpoch, mapEpoch, effects, std::move(bounded),
-        state->worldThreadReady.load(std::memory_order_acquire) && state->worldThread == std::this_thread::get_id()});
+        state->worldThreadReady.load(std::memory_order_acquire) && state->worldThread == std::this_thread::get_id(),
+        check, ExecutionScope::Origin(guid)});
+}
+
+void LivingActivityCoordinator::RefreshPermission(uint32_t guid, uint64_t actorEpoch) {
+    MANGOS_ASSERT(state->worldThread == std::this_thread::get_id());
+    Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
+    auto* ai = bot ? bot->GetPlayerbotAI() : nullptr;
+    if (!ai || ai->GetActivityActorEpoch() != actorEpoch) { ++state->staleActorObservations; return; }
+    auto binding = state->bindings.find(guid);
+    if (binding == state->bindings.end()) {
+        if (state->bindings.size() >= 20000) return;
+        binding = state->bindings.emplace(guid, State::Binding{}).first;
+    }
+    auto& entry = binding->second;
+    if (entry.actorEpoch != actorEpoch) {
+        entry.publisher.Revoke(); state->authority.Forget(guid);
+        entry.actorEpoch = actorEpoch;
+        ai->activityPermissions = entry.publisher.Reader();
+    }
+    const auto current = ReadNativeContext(*bot, state->policyRevision, state->boot);
+    if (!current.mapGeneration) { entry.publisher.Revoke(); state->authority.Forget(guid); return; }
+    const uint32_t safety = NativeSafety(bot);
+    const auto prior = ai->activityPermissions.Inspect();
+    if (prior && prior->current == current && prior->safety == safety) return;
+    const auto observed = state->authority.Observe(current, safety);
+    if (observed.code == AuthorityCode::InvalidRequest || observed.code == AuthorityCode::Capacity) {
+        entry.publisher.Revoke(); return;
+    }
+    entry.publisher.Publish(state->authority.Read(guid)); ++state->nativeViewsPublished;
+    // Stage 3 observation only: no task is admitted/acquired, and this view
+    // never grants or rejects the actual legacy native action. Cutover is gated.
 }
 
 void LivingActivityCoordinator::ObserveLeaseBoundary(uint32_t guid, LeaseBoundary boundary) {

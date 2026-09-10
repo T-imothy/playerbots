@@ -642,6 +642,15 @@ void RandomPlayerbotMgr::LogPlayerLocation()
     }
 }
 
+void RandomPlayerbotMgr::UpdateAI(uint32 elapsed)
+{
+    // The coordinator's due queues run once per native world update, not only
+    // when the population manager's independent login/update timer is due.
+    if (sPlayerbotAIConfig.randomBotAutologin && sPlayerbotAIConfig.enabled)
+        sLivingActivityCoordinator.Update();
+    PlayerbotHolder::UpdateAI(elapsed);
+}
+
 void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
     PlayerbotNpcInspector::Update();
@@ -653,7 +662,6 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     if (!sPlayerbotAIConfig.randomBotAutologin || !sPlayerbotAIConfig.enabled)
         return;
 
-    sLivingActivityCoordinator.Update();
     sPlayerbotChatDirector.Update();
 
 #ifdef GenerateBotTests

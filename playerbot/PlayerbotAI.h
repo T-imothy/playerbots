@@ -11,6 +11,7 @@
 #include "OutdoorRecoveryMemory.h"
 #include "PlayerTalentSpec.h"
 #include "LivingActivityEpoch.h"
+#include "LivingActivityPermissions.h"
 #include <stack>
 #include "strategy/IterateItemsMask.h"
 #include "RandomPlayerbotMgr.h"
@@ -420,6 +421,10 @@ public:
     void HandleCommands();
 private:
     LivingActivity::NativeEpoch activityEpoch;
+    friend class LivingActivityCoordinator;
+    // Assigned by the world coordinator between native map-worker updates.
+    // Workers receive no publisher or access to the mutable lease book.
+    LivingActivity::PermissionReader activityPermissions;
     void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
 public:    
     static std::string BotStateToString(BotState state);

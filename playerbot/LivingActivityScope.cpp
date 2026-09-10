@@ -11,14 +11,14 @@ namespace LivingActivity {
           permit(std::move(supplied)) { head = this; }
     ExecutionScope::~ExecutionScope() { assert(head == this); head = previous; }
     AuthorityCode ExecutionScope::Check(const PermissionReader& reader, const Effects& effects,
-        const WorldContext& current, uint64_t now) {
+        const WorldContext& current, uint64_t now, uint32_t nativeSafety) {
         // A nested other-actor or over-depth call must not fall through to an
         // outer actor's authority. Absence of scope is never managed permission.
         const auto* scope = head && head->actor == current.actor && head->depth <= 16 ? head : nullptr;
         return reader.Check(effects, current, now,
             scope && scope->task ? &*scope->task : nullptr,
             scope && scope->action ? &*scope->action : nullptr,
-            scope && scope->permit ? &*scope->permit : nullptr);
+            scope && scope->permit ? &*scope->permit : nullptr, nativeSafety);
     }
     std::string ExecutionScope::Origin(uint32_t actor) {
         if (!head || head->actor != actor || head->depth > 16) return "unscoped";
