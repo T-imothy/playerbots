@@ -594,10 +594,26 @@ static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandid
         }
         if (Group* invite = bot->GetGroupInvite())
         {
+            candidate.groupState.pendingInviteLeaderGuid = invite->GetLeaderGuid().GetCounter();
+            const bool requesterParty = invite->IsLeader(speaker->GetObjectGuid()) ||
+                (speaker->GetGroup() == invite && invite->IsAssistant(speaker->GetObjectGuid()));
+            const bool releasable = sPlayerbotSocialActionBroker.CanReleasePendingInvite(bot);
+            candidate.groupState.pendingInviteKind = requesterParty ? "requester_party" :
+                releasable ? "npc_party" : "other_party";
             std::ostringstream ref;
-            ref << "group:accept:" << invite->GetLeaderGuid().GetCounter();
-            AddSocialCapability(candidate, ref.str(), "accept_group_invite", 0, bot->GetGUIDLow(), 0,
-                "Accept the current pending party invitation.");
+            if (requesterParty)
+            {
+                ref << "group:accept:" << speaker->GetGUIDLow();
+                AddSocialCapability(candidate, ref.str(), "accept_group_invite", 0, bot->GetGUIDLow(), 0,
+                    "Accept the pending invitation to the requesting player's party.");
+            }
+            else if (releasable)
+            {
+                ref << "group:leave-ai-invite:" << invite->GetLeaderGuid().GetCounter() << ':'
+                    << invite->GetId() << ':' << bot->GetGUIDLow() << ':' << speaker->GetGUIDLow();
+                AddSocialCapability(candidate, ref.str(), "leave_ai_party_for_player", 0, bot->GetGUIDLow(), 0,
+                    "Clear an outstanding NPC-party invitation and stay available for the requesting human's invite.");
+            }
         }
         return;
     }
@@ -3183,6 +3199,8 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
              << ",\"is_assistant\":" << (candidate.groupState.isAssistant ? "true" : "false")
              << ",\"full\":" << (candidate.groupState.full ? "true" : "false")
              << ",\"pending_invite\":" << (candidate.groupState.pendingInvite ? "true" : "false")
+             << ",\"pending_invite_leader_guid\":" << candidate.groupState.pendingInviteLeaderGuid
+             << ",\"pending_invite_kind\":\"" << candidate.groupState.pendingInviteKind << "\""
              << ",\"human_members\":[";
         for (size_t humanIndex = 0; humanIndex < candidate.groupState.humanMembers.size(); ++humanIndex)
         {

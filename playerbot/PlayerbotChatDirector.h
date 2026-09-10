@@ -90,6 +90,8 @@ struct ChatDirectorGroupState
     bool isAssistant = false;
     bool full = false;
     bool pendingInvite = false;
+    uint32 pendingInviteLeaderGuid = 0;
+    std::string pendingInviteKind;
     std::vector<std::string> humanMembers;
 };
 

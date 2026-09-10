@@ -25,6 +25,7 @@ public:
     // reclaimed by bot-only grouping before that human can invite it.  The
     // reservation is intentionally short lived and is cleared on acceptance.
     uint32 ReservedForPlayer(uint32 botGuid);
+    bool CanReleasePendingInvite(Player* bot) const;
     void CompleteGroupReservation(uint32 botGuid, uint32 playerGuid);
     // Used while grounding chat capabilities so a leader can queue broader
     // personal free time behind an already-authorized maintenance trip.

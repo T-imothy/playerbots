@@ -128,6 +128,21 @@ static bool HasPetitionSignature(Player* bot, uint32 petitionGuid)
     return signature != nullptr;
 }
 
+bool PlayerbotSocialActionBroker::CanReleasePendingInvite(Player* bot) const
+{
+    Group* invite = bot ? bot->GetGroupInvite() : nullptr;
+    if (!bot || bot->GetGroup() || !invite || invite->IsBattleGroup())
+        return false;
+    Player* leader = sObjectAccessor.FindPlayer(invite->GetLeaderGuid());
+    if (!leader || leader->isRealPlayer() || !sRandomPlayerbotMgr.IsRandomBot(leader))
+        return false;
+    // Check persistent member slots too: an offline human still owns a seat.
+    for (const auto& member : invite->GetMemberSlots())
+        if (!sRandomPlayerbotMgr.IsRandomBot(member.guid.GetCounter()))
+            return false;
+    return true;
+}
+
 static bool LeaveAiOnlyParty(Player* bot, uint32 expectedGroupId)
 {
     Group* group = bot ? bot->GetGroup() : nullptr;
@@ -699,12 +714,14 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
     {
         Group* invite = bot->GetGroupInvite();
         uint32 leaderGuid = (uint32)std::stoul(match[1].str());
-        if (invite && invite->GetLeaderGuid().GetCounter() == leaderGuid)
+        if (invite && leaderGuid == player->GetGUIDLow() &&
+            (invite->IsLeader(player->GetObjectGuid()) ||
+                (player->GetGroup() == invite && invite->IsAssistant(player->GetObjectGuid()))))
         {
             Player* inviter = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, leaderGuid));
             WorldPacket packet;
             bot->GetSession()->HandleGroupAcceptOpcode(packet);
-            completed = bot->GetGroup() != nullptr;
+            completed = bot->GetGroup() && bot->GetGroup() == player->GetGroup();
             if (completed && inviter && inviter->isRealPlayer())
                 sPlayerbotRendezvousManager.RegisterPartyAssist(bot, inviter);
         }
@@ -736,6 +753,37 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             bot->GetSession()->HandleGroupDisbandOpcode(packet);
             completed = bot->GetGroup() == nullptr;
         }
+    }
+    else if (proposal.type == "leave_ai_party_for_player" &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(group:leave-ai-invite:([0-9]+):([0-9]+):([0-9]+):([0-9]+))")))
+    {
+        Group* invite = bot->GetGroupInvite();
+        if (CanReleasePendingInvite(bot) &&
+            invite->GetLeaderGuid().GetCounter() == (uint32)std::stoul(match[1].str()) &&
+            invite->GetId() == (uint32)std::stoul(match[2].str()) &&
+            bot->GetGUIDLow() == (uint32)std::stoul(match[3].str()) &&
+            player->GetGUIDLow() == (uint32)std::stoul(match[4].str()))
+        {
+            if (!invite->IsCreated() && invite->IsLeader(bot->GetObjectGuid()))
+            {
+                // Cancel our own unfinished party, including outgoing invites.
+                // It has no persisted members and is not registered in ObjectMgr.
+                invite->RemoveAllInvites();
+                delete invite;
+            }
+            else
+                bot->UninviteFromGroup();
+            // Native cleanup may destroy the group: never dereference it again.
+            completed = !bot->GetGroup() && !bot->GetGroupInvite();
+            if (completed)
+            {
+                ReserveForPlayer(bot->GetGUIDLow(), player->GetGUIDLow());
+                SendSocialWhisper(bot, player,
+                    "I cleared the pending bot-party invite. I'm free now; try inviting me again.");
+            }
+        }
+        if (!completed) action.failureReason = "pending invitation changed or is not NPC-only";
     }
     else if (proposal.type == "leave_ai_party_for_player" &&
         std::regex_match(proposal.capabilityRef, match,
