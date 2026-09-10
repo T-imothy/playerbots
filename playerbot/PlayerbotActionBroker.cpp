@@ -690,6 +690,26 @@ void PlayerbotActionBroker::CancelTrade(Player* bot, Player* trader, const std::
     sPlayerbotRendezvousManager.BeginDeparture(transaction->botGuid, transaction->playerGuid, reason);
 }
 
+void PlayerbotActionBroker::CancelTrade(Player* bot, const std::string& reason)
+{
+    if (!bot) return;
+    Transaction* transaction = nullptr;
+    for (auto& pair : transactions)
+        if (pair.second.botGuid == bot->GetGUIDLow() && pair.second.state != "completed" &&
+            pair.second.state != "cancelled" && pair.second.state != "expired" && pair.second.state != "failed")
+        {
+            transaction = &pair.second;
+            break;
+        }
+    if (!transaction) return;
+    transaction->state = "cancelled";
+    transaction->failureReason = reason;
+    reservedItems.erase(transaction->itemGuid);
+    if (transaction->type == "buy_item" || transaction->type == "accept_player_gift") reservedMoney[transaction->botGuid] -= std::min(reservedMoney[transaction->botGuid], transaction->priceCopper);
+    Report(*transaction);
+    sPlayerbotRendezvousManager.BeginDeparture(transaction->botGuid, transaction->playerGuid, reason);
+}
+
 void PlayerbotActionBroker::Update()
 {
     sPlayerbotRendezvousManager.Update();
@@ -854,14 +874,41 @@ void PlayerbotActionBroker::Update()
             WorldPacket packet(CMSG_INITIATE_TRADE);
             packet << player->GetObjectGuid();
             bot->GetSession()->HandleInitiateTradeOpcode(packet);
+            transaction.lastTradeAttempt = now;
+            ++transaction.tradeOpenAttempts;
             Report(transaction);
             if (bot->GetTradeData() && bot->GetTrader() == player)
                 PopulateTrade(bot, player);
         }
         if (transaction.state == "offered" && bot->GetTradeData() && bot->GetTrader() == player)
             PopulateTrade(bot, player);
-        if ((transaction.state == "offered" || transaction.state == "trading") && bot->GetTrader() == player)
-            bot->GetPlayerbotAI()->StopMoving();
+        if (transaction.state == "offered" || transaction.state == "trading")
+        {
+            // Arrival is not transaction completion. Keep the bot parked even
+            // if CMaNGOS briefly clears Trader/TradeData while the client opens
+            // or closes the window; otherwise ordinary quest AI can carry the
+            // bot away while the broker still owns a live transaction.
+            if (!bot->IsInCombat() && bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
+                bot->GetPlayerbotAI()->StopMoving();
+
+            bool liveWindow = bot->GetTrader() == player && bot->GetTradeData() && player->GetTradeData();
+            bool retryDue = transaction.lastTradeAttempt.time_since_epoch().count() == 0 ||
+                std::chrono::duration_cast<std::chrono::seconds>(now - transaction.lastTradeAttempt).count() >= 3;
+            if (!liveWindow && !bot->IsInCombat() && !player->IsInCombat() &&
+                bot->IsWithinDistInMap(player, INTERACTION_DISTANCE) && retryDue &&
+                transaction.tradeOpenAttempts < 3)
+            {
+                transaction.state = "offered";
+                WorldPacket packet(CMSG_INITIATE_TRADE);
+                packet << player->GetObjectGuid();
+                bot->GetSession()->HandleInitiateTradeOpcode(packet);
+                transaction.lastTradeAttempt = now;
+                ++transaction.tradeOpenAttempts;
+                Report(transaction);
+                if (bot->GetTradeData() && bot->GetTrader() == player)
+                    PopulateTrade(bot, player);
+            }
+        }
         if ((transaction.state == "mail_travel" || transaction.state == "meeting" || transaction.state == "offered" || transaction.state == "trading") && now >= transaction.expires)
         {
             transaction.state = "expired";

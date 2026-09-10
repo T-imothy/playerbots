@@ -48,6 +48,7 @@ public:
     bool ValidateTrade(Player* bot, Player* trader);
     void CompleteTrade(Player* bot, Player* trader);
     void CancelTrade(Player* bot, Player* trader, const std::string& reason);
+    void CancelTrade(Player* bot, const std::string& reason);
     void Update();
     void ReportRejected(const ChatDirectorActionProposal& proposal, const ChatDirectorEvent& event,
         const std::string& reason) const;
@@ -84,6 +85,8 @@ private:
         std::chrono::steady_clock::time_point expires;
         std::chrono::steady_clock::time_point preparingSince;
         std::chrono::steady_clock::time_point lastMeetingMove;
+        std::chrono::steady_clock::time_point lastTradeAttempt;
+        uint32 tradeOpenAttempts = 0;
     };
 
     Transaction* Find(uint32 botGuid, uint32 playerGuid);

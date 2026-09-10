@@ -16,10 +16,25 @@ using namespace ai;
 bool TradeStatusAction::Execute(Event& event)
 {
     Player* trader = bot->GetTrader();
-    Player* master = GetMaster();
-    if (!trader)
-        return false;
+    WorldPacket p(event.getPacket());
+    p.rpos(0);
+    uint32 status;
+    p >> status;
 
+    // CMaNGOS can clear Player::trader before Playerbots receives the close
+    // notification. Preserve the broker outcome even when that pointer is
+    // already gone, so reservations and rendezvous state do not remain stuck.
+    if (!trader)
+    {
+        if (status == TRADE_STATUS_TRADE_CANCELED || status == TRADE_STATUS_TRADE_REJECTED ||
+            status == TRADE_STATUS_CLOSE_WINDOW || status == TRADE_STATUS_TARGET_TO_FAR ||
+            status == TRADE_STATUS_YOU_DEAD || status == TRADE_STATUS_TARGET_DEAD ||
+            status == TRADE_STATUS_YOU_LOGOUT || status == TRADE_STATUS_TARGET_LOGOUT)
+            sPlayerbotActionBroker.CancelTrade(bot, "trade cancelled by participant or game state");
+        return false;
+    }
+
+    Player* master = GetMaster();
     bool shouldTrade = true;
     bool brokerTrade = sPlayerbotActionBroker.Authorizes(bot, trader);
     if (!trader->GetPlayerbotAI())
@@ -39,11 +54,6 @@ bool TradeStatusAction::Execute(Event& event)
         bot->GetSession()->HandleCancelTradeOpcode(p);
         return false;
     }
-
-    WorldPacket p(event.getPacket());
-    p.rpos(0);
-    uint32 status;
-    p >> status;
 
     if (brokerTrade && (status == TRADE_STATUS_TRADE_CANCELED || status == TRADE_STATUS_TRADE_REJECTED ||
         status == TRADE_STATUS_CLOSE_WINDOW || status == TRADE_STATUS_TARGET_TO_FAR ||

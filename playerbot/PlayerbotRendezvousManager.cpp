@@ -237,6 +237,25 @@ void PlayerbotRendezvousManager::Update()
                 session.stateSince = now;
             }
         }
+        else if (session.state == "arrived")
+        {
+            if (!player || !player->IsInWorld() || player->GetMapId() != bot->GetMapId())
+            {
+                session.state = "departing"; session.reason = "player_unavailable"; session.stateSince = now;
+            }
+            else if (!bot->IsInCombat() && !bot->IsWithinDistInMap(player, INTERACTION_DISTANCE))
+            {
+                // The trade has not completed merely because the bot reached
+                // the player. Recover from incidental movement instead of
+                // silently abandoning the still-authorized transaction.
+                session.state = "approaching";
+                session.stateSince = now;
+                bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
+                LogEvent(session, "arrival_distance_recovered");
+            }
+            else if (!bot->IsInCombat())
+                bot->GetPlayerbotAI()->StopMoving();
+        }
         else if (session.state == "departing")
         {
             long elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - session.stateSince).count();
