@@ -86,6 +86,14 @@ namespace ai
         virtual bool isAllowed() const override;
     };
 
+    class RequestQuestTurninTargetAction : public RequestTravelTargetAction {
+    public:
+        RequestQuestTurninTargetAction(PlayerbotAI* ai, std::string name = "request quest turnin target") : RequestTravelTargetAction(ai, name) {}
+    private:
+        virtual bool Execute(Event& event) override;
+        virtual bool isAllowed() const override { return true; }
+    };
+
     class FocusTravelTargetAction : public ChatCommandAction {
     public:
         FocusTravelTargetAction(PlayerbotAI* ai, std::string name = "focus travel target") : ChatCommandAction(ai, name) {}

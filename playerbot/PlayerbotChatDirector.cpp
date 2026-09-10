@@ -985,27 +985,54 @@ void PlayerbotChatDirector::MaybeCreateProactiveGroupEvent(std::chrono::steady_c
     }
 }
 
-static bool HasCompletedQuest(Player* bot)
+struct ProgressionQuestSnapshot
 {
-    for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
-    {
-        uint32 questId = bot->GetQuestSlotQuestId(slot);
-        if (questId && bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
-            return true;
-    }
-    return false;
-}
+    uint32 active = 0;
+    std::set<uint32> completed;
+    std::string signature;
+    std::string objectiveJson;
+};
 
-static void CountProgressionQuests(Player* bot, uint32& active, uint32& completed)
+static ProgressionQuestSnapshot GetProgressionQuestSnapshot(Player* bot)
 {
-    active = completed = 0;
+    ProgressionQuestSnapshot snapshot;
+    std::ostringstream signature;
+    std::ostringstream objectives;
+    bool firstQuest = true;
+    objectives << '{';
+    QuestStatusMap const& statusMap = bot->getQuestStatusMap();
     for (uint16 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
     {
         uint32 questId = bot->GetQuestSlotQuestId(slot);
         if (!questId) continue;
-        ++active;
-        if (bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE) ++completed;
+        ++snapshot.active;
+        QuestStatus status = bot->GetQuestStatus(questId);
+        if (status == QUEST_STATUS_COMPLETE) snapshot.completed.insert(questId);
+        signature << questId << ':' << (uint32)status;
+        QuestStatusMap::const_iterator progress = statusMap.find(questId);
+        if (progress == statusMap.end()) continue;
+        if (!firstQuest) objectives << ',';
+        firstQuest = false;
+        objectives << '\"' << questId << "\":{\"items\":[";
+        for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT; ++i)
+        {
+            if (i) objectives << ',';
+            objectives << progress->second.m_itemcount[i];
+            signature << ":i" << (uint32)i << '=' << progress->second.m_itemcount[i];
+        }
+        objectives << "],\"targets\":[";
+        for (uint8 i = 0; i < QUEST_OBJECTIVES_COUNT; ++i)
+        {
+            if (i) objectives << ',';
+            objectives << progress->second.m_creatureOrGOcount[i];
+            signature << ":t" << (uint32)i << '=' << progress->second.m_creatureOrGOcount[i];
+        }
+        objectives << "]}";
     }
+    objectives << '}';
+    snapshot.signature = signature.str();
+    snapshot.objectiveJson = objectives.str();
+    return snapshot;
 }
 
 void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time_point now)
@@ -1021,6 +1048,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         if (!bot || !bot->GetPlayerbotAI() || !bot->IsInWorld())
             continue;
         BotHealthState& state = botHealth[guid];
+        if (state.lastMeaningfulProgress.time_since_epoch().count() == 0)
+            state.lastMeaningfulProgress = now;
         bool levelChanged = state.lastLevel != 0 && state.lastLevel != bot->GetLevel();
         uint32 currentXp = bot->GetUInt32Value(PLAYER_XP);
         bool xpChanged = state.lastXp != 0 && state.lastXp != currentXp;
@@ -1034,7 +1063,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         }
         float dx = bot->GetPositionX() - state.x;
         float dy = bot->GetPositionY() - state.y;
-        if (dx * dx + dy * dy >= 1.0f)
+        bool movedThisSample = dx * dx + dy * dy >= 1.0f;
+        if (movedThisSample)
         {
             state.x = bot->GetPositionX();
             state.y = bot->GetPositionY();
@@ -1051,11 +1081,14 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             sPlayerbotRendezvousManager.Request(bot, humanMaster,
                 "group-follow-" + std::to_string(bot->GetGUIDLow()), false);
         }
-        bool completedQuest = HasCompletedQuest(bot);
-        if (completedQuest && state.completedQuestSince.time_since_epoch().count() == 0)
-            state.completedQuestSince = now;
-        if (!completedQuest)
-            state.completedQuestSince = std::chrono::steady_clock::time_point();
+        ProgressionQuestSnapshot questSnapshot = GetProgressionQuestSnapshot(bot);
+        bool questProgressChanged = !state.questProgressSignature.empty() &&
+            state.questProgressSignature != questSnapshot.signature;
+        state.questProgressSignature = questSnapshot.signature;
+        for (uint32 questId : questSnapshot.completed)
+            if (!state.completedQuestSince.count(questId)) state.completedQuestSince[questId] = now;
+        for (auto it = state.completedQuestSince.begin(); it != state.completedQuestSince.end();)
+            if (!questSnapshot.completed.count(it->first)) it = state.completedQuestSince.erase(it); else ++it;
         MovementFlags movementFlags = bot->m_movementInfo.GetMovementFlags();
         bool playerStay = lowered.find("stay") != std::string::npos || lowered.find("wait") != std::string::npos;
         bool airborne = movementFlags & (MOVEFLAG_FALLING | MOVEFLAG_FALLINGFAR | MOVEFLAG_FLYING |
@@ -1064,10 +1097,25 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             bot->IsNonMeleeSpellCasted(false) || bot->GetTransport() || playerStay || airborne;
         bool expectsMovement = lowered.find("move") != std::string::npos || lowered.find("travel") != std::string::npos ||
             lowered.find("quest") != std::string::npos || lowered.find("rpg") != std::string::npos;
+        if (levelChanged || xpChanged || questProgressChanged || (movedThisSample && expectsMovement))
+            state.lastMeaningfulProgress = now;
         long stillSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMoved).count();
-        long completeSeconds = completedQuest ? std::chrono::duration_cast<std::chrono::seconds>(now - state.completedQuestSince).count() : 0;
-        bool movementStalled = expectsMovement && stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
-        bool questStalled = completedQuest && completeSeconds >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds;
+        long progressSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMeaningfulProgress).count();
+        uint32 stalledQuestId = 0;
+        long oldestCompleteSeconds = 0;
+        for (const auto& complete : state.completedQuestSince)
+        {
+            long age = std::chrono::duration_cast<std::chrono::seconds>(now - complete.second).count();
+            if (age > oldestCompleteSeconds) oldestCompleteSeconds = age;
+            if (!stalledQuestId && age >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds) stalledQuestId = complete.first;
+        }
+        bool noActions = lowered.find("no actions executed") != std::string::npos;
+        bool movementStalled = expectsMovement && noActions &&
+            stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds &&
+            progressSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
+        bool questStalled = stalledQuestId && noActions &&
+            stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds &&
+            progressSeconds >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds;
         uint8 bagUsed = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
         bool inventoryBlocked = bagUsed >= 95;
         bool suspected = !excluded && (movementStalled || questStalled);
@@ -1107,8 +1155,11 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 else if (questStalled && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 3)
                 {
                     bot->GetPlayerbotAI()->DoSpecificAction("reset travel target", Event("living progression turnin recovery"), true);
-                    recovered = bot->GetPlayerbotAI()->DoSpecificAction("choose travel target", Event("living progression turnin recovery"), true);
-                    recovery = recovered ? "quest_turnin_route_selected" : "quest_turnin_route_unavailable";
+                    recovered = bot->GetPlayerbotAI()->DoSpecificAction(
+                        "request quest turnin target::" + std::to_string(stalledQuestId),
+                        Event("living progression turnin recovery"), true);
+                    recovery = recovered ? "quest_turnin_route_requested" : "quest_turnin_route_unavailable";
+                    state.recoveryQuestId = stalledQuestId;
                     state.recoveryStep = 3;
                 }
                 else if (sPlayerbotAIConfig.chatDirectorQuestInteraction &&
@@ -1132,7 +1183,6 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 if (recovered)
                 {
                     state.lastMoved = now;
-                    state.completedQuestSince = completedQuest ? now : std::chrono::steady_clock::time_point();
                     classification = "recovering";
                     suspected = false;
                 }
@@ -1153,8 +1203,6 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         bool heightFault = heightCandidate && std::chrono::duration_cast<std::chrono::seconds>(now - state.heightFaultSince).count() >= 3;
 
         uint32 areaId = sServerFacade.GetAreaId(bot);
-        uint32 activeQuests = 0, completedQuests = 0;
-        CountProgressionQuests(bot, activeQuests, completedQuests);
         std::string pathStatus = movementStalled ? "movement_blocked" : (expectsMovement ? "route_ready" : "not_applicable");
         std::string zoneName, subzoneName;
         if (AreaTableEntry const* zone = GetAreaEntryByAreaID(bot->GetZoneId())) zoneName = zone->area_name[0];
@@ -1164,22 +1212,32 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << "\",\"level\":" << (uint32)bot->GetLevel() << ",\"level_changed\":" << (levelChanged ? "true" : "false")
              << ",\"xp\":" << currentXp << ",\"xp_changed\":" << (xpChanged ? "true" : "false")
              << ",\"played_seconds\":" << bot->GetTotalPlayedTime()
-             << ",\"active_quests\":" << activeQuests << ",\"completed_turn_ins\":" << completedQuests
-             << ",\"bag_used_percent\":" << (uint32)bagUsed << ",\"objective_counters\":{}"
+             << ",\"active_quests\":" << questSnapshot.active << ",\"completed_turn_ins\":" << questSnapshot.completed.size()
+             << ",\"completed_quest_ids\":[";
+        bool firstCompleted = true;
+        for (uint32 questId : questSnapshot.completed)
+        {
+            if (!firstCompleted) json << ',';
+            firstCompleted = false;
+            json << questId;
+        }
+        json << "],\"bag_used_percent\":" << (uint32)bagUsed << ",\"objective_counters\":" << questSnapshot.objectiveJson
              << ",\"classification\":\"" << classification << "\",\"suspected_stuck\":" << (suspected ? "true" : "false")
              << ",\"current_action\":\"" << PlayerbotLLMInterface::SanitizeForJson(action)
-             << "\",\"quest_state\":\"" << (completedQuest ? "completed_quest_pending" : "none_completed")
+             << "\",\"quest_state\":\"" << (!questSnapshot.completed.empty() ? "completed_quest_pending" : "none_completed")
              << "\",\"path_status\":\"" << pathStatus << "\",\"zone_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(zoneName)
              << "\",\"subzone_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(subzoneName)
              << "\",\"x\":" << bot->GetPositionX() << ",\"y\":" << bot->GetPositionY()
              << ",\"server_z\":" << bot->GetPositionZ() << ",\"terrain_z\":" << (validTerrain ? terrainZ : bot->GetPositionZ())
              << ",\"mmap_z\":null,\"height_offset\":" << offset << ",\"height_fault\":" << (heightFault ? "true" : "false")
              << ",\"movement_flags\":" << movementFlags
-             << ",\"last_movement_seconds\":" << stillSeconds << ",\"last_progress_seconds\":" << completeSeconds
+             << ",\"last_movement_seconds\":" << stillSeconds << ",\"last_progress_seconds\":" << progressSeconds
+             << ",\"oldest_completed_quest_seconds\":" << oldestCompleteSeconds
              << ",\"recovery_mode\":" << sPlayerbotAIConfig.chatDirectorBotRecoveryMode
              << ",\"recovery_result\":\"" << PlayerbotLLMInterface::SanitizeForJson(state.recoveryResult) << "\""
              << ",\"recoveries_last_hour\":" << state.recoveryAttempts.size()
              << ",\"recovery_step\":" << state.recoveryStep
+             << ",\"recovery_target_quest_id\":" << state.recoveryQuestId
              << ",\"grouped\":" << (bot->GetGroup() ? "true" : "false") << "}";
         samples.push_back(json.str());
     }

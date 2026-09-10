@@ -5,6 +5,7 @@
 #include <future>
 #include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -187,13 +188,16 @@ private:
         float x = 0.0f;
         float y = 0.0f;
         std::chrono::steady_clock::time_point lastMoved;
-        std::chrono::steady_clock::time_point completedQuestSince;
+        std::chrono::steady_clock::time_point lastMeaningfulProgress;
+        std::map<uint32, std::chrono::steady_clock::time_point> completedQuestSince;
         std::chrono::steady_clock::time_point heightFaultSince;
         std::chrono::steady_clock::time_point lastRecovery;
         std::vector<std::chrono::steady_clock::time_point> recoveryAttempts;
         std::string recoveryResult;
         uint8 lastLevel = 0;
         uint32 lastXp = 0;
+        std::string questProgressSignature;
+        uint32 recoveryQuestId = 0;
         uint32 recoveryStep = 0;
     };
 

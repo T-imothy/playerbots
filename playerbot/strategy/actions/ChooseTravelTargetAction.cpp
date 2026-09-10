@@ -1489,6 +1489,30 @@ bool RequestQuestTravelTargetAction::isAllowed() const
     return false;
 }
 
+bool RequestQuestTurninTargetAction::Execute(Event& event)
+{
+    uint32 questId = (uint32)atoi(getQualifier().c_str());
+    Quest const* quest = questId ? sObjectMgr.GetQuestTemplate(questId) : nullptr;
+    if (!quest || bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE || !bot->CanRewardQuest(quest, false))
+        return false;
+
+    WorldPosition center(bot);
+    float range = 1000 + (bot->GetLevel() * bot->GetLevel()) * 75;
+    *AI_VALUE(FutureDestinations*, "future travel destinations") = std::async(std::launch::async,
+        [partitions = travelPartitions, travelInfo = PlayerTravelInfo(bot), center, questId, range]()
+        {
+            return sTravelMgr.GetPartitions(center, partitions, travelInfo,
+                (uint32)TravelDestinationPurpose::QuestTaker, { (int32)questId }, true,
+                range);
+        });
+
+    AI_VALUE(TravelTarget*, "travel target")->SetStatus(TravelStatus::TRAVEL_STATUS_PREPARE);
+    SET_AI_VALUE2(std::string, "manual string", "future travel purpose", "quest-turnin-" + std::to_string(questId));
+    SET_AI_VALUE2(std::string, "manual string", "future travel condition", event.getSource());
+    SET_AI_VALUE2(int, "manual int", "future travel relevance", relevance * 100);
+    return true;
+}
+
 bool FocusTravelTargetAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
