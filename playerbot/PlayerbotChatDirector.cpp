@@ -1976,6 +1976,39 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     }
                 }
             }
+            else if (terminalStep == 7 && !groupHasRealPlayer && !botOnlyGroupFollower)
+            {
+                // Some starter-area and exhausted objective partitions have
+                // no valid grind destination. A failed async grind lookup used
+                // to enter the long failure backoff at the exact same point,
+                // leaving the bot stationary until the next recovery window.
+                // Make one ordinary nearby movement attempt before backing off;
+                // this grants no XP, item, quest credit, or teleport and lets
+                // the normal target/quest strategies re-evaluate from a fresh
+                // navigation point.
+                bool nearbyHuman = false;
+                const std::list<ObjectGuid>& nearbyPlayers = bot->GetPlayerbotAI()->GetAiObjectContext()->
+                    GetValue<std::list<ObjectGuid> >("nearest non bot players")->Get();
+                for (ObjectGuid const& nearbyGuid : nearbyPlayers)
+                {
+                    Player* nearby = sObjectAccessor.FindPlayer(nearbyGuid);
+                    if (nearby && nearby->GetMapId() == bot->GetMapId() &&
+                        bot->GetDistance(nearby) <= 60.0f)
+                    {
+                        nearbyHuman = true;
+                        break;
+                    }
+                }
+                if (nearbyHuman)
+                    state.nearbyRerouteResult = "empty_grind_skipped_human_nearby";
+                else
+                {
+                    bool nudged = bot->GetPlayerbotAI()->DoSpecificAction(
+                        "move random", Event("living progression empty grind reroute"), true);
+                    state.nearbyRerouteResult = nudged ?
+                        "empty_grind_nearby_requested" : "empty_grind_nearby_rejected";
+                }
+            }
             state.recoveryResult = terminalResult +
                 (terminalCleared ? "_cleared" : "_clear_rejected");
             if (alternateGoalRequested)
