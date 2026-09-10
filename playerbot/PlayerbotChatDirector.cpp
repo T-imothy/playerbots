@@ -1131,6 +1131,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         long stillSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMoved).count();
         long progressSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMeaningfulProgress).count();
         uint32 stalledQuestId = 0;
+        std::vector<uint32> stalledQuestIds;
         long oldestCompleteSeconds = 0;
         for (const auto& complete : state.completedQuestSince)
         {
@@ -1141,9 +1142,13 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             // other valid turn-ins behind its lower numeric ID. Keep it in the
             // authoritative pending set for later diagnosis, but recover the
             // oldest quest the core can actually reward now.
-            if (!stalledQuestId && age >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds &&
+            if (age >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds &&
                 quest && bot->CanRewardQuest(quest, false))
-                stalledQuestId = complete.first;
+            {
+                stalledQuestIds.push_back(complete.first);
+                if (!stalledQuestId)
+                    stalledQuestId = complete.first;
+            }
         }
         bool noActions = lowered.find("no actions executed") != std::string::npos;
         // A bot carrying a completed quest gets a short grace period for the
@@ -1215,9 +1220,17 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     // Reset returns false when there is no active target. That
                     // is already a clean starting state, so still request the
                     // exact authoritative quest taker.
-                    recovered = bot->GetPlayerbotAI()->DoSpecificAction(
-                        "request quest turnin target::" + std::to_string(stalledQuestId),
-                        Event("can move around"), true);
+                    recovered = false;
+                    for (uint32 candidateQuestId : stalledQuestIds)
+                    {
+                        if (!bot->GetPlayerbotAI()->DoSpecificAction(
+                            "request quest turnin target::" + std::to_string(candidateQuestId),
+                            Event("can move around"), true))
+                            continue;
+                        stalledQuestId = candidateQuestId;
+                        recovered = true;
+                        break;
+                    }
                     recovery = recovered ? "quest_turnin_route_requested" :
                         (reset ? "quest_turnin_request_rejected" : "quest_turnin_request_rejected_no_prior_target");
                     state.recoveryQuestId = stalledQuestId;
