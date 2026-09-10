@@ -783,6 +783,10 @@ static void PopulateGrounding(Player* bot, Player* speaker, const std::string& m
         !bot->IsInCombat())
     {
         uint8 bagUsage = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get();
+        AddSocialCapability(candidate,
+            "bags:report:" + std::to_string(bot->GetGUIDLow()) + ':' + std::to_string(speaker->GetGUIDLow()),
+            "report_bag_state", bot->GetGroup()->GetId(), bot->GetGUIDLow(), 0,
+            "Report authoritative inventory usage of " + std::to_string((uint32)bagUsage) + " percent.");
         if (bagUsage > 80)
         {
             ChatDirectorCapability capability;
@@ -1923,13 +1927,21 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
     else if (choices.size() > 12)
         choices.resize(12);
 
+    Player* conversationSpeaker = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, event.speakerGuid));
+    uint32 partyId = conversationSpeaker && conversationSpeaker->GetGroup() ?
+        conversationSpeaker->GetGroup()->GetId() : 0;
+    std::string partySessionId = partyId ? "party:" + std::to_string(partyId) : "";
+
     std::ostringstream json;
     json << "{\"event_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.eventId) << "\",";
-    json << "\"contract_version\":3,\"message_raw\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.message) << "\",";
+    json << "\"contract_version\":4,\"message_raw\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.message) << "\",";
     json << "\"event_type\":\"" << (event.ambient ? "ambient" : "message") << "\",";
-    json << "\"bridge_capabilities\":{\"reply_channel\":true,\"negotiated_price\":true,\"economic_capabilities\":1},";
+    json << "\"bridge_capabilities\":{\"reply_channel\":true,\"negotiated_price\":true,\"economic_capabilities\":1,"
+         << "\"capability_planner\":1,\"stable_party_session\":true,\"typed_action_outcomes\":true},";
+    json << "\"party_session_id\":\"" << partySessionId << "\",";
     json << "\"channel\":{\"type\":\"" << event.channelType << "\",\"name\":\""
-         << PlayerbotLLMInterface::SanitizeForJson(event.channelName) << "\",\"zone\":" << event.zone << "},";
+         << PlayerbotLLMInterface::SanitizeForJson(event.channelName) << "\",\"zone\":" << event.zone
+         << ",\"id\":\"" << partySessionId << "\",\"party_session_id\":\"" << partySessionId << "\"},";
     json << "\"faction\":\"" << (event.team == ALLIANCE ? "alliance" : "horde") << "\",";
     json << "\"speaker\":{\"guid\":" << event.speakerGuid << ",\"name\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.speakerName)
          << "\",\"kind\":\"" << (event.ambient ? "system" : "player") << "\",\"level\":" << (uint32)event.speakerLevel
@@ -2002,13 +2014,35 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
         }
         json << "]"
              << ",\"inCombat\":" << (candidate.inCombat ? "true" : "false")
-             << ",\"available\":" << (candidate.available ? "true" : "false") << ",\"action_capabilities\":[";
+             << ",\"available\":" << (candidate.available ? "true" : "false");
+        uint32 stateRevision = candidate.groupState.groupId ^ (candidate.groupState.leaderGuid << 1) ^
+            (candidate.groupState.memberCount << 24) ^ (candidate.inCombat ? 0x40000000 : 0) ^
+            (uint32)candidate.actionCapabilities.size();
+        json << ",\"state_revision\":" << stateRevision << ",\"action_capabilities\":[";
         bool firstCapability = true;
         for (const ChatDirectorCapability& capability : candidate.actionCapabilities)
         {
             if (!firstCapability) json << ',';
             firstCapability = false;
-            json << "{\"capability_ref\":\"" << capability.capabilityRef << "\",\"type\":\"" << capability.type
+            std::string family;
+            if (capability.type == "report_bag_state" || capability.type == "vendor_bags" ||
+                capability.type == "offer_vendor_trip" || capability.type == "repair" ||
+                capability.type == "bank_items" || capability.type == "retrieve_mail") family = "vendorInventory";
+            else if (capability.type == "meet_player" || capability.type == "travel_to_party" ||
+                capability.type == "return_to_activity" || capability.type == "resume_party_assist") family = "travel";
+            else if (capability.type.find("group") != std::string::npos || capability.type == "pass_leadership" ||
+                capability.type == "set_party_role" || capability.type == "clear_party_role" ||
+                capability.type == "set_puller" || capability.type == "hold_attacks" ||
+                capability.type == "resume_assist") family = "grouping";
+            else if (capability.type.find("quest") != std::string::npos) family = "quests";
+            std::string confirmation = (capability.type == "leave_group" ||
+                capability.type == "leave_ai_party_for_player") ? "explicit_confirmation" : "low_risk";
+            json << "{\"capability_ref\":\"" << capability.capabilityRef << "\",\"ref\":\""
+                 << capability.capabilityRef << "\",\"type\":\"" << capability.type
+                 << "\",\"family\":\"" << family << "\",\"confirmation_class\":\"" << confirmation
+                 << "\",\"actor_guid\":" << (capability.actorGuid ? capability.actorGuid : candidate.guid)
+                 << ",\"target_guid\":" << event.speakerGuid << ",\"party_session_id\":\"" << partySessionId
+                 << "\",\"state_revision\":" << stateRevision << ",\"expires_seconds\":90"
                  << "\",\"item_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(capability.itemName)
                  << "\",\"item_kind\":\"" << capability.itemKind
                  << "\",\"item_usage\":\"" << capability.itemUsage
@@ -2044,8 +2078,12 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
             json << "]}";
         }
         Player* candidateBot = sRandomPlayerbotMgr.GetPlayerBot(candidate.guid);
-        Player* conversationSpeaker = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, event.speakerGuid));
-        json << "],\"party_combat_state\":"
+        uint32 bagUsage = candidateBot && candidateBot->GetPlayerbotAI() ?
+            candidateBot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<uint8>("bag space")->Get() : 0;
+        json << "],\"facts\":{\"bag_usage_percent\":" << bagUsage
+             << ",\"safe_for_travel\":" << (!candidate.inCombat ? "true" : "false")
+             << ",\"current_activity\":\"" << PlayerbotLLMInterface::SanitizeForJson(candidate.currentActivity)
+             << "\"},\"party_combat_state\":"
              << (candidateBot ? sPlayerbotPartyCombatCoordinator.GetCandidateJson(candidateBot, conversationSpeaker) : "null")
              << "}";
     }

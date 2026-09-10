@@ -517,10 +517,13 @@ void PlayerbotSocialActionBroker::Report(const Action& action) const
 {
     Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
     Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
+    uint32 currentGroupId = player && player->GetGroup() ? player->GetGroup()->GetId() : action.groupId;
+    std::string partySessionId = currentGroupId ? "party:" + std::to_string(currentGroupId) : "";
     std::ostringstream body;
     body << "{\"transaction_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(action.actionId)
          << "\",\"event_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(action.eventId)
          << "\",\"proposal_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(action.proposalId)
+         << "\",\"party_session_id\":\"" << partySessionId
          << "\",\"bot_guid\":" << action.botGuid << ",\"bot_name\":\""
          << PlayerbotLLMInterface::SanitizeForJson(bot ? bot->GetName() : "") << "\",\"player_guid\":" << action.playerGuid
          << ",\"player_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(player ? player->GetName() : "")
