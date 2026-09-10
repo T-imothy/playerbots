@@ -4171,7 +4171,21 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
             << ",\"maximum_members\":5,\"tank_slots\":" << (eventType == "dungeon" ? 1 : 0)
             << ",\"healer_slots\":" << (eventType == "dungeon" ? 1 : 0)
             << ",\"damage_slots\":" << (eventType == "dungeon" ? 3 : 0)
-            << ",\"failure_reason\":\"" << rejection << "\"}]}";
+            << ",\"failure_reason\":\"" << rejection << "\"}";
+        for (uint32 memberGuid : committedRosterGuids)
+        {
+            Player* member = sRandomPlayerbotMgr.GetPlayerBot(memberGuid);
+            std::string memberName;
+            sObjectMgr.GetPlayerNameByGUID(ObjectGuid(HIGHGUID_PLAYER, memberGuid), memberName);
+            const char* role = member && PlayerbotAI::IsTank(member, false) ? "tank" :
+                member && PlayerbotAI::IsHeal(member, false) ? "healer" : "damage";
+            telemetry << ",{\"event_id\":\"rsvp-" << eventId << '-' << memberGuid
+                << "\",\"type\":\"guild_rsvp\",\"guild_event_id\":\"" << eventId
+                << "\",\"guild_id\":" << guildId << ",\"character_guid\":" << memberGuid
+                << ",\"character_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(memberName)
+                << "\",\"response\":\"accepted\",\"role\":\"" << role << "\",\"human\":false}";
+        }
+        telemetry << "]}";
         const std::string body = telemetry.str();
         std::thread([body]()
         {
