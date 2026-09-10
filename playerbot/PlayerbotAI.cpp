@@ -234,7 +234,9 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
     masterOutgoingPacketHandlers.AddHandler(MSG_RAID_READY_CHECK_FINISHED, "ready check finished");
 #endif
 
-    if (!HasRealPlayerMaster() && bot->GetFreeTalentPoints() > 0)
+    // Talent maintenance is safe for both autonomous and human-led bots. A
+    // bot joining a human party must not retain unspent points indefinitely.
+    if (bot->GetFreeTalentPoints() > 0)
     {
         DoSpecificAction("auto talents");
     }

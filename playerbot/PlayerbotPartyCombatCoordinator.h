@@ -155,6 +155,7 @@ namespace ai
         void RefreshMarkers(Group* group, GroupState& state) const;
         void SendSnapshot(Group* group, GroupState& state) const;
         void SendAddon(Player* source, Player* target, const std::string& payload) const;
+        std::string ApplyRoleTalents(Player* member, LivingPartyRole role) const;
         LivingPartyRoleState InferRole(Player* member, const GroupState& state) const;
         bool HasShield(Player* member) const;
         bool HasHealingSpell(Player* member) const;

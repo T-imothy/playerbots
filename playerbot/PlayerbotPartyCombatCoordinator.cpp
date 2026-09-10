@@ -4,6 +4,8 @@
 #include "playerbot/strategy/values/LootValues.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/strategy/Action.h"
+#include "playerbot/strategy/actions/ChangeTalentsAction.h"
+#include "playerbot/RandomPlayerbotMgr.h"
 
 #include "Chat/Chat.h"
 #include "Entities/Player.h"
@@ -22,6 +24,8 @@ using namespace ai;
 
 namespace
 {
+    const int32 kPersistentSpecSeconds = 10 * 365 * 24 * 60 * 60;
+
     bool ReadBool(const std::string& json, const char* name, bool fallback)
     {
         const std::string needle = std::string("\"") + name + "\"";
@@ -185,10 +189,36 @@ void PlayerbotPartyCombatCoordinator::RefreshRoles(Group* group, GroupState& sta
 {
     state.roles.clear(); state.tank.Clear(); state.healer.Clear();
     Group::MemberSlotList const& slots = group->GetMemberSlots();
+    uint32 onlineMembers = 0;
+    uint32 lockedHealers = 0;
     for (Group::MemberSlotList::const_iterator i = slots.begin(); i != slots.end(); ++i)
         if (Player* p = sObjectAccessor.FindPlayer(i->guid))
         {
-            LivingPartyRoleState role = InferRole(p, state); state.roles[p->GetObjectGuid()] = role;
+            LivingPartyRoleState role = InferRole(p, state);
+            state.roles[p->GetObjectGuid()] = role;
+            ++onlineMembers;
+            if (role.primary == LivingPartyRole::Healer && role.locked) ++lockedHealers;
+        }
+
+    // Automatic composition uses one healer per five members. Additional
+    // healer-capable characters remain damage/support unless the leader
+    // explicitly assigns another healer.
+    const uint32 desiredHealers = std::max<uint32>(1, (onlineMembers + 4) / 5);
+    uint32 automaticHealers = desiredHealers > lockedHealers ? desiredHealers - lockedHealers : 0;
+    for (Group::MemberSlotList::const_iterator i = slots.begin(); i != slots.end(); ++i)
+        if (Player* p = sObjectAccessor.FindPlayer(i->guid))
+        {
+            LivingPartyRoleState& role = state.roles[p->GetObjectGuid()];
+            if (role.primary == LivingPartyRole::Healer && !role.locked)
+            {
+                if (automaticHealers) --automaticHealers;
+                else
+                {
+                    role.primary = LivingPartyRole::Damage;
+                    role.secondary = LivingPartyRole::Healer;
+                    role.source = role.source == "talents" ? "talent_support" : "ability_support";
+                }
+            }
             if (role.primary == LivingPartyRole::Tank && state.tank.IsEmpty()) state.tank = p->GetObjectGuid();
             if (role.primary == LivingPartyRole::Healer && state.healer.IsEmpty()) state.healer = p->GetObjectGuid();
         }
@@ -196,6 +226,38 @@ void PlayerbotPartyCombatCoordinator::RefreshRoles(Group* group, GroupState& sta
     if (state.puller.IsEmpty() || !FindMember(group, state.puller)) state.puller = state.tank;
     state.humanLeader = IsRealPlayer(sObjectAccessor.FindPlayer(group->GetLeaderGuid()));
     ++state.revision;
+}
+
+std::string PlayerbotPartyCombatCoordinator::ApplyRoleTalents(Player* member, LivingPartyRole role) const
+{
+    if (!member || !member->GetPlayerbotAI()) return "completed";
+    if (role == LivingPartyRole::Auto || member->GetLevel() < 10) return "completed";
+    if (member->IsInCombat() || !member->IsAlive() || member->IsTaxiFlying() || member->InBattleGround() ||
+        (member->GetMap() && member->GetMap()->IsDungeon()))
+        return "respec_unsafe_now";
+
+    BotRoles desired = role == LivingPartyRole::Tank ? BOT_ROLE_TANK :
+        role == LivingPartyRole::Healer ? BOT_ROLE_HEALER : BOT_ROLE_DPS;
+    if (!ChangeTalentsAction::HasPremadeRole(member->getClass(), desired))
+        return "role_not_supported_by_class";
+
+    // A leader role assignment is an explicit party-scoped preference. Clear
+    // the old path before selecting so AutoSelectTalents cannot continue a
+    // contradictory build, and reset at no cost as bots do not use trainers.
+    sRandomPlayerbotMgr.SetValue(member->GetGUIDLow(), "specNo", 0, "", kPersistentSpecSeconds);
+    sRandomPlayerbotMgr.SetValue(member->GetGUIDLow(), "specLink", 0, "", kPersistentSpecSeconds);
+    member->resetTalents(true);
+    std::ostringstream details;
+    ChangeTalentsAction::AutoSelectTalents(member, &details, desired);
+    member->GetPlayerbotAI()->DoSpecificAction("auto learn spell");
+
+    const uint32 freePoints = member->GetFreeTalentPoints();
+    const uint32 totalPoints = member->CalculateTalentsPoints();
+    const std::string specName = ChangeTalentsAction::GetPremadeSpecName(member);
+    sLog.outString("Living WoW role respec bot=%u name=%s role=%s spec=%s used=%u free=%u",
+        member->GetGUIDLow(), member->GetName(), RoleName(role), specName.c_str(),
+        totalPoints >= freePoints ? totalPoints - freePoints : 0, freePoints);
+    return freePoints == 0 ? "completed" : "talent_assignment_incomplete";
 }
 
 bool PlayerbotPartyCombatCoordinator::IsApprovedTarget(const GroupState& state, Unit* target) const
@@ -517,7 +579,34 @@ bool PlayerbotPartyCombatCoordinator::HandleAddonMessage(Player* receiverBot, Pl
     else if (f[1] == "ASSIST") { state->hold = false; ++state->revision; }
     else if (f[1] == "ROLE" && f.size() >= 4)
     {
-        if (Player* member = FindMember(sender->GetGroup(), f[2])) { LivingPartyRole role = f[3] == "tank" ? LivingPartyRole::Tank : f[3] == "healer" ? LivingPartyRole::Healer : f[3] == "damage" ? LivingPartyRole::Damage : LivingPartyRole::Auto; if (role == LivingPartyRole::Auto) state->overrides.erase(member->GetObjectGuid()); else state->overrides[member->GetObjectGuid()] = role; RefreshRoles(sender->GetGroup(), *state); }
+        if (Player* member = FindMember(sender->GetGroup(), f[2]))
+        {
+            // PARTY addon messages fan out to every bot. A bot target handles
+            // its own role; a human target is handled by the lowest-guid bot.
+            Player* executor = member->GetPlayerbotAI() ? member : NULL;
+            if (!executor)
+            {
+                Group::MemberSlotList const& slots = sender->GetGroup()->GetMemberSlots();
+                for (Group::MemberSlotList::const_iterator i = slots.begin(); i != slots.end(); ++i)
+                    if (Player* candidate = sObjectAccessor.FindPlayer(i->guid))
+                        if (candidate->GetPlayerbotAI() && (!executor || candidate->GetObjectGuid() < executor->GetObjectGuid()))
+                            executor = candidate;
+            }
+            if (executor != receiverBot) return true;
+
+            LivingPartyRole role = f[3] == "tank" ? LivingPartyRole::Tank :
+                f[3] == "healer" ? LivingPartyRole::Healer :
+                f[3] == "damage" ? LivingPartyRole::Damage : LivingPartyRole::Auto;
+            std::string outcome = ApplyRoleTalents(member, role);
+            if (outcome != "completed")
+            {
+                SendAddon(receiverBot, sender, "LWOWP1\tE\t" + outcome);
+                return true;
+            }
+            if (role == LivingPartyRole::Auto) state->overrides.erase(member->GetObjectGuid());
+            else state->overrides[member->GetObjectGuid()] = role;
+            RefreshRoles(sender->GetGroup(), *state);
+        }
     }
     SendSnapshot(receiverBot->GetGroup(), *state); return true;
 }
@@ -570,7 +659,14 @@ std::string PlayerbotPartyCombatCoordinator::ExecuteProposal(Player* bot, Player
         uint32 guid = second == std::string::npos ? 0 : std::strtoul(capabilityRef.c_str() + second + 1, NULL, 10);
         Player* p = FindMember(bot->GetGroup(), ObjectGuid(HIGHGUID_PLAYER, guid)); if (!p) return "member_not_found";
         if (type == "clear_party_role") state->overrides.erase(p->GetObjectGuid());
-        else { std::string named = third == std::string::npos ? "damage" : capabilityRef.substr(third + 1); LivingPartyRole role = named == "tank" ? LivingPartyRole::Tank : named == "healer" ? LivingPartyRole::Healer : LivingPartyRole::Damage; state->overrides[p->GetObjectGuid()] = role; }
+        else
+        {
+            std::string named = third == std::string::npos ? "damage" : capabilityRef.substr(third + 1);
+            LivingPartyRole role = named == "tank" ? LivingPartyRole::Tank : named == "healer" ? LivingPartyRole::Healer : LivingPartyRole::Damage;
+            std::string outcome = ApplyRoleTalents(p, role);
+            if (outcome != "completed") return outcome;
+            state->overrides[p->GetObjectGuid()] = role;
+        }
         RefreshRoles(bot->GetGroup(), *state);
     }
     ++state->revision; return "completed";

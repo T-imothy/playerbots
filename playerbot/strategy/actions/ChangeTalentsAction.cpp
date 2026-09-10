@@ -176,6 +176,20 @@ std::vector<TalentPath*> ChangeTalentsAction::getPremadePaths(uint8 cls, std::st
     return ret;
 }
 
+bool ChangeTalentsAction::HasPremadeRole(uint8 cls, BotRoles role)
+{
+    return !getPremadePaths(cls, "", role).empty();
+}
+
+std::string ChangeTalentsAction::GetPremadeSpecName(Player* bot)
+{
+    if (!bot) return "";
+    uint32 specNo = sRandomPlayerbotMgr.GetValue(bot->GetGUIDLow(), "specNo");
+    if (!specNo) return "";
+    TalentPath* path = getPremadePath(bot->getClass(), (int)specNo - 1);
+    return path ? path->name : "";
+}
+
 std::vector<TalentPath*> ChangeTalentsAction::getPremadePaths(Player* bot, TalentSpec* oldSpec)
 {
     std::vector<TalentPath*> ret;
@@ -371,11 +385,12 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
         }
     }
 
-    sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specNo", specId + 1);
+    const int32 persistentSpecSeconds = 10 * 365 * 24 * 60 * 60;
+    sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specNo", specId + 1, "", persistentSpecSeconds);
     if (!specLink.empty() && specId == -1)
-        sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 1, specLink);
+        sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 1, specLink, persistentSpecSeconds);
     else
-        sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 0);
+        sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specLink", 0, "", persistentSpecSeconds);
 
     return (specNo == 0) ? false : true;
 }
