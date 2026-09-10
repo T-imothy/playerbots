@@ -14,6 +14,9 @@ namespace ai
     {
     public:
         MovementAction(PlayerbotAI* ai, std::string name) : Action(ai, name) {}
+        LivingActivity::Effects GetActivityEffects() const override {
+            return {LivingActivity::Mask(LivingActivity::Effect::Movement), LivingActivity::Lane::Managed, true};
+        }
 
         static bool MinimalMove(PlayerbotAI* ai);
         static bool UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition dockPosition, WorldPosition exitPosition, bool doTeleport);

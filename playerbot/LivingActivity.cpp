@@ -67,9 +67,10 @@ namespace LivingActivity
             std::numeric_limits<uint64_t>::max() : prior + delta;
     }
     bool WorldContext::operator==(const WorldContext& other) const {
-        return std::tie(actor, policyRevision, map, instance, session, sessionRevision, boot) ==
+        return std::tie(actor, policyRevision, map, instance, session, sessionRevision, boot,
+                actorGeneration, mapGeneration) ==
             std::tie(other.actor, other.policyRevision, other.map, other.instance,
-                other.session, other.sessionRevision, other.boot);
+                other.session, other.sessionRevision, other.boot, other.actorGeneration, other.mapGeneration);
     }
     bool CanTransition(const Task& before, Phase after, const CompletionProof& proof) {
         if (Terminal(before.phase) || std::string(Name(after)) == "invalid") return false;
@@ -122,6 +123,7 @@ namespace LivingActivity
         task.checkpoint.blocker = "restart_revalidation_required";
         task.updatedAtMs = std::max(nowMs, task.updatedAtMs);
         task.context.boot.clear(); // Not an executable context until revalidated.
+        task.context.actorGeneration = task.context.mapGeneration = 0;
         if (task.ownerGeneration == std::numeric_limits<uint64_t>::max() ||
             task.revision >= std::numeric_limits<uint64_t>::max() - 1)
             throw std::overflow_error("Task generation requires operator reconciliation");

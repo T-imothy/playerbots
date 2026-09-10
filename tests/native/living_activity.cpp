@@ -79,6 +79,8 @@ int main() {
     auto changed = task.context; ++changed.sessionRevision; assert(!Fresh(task, action, changed));
     changed = task.context; ++changed.policyRevision; assert(!Fresh(task, action, changed));
     changed = task.context; ++changed.map; assert(!Fresh(task, action, changed));
+    changed = task.context; ++changed.mapGeneration; assert(!Fresh(task, action, changed));
+    changed = task.context; ++changed.actorGeneration; assert(!Fresh(task, action, changed));
     changed = task.context; changed.boot = Id; assert(!Fresh(task, action, changed));
     ++action.revision; assert(!Fresh(task, action, task.context));
     assert(SqlValue("a'\\b") == "X'61275c62'");

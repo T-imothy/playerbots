@@ -24,7 +24,7 @@ namespace LivingActivity
     };
     enum class Effect : uint32_t {
         Inspect = 0, Movement = 1, Group = 2, Inventory = 4, Money = 8,
-        Spell = 16, Equipment = 32, Guild = 64, Social = 128
+        Spell = 16, Equipment = 32, Guild = 64, Social = 128, TravelTarget = 256
     };
     enum class OperationState { Intent, Reconciling, Verified, Rejected };
 
@@ -45,6 +45,9 @@ namespace LivingActivity
         uint32_t map = 0, instance = 0;
         std::string session;
         uint64_t sessionRevision = 0;
+        // Ephemeral native lifecycle epochs, not resumable DB authority. Map
+        // IDs alone cannot distinguish leaving and returning to the same map.
+        uint64_t actorGeneration = 0, mapGeneration = 0;
         // Never persisted as a resumable authority. A new boot invalidates all
         // outstanding worker proposals and execution contexts from the old boot.
         std::string boot;

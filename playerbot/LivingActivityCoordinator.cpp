@@ -4,6 +4,8 @@
 #include "LivingActivity.h"
 #include "LivingActivityAdmission.h"
 #include "LivingActivityCodec.h"
+#include "LivingActivityMailbox.h"
+#include "LivingActivityAuthority.h"
 #include "PlayerbotRendezvousManager.h"
 #include <boost/property_tree/json_parser.hpp>
 #include <boost/property_tree/ptree.hpp>
@@ -78,6 +80,18 @@ namespace {
 }
 
 struct LivingActivityCoordinator::State {
+    ExecutionAuthority authority; // Only world-thread methods may access this book.
+    struct ActionObservation {
+        uint32_t actor;
+        uint64_t actorEpoch, mapEpoch;
+        Effects effects;
+        std::string action;
+    };
+    struct ActionCount { uint64_t count = 0; uint32_t exampleActor = 0; };
+    BoundedMailbox<ActionObservation> actionInbox{2048};
+    std::atomic<bool> observeEffects{false};
+    std::map<std::string, ActionCount> actionCounts;
+    uint64_t observedActions = 0, unknownActions = 0, actionCardinalityRejected = 0;
     Mode effective = Mode::Off;
     std::string desired = "off", blocker = "not_enabled", loadCursor;
     uint64_t policyRevision = 0, epoch = 0, nextPolicy = 0, nextWork = 0, nextLog = 0;
@@ -117,6 +131,7 @@ struct LivingActivityCoordinator::State {
         if (now < nextPolicy) return;
         nextPolicy = now + 60000;
         Mode next = Mode::Off; std::string why = "not_enabled"; uint64_t revision = 0;
+        bool nextObserveEffects = false;
         try {
             std::ifstream input("/srv/living-wow/config/activities.json");
             if (input) {
@@ -136,12 +151,14 @@ struct LivingActivityCoordinator::State {
                     if (!batch || batch > 32 || !loadBatch || loadBatch > 64 || maxCache < 64 || maxCache > 20000)
                         throw std::invalid_argument("limits");
                     next = Mode::Observe; why.clear();
+                    nextObserveEffects = p.get<bool>("features.effectObservation", false);
                 }
             } else desired = "off";
         } catch (const std::exception&) { why = "invalid_activity_configuration"; }
         // Do not invalidate a committed journal acknowledgement on config reload.
         // Its receipts still matter, but no gameplay action is ever dispatched here.
         effective = next; policyRevision = revision;
+        observeEffects.store(nextObserveEffects, std::memory_order_release);
         if (effective == Mode::Off) blocker = why;
         else if (!schemaReady) blocker = "schema_verification_pending";
     }
@@ -319,6 +336,17 @@ void LivingActivityCoordinator::Update() {
     } measure{*state, started};
     const uint64_t now = NowMs();
     state->Policy(now);
+    for (const auto& observation : state->actionInbox.Drain(16)) {
+        ++state->observedActions;
+        if (!observation.effects.classified) ++state->unknownActions;
+        const std::string key = std::to_string(observation.effects.mask) + ':' +
+            std::to_string(static_cast<unsigned>(observation.effects.lane)) + ':' + observation.action;
+        const auto found = state->actionCounts.find(key);
+        if (found == state->actionCounts.end() && state->actionCounts.size() >= 256) {
+            ++state->actionCardinalityRejected; continue;
+        }
+        auto& count = state->actionCounts[key]; ++count.count; count.exampleActor = observation.actor;
+    }
     if (now >= state->nextLog && state->desired != "off") {
         state->nextLog = now + 60000;
         sLog.outString("Living activity shadow: %s", StatusJson().c_str());
@@ -356,6 +384,16 @@ std::string LivingActivityCoordinator::StatusJson() const {
     p.put("pending_decode", state->incoming.size()); p.put("maximum_dispatch_us", state->maximumDispatchUs);
     p.put("over_budget_updates", state->overBudgetUpdates); p.put("next_import_family", state->importFamily);
     p.put("invalid_records", state->invalidRecords); p.put("gameplay_mutations", 0);
+    p.put("observed_actions", state->observedActions); p.put("unknown_effect_actions", state->unknownActions);
+    p.put("optional_action_observations_rejected", state->actionInbox.Rejected());
+    p.put("action_cardinality_rejected", state->actionCardinalityRejected);
+    boost::property_tree::ptree effects;
+    for (const auto& entry : state->actionCounts) {
+        boost::property_tree::ptree value; value.put("key", entry.first);
+        value.put("count", entry.second.count); value.put("example_actor", entry.second.exampleActor);
+        effects.push_back({"", value});
+    }
+    p.add_child("action_effects", effects);
     p.put("quarantined_records", state->quarantined.size());
     if (!state->quarantined.empty()) {
         p.put("quarantined_task", state->quarantined.begin()->first);
@@ -380,4 +418,16 @@ std::string LivingActivityCoordinator::ActorJson(uint32_t guid) const {
         p.put("updated_at_ms", task.updatedAtMs); p.put("due_at_ms", task.dueAtMs); p.put("retry_at_ms", task.retryAtMs);
     }
     return Json(p);
+}
+
+void LivingActivityCoordinator::ObserveAction(uint32_t guid, uint64_t actorEpoch, uint64_t mapEpoch,
+    const Effects& effects, const std::string& action) {
+    if (!state->observeEffects.load(std::memory_order_acquire) || !guid || !actorEpoch || !mapEpoch) return;
+    // Fixed engine action identifiers only. Never include Event text, commands,
+    // player names, model output, credentials or arbitrarily qualified strings.
+    std::string bounded = action;
+    if (bounded.empty() || bounded.size() > 64 || bounded.find_first_not_of(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 _-'") != std::string::npos)
+        bounded = "dynamic_action_identifier";
+    state->actionInbox.TryPush({guid, actorEpoch, mapEpoch, effects, std::move(bounded)});
 }

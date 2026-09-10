@@ -9,6 +9,9 @@ namespace ai
     class ChooseRpgTargetAction : public Action {
     public:
         ChooseRpgTargetAction(PlayerbotAI* ai, std::string name = "choose rpg target") : Action(ai, name) {}
+        LivingActivity::Effects GetActivityEffects() const override {
+            return {LivingActivity::Mask(LivingActivity::Effect::TravelTarget), LivingActivity::Lane::Managed, true};
+        }
 
         virtual bool Execute(Event& event);
         virtual bool isUseful();

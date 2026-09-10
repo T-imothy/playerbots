@@ -10,6 +10,7 @@
 #include "BotState.h"
 #include "OutdoorRecoveryMemory.h"
 #include "PlayerTalentSpec.h"
+#include "LivingActivityEpoch.h"
 #include <stack>
 #include "strategy/IterateItemsMask.h"
 #include "RandomPlayerbotMgr.h"
@@ -409,10 +410,16 @@ public:
 	PlayerbotAI(Player* bot);
 	virtual ~PlayerbotAI();
 
+    uint64 GetActivityActorEpoch() const { return activityEpoch.Actor(); }
+    uint64 GetActivityMapEpoch() const { return activityEpoch.Map(); }
+    // Native core hook. Revokes old asynchronous proposals, not commitments.
+    void InvalidateActivityWorld() { activityEpoch.Invalidate(); }
+
     virtual void UpdateAI(uint32 elapsed, bool minimal = false);
 
     void HandleCommands();
 private:
+    LivingActivity::NativeEpoch activityEpoch;
     void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
 public:    
     static std::string BotStateToString(BotState state);

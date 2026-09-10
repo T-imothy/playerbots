@@ -12,6 +12,9 @@ namespace ai
     class ChooseTravelTargetAction : public Action {
     public:
         ChooseTravelTargetAction(PlayerbotAI* ai, std::string name = "choose travel target") : Action(ai, name) {}
+        LivingActivity::Effects GetActivityEffects() const override {
+            return {LivingActivity::Mask(LivingActivity::Effect::TravelTarget), LivingActivity::Lane::Managed, true};
+        }
 
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
@@ -71,6 +74,9 @@ namespace ai
     class RequestTravelTargetAction : public Action, public Qualified {
     public:
         RequestTravelTargetAction(PlayerbotAI* ai, std::string name = "request travel target") : Action(ai, name), Qualified() {}
+        LivingActivity::Effects GetActivityEffects() const override {
+            return {LivingActivity::Mask(LivingActivity::Effect::TravelTarget), LivingActivity::Lane::Managed, true};
+        }
     private:
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;

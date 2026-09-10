@@ -10,6 +10,7 @@
 #include "playerbot/PlayerbotGuildSupplies.h"
 #include "playerbot/PlayerbotOrganicEconomy.h"
 #include "playerbot/PlayerbotRendezvousManager.h"
+#include "playerbot/LivingActivityCoordinator.h"
 
 #ifdef BUILD_ELUNA
 #include "LuaEngine/LuaEngine.h"
@@ -693,6 +694,8 @@ Action* Engine::InitializeAction(ActionNode* actionNode)
 
 bool Engine::ListenAndExecute(Action* action, Event& event)
 {
+    sLivingActivityCoordinator.ObserveAction(ai->GetBot()->GetGUIDLow(), ai->GetActivityActorEpoch(),
+        ai->GetActivityMapEpoch(), action->GetActivityEffects(), action->getName());
     if(state==BotState::BOT_STATE_NON_COMBAT &&
         !sPlayerbotOrganicEconomy.AllowsServiceAction(ai->GetBot()->GetGUIDLow(),action->getName())) return false;
     if(state==BotState::BOT_STATE_NON_COMBAT &&

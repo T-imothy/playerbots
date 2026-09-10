@@ -4,6 +4,7 @@
 #include "AiObject.h"
 #include "AiObject.h"
 #include "playerbot/PlayerbotAIConfig.h"
+#include "playerbot/LivingActivityEffects.h"
 
 class Unit;
 
@@ -65,6 +66,9 @@ namespace ai
 
     public:
         virtual bool Execute(Event& event) { return true; }
+        // Unknown is explicit, not an implicit claim to be read-only. Concrete
+        // actions and shared native bases declare effects without name deny lists.
+        virtual LivingActivity::Effects GetActivityEffects() const { return {}; }
         virtual bool isPossible() { return true; }
         virtual bool isUseful() { return true; }
         virtual bool isUsefulWhenStunned() { return false; }

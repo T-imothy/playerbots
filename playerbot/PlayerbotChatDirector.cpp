@@ -1664,8 +1664,10 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
     for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
     {
         Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
-        if (!bot || !bot->GetPlayerbotAI() || !bot->IsInWorld())
+        if (!bot || !bot->GetPlayerbotAI() || !bot->IsInWorld() || bot->IsBeingTeleported())
             continue;
+        const LivingActivity::NativeWorldStamp healthWorld{bot->GetMapId(), bot->GetInstanceId(),
+            bot->GetPlayerbotAI()->GetActivityActorEpoch(), bot->GetPlayerbotAI()->GetActivityMapEpoch()};
         const bool recoveryCanary = std::find(sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.begin(),
             sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.end(), guid) !=
             sPlayerbotAIConfig.chatDirectorRecoveryCanaryBotGuids.end();
@@ -2470,6 +2472,11 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 recoveryMoveResult = "movement_impossible";
         }
 
+        // A recovery action above may begin a map transfer (including transport
+        // travel). The initial IsInWorld check is no longer valid afterwards.
+        // Preserve the task/recovery state and sample after native reattachment.
+        if (!LivingActivity::SameNativeWorld(*bot, healthWorld))
+            continue;
         float terrainZ = bot->GetMap()->GetHeight(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ() + 2.0f);
         bool validTerrain = terrainZ > -100000.0f;
         float offset = validTerrain ? bot->GetPositionZ() - terrainZ : 0.0f;
