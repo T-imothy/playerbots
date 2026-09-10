@@ -8,6 +8,7 @@
 #include "Globals/ObjectMgr.h"
 #include "Database/DatabaseEnv.h"
 #include "PlayerbotAI.h"
+#include "PlayerbotNpcInspector.h"
 #include "Entities/Player.h"
 #include "playerbot/AiFactory.h"
 #include "PlayerbotCommandServer.h"
@@ -642,6 +643,7 @@ void RandomPlayerbotMgr::LogPlayerLocation()
 
 void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
+    PlayerbotNpcInspector::Update();
 #ifdef MEMORY_MONITOR
     sMemoryMonitor.Print();
     sMemoryMonitor.LogCount(sConfig.GetStringDefault("LogsDir") + "/" + "memory.csv");
