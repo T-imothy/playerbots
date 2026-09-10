@@ -26,8 +26,40 @@ bool PlayerbotSocialActionBroker::Supports(const std::string& type) const
     return sPlayerbotAIConfig.chatDirectorSocialActions && (type == "create_group_and_invite" || type == "invite_to_existing_group" ||
         type == "request_leader_invite" || type == "accept_group_invite" ||
         type == "pass_leadership" || type == "leave_group" ||
+        type == "leave_ai_party_for_player" ||
         type == "share_quest" || type == "accept_party_quest_plan" || type == "meet_player" ||
         type == "vendor_bags");
+}
+
+static bool GroupHasRealHuman(Group* group)
+{
+    if (!group) return false;
+    for (GroupReference* reference = group->GetFirstMember(); reference; reference = reference->next())
+    {
+        Player* member = reference->getSource();
+        if (member && member->IsInWorld() && member->isRealPlayer())
+            return true;
+    }
+    return false;
+}
+
+static bool LeaveAiOnlyParty(Player* bot, uint32 expectedGroupId)
+{
+    Group* group = bot ? bot->GetGroup() : nullptr;
+    if (!bot || !group || group->GetId() != expectedGroupId || GroupHasRealHuman(group) ||
+        bot->IsInCombat() || bot->GetMap()->IsDungeon() || bot->InBattleGround() ||
+        bot->IsTaxiFlying() || bot->GetTransport())
+        return false;
+
+    WorldPacket packet;
+    packet << uint32(PARTY_OP_LEAVE) << bot->GetName() << uint32(0);
+    bot->GetSession()->HandleGroupDisbandOpcode(packet);
+    if (bot->GetGroup())
+        return false;
+    bot->GetPlayerbotAI()->SetMaster(nullptr);
+    bot->GetPlayerbotAI()->ResetStrategies();
+    bot->GetPlayerbotAI()->Reset();
+    return true;
 }
 
 bool PlayerbotSocialActionBroker::ValidateCommon(Player* bot, Player* player) const
@@ -141,7 +173,7 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
     action.playerGuid = proposal.targetGuid;
     action.state = "preparing";
     action.expires = std::chrono::steady_clock::now() + std::chrono::seconds(
-        proposal.type == "vendor_bags" ? 300 : 90);
+        proposal.type == "vendor_bags" ? 300 : proposal.type == "leave_ai_party_for_player" ? 180 : 90);
 
     std::smatch match;
     bool completed = false;
@@ -204,6 +236,32 @@ bool PlayerbotSocialActionBroker::Create(const ChatDirectorActionProposal& propo
             bot->GetSession()->HandleGroupDisbandOpcode(packet);
             completed = bot->GetGroup() == nullptr;
         }
+    }
+    else if (proposal.type == "leave_ai_party_for_player" &&
+        std::regex_match(proposal.capabilityRef, match,
+            std::regex(R"(group:leave-ai-for-player:([0-9]+):([0-9]+))")) &&
+        (uint32)std::stoul(match[2].str()) == player->GetGUIDLow())
+    {
+        uint32 groupId = (uint32)std::stoul(match[1].str());
+        action.groupId = groupId;
+        Group* group = bot->GetGroup();
+        if (group && group->GetId() == groupId && !GroupHasRealHuman(group) &&
+            !bot->GetMap()->IsDungeon() && !bot->InBattleGround() && !bot->IsTaxiFlying() && !bot->GetTransport())
+        {
+            if (bot->IsInCombat())
+            {
+                action.state = "waiting_to_leave_ai_party";
+                actions[action.actionId] = action;
+                Report(actions[action.actionId]);
+                return true;
+            }
+            completed = LeaveAiOnlyParty(bot, groupId);
+            if (completed)
+                bot->Whisper("I'm free now. You can invite me.", LANG_UNIVERSAL, player->GetObjectGuid());
+        }
+        else
+            action.failureReason = GroupHasRealHuman(group) ? "a human is now in the party" :
+                "the AI-only party is no longer safe to leave";
     }
     else if (proposal.type == "share_quest" &&
         std::regex_match(proposal.capabilityRef, match, std::regex(R"(quest:share:([0-9]+):([0-9]+))")))
@@ -320,7 +378,34 @@ void PlayerbotSocialActionBroker::Update()
     for (auto& pair : actions)
     {
         Action& action = pair.second;
-        if (action.state == "vendor_travel")
+        if (action.state == "waiting_to_leave_ai_party")
+        {
+            Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
+            Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));
+            Group* group = bot ? bot->GetGroup() : nullptr;
+            if (!bot || !player || !ValidateCommon(bot, player) || !group || group->GetId() != action.groupId ||
+                GroupHasRealHuman(group))
+            {
+                action.state = "rejected";
+                action.failureReason = group && GroupHasRealHuman(group) ? "a human joined the party" :
+                    "party or character state changed before release";
+                Report(action);
+            }
+            else if (!bot->IsInCombat() && LeaveAiOnlyParty(bot, action.groupId))
+            {
+                action.state = "completed";
+                action.completedAt = now;
+                bot->Whisper("I'm free now. You can invite me.", LANG_UNIVERSAL, player->GetObjectGuid());
+                Report(action);
+            }
+            else if (now >= action.expires)
+            {
+                action.state = "expired";
+                action.failureReason = "could not safely leave the AI-only party before the offer expired";
+                Report(action);
+            }
+        }
+        else if (action.state == "vendor_travel")
         {
             Player* bot = sRandomPlayerbotMgr.GetPlayerBot(action.botGuid);
             Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, action.playerGuid));

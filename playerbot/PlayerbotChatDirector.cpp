@@ -308,12 +308,21 @@ static void PopulateSocialState(Player* bot, Player* speaker, ChatDirectorCandid
             "Pass party leadership to the requesting player.");
     }
 
-    if (!bot->IsInCombat() && !bot->GetMap()->IsDungeon())
+    if (speaker->GetGroup() == group && !bot->IsInCombat() && !bot->GetMap()->IsDungeon())
     {
         std::ostringstream ref;
         ref << "group:leave:" << state.groupId;
         AddSocialCapability(candidate, ref.str(), "leave_group", state.groupId, bot->GetGUIDLow(), 0,
             "Leave the current party only after an explicit confirmed request.");
+    }
+
+    if (state.humanMembers.empty() && speaker->GetGroup() != group && !bot->GetMap()->IsDungeon() &&
+        !bot->InBattleGround() && !bot->IsTaxiFlying())
+    {
+        std::ostringstream ref;
+        ref << "group:leave-ai-for-player:" << state.groupId << ':' << speaker->GetGUIDLow();
+        AddSocialCapability(candidate, ref.str(), "leave_ai_party_for_player", state.groupId,
+            bot->GetGUIDLow(), 0, "Leave this AI-only party for the requesting player. If combat is active, wait until it ends, then confirm only after the bot is actually ungrouped.");
     }
 
     if (speaker->GetGroup() == group)
