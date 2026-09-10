@@ -126,6 +126,16 @@ bool TradeStatusAction::Execute(Event& event)
 
         return true;
     }
+    else if (status == TRADE_STATUS_OPEN_WINDOW && brokerTrade)
+    {
+        // A bot-initiated trade creates TradeData before the human accepts the
+        // invitation. Any item or money update sent at that point can arrive
+        // before the TBC client has created its trade window and be discarded.
+        // Populate again on the authoritative open-window event so the human
+        // sees the broker's exact offer before either side can accept.
+        sPlayerbotActionBroker.PopulateTrade(bot, trader);
+        return true;
+    }
 
     return false;
 }
