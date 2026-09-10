@@ -325,7 +325,12 @@ bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
         transaction->itemGuid = split->GetGUIDLow();
         reservedItems[transaction->itemGuid] = transaction->transactionId;
     }
+
+    // Bot-initiated trades create TradeData before the human has opened the window.
+    // Keep the authoritative slot populated now; Update() will resend it after the
+    // window opens so the TBC client cannot miss this first extended trade update.
     trade->SetItem((TradeSlots)0, item);
+    trader->GetSession()->SendUpdateTrade(true);
     offered = trade->GetItem((TradeSlots)0);
     if (!offered || offered->GetGUIDLow() != transaction->itemGuid || offered->GetCount() != transaction->quantity)
     {
@@ -576,7 +581,16 @@ void PlayerbotActionBroker::Update()
         if (transaction.state == "offered" && bot->GetTradeData() && bot->GetTrader() == player)
             PopulateTrade(bot, player);
         if ((transaction.state == "offered" || transaction.state == "trading") && bot->GetTrader() == player)
+        {
             bot->GetPlayerbotAI()->StopMoving();
+            if (transaction.state == "trading" && bot->GetTradeData() &&
+                (transaction.lastTradeRefresh.time_since_epoch().count() == 0 ||
+                std::chrono::duration_cast<std::chrono::seconds>(now - transaction.lastTradeRefresh).count() >= 1))
+            {
+                player->GetSession()->SendUpdateTrade(true);
+                transaction.lastTradeRefresh = now;
+            }
+        }
         if ((transaction.state == "mail_travel" || transaction.state == "meeting" || transaction.state == "offered" || transaction.state == "trading") && now >= transaction.expires)
         {
             transaction.state = "expired";
