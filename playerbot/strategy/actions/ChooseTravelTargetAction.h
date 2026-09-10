@@ -97,6 +97,7 @@ namespace ai
     public:
         RequestProgressionQuestTravelTargetAction(PlayerbotAI* ai, std::string name = "request progression quest travel target") : RequestQuestTravelTargetAction(ai, name) {}
     private:
+        virtual bool isUseful() override;
         virtual bool isAllowed() const override { return true; }
     };
 
@@ -107,6 +108,7 @@ namespace ai
             Qualify((int32)TravelDestinationPurpose::Vendor);
         }
     private:
+        virtual bool isUseful() override;
         virtual bool isAllowed() const override { return true; }
     };
 
@@ -115,6 +117,7 @@ namespace ai
         RequestQuestTurninTargetAction(PlayerbotAI* ai, std::string name = "request quest turnin target") : RequestTravelTargetAction(ai, name) {}
     private:
         virtual bool Execute(Event& event) override;
+        virtual bool isUseful() override;
         virtual bool isAllowed() const override { return true; }
     };
 

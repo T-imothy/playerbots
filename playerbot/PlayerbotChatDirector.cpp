@@ -1168,18 +1168,20 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                 std::string recovery;
                 if (inventoryBlocked && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 5)
                 {
-                    bot->GetPlayerbotAI()->DoSpecificAction("progression reset travel target", Event("living progression inventory recovery"), true);
-                    recovered = bot->GetPlayerbotAI()->DoSpecificAction("request progression vendor travel target", Event(), true);
-                    recovery = recovered ? "vendor_route_requested" : "vendor_route_unavailable";
+                    bool reset = bot->GetPlayerbotAI()->DoSpecificAction("progression reset travel target", Event("living progression inventory recovery"), true);
+                    recovered = reset && bot->GetPlayerbotAI()->DoSpecificAction("request progression vendor travel target", Event(), true);
+                    recovery = recovered ? "vendor_route_requested" :
+                        (reset ? "vendor_request_rejected" : "vendor_reset_rejected");
                     state.recoveryStep = 5;
                 }
                 else if (questStalled && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 3)
                 {
-                    bot->GetPlayerbotAI()->DoSpecificAction("progression reset travel target", Event("living progression turnin recovery"), true);
-                    recovered = bot->GetPlayerbotAI()->DoSpecificAction(
+                    bool reset = bot->GetPlayerbotAI()->DoSpecificAction("progression reset travel target", Event("living progression turnin recovery"), true);
+                    recovered = reset && bot->GetPlayerbotAI()->DoSpecificAction(
                         "request quest turnin target::" + std::to_string(stalledQuestId),
                         Event(), true);
-                    recovery = recovered ? "quest_turnin_route_requested" : "quest_turnin_route_unavailable";
+                    recovery = recovered ? "quest_turnin_route_requested" :
+                        (reset ? "quest_turnin_request_rejected" : "quest_turnin_reset_rejected");
                     state.recoveryQuestId = stalledQuestId;
                     state.recoveryStep = 3;
                 }
@@ -1197,10 +1199,12 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
                     // new target: action-starved bots commonly have no target.
                     bool reset = bot->GetPlayerbotAI()->DoSpecificAction(
                         "progression reset travel target", Event("living progression objective recovery"), true);
-                    recovered = sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 2 ?
-                        bot->GetPlayerbotAI()->DoSpecificAction(
-                            "request progression quest travel target", Event(), true) : reset;
-                    recovery = recovered ? "objective_route_requested" : "objective_reselection_rejected";
+                    recovered = reset;
+                    if (recovered && sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep >= 2)
+                        recovered = bot->GetPlayerbotAI()->DoSpecificAction(
+                            "request progression quest travel target", Event(), true);
+                    recovery = recovered ? "objective_route_requested" :
+                        (reset ? "objective_request_rejected" : "objective_reset_rejected");
                     state.recoveryStep = std::min<uint32>(2, sPlayerbotAIConfig.chatDirectorRecoveryMaximumStep);
                 }
                 state.lastRecovery = now;

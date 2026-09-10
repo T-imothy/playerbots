@@ -749,14 +749,34 @@ bool ResetTargetAction::isUseful()
 
 bool ProgressionResetTravelTargetAction::isUseful()
 {
-    if (bot->InBattleGround() || !ai->AllowActivity(TRAVEL_ACTIVITY))
+    if (bot->InBattleGround())
         return false;
 
-    if (!AI_VALUE(bool, "can move around"))
-        return false;
+    // This action exists specifically to recover stale PREPARE and active
+    // targets. Outer progression recovery already excludes combat, unsafe
+    // groups, transports, and other states where intervention is forbidden.
+    return AI_VALUE(bool, "can move around");
+}
 
-    return AI_VALUE(TravelTarget*, "travel target")->GetStatus() !=
-        TravelStatus::TRAVEL_STATUS_PREPARE;
+bool RequestProgressionQuestTravelTargetAction::isUseful()
+{
+    return !bot->InBattleGround() && AI_VALUE(bool, "can move around") &&
+        !AI_VALUE(bool, "travel target active") &&
+        AI_VALUE(TravelTarget*, "travel target")->GetStatus() != TravelStatus::TRAVEL_STATUS_PREPARE;
+}
+
+bool RequestProgressionVendorTravelTargetAction::isUseful()
+{
+    return !bot->InBattleGround() && AI_VALUE(bool, "can move around") &&
+        !AI_VALUE(bool, "travel target active") &&
+        AI_VALUE(TravelTarget*, "travel target")->GetStatus() != TravelStatus::TRAVEL_STATUS_PREPARE;
+}
+
+bool RequestQuestTurninTargetAction::isUseful()
+{
+    return !bot->InBattleGround() && AI_VALUE(bool, "can move around") &&
+        !AI_VALUE(bool, "travel target active") &&
+        AI_VALUE(TravelTarget*, "travel target")->GetStatus() != TravelStatus::TRAVEL_STATUS_PREPARE;
 }
 
 bool RequestTravelTargetAction::Execute(Event& event)
