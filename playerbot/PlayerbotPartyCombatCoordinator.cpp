@@ -276,14 +276,16 @@ void PlayerbotPartyCombatCoordinator::Update(Player* bot)
     uint32 now = WorldTimer::getMSTime();
     uint32& lastAttempt = lastQuestMaintenance[bot->GetGUIDLow()];
     if (bot->IsAlive() && !bot->IsInCombat() &&
-        (!lastAttempt || WorldTimer::getMSTimeDiff(lastAttempt, now) >= 1000))
+        (!lastAttempt || WorldTimer::getMSTimeDiff(lastAttempt, now) >= 3000))
     {
         lastAttempt = now;
         PlayerbotAI* ai = bot->GetPlayerbotAI();
         if (ai && ai->CanDoSpecificAction("use random quest item", true, true))
         {
             bool used = ai->DoSpecificAction("use random quest item",
-                Event("living mixed party quest maintenance", "", ai->GetMaster()), true);
+                // This is autonomous maintenance, not a direct player command.
+                // Keep legacy use/target diagnostics out of party chat.
+                Event("living mixed party quest maintenance"), true);
             sLog.outString("Living WoW party maintenance bot=%u name=%s action=quest_source_item result=%s",
                 bot->GetGUIDLow(), bot->GetName(), used ? "executed" : "failed");
         }

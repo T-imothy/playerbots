@@ -1425,7 +1425,26 @@ bool UseRandomQuestItemAction::isUseful()
                 if (!spellId || proto->Spells[spell].SpellTrigger != ITEM_SPELLTRIGGER_ON_USE)
                     continue;
                 SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(spellId);
-                if (!spellInfo || !spellInfo->RequiresSpellFocus)
+                if (!spellInfo)
+                    continue;
+
+                // Some source items (for example Tender Strider Meat) must be
+                // used on an authoritative creature target. They are valid
+                // quest items, but using them on self is never a safe fallback.
+                ItemRequiredTargetMapBounds requiredTargets = sObjectMgr.GetItemRequiredTargetMapBounds(sourceId);
+                if (requiredTargets.first != requiredTargets.second)
+                {
+                    std::list<ObjectGuid> nearbyNpcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
+                    for (ObjectGuid const& guid : nearbyNpcs)
+                    {
+                        Unit* target = ai->GetUnit(guid);
+                        if (target && IsTargetValidForItemUse(sourceId, target))
+                            return true;
+                    }
+                    continue;
+                }
+
+                if (!spellInfo->RequiresSpellFocus)
                     return true;
                 std::list<ObjectGuid> nearbyObjects = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
                 for (ObjectGuid const& guid : nearbyObjects)
@@ -1519,13 +1538,46 @@ bool UseRandomQuestItemAction::Execute(Event& event)
                 }
             }
 
+            ItemRequiredTargetMapBounds requiredTargets = sObjectMgr.GetItemRequiredTargetMapBounds(sourceId);
+            if (requiredTargets.first != requiredTargets.second)
+            {
+                Unit* requiredTarget = nullptr;
+                std::list<ObjectGuid> nearbyNpcs = AI_VALUE(std::list<ObjectGuid>, "nearest npcs");
+                for (ObjectGuid const& guid : nearbyNpcs)
+                {
+                    Unit* candidate = ai->GetUnit(guid);
+                    if (!candidate || !IsTargetValidForItemUse(sourceId, candidate))
+                        continue;
+                    if (!requiredTarget || bot->GetDistance(candidate) < bot->GetDistance(requiredTarget))
+                        requiredTarget = candidate;
+                }
+
+                // A target-constrained quest item must never silently become a
+                // self-use action. Wait until the authoritative creature is
+                // present, then approach it through ordinary movement.
+                if (!requiredTarget)
+                {
+                    SetDuration(5000);
+                    return false;
+                }
+                if (!bot->IsWithinDistInMap(requiredTarget, sPlayerbotAIConfig.spellDistance))
+                {
+                    SET_AI_VALUE(GuidPosition, "rpg target", GuidPosition(requiredTarget));
+                    bool moving = ai->DoSpecificAction("move to rpg target",
+                        Event("living quest source target", "", requester), true);
+                    SetDuration(moving ? 1500 : 5000);
+                    return moving;
+                }
+                unitTarget = requiredTarget;
+            }
+
             item = sourceItem;
         }
     }
 
     if (item)
     {
-        bool success = UseItem(requester, item->GetEntry(), (Unit*)nullptr);
+        bool success = UseItem(requester, item->GetEntry(), unitTarget);
         if (success)
         {
             RESET_AI_VALUE(GuidPosition, "rpg target");
