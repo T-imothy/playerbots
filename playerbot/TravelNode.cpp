@@ -125,6 +125,7 @@ float TravelNodePath::getCost(Unit* unit, uint32 cGold)
                 case 3430: // Eversong Woods
                 case 3433: // Ghostlands
                 case 3487: // Silvermoon City
+                case 3479: // The Veiled Sea: Azuremyst ferry, dock, and coastal approach
                 case 3524: // Azuremyst Isle
                 case 3525: // Bloodmyst Isle
                 case 3557: // The Exodar
