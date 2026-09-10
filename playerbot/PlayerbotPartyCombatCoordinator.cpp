@@ -372,13 +372,14 @@ void PlayerbotPartyCombatCoordinator::RefreshCombat(Group* group, GroupState& st
             // CMSG_ATTACKSWING assigns a victim as soon as a human right-clicks.
             // Generic combat flags are insufficient: either participant may
             // already be fighting something else. Approve only a direct combat
-            // relationship with this exact victim.
+            // relationship in which the creature has engaged the player, or
+            // the player has generated real threat. Merely starting an
+            // auto-attack must not authorize bots to pull the selected target.
             if (Unit* victim = p->GetVictim())
             {
-                const bool directlyAttacking =
-                    p->getAttackers().find(victim) != p->getAttackers().end() ||
-                    victim->getAttackers().find(p) != victim->getAttackers().end();
-                const bool engaged = directlyAttacking ||
+                const bool victimAttackingPlayer =
+                    p->getAttackers().find(victim) != p->getAttackers().end();
+                const bool engaged = victimAttackingPlayer ||
                     victim->getThreatManager().getThreat(p) > 0.0f;
                 if (engaged) state.approvedTargets.insert(victim->GetObjectGuid());
             }
@@ -454,19 +455,37 @@ void PlayerbotPartyCombatCoordinator::Update(Player* bot)
     uint32 now = WorldTimer::getMSTime();
     uint32& lastLootScan = lastPartyLootScan[bot->GetGUIDLow()];
     // Random-bot loot discovery normally runs as a low-priority "often"
-    // action. Mixed-party maintenance can starve it, leaving the human locked
-    // out of a corpse assigned to a bot. Promptly populate the normal loot
-    // stack; movement, bag checks, ownership, and actual looting remain in the
-    // standard Playerbots actions.
-    if (maintenanceAi && maintenancePositionStable && !pendingLoot && bot->IsAlive() &&
+    // action. Mixed-party maintenance can starve both discovery and the later
+    // select/move/open steps, leaving the human locked out of a corpse assigned
+    // to a bot. Drive the existing validated actions in their normal order at
+    // a bounded cadence; ownership, distance, movement, and bag checks remain
+    // inside those standard Playerbots actions.
+    if (maintenanceAi && maintenancePositionStable && bot->IsAlive() &&
         !bot->IsInCombat() && (!lastLootScan || WorldTimer::getMSTimeDiff(lastLootScan, now) >= 1000))
     {
         lastLootScan = now;
-        if (maintenanceAi->CanDoSpecificAction("add all loot", true, true) &&
-            maintenanceAi->DoSpecificAction("add all loot", Event("living mixed party loot scan"), true))
+        if (!pendingLoot && maintenanceAi->CanDoSpecificAction("add all loot", true, true))
         {
-            pendingLoot = true;
-            sLog.outDetail("LivingParty loot scan queued bot=%u name=%s", bot->GetGUIDLow(), bot->GetName());
+            maintenanceAi->DoSpecificAction("add all loot", Event("living mixed party loot scan"), true);
+            pendingLoot =
+                maintenanceAi->GetAiObjectContext()->GetValue<bool>("has available loot")->Get() ||
+                !maintenanceAi->GetAiObjectContext()->GetValue<LootObject>("loot target")->Get().IsEmpty();
+        }
+        if (pendingLoot)
+        {
+            if (maintenanceAi->CanDoSpecificAction("loot", true, true))
+                maintenanceAi->DoSpecificAction("loot", Event("living mixed party loot select"), true);
+
+            bool moving = false;
+            if (maintenanceAi->CanDoSpecificAction("move to loot", true, true))
+                moving = maintenanceAi->DoSpecificAction("move to loot",
+                    Event("living mixed party loot approach"), true);
+            if (!moving && maintenanceAi->CanDoSpecificAction("open loot", true, true))
+                maintenanceAi->DoSpecificAction("open loot",
+                    Event("living mixed party loot open"), true);
+
+            sLog.outDetail("LivingParty loot maintenance bot=%u name=%s moving=%s",
+                bot->GetGUIDLow(), bot->GetName(), moving ? "yes" : "no");
         }
     }
     uint32& lastAttempt = lastQuestMaintenance[bot->GetGUIDLow()];
@@ -535,14 +554,19 @@ float PlayerbotPartyCombatCoordinator::ActionMultiplier(Player* bot, Action* act
         (actionName == "greet" || actionName == "talk" || actionName == "suggest what to do" ||
             actionName == "suggest trade"))
         return 0.0f;
-    ActionThreatType threat = action->getThreatType(); if (threat == ActionThreatType::ACTION_THREAT_NONE || threat == ActionThreatType::ACTION_THREAT_LOW) return 1.0f;
-    LivingPartyRoleState role = GetRole(bot); if (role.primary == LivingPartyRole::Tank) return 1.0f;
     Unit* target = action->GetTarget();
     // Friendly healing, cleansing, and protection are never subject to hostile
     // pull or DPS threat gates. Existing class strategies remain authoritative
     // for spell choice and emergency-heal timing.
     if (target && bot->CanAssist(target)) return 1.0f;
+    // Target gating must precede threat classification. Hunter's Mark and
+    // similar hostile setup actions are intentionally low threat, but they
+    // still must not begin an unapproved pull in a human-led party.
     if (target && !CanInitiate(bot, target)) return 0.0f;
+    ActionThreatType threat = action->getThreatType();
+    if (threat == ActionThreatType::ACTION_THREAT_NONE || threat == ActionThreatType::ACTION_THREAT_LOW)
+        return 1.0f;
+    LivingPartyRoleState role = GetRole(bot); if (role.primary == LivingPartyRole::Tank) return 1.0f;
     if (!policy.threatThrottling) return 1.0f;
     if (state->hold) return 0.0f;
     uint32 elapsed = WorldTimer::getMSTimeDiff(state->phaseSince, WorldTimer::getMSTime());
