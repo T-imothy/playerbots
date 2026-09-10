@@ -3516,37 +3516,72 @@ void PlayerbotChatDirector::ApplyGuildPlans(const std::string& response,
         uint32 organizerGuid = 0, accepted = 0;
         if (groupEvent)
         {
-            std::vector<Player*> roster;
+            std::vector<Player*> eligible;
             Player* leader = sRandomPlayerbotMgr.GetPlayerBot(guild->GetLeaderGuid().GetCounter());
             if (SafeGuildEventParticipant(leader, guildId))
-                roster.push_back(leader);
+                eligible.push_back(leader);
             for (uint32 guid : sRandomPlayerbotMgr.GetChatBotGuids())
             {
                 Player* bot = sRandomPlayerbotMgr.GetPlayerBot(guid);
                 if (!SafeGuildEventParticipant(bot, guildId) || bot == leader)
                     continue;
-                roster.push_back(bot);
-                if (roster.size() >= 5)
-                    break;
+                eligible.push_back(bot);
             }
-            const uint32 minimum = decisionType == "schedule_dungeon" ? 5 : 2;
-            bool rolesReady = decisionType != "schedule_dungeon";
-            if (decisionType == "schedule_dungeon" && roster.size() >= 5)
+            std::vector<Player*> roster;
+            auto addUnique = [&roster](Player* bot)
             {
-                uint32 tanks = 0, healers = 0;
-                for (Player* bot : roster)
+                if (bot && std::find(roster.begin(), roster.end(), bot) == roster.end())
+                    roster.push_back(bot);
+            };
+            const uint32 minimum = decisionType == "schedule_dungeon" ? 5 : 2;
+            if (decisionType == "schedule_dungeon")
+            {
+                // Do not take the first five online members and then discover
+                // that they have no healer. Build the authoritative roster by
+                // role before any existing AI-only groups are disturbed.
+                for (Player* bot : eligible)
+                    if (PlayerbotAI::IsTank(bot, false)) { addUnique(bot); break; }
+                for (Player* bot : eligible)
+                    if (PlayerbotAI::IsHeal(bot, false) &&
+                        std::find(roster.begin(), roster.end(), bot) == roster.end())
+                    { addUnique(bot); break; }
+                for (Player* bot : eligible)
                 {
-                    if (PlayerbotAI::IsTank(bot, false)) ++tanks;
-                    if (PlayerbotAI::IsHeal(bot, false)) ++healers;
+                    addUnique(bot);
+                    if (roster.size() >= 5) break;
                 }
-                rolesReady = tanks > 0 && healers > 0;
             }
+            else
+                for (Player* bot : eligible)
+                {
+                    addUnique(bot);
+                    if (roster.size() >= 5) break;
+                }
+            uint32 tanks = 0, healers = 0;
+            for (Player* bot : roster)
+            {
+                if (PlayerbotAI::IsTank(bot, false)) ++tanks;
+                if (PlayerbotAI::IsHeal(bot, false)) ++healers;
+            }
+            bool rolesReady = decisionType != "schedule_dungeon" || (tanks > 0 && healers > 0);
             if (roster.size() >= minimum && rolesReady)
             {
+                // Guild events may reclaim bots only from AI-only groups; the
+                // safety predicate above has already excluded every group with
+                // a real player. Release the full selected roster first so an
+                // organizer that was a nonleader cannot issue doomed invites.
+                bool released = true;
+                for (Player* member : roster)
+                {
+                    if (!member->GetGroup()) continue;
+                    if (!member->GetPlayerbotAI()->DoSpecificAction(
+                            "leave", Event("guild society event", "", member), true) && member->GetGroup())
+                        released = false;
+                }
                 Player* organizer = roster.front();
                 organizerGuid = organizer->GetGUIDLow();
-                accepted = 1;
-                for (size_t index = 1; index < roster.size(); ++index)
+                accepted = released && !organizer->GetGroup() ? 1 : 0;
+                for (size_t index = 1; released && index < roster.size(); ++index)
                 {
                     Player* member = roster[index];
                     if (member->GetGroup() == organizer->GetGroup() && organizer->GetGroup())
