@@ -182,6 +182,7 @@ public:
     void ObservePartyQuestPlan(Player* bot, uint32 questId, const std::string& questName,
         const std::string& objective, const std::string& areaName, uint32 distanceYards);
     void ObserveGroupInviteConflict(Player* bot, Player* initiator);
+    void ObservePartyJoin(Player* bot, Player* inviter);
     bool HandleGuildAddonMessage(Player* receiverBot, Player* sender, const std::string& message);
     void Update();
 

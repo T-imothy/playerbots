@@ -305,6 +305,11 @@ std::string PlayerbotPartyCombatCoordinator::ApplySpecialization(Player* member,
 bool PlayerbotPartyCombatCoordinator::RoleMatchesTalents(Player* member, LivingPartyRole role) const
 {
     if (!member || member->GetLevel() < 10 || role == LivingPartyRole::Auto) return true;
+    // GetPlayerSpecTab falls back to tree zero when a character has not spent
+    // any talents.  For several classes that fallback happens to map to a
+    // valid role, which made an empty talent sheet look synchronized.  A
+    // level-10+ party bot is not role-ready while it still has unspent points.
+    if (member->GetFreeTalentPoints() > 0) return false;
     BotRoles desired = role == LivingPartyRole::Tank ? BOT_ROLE_TANK :
         role == LivingPartyRole::Healer ? BOT_ROLE_HEALER : BOT_ROLE_DPS;
     return (AiFactory::GetPlayerRoles(member) & desired) != 0;
@@ -983,7 +988,9 @@ void PlayerbotPartyCombatCoordinator::SendSnapshot(Group* group, GroupState& sta
                         std::ostringstream buildRow; buildRow << "LWOWP1\tB\t" << build.revision << "\t"
                             << Escape(member->GetName()) << "\t" << build.mainSpecialization << "\t"
                             << build.offSpecialization << "\t" << build.activeSpecialization << "\t"
-                            << (build.partySessionId ? 1 : 0) << "\t" << (build.offPathId != build.mainPathId ? 1 : 0);
+                            << (build.partySessionId ? 1 : 0) << "\t" << (build.offPathId != build.mainPathId ? 1 : 0)
+                            << "\t" << ((member->GetLevel() < 10 || member->GetFreeTalentPoints() == 0) ? 1 : 0)
+                            << "\t" << (member->IsAlive() ? "ready" : "dead");
                         SendAddon(source, receiver, buildRow.str());
                     }
                 }

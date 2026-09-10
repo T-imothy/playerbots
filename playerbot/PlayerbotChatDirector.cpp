@@ -2857,6 +2857,54 @@ void PlayerbotChatDirector::ObserveGroupInviteConflict(Player* bot, Player* init
     pending[event.eventId] = std::move(event);
 }
 
+void PlayerbotChatDirector::ObservePartyJoin(Player* bot, Player* inviter)
+{
+    if (!sPlayerbotAIConfig.chatDirectorV2 || !bot || !inviter || !inviter->isRealPlayer() ||
+        !bot->GetPlayerbotAI() || !bot->GetGroup() || bot->GetGroup() != inviter->GetGroup())
+        return;
+
+    ChatDirectorEvent event;
+    std::ostringstream id;
+    id << "wow-party-join-" << time(nullptr) << '-' << ++sequence;
+    event.eventId = id.str();
+    event.key = event.eventId;
+    event.channelType = "whisper";
+    event.channelName = "whisper";
+    event.speakerName = inviter->GetName();
+    event.speakerGuid = inviter->GetGUIDLow();
+    event.speakerLevel = inviter->GetLevel();
+    event.zone = inviter->GetZoneId();
+    event.team = inviter->GetTeam();
+    event.message = "[authoritative party join] This character has joined the player's party.";
+    event.ambient = true;
+    event.factualGrounding = true;
+    event.groundingType = "party_join";
+    event.firstSeen = std::chrono::steady_clock::now();
+
+    ChatDirectorCandidate candidate;
+    candidate.guid = bot->GetGUIDLow();
+    candidate.name = bot->GetName();
+    candidate.race = bot->getRace();
+    candidate.cls = bot->getClass();
+    candidate.level = bot->GetLevel();
+    candidate.zone = bot->GetZoneId();
+    candidate.grouped = true;
+    candidate.inCombat = bot->IsInCombat();
+    candidate.alive = bot->IsAlive();
+    candidate.ghost = bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST);
+    candidate.available = bot->IsInWorld();
+    candidate.currentActivity = bot->GetPlayerbotAI()->HandleRemoteCommand("action");
+    PopulateSocialState(bot, inviter, candidate);
+    if (PlayerbotAI::IsTank(bot, false)) candidate.role = "tank";
+    else if (PlayerbotAI::IsHeal(bot, false)) candidate.role = "healer";
+    else candidate.role = "damage";
+    event.candidates[candidate.guid] = std::move(candidate);
+
+    std::lock_guard<std::mutex> guard(mutex);
+    lastConversation = std::chrono::steady_clock::now();
+    pending[event.eventId] = std::move(event);
+}
+
 void PlayerbotChatDirector::ObservePartyQuestPlan(Player* bot, uint32 questId, const std::string& questName,
     const std::string& objective, const std::string& areaName, uint32 distanceYards)
 {
@@ -3070,6 +3118,7 @@ std::string PlayerbotChatDirector::BuildJson(const ChatDirectorEvent& event) con
     json << "{\"event_id\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.eventId) << "\",";
     json << "\"contract_version\":4,\"message_raw\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.message) << "\",";
     json << "\"event_type\":\"" << (event.ambient ? "ambient" : "message") << "\",";
+    json << "\"grounding_type\":\"" << PlayerbotLLMInterface::SanitizeForJson(event.groundingType) << "\",";
     json << "\"bridge_capabilities\":{\"reply_channel\":true,\"negotiated_price\":true,\"economic_capabilities\":1,"
          << "\"capability_planner\":2,\"capability_catalog\":\"2.0.0\","
          << "\"stable_party_session\":true,\"typed_action_outcomes\":true},";

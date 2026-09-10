@@ -1,6 +1,7 @@
 #pragma once
 
 #include "playerbot/strategy/Action.h"
+#include "playerbot/PlayerbotChatDirector.h"
 #include "playerbot/PlayerbotRendezvousManager.h"
 #include "playerbot/PlayerbotSocialActionBroker.h"
 
@@ -10,6 +11,20 @@ namespace ai
     {
     public:
         AcceptInvitationAction(PlayerbotAI* ai) : Action(ai, "accept invitation") {}
+
+        static uint32 RememberPartyMember(Player* observer, Player* member)
+        {
+            if (!observer || !member || !observer->GetPlayerbotAI() || observer == member)
+                return 0;
+
+            std::ostringstream key;
+            key << "partyWith:" << member->GetGUIDLow();
+            uint32 previous = sRandomPlayerbotMgr.GetValue(observer->GetGUIDLow(), key.str());
+            const int32 persistentSeconds = 10 * 365 * 24 * 60 * 60;
+            sRandomPlayerbotMgr.SetValue(observer->GetGUIDLow(), key.str(),
+                std::min<uint32>(1000000, previous + 1), "", persistentSeconds);
+            return previous;
+        }
 
         virtual bool Execute(Event& event) override
         {
@@ -75,6 +90,18 @@ namespace ai
             sPlayerbotAIConfig.logEvent(ai, "AcceptInvitationAction", grp->GetLeaderName(), std::to_string(grp->GetMembersCount()));
 
             Player* master = inviter;
+            if (Group* acceptedGroup = bot->GetGroup())
+            {
+                for (GroupReference* reference = acceptedGroup->GetFirstMember(); reference; reference = reference->next())
+                {
+                    Player* member = reference->getSource();
+                    if (!member || member == bot)
+                        continue;
+                    RememberPartyMember(bot, member);
+                    if (member->GetPlayerbotAI())
+                        RememberPartyMember(member, bot);
+                }
+            }
 
             if (master->GetPlayerbotAI()) //Copy formation from bot master.
             {
@@ -101,8 +128,11 @@ namespace ai
                 value->Load(masterFormation->getName());
             }
 
-            ai->TellPlayer(inviter, BOT_TEXT("hello"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL,
-                false, false, PlayerbotAI::ChatMessageClass::social);
+            // The stock "hello" pool contains first-meeting claims.  Keep a
+            // durable pair history and let Chat v2 use its existing relationship
+            // and memory state to distinguish a new acquaintance from a regular.
+            if (inviter->isRealPlayer())
+                sPlayerbotChatDirector.ObservePartyJoin(bot, inviter);
 
             ai->DoSpecificAction("reset raids", event, true);
             ai->DoSpecificAction("update gear", event, true);
