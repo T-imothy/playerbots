@@ -1245,6 +1245,26 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         }
         TravelStatus recoveryStatus = recoveryTarget ? recoveryTarget->GetStatus() :
             TravelStatus::TRAVEL_STATUS_NONE;
+        if (recoveryCanary && state.recoveryStep == 3 && state.recoveryQuestId && recoveryTarget &&
+            (recoveryStatus == TravelStatus::TRAVEL_STATUS_READY ||
+             recoveryStatus == TravelStatus::TRAVEL_STATUS_TRAVEL))
+        {
+            // Async travel requests share legacy metadata slots with ordinary
+            // Playerbots travel. If another request updates those slots while
+            // an exact turn-in route is being calculated, the finished target
+            // can lose its recovery condition and priority. Re-establish them
+            // only when the installed world-authoritative destination is the
+            // exact QuestTaker for this canary's recorded completed quest.
+            QuestTravelDestination* questDestination =
+                dynamic_cast<QuestTravelDestination*>(recoveryTarget->GetDestination());
+            if (questDestination && questDestination->GetQuestId() == state.recoveryQuestId &&
+                questDestination->GetPurpose() == TravelDestinationPurpose::QuestTaker)
+            {
+                boundedRecoveryTarget = true;
+                recoveryTarget->AddCondition("can move around");
+                recoveryTarget->SetRelevance(std::max<uint32>(recoveryTarget->GetRelevance(), 199u));
+            }
+        }
         if (!excluded && boundedRecoveryTarget &&
             (recoveryStatus == TravelStatus::TRAVEL_STATUS_READY ||
              recoveryStatus == TravelStatus::TRAVEL_STATUS_TRAVEL))
