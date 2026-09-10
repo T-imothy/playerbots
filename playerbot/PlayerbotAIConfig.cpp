@@ -663,6 +663,11 @@ bool PlayerbotAIConfig::Initialize()
     chatDirectorV2 = config.GetBoolDefault("AiPlayerbot.ChatDirectorV2", false);
     chatDirectorEndpoint = config.GetStringDefault("AiPlayerbot.ChatDirectorEndpoint", "http://127.0.0.1:8765/v2/chat-events");
     chatDirectorApiKey = config.GetStringDefault("AiPlayerbot.ChatDirectorApiKey", "");
+    chatDirectorBotRecoveryMode = config.GetIntDefault("AiPlayerbot.ChatDirectorBotRecoveryMode", 1);
+    chatDirectorMovementStuckSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorMovementStuckSeconds", 120);
+    chatDirectorQuestStuckSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorQuestStuckSeconds", 180);
+    chatDirectorRecoveryCooldownSeconds = config.GetIntDefault("AiPlayerbot.ChatDirectorRecoveryCooldownSeconds", 600);
+    chatDirectorMaxRecoveriesPerHour = config.GetIntDefault("AiPlayerbot.ChatDirectorMaxRecoveriesPerHour", 2);
     try {
         chatDirectorEndPointUrl = parseUrl(chatDirectorEndpoint);
     }

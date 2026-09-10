@@ -109,6 +109,10 @@ private:
         std::chrono::steady_clock::time_point lastMoved;
         std::chrono::steady_clock::time_point completedQuestSince;
         std::chrono::steady_clock::time_point heightFaultSince;
+        std::chrono::steady_clock::time_point lastRecovery;
+        std::vector<std::chrono::steady_clock::time_point> recoveryAttempts;
+        std::string recoveryResult;
+        uint8 lastLevel = 0;
     };
 
     std::mutex mutex;

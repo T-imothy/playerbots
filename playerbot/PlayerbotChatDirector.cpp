@@ -10,6 +10,7 @@
 #include "strategy/ItemVisitors.h"
 #include "strategy/values/ItemUsageValue.h"
 
+#include <algorithm>
 #include <boost/algorithm/string.hpp>
 #include <regex>
 #include <set>
@@ -339,6 +340,8 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         if (!bot || !bot->GetPlayerbotAI() || !bot->IsInWorld())
             continue;
         BotHealthState& state = botHealth[guid];
+        bool levelChanged = state.lastLevel != 0 && state.lastLevel != bot->GetLevel();
+        state.lastLevel = bot->GetLevel();
         if (state.lastMoved.time_since_epoch().count() == 0)
         {
             state.x = bot->GetPositionX();
@@ -370,15 +373,46 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
             lowered.find("quest") != std::string::npos || lowered.find("rpg") != std::string::npos;
         long stillSeconds = std::chrono::duration_cast<std::chrono::seconds>(now - state.lastMoved).count();
         long completeSeconds = completedQuest ? std::chrono::duration_cast<std::chrono::seconds>(now - state.completedQuestSince).count() : 0;
-        bool suspected = !excluded && ((expectsMovement && stillSeconds >= 120) || (completedQuest && completeSeconds >= 180));
+        bool movementStalled = expectsMovement && stillSeconds >= sPlayerbotAIConfig.chatDirectorMovementStuckSeconds;
+        bool questStalled = completedQuest && completeSeconds >= sPlayerbotAIConfig.chatDirectorQuestStuckSeconds;
+        bool suspected = !excluded && (movementStalled || questStalled);
         std::string classification = "active";
         if (!bot->IsAlive()) classification = "dead";
         else if (bot->IsInCombat()) classification = "combat";
         else if (bot->IsTaxiFlying() || bot->GetTransport()) classification = "transport";
         else if (playerStay) classification = "group_wait";
-        else if (completedQuest && completeSeconds >= 180) classification = "quest_turn_in_stalled";
-        else if (expectsMovement && stillSeconds >= 120) classification = "movement_stalled";
+        else if (questStalled) classification = "quest_turn_in_stalled";
+        else if (movementStalled) classification = "movement_stalled";
         else if (!expectsMovement && stillSeconds >= 60) classification = "rpg_pause";
+
+        // Recovery mode 1 observes only; mode 2 performs the least invasive
+        // recovery step on the world thread. Resetting the travel target makes
+        // normal quest/travel strategies choose again without teleporting or
+        // modifying authoritative quest state.
+        if (suspected && sPlayerbotAIConfig.chatDirectorBotRecoveryMode >= 2)
+        {
+            const auto oneHourAgo = now - std::chrono::hours(1);
+            state.recoveryAttempts.erase(std::remove_if(state.recoveryAttempts.begin(), state.recoveryAttempts.end(),
+                [&](const std::chrono::steady_clock::time_point& attempt) { return attempt < oneHourAgo; }), state.recoveryAttempts.end());
+            bool cooldownReady = state.lastRecovery.time_since_epoch().count() == 0 ||
+                std::chrono::duration_cast<std::chrono::seconds>(now - state.lastRecovery).count() >=
+                    sPlayerbotAIConfig.chatDirectorRecoveryCooldownSeconds;
+            if (cooldownReady && state.recoveryAttempts.size() < sPlayerbotAIConfig.chatDirectorMaxRecoveriesPerHour)
+            {
+                bool recovered = bot->GetPlayerbotAI()->DoSpecificAction(
+                    "reset travel target", Event("living chat director recovery"), true);
+                state.lastRecovery = now;
+                state.recoveryAttempts.push_back(now);
+                state.recoveryResult = recovered ? "travel_target_reset" : "travel_target_reset_rejected";
+                if (recovered)
+                {
+                    state.lastMoved = now;
+                    state.completedQuestSince = completedQuest ? now : std::chrono::steady_clock::time_point();
+                    classification = "recovering_travel_target";
+                    suspected = false;
+                }
+            }
+        }
 
         float terrainZ = bot->GetMap()->GetHeight(bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ() + 2.0f);
         bool validTerrain = terrainZ > -100000.0f;
@@ -399,6 +433,7 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
         if (AreaTableEntry const* area = GetAreaEntryByAreaID(areaId)) subzoneName = area->area_name[0];
         std::ostringstream json;
         json << "{\"bot_guid\":" << guid << ",\"bot_name\":\"" << PlayerbotLLMInterface::SanitizeForJson(bot->GetName())
+             << "\",\"level\":" << (uint32)bot->GetLevel() << ",\"level_changed\":" << (levelChanged ? "true" : "false")
              << "\",\"classification\":\"" << classification << "\",\"suspected_stuck\":" << (suspected ? "true" : "false")
              << ",\"current_action\":\"" << PlayerbotLLMInterface::SanitizeForJson(action)
              << "\",\"quest_state\":\"" << (completedQuest ? "completed_quest_pending" : "none_completed")
@@ -409,6 +444,9 @@ void PlayerbotChatDirector::MaybeReportBotHealth(std::chrono::steady_clock::time
              << ",\"mmap_z\":null,\"height_offset\":" << offset << ",\"height_fault\":" << (heightFault ? "true" : "false")
              << ",\"movement_flags\":" << movementFlags
              << ",\"last_movement_seconds\":" << stillSeconds << ",\"last_progress_seconds\":" << completeSeconds
+             << ",\"recovery_mode\":" << sPlayerbotAIConfig.chatDirectorBotRecoveryMode
+             << ",\"recovery_result\":\"" << PlayerbotLLMInterface::SanitizeForJson(state.recoveryResult) << "\""
+             << ",\"recoveries_last_hour\":" << state.recoveryAttempts.size()
              << ",\"grouped\":" << (bot->GetGroup() ? "true" : "false") << "}";
         samples.push_back(json.str());
     }

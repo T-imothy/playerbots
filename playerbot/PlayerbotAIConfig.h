@@ -401,6 +401,8 @@ public:
     std::string chatDirectorEndpoint, chatDirectorApiKey;
     uint32 llmEnabled, llmContextLength, llmBotToBotChatChance, llmGenerationTimeout, llmMaxSimultaniousGenerations, llmRpgAIChatChance;
     bool llmGlobalContext, chatDirectorV2;
+    uint32 chatDirectorBotRecoveryMode, chatDirectorMovementStuckSeconds, chatDirectorQuestStuckSeconds;
+    uint32 chatDirectorRecoveryCooldownSeconds, chatDirectorMaxRecoveriesPerHour;
     ParsedUrl llmEndPointUrl, chatDirectorEndPointUrl;
     std::set<uint32> llmBlockedReplyChannels;
     //LM END
