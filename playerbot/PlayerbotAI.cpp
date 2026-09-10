@@ -1397,7 +1397,9 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
     // be in Playerbots' minimal/AFK activity state, where its queued chat packet
     // is not processed promptly. Pending conversations and transactions must not
     // disappear merely because the target bot is temporarily passive.
-    if (sPlayerbotAIConfig.chatDirectorV2 && type == CHAT_MSG_WHISPER && lang != LANG_ADDON)
+    // Internal bot-to-self commands use the same whisper path. They are gameplay
+    // control messages, not player conversation, and must never reach a cloud model.
+    if (sPlayerbotAIConfig.chatDirectorV2 && type == CHAT_MSG_WHISPER && lang != LANG_ADDON && !fromPlayer.GetPlayerbotAI())
         sPlayerbotChatDirector.Observe(bot, type, fromPlayer.GetObjectGuid().GetCounter(),
             fromPlayer.GetName(), text, "");
 
