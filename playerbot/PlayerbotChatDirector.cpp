@@ -113,7 +113,7 @@ public:
     {
         if (item && item->CanBeTraded() && !item->IsSoulBound() && !item->IsInTrade())
             items.push_back(item);
-        return items.size() < 24;
+        return true;
     }
 };
 
