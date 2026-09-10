@@ -747,6 +747,18 @@ bool ResetTargetAction::isUseful()
     return true;
 }
 
+bool ProgressionResetTravelTargetAction::isUseful()
+{
+    if (bot->InBattleGround() || !ai->AllowActivity(TRAVEL_ACTIVITY))
+        return false;
+
+    if (!AI_VALUE(bool, "can move around"))
+        return false;
+
+    return AI_VALUE(TravelTarget*, "travel target")->GetStatus() !=
+        TravelStatus::TRAVEL_STATUS_PREPARE;
+}
+
 bool RequestTravelTargetAction::Execute(Event& event)
 {
     TravelDestinationPurpose actionPurpose = TravelDestinationPurpose(stoi(getQualifier()));
