@@ -537,6 +537,7 @@ PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
         return RequestResult::unavailable;
 
     const auto now = std::chrono::steady_clock::now();
+    bool deferredCrossMapArrival = false;
     Session session;
     session.botGuid = bot->GetGUIDLow();
     session.playerGuid = player->GetGUIDLow();
@@ -576,14 +577,25 @@ PlayerbotRendezvousManager::RequestResult PlayerbotRendezvousManager::Request(
             transport->RemovePassenger(bot);
         if (sameMap)
             bot->NearTeleportTo(stageX, stageY, stageZ, bot->GetAngle(player));
-        else if (!bot->TeleportTo(player->GetMapId(), stageX, stageY, stageZ, player->GetOrientation()))
-            return RequestResult::unavailable;
+        else
+        {
+            if (!bot->TeleportTo(player->GetMapId(), stageX, stageY, stageZ, player->GetOrientation()))
+                return RequestResult::unavailable;
+            deferredCrossMapArrival = true;
+        }
         session.relocated = true;
         lastRelocation[bot->GetGUIDLow()] = now;
     }
 
+    if (deferredCrossMapArrival)
+        session.state = "relocating";
     sessions[session.botGuid] = session;
-    bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
+    // TeleportTo completes the map transfer asynchronously. Installing a
+    // movement generator while m_currMap is detached violates a CMaNGOS map
+    // invariant, so cross-map arrivals begin following from Update only after
+    // IsBeingTeleported has cleared and both actors share the destination map.
+    if (!deferredCrossMapArrival)
+        bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
     LogEvent(sessions[session.botGuid], session.relocated ? "relocated_for_arrival" : "ordinary_arrival");
     return session.relocated ? RequestResult::accepted : RequestResult::ordinary_travel;
 }
@@ -669,6 +681,30 @@ void PlayerbotRendezvousManager::Update()
         Player* player = sObjectAccessor.FindPlayer(ObjectGuid(HIGHGUID_PLAYER, session.playerGuid));
         bool erase = false;
         if (!bot || !bot->IsInWorld()) erase = true;
+        else if (session.state == "relocating")
+        {
+            if (!player || !player->IsInWorld())
+            {
+                LogEvent(session, "relocation_player_unavailable");
+                erase = true;
+            }
+            else if (!bot->IsBeingTeleported())
+            {
+                if (bot->GetMapId() != player->GetMapId() ||
+                    bot->GetInstanceId() != player->GetInstanceId())
+                {
+                    LogEvent(session, "relocation_map_mismatch");
+                    erase = true;
+                }
+                else
+                {
+                    session.state = "approaching";
+                    session.stateSince = now;
+                    bot->GetMotionMaster()->MoveFollow(player, 2.0f, 0.0f, true, false);
+                    LogEvent(session, "relocation_attached");
+                }
+            }
+        }
         else if (session.state == "approaching")
         {
             if (!player || !player->IsInWorld() || player->GetMapId() != bot->GetMapId())
