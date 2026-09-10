@@ -4885,7 +4885,7 @@ bool ArenaTactics::Execute(Event& event)
         if (sBattleGroundMgr.IsArenaType(bg->GetTypeId()))
 #endif
         {
-            ai->ResetStrategies(false);
+            ai->RequestStrategyReset(false);
             ai->SetMaster(NULL);
         }
 

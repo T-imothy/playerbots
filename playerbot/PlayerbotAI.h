@@ -399,6 +399,19 @@ public:
     T* GetStrategy(const std::string& name, BotState type);
     BotState GetState() { return currentState; };
     void ResetStrategies(bool autoLoad = true);
+    // Strategy resets destroy every action owned by the engines. Actions and
+    // coordinator callbacks must queue that work for the next clean AI tick
+    // rather than deleting the action that is currently executing.
+    void RequestStrategyReset(bool autoLoad = true, const std::string& postNonCombatChanges = "")
+    {
+        if (!strategyResetRequested)
+            strategyResetAutoLoad = autoLoad;
+        else
+            strategyResetAutoLoad = strategyResetAutoLoad && autoLoad;
+        if (!postNonCombatChanges.empty())
+            strategyResetPostNonCombatChanges = postNonCombatChanges;
+        strategyResetRequested = true;
+    }
     void ReInitCurrentEngine();
     void Reset(bool full = false);
     static bool IsTank(Player* player, bool inGroup = true);
@@ -724,6 +737,9 @@ protected:
     bool isPlayerFriend = false;
     bool isMovingToTransport = false;
     bool shouldLogOut = false;
+    bool strategyResetRequested = false;
+    bool strategyResetAutoLoad = true;
+    std::string strategyResetPostNonCombatChanges;
     bool m_recordMessages = false;
     bool m_recordIncommingMessages = false;
     std::vector<std::string> m_recordedMessages;

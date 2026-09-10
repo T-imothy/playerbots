@@ -264,7 +264,7 @@ std::string PlayerbotPartyCombatCoordinator::ApplyRoleTalents(Player* member, Li
     // spec so a restoration assignment cannot keep enhancement/feral melee
     // strategies.  Do not reload persisted strategy toggles from the old role.
     if (policy.roleStrategySync)
-        memberAi->ResetStrategies(false);
+        memberAi->RequestStrategyReset(false);
 
     const uint32 freePoints = member->GetFreeTalentPoints();
     const uint32 totalPoints = member->CalculateTalentsPoints();
@@ -273,7 +273,7 @@ std::string PlayerbotPartyCombatCoordinator::ApplyRoleTalents(Player* member, Li
         member->GetGUIDLow(), member->GetName(), RoleName(role), specName.c_str(),
         totalPoints >= freePoints ? totalPoints - freePoints : 0, freePoints);
     if (policy.roleStrategySync)
-        sLog.outString("Living WoW role strategies synchronized bot=%u name=%s role=%s",
+        sLog.outString("Living WoW role strategy synchronization queued bot=%u name=%s role=%s",
             member->GetGUIDLow(), member->GetName(), RoleName(role));
     return freePoints == 0 ? "completed" : "talent_assignment_incomplete";
 }

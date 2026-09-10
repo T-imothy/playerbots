@@ -256,6 +256,17 @@ PlayerbotAI::~PlayerbotAI()
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 {
+    if (strategyResetRequested)
+    {
+        const bool autoLoad = strategyResetAutoLoad;
+        const std::string postNonCombatChanges = strategyResetPostNonCombatChanges;
+        strategyResetRequested = false;
+        strategyResetAutoLoad = true;
+        strategyResetPostNonCombatChanges.clear();
+        ResetStrategies(autoLoad);
+        if (!postNonCombatChanges.empty())
+            ChangeStrategy(postNonCombatChanges, BotState::BOT_STATE_NON_COMBAT);
+    }
     sPlayerbotPartyCombatCoordinator.Update(bot);
     AiObjectContext* context = aiObjectContext;
     std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());

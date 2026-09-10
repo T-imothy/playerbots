@@ -54,9 +54,11 @@ namespace ai
                 ai->ChangeStrategy("+" + defaultMovementStrategy, BotState::BOT_STATE_NON_COMBAT);
             }
 
-            ai->ResetStrategies();
-            
-            ai->ChangeStrategy("-lfg,-bg", BotState::BOT_STATE_NON_COMBAT);
+            // ResetStrategies destroys this AcceptInvitationAction. Queue the
+            // rebuild for the next AI tick so this Execute call can finish
+            // without continuing through freed engine/action memory.
+            ai->RequestStrategyReset(true, "-lfg,-bg");
+
             ai->Reset();
 
             sPlayerbotAIConfig.logEvent(ai, "AcceptInvitationAction", grp->GetLeaderName(), std::to_string(grp->GetMembersCount()));
