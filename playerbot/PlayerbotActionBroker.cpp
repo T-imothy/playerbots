@@ -394,6 +394,7 @@ bool PlayerbotActionBroker::PopulateTrade(Player* bot, Player* trader)
         trade->SetMoney(transaction->priceCopper);
         if (trade->GetMoney() != transaction->priceCopper)
             return false;
+        trader->GetSession()->SendUpdateTrade(true);
         transaction->state = "trading";
         transaction->failureReason.clear();
         Report(*transaction);
