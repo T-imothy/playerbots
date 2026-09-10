@@ -1,8 +1,19 @@
 #ifndef LIVING_ACTIVITY_NATIVE_CONTEXT_H
 #define LIVING_ACTIVITY_NATIVE_CONTEXT_H
-#include "LivingActivity.h"
+#include "LivingActivityEffects.h"
 
 namespace LivingActivity {
+    template<class NativePlayer, class MovementFlag>
+    uint32_t ReadNativeSafety(NativePlayer& player, MovementFlag falling) {
+        uint32_t safety = 0;
+        if (!player.IsAlive()) safety |= uint32_t(Safety::Death);
+        if (player.IsInCombat()) safety |= uint32_t(Safety::Combat);
+        if (!player.IsInWorld() || player.IsBeingTeleported()) safety |= uint32_t(Safety::Transfer);
+        if (player.IsTaxiFlying()) safety |= uint32_t(Safety::Taxi);
+        if (player.GetTransport()) safety |= uint32_t(Safety::Transport);
+        if (player.m_movementInfo.HasMovementFlag(falling)) safety |= uint32_t(Safety::Falling);
+        return safety;
+    }
     // Reads the actor's native lifecycle and the group's atomic stamp only.
     // Never enumerates a roster or calls a manager's mutating 'const' session
     // getter on a map worker. Core patch 016 supplies the native group stamp.

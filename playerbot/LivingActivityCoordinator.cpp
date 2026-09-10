@@ -27,14 +27,7 @@
 using namespace LivingActivity;
 namespace {
     uint32_t NativeSafety(Player* bot) {
-        uint32_t safety = 0;
-        if (!bot->IsAlive()) safety |= uint32_t(Safety::Death);
-        if (bot->IsInCombat()) safety |= uint32_t(Safety::Combat);
-        if (!bot->IsInWorld() || bot->IsBeingTeleported()) safety |= uint32_t(Safety::Transfer);
-        if (bot->IsTaxiFlying()) safety |= uint32_t(Safety::Taxi);
-        if (bot->GetTransport()) safety |= uint32_t(Safety::Transport);
-        if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_FALLING | MOVEFLAG_FALLINGFAR)) safety |= uint32_t(Safety::Falling);
-        return safety;
+        return ReadNativeSafety(*bot, MovementFlags(MOVEFLAG_FALLING | MOVEFLAG_FALLINGFAR));
     }
     uint64_t NowMs() {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
