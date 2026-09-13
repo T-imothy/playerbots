@@ -153,7 +153,7 @@ namespace ai
     {
     protected:
         using ActionCreator = std::function<T* (PlayerbotAI* ai)>;
-        std::map<std::string, ActionCreator> creators;
+        std::map<std::string, ActionCreator, std::less<>> creators;
 
     public:
         T* Create(std::string_view name, PlayerbotAI* ai)
@@ -167,7 +167,7 @@ namespace ai
                 nameView = nameView.substr(0, pos);
             }
 
-            auto it = creators.find(std::string(nameView));
+            auto it = creators.find(nameView);
             if (it == creators.end())
                 return nullptr;
 
@@ -199,7 +199,7 @@ namespace ai
         NamedObjectContext(bool shared = false, bool supportsSiblings = false) :
             NamedObjectFactory<T>(), shared(shared), supportsSiblings(supportsSiblings) {}
 
-        T* Create(std::string name, PlayerbotAI* ai)
+        T* Create(std::string_view name, PlayerbotAI* ai)
         {
             // A bot can briefly be visible to two map/update paths while it is
             // logging in or changing maps. Shared contexts are also queried by
@@ -214,7 +214,7 @@ namespace ai
                 // encounter new GUID/item/spell qualifiers.
                 T* object = NamedObjectFactory<T>::Create(name, ai);
                 if (object)
-                    created.emplace(std::move(name), object);
+                    created.emplace(std::string(name), object);
                 return object;
             }
 
@@ -229,7 +229,7 @@ namespace ai
         void Clear()
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
-            for (typename std::map<std::string, T*>::iterator i = created.begin(); i != created.end(); i++)
+            for (typename std::map<std::string, T*, std::less<>>::iterator i = created.begin(); i != created.end(); i++)
             {
                 if (i->second)
                     delete i->second;
@@ -241,7 +241,7 @@ namespace ai
         void Erase(const std::string& name)
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
-            typename std::map<std::string, T*>::iterator existing = created.find(name);
+            typename std::map<std::string, T*, std::less<>>::iterator existing = created.find(name);
             if (existing != created.end())
             {
                 delete existing->second;
@@ -272,7 +272,7 @@ namespace ai
         void Update()
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
-            for (typename std::map<std::string, T*>::iterator i = created.begin(); i != created.end(); i++)
+            for (typename std::map<std::string, T*, std::less<>>::iterator i = created.begin(); i != created.end(); i++)
             {
                 if (i->second)
                     i->second->Update();
@@ -282,7 +282,7 @@ namespace ai
         void Reset()
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
-            for (typename std::map<std::string, T*>::iterator i = created.begin(); i != created.end(); i++)
+            for (typename std::map<std::string, T*, std::less<>>::iterator i = created.begin(); i != created.end(); i++)
             {
                 if (i->second)
                     i->second->Reset();
@@ -302,7 +302,7 @@ namespace ai
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
             std::set<std::string> keys;
-            for (typename std::map<std::string, T*>::iterator it = created.begin(); it != created.end(); it++)
+            for (typename std::map<std::string, T*, std::less<>>::iterator it = created.begin(); it != created.end(); it++)
                 keys.insert(it->first);
             return keys;
         }
@@ -330,7 +330,7 @@ namespace ai
         }
 
     protected:
-        std::map<std::string, T*> created;
+        std::map<std::string, T*, std::less<>> created;
         mutable std::recursive_mutex createdMutex;
         bool shared;
         bool supportsSiblings;
