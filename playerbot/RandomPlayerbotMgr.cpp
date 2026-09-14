@@ -3721,10 +3721,11 @@ void RandomPlayerbotMgr::PrimeEventCache()
     do
     {
         Field* fields = result->Fetch();
+        // Legacy event payloads may be SQL NULL; native Field maps these to empty strings.
         uint32 const bot = fields[0].GetUInt32();
         loadedEventBots.insert(bot);
-        eventCache[bot][fields[1].GetString()] = CachedEvent(fields[2].GetUInt32(),
-            fields[3].GetUInt32(), fields[4].GetUInt32(), fields[5].GetString());
+        eventCache[bot][fields[1].GetCppString()] = CachedEvent(fields[2].GetUInt32(),
+            fields[3].GetUInt32(), fields[4].GetUInt32(), fields[5].GetCppString());
     } while (result->NextRow());
     eventCachePrimed = true;
 }
@@ -3743,12 +3744,12 @@ void RandomPlayerbotMgr::EnsureEventCacheLoaded(uint32 bot)
         do
         {
             Field* fields = results->Fetch();
-            std::string eventName = fields[0].GetString();
+            std::string eventName = fields[0].GetCppString();
             CachedEvent e;
             e.value = fields[1].GetUInt32();
             e.lastChangeTime = fields[2].GetUInt32();
             e.validIn = fields[3].GetUInt32();
-            e.data = fields[4].GetString();
+            e.data = fields[4].GetCppString();
             eventCache[bot][eventName] = std::move(e);
             ++loadedRows;
         } while (results->NextRow());
