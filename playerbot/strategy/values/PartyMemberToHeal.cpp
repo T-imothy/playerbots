@@ -4,6 +4,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/actions/EncounterSpellPolicy.h"
+#include "playerbot/LootObjectStack.h"
 
 using namespace ai;
 
@@ -73,7 +74,9 @@ Unit* PartyMemberToHeal::Calculate()
         Unit* target = rpgTarget.GetCreature(bot->GetInstanceId());
         if (Check(target) && target->GetHealthPercent() < 100)
         {
-            addCandidate(target);
+            LootObject loot = AI_VALUE(LootObject, "loot target");
+            if (!loot.IsLootPossible(bot))
+                addCandidate(target);
         }
     }
 

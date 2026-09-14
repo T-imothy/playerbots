@@ -106,5 +106,35 @@
     "native_wire_login_invite_llm": "passed on build67; final build retest pending",
     "scale_acceptance": "pending",
     "audit": "docs/MANTECH_PLAYERBOTS_INTEGRATION_AUDIT_2026-09-13.md"
+  },
+  "upstream_sync_20260914": {
+    "upstream": "cmangos/playerbots",
+    "through": "266268c6d4920487b013c31a62207ac7e7d777fe",
+    "mantech_reviewed_merge": "873ebbfeda7a7d074d29c7f3bf83c0d18192619a",
+    "commits": [
+      "1a5af653",
+      "13523ae4",
+      "8f2df5ab",
+      "f01fcb33",
+      "266268c6"
+    ],
+    "scope": "Reviewed upstream delta from the other ManTech task; preserve Turtle native adapters and existing port fixes",
+    "already_present": [
+      "neutral fallback for missing faction metadata",
+      "missing creature-template diagnostic guard"
+    ],
+    "adaptations": [
+      "preserve Turtle movement/world ownership and host APIs during conflict resolution",
+      "keep selected and party healing ahead of incidental RPG healing even with pending loot",
+      "retain NULL-safe legacy event loading"
+    ],
+    "validation": [
+      "Release build88 passed",
+      "actual faction methods across expansion defines passed",
+      "actual healing selection across expansion defines passed with Turtle fixture APIs",
+      "actual RPG/travel loot-admission tails passed",
+      "actual bulk/lazy NULL event loaders passed"
+    ],
+    "production_deployment": "not deployed; production remains build87"
   }
 }

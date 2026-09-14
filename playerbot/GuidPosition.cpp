@@ -120,7 +120,9 @@ const FactionTemplateEntry* GuidPosition::GetFactionTemplateEntry() const
 const ReputationRank GuidPosition::GetReactionTo(const GuidPosition& other, uint32 instanceId) const
 {
     // A diagnostic GUID can outlive its player or creature-template metadata.
-    if (!GetFactionTemplateEntry() || !other.GetFactionTemplateEntry())
+    const FactionTemplateEntry* thisTemplate = GetFactionTemplateEntry();
+    const FactionTemplateEntry* otherTemplate = other.GetFactionTemplateEntry();
+    if (!thisTemplate || !otherTemplate)
         return REP_NEUTRAL;
 
     if(other.IsUnit() && other.GetUnit(instanceId))
@@ -128,29 +130,24 @@ const ReputationRank GuidPosition::GetReactionTo(const GuidPosition& other, uint
         {
             if (const Player* unitPlayer = other.GetUnit(instanceId)->GetControllingPlayer())
             {
-                if (unitPlayer->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_CONTESTED_PVP) && GetFactionTemplateEntry()->IsContestedGuardFaction())
+                if (unitPlayer->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_CONTESTED_PVP) && thisTemplate->IsContestedGuardFaction())
                     return REP_HOSTILE;
 
-                if (const ReputationRank* rank = unitPlayer->GetReputationMgr().GetForcedRankIfAny(GetFactionTemplateEntry()))
+                if (const ReputationRank* rank = unitPlayer->GetReputationMgr().GetForcedRankIfAny(thisTemplate))
                     return (*rank);
 
 #ifdef MANGOSBOT_ZERO
-                const FactionTemplateEntry* thisFactionEntry = GetFactionTemplateEntry();
+                const FactionEntry* unitFactionEntry = sFactionStore.LookupEntry(thisTemplate->faction);
 
-                if (thisFactionEntry)
-                {
-                    const FactionEntry* unitFactionEntry = sFactionStore.LookupEntry(GetFactionTemplateEntry()->faction);
-
-                    if (unitFactionEntry)
-                        return unitPlayer->GetReputationMgr().IsAtWar(unitFactionEntry) ? REP_HOSTILE : REP_FRIENDLY;
-                }
+                if (unitFactionEntry)
+                    return unitPlayer->GetReputationMgr().IsAtWar(unitFactionEntry) ? REP_HOSTILE : REP_FRIENDLY;
 #else
                 if (!other.GetUnit(instanceId)->HasFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_IGNORE_REPUTATION))
                 {
 #ifdef MANGOSBOT_TWO
-                    const FactionEntry* thisFactionEntry = sFactionStore.LookupEntry(GetFactionTemplateEntry()->faction);
+                    const FactionEntry* thisFactionEntry = sFactionStore.LookupEntry(thisTemplate->faction);
 #else
-                    const FactionEntry* thisFactionEntry = sFactionStore.LookupEntry<FactionEntry>(GetFactionTemplateEntry()->faction);
+                    const FactionEntry* thisFactionEntry = sFactionStore.LookupEntry<FactionEntry>(thisTemplate->faction);
 #endif
                     if (thisFactionEntry && thisFactionEntry->HasReputation())
                     {
@@ -162,7 +159,7 @@ const ReputationRank GuidPosition::GetReactionTo(const GuidPosition& other, uint
             }
         }
   
-    return PlayerbotAI::GetFactionReaction(GetFactionTemplateEntry(), other.GetFactionTemplateEntry());
+    return PlayerbotAI::GetFactionReaction(thisTemplate, otherTemplate);
 }
 
 bool GuidPosition::isDead(uint32 instanceId)

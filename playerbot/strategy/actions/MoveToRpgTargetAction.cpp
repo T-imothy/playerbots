@@ -284,6 +284,11 @@ bool MoveToRpgTargetAction::isUseful()
             return false;
     }
 
+    // Finish the selected loot target before resuming RPG travel.
+    LootObject loot = AI_VALUE(LootObject, "loot target");
+    if (loot.IsLootPossible(bot))
+        return false;
+
     return true;
 }
 
