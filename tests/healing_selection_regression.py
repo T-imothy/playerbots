@@ -64,7 +64,8 @@ struct Group{std::vector<GroupReference> refs;GroupReference* GetFirstMember(){r
  void Set(std::initializer_list<Player*> players){refs.clear();for(auto p:players){refs.push_back({p});p->group=this;}
  for(size_t i=0;i+1<refs.size();++i)refs[i].following=&refs[i+1];}};
 struct GuidPosition{Unit* unit=nullptr;operator bool()const{return unit;}Unit* GetCreature(unsigned){return unit;}};
-struct PlayerbotAI{Player* bot;std::map<unsigned,Unit*> units;bool preheal=false,focus=false;
+struct LootObject{bool possible=false;bool IsLootPossible(Player*){return possible;}};
+struct PlayerbotAI{Player* bot;bool lootPossible=false;std::map<unsigned,Unit*> units;bool preheal=false,focus=false;
  std::list<ObjectGuid> nearest,focused;GuidPosition rpg;
  static bool IsHealSpell(const SpellEntry* s){return s&&s->healing;}
  bool HasStrategy(std::string name,BotState){return name=="preheal"?preheal:focus;}
@@ -72,6 +73,7 @@ struct PlayerbotAI{Player* bot;std::map<unsigned,Unit*> units;bool preheal=false
  bool IsTank(Player* p){return p->tank;}bool IsHeal(Player* p){return p->healer;}bool IsSafe(Player* p){return p&&p->safe;}
  float GetRange(const char*){return 40;}
  template<class T>T value(std::string key){if constexpr(std::is_same_v<T,GuidPosition>)return rpg;
+ else if constexpr(std::is_same_v<T,LootObject>)return {lootPossible};
  else return key=="focus heal targets"?focused:nearest;}
 };
 struct Facade{bool IsFriendlyTo(Unit*,Unit* u){return u&&u->friendly;}bool IsAlive(Unit* u){return u&&u->alive;}
@@ -110,6 +112,14 @@ int main(){
  owner.friendly=false;assert(selector.Calculate()==nullptr);owner.friendly=true;owner.maxhp=0;assert(selector.Calculate()==nullptr);owner.maxhp=100;
  bot.bg=true;owner.distance=25;assert(selector.Calculate()==&owner);owner.distance=40;assert(selector.Calculate()==&owner);owner.distance=41;assert(selector.Calculate()==nullptr);bot.bg=false;assert(selector.Calculate()==nullptr);owner.distance=25;assert(selector.Calculate()==&owner);owner.distance=0;
  owner.hp=100;ai.rpg.unit=&pet;pet.hp=40;pet.instance=2;assert(selector.Calculate()==nullptr);pet.instance=1;assert(selector.Calculate()==&pet);ai.rpg.unit=nullptr;
+ // Upstream pending loot suppresses only incidental RPG healing. Real party
+ // healing, native Check validation and candidate deduplication remain intact.
+ pet.hp=100;Unit npc;npc.guid=77;npc.hp=40;ai.rpg.unit=&npc;
+ ai.lootPossible=true;assert(selector.Calculate()==nullptr);
+ owner.hp=20;assert(selector.Calculate()==&owner);owner.hp=100;
+ ai.lootPossible=false;assert(selector.Calculate()==&npc);
+ npc.phase=2;assert(selector.Calculate()==nullptr);npc.phase=1;
+ ai.rpg.unit=nullptr;
  // De-duplicate selected+group candidates before distributing two healers.
  owner.pet=nullptr;a.hp=10;b.hp=20;healer.healer=true;group.Set({&healer,&bot,&a,&b});bot.selection=a.guid;
  assert(selector.Calculate()==&a);healer.maxmana=0;assert(selector.Calculate()==&a);healer.maxmana=100;
