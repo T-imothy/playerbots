@@ -518,7 +518,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         if (CombatDiagnostics::Select(ai))
                             CombatDiagnostics::Record(ai, action->getName(), event.getSource(), "action_execute", actionExecuted ? 1 : 0);
                         MANTECH_DIAG_END(devDiagPmo4);
-                    pmo4.reset();
+                        pmo4.reset();
 
 #ifdef PLAYERBOT_ELUNA
                         // used by eluna    
