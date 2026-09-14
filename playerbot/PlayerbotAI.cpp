@@ -18,6 +18,8 @@
 #include "LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
+#include "ChatPrefix.h"
+#include "ChatBroadcastSender.h"
 #include "BotRecruitment.h"
 #include "CombatDiagnostics.h"
 #include "strategy/actions/EncounterSpellPolicy.h"
@@ -1868,7 +1870,12 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
             }
 #endif
 
-            bool isAiChat = sPlayerbotAIConfig.llmEnabled > 0 && (HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT) || sPlayerbotAIConfig.llmEnabled == 3);
+            // Most bot-to-bot broadcasts fail the existing probability gate.
+            // Do not probe every recipient's strategy/cache before that gate.
+            auto usesAIChat = [this] {
+                return sPlayerbotAIConfig.llmEnabled > 0 &&
+                    (sPlayerbotAIConfig.llmEnabled == 3 || HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT));
+            };
 
             if (m_recordIncommingMessages)
             {
@@ -1919,43 +1926,37 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                 m_recordedMessages.push_back(recievedMessage);
             }
 
-            if (isAiChat && (lang == LANG_ADDON || message.find("d:") == 0))
-                return;
-
             if (guid1 != bot->GetObjectGuid()) // do not reply to self
             {
-                // try to always reply to real player
-                time_t lastChat = GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Get();
-                bool isPaused = time(0) < lastChat;
-                bool shouldReply = false;
+                // Human messages keep their existing LLM/mention semantics.
                 bool isFromFreeBot = false;
-                sObjectMgr.GetPlayerNameByGUID(guid1, name);
-                uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid1);
-                isFromFreeBot = sPlayerbotAIConfig.IsInRandomAccountList(accountId);
-                if (!isFromFreeBot)
+                if (!ai::chat::BroadcastSenderScope::TryGet(guid1.GetRawValue(), isFromFreeBot))
                 {
-
-                    isFromFreeBot = sPlayerbotAIConfig.IsFreeAltBot(guid1);
-
-                    if (isFromFreeBot)
+                    uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid1);
+                    isFromFreeBot = sPlayerbotAIConfig.IsInRandomAccountList(accountId);
+                    if (!isFromFreeBot)
                     {
-                        Player* player = sObjectMgr.GetPlayer(guid1);
-                        if (player && player->isRealPlayer())
-                            isFromFreeBot = false;
+
+                        isFromFreeBot = sPlayerbotAIConfig.IsFreeAltBot(guid1);
+
+                        if (isFromFreeBot)
+                        {
+                            Player* player = sObjectMgr.GetPlayer(guid1);
+                            if (player && player->isRealPlayer())
+                                isFromFreeBot = false;
+                        }
                     }
                 }
 
                 bool isMentioned = message.find(bot->GetName()) != std::string::npos;
-                
 
-                ChatChannelSource chatChannelSource = GetChatChannelSource(bot, msgtype, chanName);
+
+                bool isAiChat = !isFromFreeBot && usesAIChat();
+                if (isAiChat && (lang == LANG_ADDON || message.find("d:") == 0))
+                    return;
 
                 if (!isAiChat || isFromFreeBot)
                 {
-                    // random bot speaks, chat CD
-                    if ((isFromFreeBot || isAiChat) && isPaused)
-                        return;
-
                     // BG: react only if mentioned or if not channel and real player spoke
                     if (bot->InBattleGround() && !(isMentioned || (msgtype != CHAT_MSG_CHANNEL && !isFromFreeBot)))
                         return;
@@ -1966,16 +1967,18 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                     if (lang == LANG_ADDON)
                         return;
 
-                    if (boost::algorithm::istarts_with(message, sPlayerbotAIConfig.toxicLinksPrefix)
-                        && (GetChatHelper()->ExtractAllItemIds(message).size() > 0 || GetChatHelper()->ExtractAllQuestIds(message).size() > 0)
-                        && sPlayerbotAIConfig.toxicLinksRepliesChance)
+                    if (sPlayerbotAIConfig.toxicLinksRepliesChance &&
+                        (message.find("Hitem:") != std::string::npos || message.find("Hquest:") != std::string::npos) &&
+                        ai::chat::HasInsensitivePrefix(message, sPlayerbotAIConfig.toxicLinksPrefix)
+                        && (GetChatHelper()->ExtractAllItemIds(message).size() > 0 || GetChatHelper()->ExtractAllQuestIds(message).size() > 0))
                     {
                         if (urand(0, 50) > 0 || urand(1, 100) > sPlayerbotAIConfig.toxicLinksRepliesChance)
                         {
                             return;
                         }
                     }
-                    else if ((GetChatHelper()->ExtractAllItemIds(message).count(19019) && sPlayerbotAIConfig.thunderfuryRepliesChance))
+                    else if (sPlayerbotAIConfig.thunderfuryRepliesChance &&
+                        GetChatHelper()->ExtractAllItemIds(message).count(19019))
                     {
                         if (urand(0, 60) > 0 || urand(1, 100) > sPlayerbotAIConfig.thunderfuryRepliesChance)
                         {
@@ -2003,15 +2006,30 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                     }
                 }
 
-                MANGOS_ASSERT(!message.empty());     
+                // Preserve cooldown policy, but only touch the recipient's
+                // locked value cache after a reply actually passes selection.
+                if (isFromFreeBot)
+                {
+                    time_t const lastChat = GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Get();
+                    if (time(0) < lastChat)
+                        return;
+                }
+                if (isFromFreeBot)
+                    isAiChat = usesAIChat();
+                if (isAiChat && (lang == LANG_ADDON || message.find("d:") == 0))
+                    return;
+                sObjectMgr.GetPlayerNameByGUID(guid1, name);
+                MANGOS_ASSERT(!message.empty());
                 QueueChatResponse(msgtype, guid1, ObjectGuid(), message, chanName, name, isAiChat);
                 GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Set(time(0) + urand(5, 25));
 
                 return;
             }
 
-            if (isAiChat)
+            if (usesAIChat())
             {
+                if (lang == LANG_ADDON || message.find("d:") == 0)
+                    return;
                 ChatChannelSource chatChannelSource = bot->GetPlayerbotAI()->GetChatChannelSource(bot, msgtype, chanName);
 
                 std::string llmChannel;
@@ -3481,6 +3499,9 @@ bool PlayerbotAI::SayToWorld(std::string msg)
     //no zone
     if (Channel* worldChannel = cMgr->GetChannel("World", bot))
     {
+        ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+            sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+            (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !bot->isRealPlayer()));
         worldChannel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
         return true;
     }
@@ -3513,6 +3534,9 @@ bool PlayerbotAI::SayToGeneral(std::string msg)
         if (channel && channel->GetChannelId() == ChatChannelId::GENERAL
             && boost::algorithm::contains(channel->GetName(), GetLocalizedAreaName(current_zone)))
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !bot->isRealPlayer()));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }
@@ -3553,6 +3577,9 @@ bool PlayerbotAI::SayToTrade(std::string msg)
         if (channel && channel->GetChannelId() == ChatChannelId::TRADE
             && boost::algorithm::contains(channel->GetName(), GetLocalizedAreaName(GetAreaEntryByAreaID(ImportantAreaId::CITY))))
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !bot->isRealPlayer()));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }
@@ -3585,6 +3612,9 @@ bool PlayerbotAI::SayToLFG(std::string msg)
         //check for current zone
         if (channel && channel->GetChannelId() == ChatChannelId::LOOKING_FOR_GROUP)
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !bot->isRealPlayer()));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }
@@ -3619,6 +3649,9 @@ bool PlayerbotAI::SayToLocalDefense(std::string msg)
         if (channel && channel->GetChannelId() == ChatChannelId::LOCAL_DEFENSE
             && boost::algorithm::contains(channel->GetName(), GetLocalizedAreaName(current_zone)))
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !bot->isRealPlayer()));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }
@@ -3651,6 +3684,9 @@ bool PlayerbotAI::SayToWorldDefense(std::string msg)
     {
         if (channel && channel->GetChannelId() == ChatChannelId::WORLD_DEFENSE)
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !bot->isRealPlayer()));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }
@@ -3693,6 +3729,9 @@ bool PlayerbotAI::SayToGuildRecruitment(std::string msg)
         if (channel && channel->GetChannelId() == ChatChannelId::GUILD_RECRUITMENT
             && boost::algorithm::contains(channel->GetName(), GetLocalizedAreaName(GetAreaEntryByAreaID(ImportantAreaId::CITY))))
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !bot->isRealPlayer()));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }

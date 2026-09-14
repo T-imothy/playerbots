@@ -517,8 +517,9 @@ void ChatReplyAction::ChatReplyDo(Player* bot, uint32 type, uint32 guid1, uint32
         PlayerbotAI* ai = bot->GetPlayerbotAI();
         AiObjectContext* context = ai->GetAiObjectContext();
 
+        // Do not fall through to a canned reply after the channel loses its human audience.
         if (!chanName.empty() && !ai->ChannelHasRealPlayer(chanName))
-            player = nullptr;
+            return;
 
         std::string llmChannel;
 
