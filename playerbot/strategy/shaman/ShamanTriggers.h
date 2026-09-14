@@ -347,6 +347,8 @@ namespace ai
 
             for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
             {
+                if (!target->HasAuraType((AuraType)type))
+                    continue;
                 Unit::AuraList const& auras = target->GetAurasByType((AuraType)type);
                 for (Unit::AuraList::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
                 {

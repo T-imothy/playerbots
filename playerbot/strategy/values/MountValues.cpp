@@ -181,6 +181,8 @@ uint32 CurrentMountSpeedValue::Calculate()
 
     for (uint32 auraType = SPELL_AURA_BIND_SIGHT; auraType < TOTAL_AURAS; auraType++)
     {
+        if (!unit->HasAuraType((AuraType)auraType))
+            continue;
         Unit::AuraList const& auras = unit->GetAurasByType((AuraType)auraType);
 
         if (auras.empty())
