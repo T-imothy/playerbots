@@ -35,7 +35,8 @@ bool ai::HasActiveSummoningRitual(Player* player)
     {
         const Spell* spell = player->GetCurrentSpell(type);
         if (spell && spell->m_spellInfo && spell->getState() != SPELL_STATE_FINISHED &&
-            IsNativeSummoningRitual(spell->m_spellInfo->Id)) return true;
+            (IsNativeSummoningRitual(spell->m_spellInfo->Id) ||
+             (player->GetMapId() == 70 && spell->m_spellInfo->Id == 11206))) return true;
     }
     return false;
 }

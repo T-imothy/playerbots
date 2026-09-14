@@ -24,6 +24,7 @@
 #include "ImbueAction.h"
 #include "MovementActions.h"
 #include "RitualSummonAction.h"
+#include "UldamanAltarAction.h"
 #include "MoveToRpgTargetAction.h"
 #include "MoveToTravelTargetAction.h"
 #include "OutfitAction.h"
@@ -416,6 +417,7 @@ namespace ai
             creators["magtheridon cube"] = [](PlayerbotAI* ai) { return new MagtheridonCubeAction(ai); };
             creators["gruul shatter spread"] = [](PlayerbotAI* ai) { return new GruulSpreadAction(ai); };
             creators["assist summoning ritual"] = [](PlayerbotAI* ai) { return new AssistSummoningRitualAction(ai); };
+            creators["assist uldaman altar"] = [](PlayerbotAI* ai) { return new AssistUldamanAltarAction(ai); };
             creators["hold summoning ritual"] = [](PlayerbotAI* ai) { return new HoldSummoningRitualAction(ai); };
             creators["continue ritual summon"] = [](PlayerbotAI* ai) { return new ContinueRitualSummonAction(ai); };
             creators["pathaleon attack adds"] = [](PlayerbotAI* ai) { return new PathaleonAddsAction(ai); };

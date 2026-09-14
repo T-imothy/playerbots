@@ -3,6 +3,7 @@
 #include "UseMeetingStoneAction.h"
 #include "playerbot/BotRecruitment.h"
 #include "RitualSummonAction.h"
+#include "UldamanAltarAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 
@@ -28,6 +29,9 @@ bool UseMeetingStoneAction::Execute(Event& event)
     p.rpos(0);
     ObjectGuid guid;
     p >> guid;
+
+    if (requester->IsInWorld() && requester->GetMapId() == 70 &&
+        AssistUldamanAltarAction::Start(ai, requester, guid)) return true;
 
 	if (requester->GetSelectionGuid() && requester->GetSelectionGuid() != bot->GetObjectGuid())
 		return false;

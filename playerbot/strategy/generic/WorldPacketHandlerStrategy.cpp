@@ -34,6 +34,8 @@ void WorldPacketHandlerStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &
         NextAction::array(0, new NextAction("hold summoning ritual", 100.0f), NULL)));
     triggers.push_back(new TriggerNode("assist summoning ritual",
         NextAction::array(0, new NextAction("assist summoning ritual", 80.0f), NULL)));
+    triggers.push_back(new TriggerNode("assist uldaman altar",
+        NextAction::array(0, new NextAction("assist uldaman altar", 80.0f), NULL)));
 #ifdef MANGOSBOT_TWO
     triggers.push_back(new TriggerNode("continue ritual summon",
         NextAction::array(0, new NextAction("continue ritual summon", 81.0f), NULL)));
