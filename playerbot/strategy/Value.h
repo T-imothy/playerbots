@@ -1,3 +1,4 @@
+#include "Util/DevDiagnostics.h"
 #pragma once
 #include "Action.h"
 #include "Event.h"
@@ -66,6 +67,7 @@ namespace ai
                 lastCheckTime = now;
 
                 auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, AiNamedObject::getName(), this->ai);
+                MANTECH_DIAG_SCOPE(BotValue,32,AiNamedObject::getName().c_str());
                 value = Calculate();
             }
             return value;
@@ -103,6 +105,7 @@ namespace ai
                 this->lastCheckTime = now;
 
                 auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, AiNamedObject::getName(), this->ai);
+                MANTECH_DIAG_SCOPE(BotValue,32,AiNamedObject::getName().c_str());
                 this->value = this->Calculate();
             }
             return this->value;

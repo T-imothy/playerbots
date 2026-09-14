@@ -1,3 +1,4 @@
+#include "Util/DevDiagnostics.h"
 
 #include "playerbot/playerbot.h"
 #include <stdarg.h>
@@ -336,6 +337,7 @@ void Engine::Init()
 
 bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 {
+    MANTECH_DIAG_SCOPE(BotDecision,32,nullptr);
     PruneActionFailures(WorldTimer::getMSTime());
     // Expire old plans before fresh triggers deduplicate against them.
     queue.RemoveExpired();
@@ -419,7 +421,9 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                 if (!isStunned || action->isUsefulWhenStunned())
                 {
                     auto pmo2 = sPerformanceMonitor.start(PERF_MON_ACTION, "isUseful", ai);
+            MANTECH_DIAG_BEGIN(devDiagPmo2,BotUseful,32,actionName.c_str());
                     isUseful = action->isUseful();
+                    MANTECH_DIAG_END(devDiagPmo2);
                     pmo2.reset();
                 }
 
@@ -501,16 +505,20 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     }
 
                     auto pmo3 = sPerformanceMonitor.start(PERF_MON_ACTION, "isPossible", ai);
+            MANTECH_DIAG_BEGIN(devDiagPmo3,BotPossible,32,actionName.c_str());
                     bool isPossible = action->isPossible();
+                    MANTECH_DIAG_END(devDiagPmo3);
                     pmo3.reset();
 
                     if (isPossible && relevance)
                     {
                         auto pmo4 = sPerformanceMonitor.start(PERF_MON_ACTION, "Execute", ai);
+            MANTECH_DIAG_BEGIN(devDiagPmo4,BotExecute,32,actionName.c_str());
                         actionExecuted = ListenAndExecute(action, event);
                         if (CombatDiagnostics::Select(ai))
                             CombatDiagnostics::Record(ai, action->getName(), event.getSource(), "action_execute", actionExecuted ? 1 : 0);
-                        pmo4.reset();
+                        MANTECH_DIAG_END(devDiagPmo4);
+                    pmo4.reset();
 
 #ifdef PLAYERBOT_ELUNA
                         // used by eluna    
@@ -897,7 +905,9 @@ void Engine::ProcessTriggers(bool minimal)
             if (minimal && node->getFirstRelevance() < 100)
                 continue;
             auto pmo = sPerformanceMonitor.start(PERF_MON_TRIGGER, trigger->getName(), ai);
+            MANTECH_DIAG_BEGIN(devDiagTrigger,BotTrigger,32,trigger->getName().c_str());
             Event event = trigger->Check();
+            MANTECH_DIAG_END(devDiagTrigger);
 
 #ifdef PLAYERBOT_ELUNA
             // used by eluna    

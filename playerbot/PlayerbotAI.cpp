@@ -1,3 +1,4 @@
+#include "Util/DevDiagnostics.h"
 #include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
 #include <stdarg.h>
@@ -289,6 +290,7 @@ PlayerbotAI::~PlayerbotAI()
 
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanced)
 {
+    MANTECH_DIAG_SCOPE(BotAI,32,nullptr);
     // Do not block a map worker behind another map worker that is already
     // updating this bot. The current update owns the complete mutable AI
     // context; a duplicate transition-frame update is safe to skip.
@@ -695,6 +697,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
 
 bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
 {
+    MANTECH_DIAG_SCOPE(BotReaction,32,nullptr);
     bool reactionFound;
     std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
     auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAIReaction " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
@@ -1212,6 +1215,7 @@ void PlayerbotAI::HandleCommands()
 
 void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
+    MANTECH_DIAG_SCOPE(BotDecision,32,nullptr);
     if (bot->IsBeingTeleported() || !bot->IsInWorld())
         return;
 
