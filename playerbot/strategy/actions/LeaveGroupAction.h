@@ -7,6 +7,7 @@ namespace ai
     class LeaveGroupAction : public ChatCommandAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         LeaveGroupAction(PlayerbotAI* ai, std::string name = "leave") : ChatCommandAction(ai, name) {}
 
         virtual bool Execute(Event& event) override
@@ -24,6 +25,7 @@ namespace ai
     class PartyCommandAction : public LeaveGroupAction 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         PartyCommandAction(PlayerbotAI* ai) : LeaveGroupAction(ai, "party command") {}
 
         virtual bool Execute(Event& event) override
@@ -49,6 +51,7 @@ namespace ai
     class UninviteAction : public LeaveGroupAction 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         UninviteAction(PlayerbotAI* ai) : LeaveGroupAction(ai, "uninvite") {}
 
         virtual bool Execute(Event& event) override
@@ -88,6 +91,7 @@ namespace ai
     class LeaveFarAwayAction : public LeaveGroupAction 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         LeaveFarAwayAction(PlayerbotAI* ai) : LeaveGroupAction(ai, "leave far away") {}
 
         virtual bool Execute(Event& event) override

@@ -1,6 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "GuildMeetingTrigger.h"
-#include "Guilds/GuildMgr.h"
+#include "Guild/GuildMgr.h"
 #include <regex>
 
 using namespace ai;

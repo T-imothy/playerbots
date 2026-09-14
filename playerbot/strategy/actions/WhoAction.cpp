@@ -31,7 +31,7 @@ bool WhoAction::Execute(Event& event)
     if (!sObjectMgr.GetPlayer(owner->GetObjectGuid()))
         return false;
 
-    if (owner->isRealPlayer() && event.getParam().empty())
+    if (IsRealPlayer(owner) && event.getParam().empty())
         return BotRecruitment::Queue(owner, bot, "who");
 
     std::ostringstream out;
@@ -52,7 +52,7 @@ bool WhoAction::Execute(Event& event)
     {
         if (AreaTableEntry const* areaEntry = GetAreaEntryByAreaID(sServerFacade.GetAreaId(bot)))
         {
-            out << ", (|cffb04040" << areaEntry->area_name[0] << "|r)";
+            out << ", (|cffb04040" << areaEntry->area_name << "|r)";
         }
     }
 

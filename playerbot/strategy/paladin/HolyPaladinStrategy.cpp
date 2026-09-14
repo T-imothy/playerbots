@@ -58,26 +58,48 @@ void HolyPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "party member almost full health",
         NextAction::array(0, new NextAction("flash of light on party", ACTION_LIGHT_HEAL), NULL)));
 
+    // TurtleWoW build override: Seal of Wisdom over Seal of Light
+    // (party mana-regen utility via Judgement of Wisdom; Seal of Light's
+    // direct heal-on-swing is redundant with our 5 healing buttons)
     triggers.push_back(new TriggerNode(
         "seal",
-        NextAction::array(0, new NextAction("seal of light", ACTION_NORMAL + 2), NULL)));
+        NextAction::array(0, new NextAction("seal of wisdom", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "enemy is close",
         NextAction::array(0, new NextAction("judgement", ACTION_NORMAL), NULL)));
+
+    // TurtleWoW melee-weave engine: Crusader Strike on cooldown when in melee.
+    // 5/5 Blessed Strikes gives CS a chance to reset Holy Shock's cooldown,
+    // and Holy Judgement makes the next Holy Light cast faster, so every CS
+    // contributes to the heal chain. This is THE defining add for the Holy
+    // Paladin in our 37/3/11 melee-weave build.
+    triggers.push_back(new TriggerNode(
+        "crusader strike",
+        NextAction::array(0, new NextAction("crusader strike", ACTION_NORMAL + 4), NULL)));
+
+    // Caster interrupt: Hammer of Justice (60-sec CD, 6-sec stun)
+    triggers.push_back(new TriggerNode(
+        "hammer of justice interrupt",
+        NextAction::array(0, new NextAction("hammer of justice", ACTION_INTERRUPT), NULL)));
+
+    // Daybreak target-prioritization (Holy 6/1, capstone): when a party
+    // member has the Daybreak buff (51322, applied via crit-heal procs),
+    // their next FoL/HL/HS heals for boosted effect AND they have +max-HP
+    // headroom. Bot prioritizes healing them over default health-band
+    // triage to consume the Daybreak window efficiently.
+    //
+    // Priority HIGH+5: above default health-band triage (MEDIUM_HEAL+0..+5)
+    // but below CRITICAL_HEAL emergencies. Holy Light is the bigger heal
+    // and benefits more from the Daybreak +healing-received bonus.
+    triggers.push_back(new TriggerNode(
+        "party member has daybreak",
+        NextAction::array(0, new NextAction("holy light on party", ACTION_HIGH + 5), NULL)));
 }
 
 void HolyPaladinStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PaladinStrategy::InitNonCombatTriggers(triggers);
-
-    triggers.push_back(new TriggerNode(
-        "critical health",
-        NextAction::array(0, new NextAction("holy light", ACTION_CRITICAL_HEAL), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "party member critical health",
-        NextAction::array(0, new NextAction("holy light on party", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "low health",
@@ -598,26 +620,48 @@ void HolyPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         "party member almost full health",
         NextAction::array(0, new NextAction("flash of light on party", ACTION_LIGHT_HEAL), NULL)));
 
+    // TurtleWoW build override: Seal of Wisdom over Seal of Light
+    // (party mana-regen utility via Judgement of Wisdom; Seal of Light's
+    // direct heal-on-swing is redundant with our 5 healing buttons)
     triggers.push_back(new TriggerNode(
         "seal",
-        NextAction::array(0, new NextAction("seal of light", ACTION_NORMAL + 2), NULL)));
+        NextAction::array(0, new NextAction("seal of wisdom", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "enemy is close",
         NextAction::array(0, new NextAction("judgement", ACTION_NORMAL), NULL)));
+
+    // TurtleWoW melee-weave engine: Crusader Strike on cooldown when in melee.
+    // 5/5 Blessed Strikes gives CS a chance to reset Holy Shock's cooldown,
+    // and Holy Judgement makes the next Holy Light cast faster, so every CS
+    // contributes to the heal chain. This is THE defining add for the Holy
+    // Paladin in our 37/3/11 melee-weave build.
+    triggers.push_back(new TriggerNode(
+        "crusader strike",
+        NextAction::array(0, new NextAction("crusader strike", ACTION_NORMAL + 4), NULL)));
+
+    // Caster interrupt: Hammer of Justice (60-sec CD, 6-sec stun)
+    triggers.push_back(new TriggerNode(
+        "hammer of justice interrupt",
+        NextAction::array(0, new NextAction("hammer of justice", ACTION_INTERRUPT), NULL)));
+
+    // Daybreak target-prioritization (Holy 6/1, capstone): when a party
+    // member has the Daybreak buff (51322, applied via crit-heal procs),
+    // their next FoL/HL/HS heals for boosted effect AND they have +max-HP
+    // headroom. Bot prioritizes healing them over default health-band
+    // triage to consume the Daybreak window efficiently.
+    //
+    // Priority HIGH+5: above default health-band triage (MEDIUM_HEAL+0..+5)
+    // but below CRITICAL_HEAL emergencies. Holy Light is the bigger heal
+    // and benefits more from the Daybreak +healing-received bonus.
+    triggers.push_back(new TriggerNode(
+        "party member has daybreak",
+        NextAction::array(0, new NextAction("holy light on party", ACTION_HIGH + 5), NULL)));
 }
 
 void HolyPaladinStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PaladinStrategy::InitNonCombatTriggers(triggers);
-
-    triggers.push_back(new TriggerNode(
-        "critical health",
-        NextAction::array(0, new NextAction("holy light", ACTION_CRITICAL_HEAL), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "party member critical health",
-        NextAction::array(0, new NextAction("holy light on party", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "low health",
@@ -1158,14 +1202,6 @@ void HolyPaladinStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 void HolyPaladinStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     PaladinStrategy::InitNonCombatTriggers(triggers);
-
-    triggers.push_back(new TriggerNode(
-        "critical health",
-        NextAction::array(0, new NextAction("holy light", ACTION_CRITICAL_HEAL), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "party member critical health",
-        NextAction::array(0, new NextAction("holy light on party", ACTION_CRITICAL_HEAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "low health",

@@ -5,10 +5,10 @@
 
 using namespace ai;
 
-class RestorationDruidStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
+class BalanceDruidStrategyActionNodeFactory : public NamedObjectFactory<ActionNode>
 {
 public:
-    RestorationDruidStrategyActionNodeFactory()
+    BalanceDruidStrategyActionNodeFactory()
     {
         creators["innervate"] = &innervate;
         creators["tranquility"] = &tranquility;
@@ -25,7 +25,7 @@ private:
     static ActionNode* innervate(PlayerbotAI* ai)
     {
         return new ActionNode("innervate",
-            /*P*/ NextAction::array(0, new NextAction("restoration caster form"), NULL),
+            /*P*/ NextAction::array(0, new NextAction("caster form"), NULL),
             /*A*/ NextAction::array(0, new NextAction("mana potion"), NULL),
             /*C*/ NULL);
     }
@@ -54,11 +54,6 @@ private:
     ACTION_NODE_P(tranquility, "tranquility", "caster form");
 #endif
 };
-
-RestorationDruidStrategy::RestorationDruidStrategy(PlayerbotAI* ai) : DruidStrategy(ai)
-{
-    actionNodeFactories.Add(std::make_unique<RestorationDruidStrategyActionNodeFactory>());
-}
 
 #ifdef MANGOSBOT_ZERO // Vanilla
 
@@ -137,7 +132,7 @@ void RestorationDruidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tr
 
     triggers.push_back(new TriggerNode(
         "low health",
-        NextAction::array(0, new NextAction("regrowth", ACTION_MEDIUM_HEAL), NULL)));
+        NextAction::array(0, new NextAction("regrowth", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode(
         "party member low health",

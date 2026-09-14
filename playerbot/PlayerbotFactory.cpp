@@ -1,18 +1,22 @@
+#include "MountManager.hpp"
+#include "playerbot/strategy/values/MountValues.h"
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/AutoLearnSpellAction.h"
 #include "playerbot/PlayerbotFactory.h"
+#include "playerbot/PerformanceMonitor.h"
 
-#include "Server/SQLStorages.h"
-#include "Entities/ItemPrototype.h"
+#include "Database/SQLStorages.h"
+#include "Objects/ItemPrototype.h"
 #include "playerbot/PlayerbotAIConfig.h"
-#include "Accounts/AccountMgr.h"
+#include "AccountMgr.h"
 #include "Database/DBCStore.h"
-#include "Globals/SharedDefines.h"
+#include "SharedDefines.h"
 #include "RandomItemMgr.h"
 #include "RandomPlayerbotFactory.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/AiFactory.h"
-#include "Guilds/GuildMgr.h"
+#include "Guild/GuildMgr.h"
 
 #ifndef MANGOSBOT_ZERO
     #ifdef CMANGOS
@@ -89,6 +93,15 @@ void PlayerbotFactory::Init()
         if (!taxiNode)
             continue;
 
+        // The taximask is eight words and AppendTaximaskTo puts exactly those
+        // eight on the wire, so 256 is a protocol limit, not a tunable. Turtle
+        // numbers its two Landing Pod nodes 508 and 509, which land on field 15
+        // of an eight-field mask - seven words past it, straight into
+        // m_TaxiDestinations. SetTaximaskNode bounds-checks that now, but there
+        // is no point offering it a node it can never record.
+        if (i > TaxiMaskSize * 32)
+            continue;
+
         WorldPosition taxiPosition(taxiNode);
 
         if (!taxiPosition.isOverworld())
@@ -139,13 +152,17 @@ void PlayerbotFactory::Prepare()
     }
 
     bot->CombatStop(true);
-    /*if (sPlayerbotAIConfig.disableRandomLevels)
+    // Was commented out - re-enabled so a manual .bot random/.bot init on a
+    // still-fresh bot (below the configured starting level) brings it up to
+    // randombotStartingLevel. GiveLevel (not SetLevel) so stats/HP/mana/talent
+    // points come along too - raw SetLevel only touches the level field.
+    if (sPlayerbotAIConfig.disableRandomLevels)
     {
         if (bot->GetLevel() < sPlayerbotAIConfig.randombotStartingLevel)
         {
-            bot->SetLevel(sPlayerbotAIConfig.randombotStartingLevel);
+            bot->GiveLevel(sPlayerbotAIConfig.randombotStartingLevel);
         }
-    }*/
+    }
 
     if (!sPlayerbotAIConfig.disableRandomLevels)
     {
@@ -176,7 +193,7 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
         return;
     }
     bool isRealRandomBot = sRandomPlayerbotMgr.IsRandomBot(bot);
-    bool isRandomBot = sRandomPlayerbotMgr.IsRandomBot(bot) && bot->GetPlayerbotAI() && !bot->GetPlayerbotAI()->HasRealPlayerMaster() && !bot->GetPlayerbotAI()->IsInRealGuild();
+    bool isRandomBot = sRandomPlayerbotMgr.IsRandomBot(bot) && GetBotAI(bot) && !GetBotAI(bot)->HasRealPlayerMaster() && !GetBotAI(bot)->IsInRealGuild();
 
     sLog.outDetail("Resetting player...");
     auto pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Reset");
@@ -201,7 +218,7 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
         }
 
         InitQuests(specialQuestIds);
-        bot->learnQuestRewardedSpells();
+        bot->LearnQuestRewardedSpells();
 
         // clear inventory and set level after getting xp and quest rewards
         ClearInventory();
@@ -226,8 +243,11 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
 
     pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Talents");
     sLog.outDetail("Initializing talents...");
-    //InitTalentsTree(incremental);
-    //sRandomPlayerbotMgr.SetValue(bot->GetGUIDLow(), "specNo", 0);
+    // Assign a premade spec (specNo), then let the "auto talents" action apply the
+    // matching premade build. If no premade spec is configured for the class, the
+    // action falls back to its generic per-tree auto-selection.
+    if (!incremental)
+        SelectPremadeSpecNo();
     ai->DoSpecificAction("auto talents");
 
     if (!incremental && isRandomBot)
@@ -240,6 +260,10 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
     sLog.outDetail("Initializing spells (step 2)...");
     InitAvailableSpells();
     InitSpecialSpells();
+    // Also catch up configured profession/pet-trainer spells after talents and
+    // skills; class trainer spells are handled by InitAvailableSpells itself.
+    if (ai && sPlayerbotAIConfig.autoLearnTrainerSpells)
+        AutoLearnSpellAction(ai).CatchUpTrainerSpells();
     pmo.reset();
 
     if (isRealRandomBot)
@@ -558,7 +582,7 @@ void PlayerbotFactory::InitPet()
             return;
 
         std::vector<uint32> ids;
-        for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
+        for (auto const& [id, nativeTemplate] : sObjectMgr.GetCreatureInfoMap())
         {
             CreatureInfo const* co = sCreatureStorage.LookupEntry<CreatureInfo>(id);
 			if (!co)
@@ -2368,7 +2392,7 @@ void PlayerbotFactory::ClearSpells()
     }
 #endif
 #ifdef CMANGOS
-    bot->resetSpells();
+    bot->ResetSpells();
 #endif
 }
 
@@ -2482,29 +2506,41 @@ void PlayerbotFactory::InitSpells()
         InitAvailableSpells();
 }
 
-void PlayerbotFactory::InitTalentsTree(bool incremental)
+bool PlayerbotFactory::SelectPremadeSpecNo()
 {
-    uint32 specNo = sRandomPlayerbotMgr.GetValue(bot->GetGUIDLow(), "specNo");
-    if (incremental && specNo)
-	{
-        specNo -= 1;
-	}
-    else
+    uint8 cls = bot->getClass();
+    std::vector<TalentPath>& paths = sPlayerbotAIConfig.classSpecs[cls].talentPath;
+    if (paths.empty())
+        return false;
+
+    // Weighted roll across the configured premade specs (currently one PvE spec per
+    // class, but this keeps working if more are added). GetBestPremadeSpec indexes
+    // getPremadePath(cls, specNo - 1) by TalentPath::id, so store id + 1.
+    uint32 totalProbability = 0;
+    for (TalentPath& path : paths)
+        totalProbability += std::max(0, path.probability);
+
+    TalentPath* chosen = &paths.front();
+    if (totalProbability > 0)
     {
-        uint32 point = urand(0, 100);
-        uint8 cls = bot->getClass();
-        uint32 p1 = sPlayerbotAIConfig.specProbability[cls][0];
-        uint32 p2 = p1 + sPlayerbotAIConfig.specProbability[cls][1];
-
-        specNo = (point < p1 ? 0 : (point < p2 ? 1 : 2));
-        sRandomPlayerbotMgr.SetValue(bot, "specNo", specNo + 1);
+        uint32 roll = urand(0, totalProbability - 1);
+        uint32 cumulative = 0;
+        for (TalentPath& path : paths)
+        {
+            cumulative += std::max(0, path.probability);
+            if (roll < cumulative)
+            {
+                chosen = &path;
+                break;
+            }
+        }
     }
 
-    InitTalents(specNo);
+    sLog.outDetail("SPECROLL: factory picked %s for class %u (%u paths, weight %u)",
+        chosen->name.c_str(), uint32(cls), uint32(paths.size()), totalProbability);
 
-    if (bot->GetFreeTalentPoints()) {
-        InitTalents(2 - specNo);
-    }
+    sRandomPlayerbotMgr.SetValue(bot, "specNo", chosen->id + 1);
+    return true;
 }
 
 class DestroyItemsVisitor : public IterateItemsVisitor
@@ -2948,6 +2984,16 @@ void PlayerbotFactory::Shuffle(std::vector<uint32>& items)
 
 void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool progressive, bool partialUpgrade)
 {
+    // Bots below level 5 stay in their starting outfit: gear DB has little for them,
+    // and specId is often 0 at low levels which would strip them naked (DestroyItemsVisitor
+    // runs before the specId guard). Level 5 aligns with AcceptQuestAction's breadcrumb gate.
+    if (bot->GetLevel() < 5)
+    {
+        sLog.outDetail("Bot #%d <%s> lvl %d: InitEquipment skipped (below level 5)",
+            bot->GetGUIDLow(), bot->GetName(), bot->GetLevel());
+        return;
+    }
+
     uint32 oldGS = ai->GetEquipGearScore(bot, false, false);
     uint32 masterGS = 0;
     if(syncWithMaster && ai->GetMaster())
@@ -2955,7 +3001,7 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
         masterGS = ai->GetEquipGearScore(ai->GetMaster(), false, false);
     }
 
-    bool isRandomBot = sRandomPlayerbotMgr.IsRandomBot(bot) && bot->GetPlayerbotAI() && !bot->GetPlayerbotAI()->HasRealPlayerMaster() && !bot->GetPlayerbotAI()->IsInRealGuild();
+    bool isRandomBot = sRandomPlayerbotMgr.IsRandomBot(bot) && GetBotAI(bot) && !GetBotAI(bot)->HasRealPlayerMaster() && !GetBotAI(bot)->IsInRealGuild();
     uint32 specId = sRandomItemMgr.GetPlayerSpecId(bot);
     if (specId == 0)
         return;
@@ -3549,8 +3595,8 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
                         if (incremental)
                         {
                             if (oldItem)
-                                sLog.outDetail("Bot #%d %s:%d <%s>: Old Item: slot: %u, id: %u, value: %u (%s)", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), slot, oldProto->ItemId, oldStatValue, oldProto->Name1);
-                            sLog.outDetail("Bot #%d %s:%d <%s>: New Item: slot: %u, id: %u, value: %u (%s)", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), slot, proto->ItemId, newStatValue, proto->Name1);
+                                sLog.outDetail("Bot #%d %s:%d <%s>: Old Item: slot: %u, id: %u, value: %u (%s)", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), slot, oldProto->ItemId, oldStatValue, oldProto->Name1.c_str());
+                            sLog.outDetail("Bot #%d %s:%d <%s>: New Item: slot: %u, id: %u, value: %u (%s)", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), slot, proto->ItemId, newStatValue, proto->Name1.c_str());
                         }
                         break;
                     }
@@ -3572,8 +3618,9 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
         }
     }
 
-    /*if (incremental && oldGS != newGS)
-        sLog.outDetail("Bot #%d %s:%d <%s>: GS: %u -> %u", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), oldGS, newGS);*/
+    sLog.outDetail("Bot #%d %s:%d <%s>: InitEquipment done, GS %u -> %u",
+        bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(),
+        oldGS, ai->GetEquipGearScore(bot, false, false));
 
     // Update stats here so the bots will benefit from the new equipped items' stats
     bot->InitStatsForLevel(true);
@@ -3644,7 +3691,7 @@ void PlayerbotFactory::InitSecondEquipmentSet()
 
     do
     {
-        for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+        for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
         {
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
             if (!proto)
@@ -3894,74 +3941,58 @@ void PlayerbotFactory::InitTradeSkills()
     {
         std::vector<uint32> firstSkills;
         std::vector<uint32> secondSkills;
-        switch (urand(0, 4))
+        switch (bot->getClass())
         {
-            case 0:
-                switch (urand(0, 7))
-                {
-                    case 0:
-                        firstSkill = SKILL_HERBALISM;
-                        secondSkill = SKILL_ALCHEMY;
-                        break;
-                    case 1:
-                        firstSkill = SKILL_HERBALISM;
-                        secondSkill = SKILL_MINING;
-                        break;
-                    case 2:
-                        firstSkill = SKILL_MINING;
-                        secondSkill = SKILL_SKINNING;
-                        break;
-                    case 3:
-#ifdef MANGOSBOT_ZERO
-                        firstSkill = SKILL_HERBALISM;
-                        secondSkill = SKILL_SKINNING;
-#else
-                        firstSkill = SKILL_JEWELCRAFTING;
-                        secondSkill = SKILL_MINING;
-#endif
-                        break;
-                    case 4:
-                        firstSkill = SKILL_ENCHANTING;
-                        secondSkill = SKILL_SKINNING;
-                        break;
-                    case 5:
-                        firstSkill = SKILL_ENCHANTING;
-                        secondSkill = SKILL_HERBALISM;
-                        break;
-                }
-                break;
-            default:
-                switch (bot->getClass())
-                {
-                    case CLASS_WARRIOR:
-                    case CLASS_PALADIN:
+        case CLASS_WARRIOR:
+        case CLASS_PALADIN:
 #ifdef MANGOSBOT_TWO
-                    case CLASS_DEATH_KNIGHT:
+        case CLASS_DEATH_KNIGHT:
 #endif
-                        firstSkills.push_back(SKILL_BLACKSMITHING);
-                        secondSkills.push_back(SKILL_ENGINEERING);
-                        break;
-                    case CLASS_SHAMAN:
-                    case CLASS_DRUID:
-                    case CLASS_HUNTER:
-                    case CLASS_ROGUE:
-                        firstSkills.push_back(SKILL_SKINNING);
-                        firstSkills.push_back(SKILL_ENGINEERING);
-                        secondSkills.push_back(SKILL_LEATHERWORKING);
-                        break;
-                    case CLASS_WARLOCK:
-                    case CLASS_MAGE:
-                    case CLASS_PRIEST:
-                        firstSkills.push_back(SKILL_TAILORING);
-#ifndef MANGOSBOT_ZERO
-                        firstSkills.push_back(SKILL_JEWELCRAFTING);
-#endif
-                        secondSkills.push_back(SKILL_ENCHANTING);
-                }
-                firstSkill = firstSkills[urand(0, firstSkills.size() - 1)];
-                secondSkill = secondSkills[urand(0, secondSkills.size() - 1)];
-                break;
+            firstSkills.push_back(SKILL_BLACKSMITHING);
+            secondSkills.push_back(SKILL_ENGINEERING);
+            break;
+        case CLASS_SHAMAN:
+        case CLASS_DRUID:
+        case CLASS_HUNTER:
+        case CLASS_ROGUE:
+            firstSkills.push_back(SKILL_SKINNING);
+            firstSkills.push_back(SKILL_ENGINEERING);
+            secondSkills.push_back(SKILL_LEATHERWORKING);
+            break;
         }
+
+        if (firstSkills.empty() || secondSkills.empty())
+        {
+            switch (urand(0, 6))
+            {
+            case 0:
+                firstSkill = SKILL_HERBALISM;
+                secondSkill = SKILL_ALCHEMY;
+                break;
+            case 1:
+                firstSkill = SKILL_HERBALISM;
+                secondSkill = SKILL_MINING;
+                break;
+            case 2:
+                firstSkill = SKILL_MINING;
+                secondSkill = SKILL_SKINNING;
+                break;
+            case 3:
+#ifdef MANGOSBOT_ZERO
+                firstSkill = SKILL_HERBALISM;
+                secondSkill = SKILL_SKINNING;
+#else
+                firstSkill = SKILL_JEWELCRAFTING;
+                secondSkill = SKILL_MINING;
+#endif
+            }
+        }
+        else
+        {
+            firstSkill = firstSkills[urand(0, firstSkills.size() - 1)];
+            secondSkill = secondSkills[urand(0, secondSkills.size() - 1)];
+        }
+
         sRandomPlayerbotMgr.SetValue(bot, "firstSkill", firstSkill);
         sRandomPlayerbotMgr.SetValue(bot, "secondSkill", secondSkill);
     }
@@ -3993,7 +4024,7 @@ void PlayerbotFactory::InitTradeSkills()
 #endif
 
     // learn recipies
-    for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
+    for (auto const& [id, nativeTemplate] : sObjectMgr.GetCreatureInfoMap())
     {
         CreatureInfo const* co = sCreatureStorage.LookupEntry<CreatureInfo>(id);
         if (!co)
@@ -4029,45 +4060,27 @@ void PlayerbotFactory::InitTradeSkills()
             SpellEntry const* proto = sServerFacade.LookupSpellInfo(tSpell->spell);
             if (!proto)
                 continue;
-            
+
             SpellEntry const* spell = sServerFacade.LookupSpellInfo(tSpell->spell);
             if (spell)
             {
                 std::string SpellName = spell->SpellName[0];
-#ifdef MANGOSBOT_ZERO
                 if (spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL_STEP)
-#elif defined(MANGOSBOT_ONE) || defined(MANGOSBOT_TWO) // TBC OR WOTLK
-                if (spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL || spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL_STEP)
-#endif
                 {
                     uint32 skill = spell->EffectMiscValue[EFFECT_INDEX_1];
 
-                    if (skill)
+                    if (skill && !bot->HasSkill(skill))
                     {
                         SkillLineEntry const* pSkill = sSkillLineStore.LookupEntry(skill);
                         if (pSkill)
                         {
-                            if (!bot->HasSkill(skill))
-                            {
-#ifdef MANGOSBOT_ZERO
-                                if (SpellName.find("Apprentice") != std::string::npos && pSkill->categoryId == SKILL_CATEGORY_PROFESSION || pSkill->categoryId == SKILL_CATEGORY_SECONDARY)
-                                    continue;
-#elif defined(MANGOSBOT_ONE) || defined(MANGOSBOT_TWO) // TBC OR WOTLK
-                                std::string SpellRank = spell->Rank[0];
-                                if (SpellName.find("Apprentice") != std::string::npos && (pSkill->categoryId == SKILL_CATEGORY_PROFESSION || pSkill->categoryId == SKILL_CATEGORY_SECONDARY))
-                                    continue;
-                                else if (SpellRank.find("Apprentice") != std::string::npos && (pSkill->categoryId == SKILL_CATEGORY_PROFESSION || pSkill->categoryId == SKILL_CATEGORY_SECONDARY))
-                                    continue;
-#endif
-                            }
-                            else
-                                bot->learnSpell(spell->Id, false);
+                            if (SpellName.find("Apprentice") != std::string::npos && pSkill->categoryId == SKILL_CATEGORY_PROFESSION || pSkill->categoryId == SKILL_CATEGORY_SECONDARY)
+                                continue;
                         }
                     }
-                    
                 }
             }
-            
+
 #ifdef MANGOSBOT_ZERO
             if (tSpell->learnedSpell)
             {
@@ -4100,14 +4113,11 @@ void PlayerbotFactory::InitTradeSkills()
                         if (proto->Effect[j] == SPELL_EFFECT_LEARN_SPELL)
                         {
                             uint32 learnedSpell = proto->EffectTriggerSpell[j];
-                            if (learnedSpell && sServerFacade.LookupSpellInfo(learnedSpell))
-                            {
-                                bot->learnSpell(learnedSpell, false);
-                                learned = true;
-                            }
+                            bot->learnSpell(learnedSpell, false);
+                            learned = true;
                         }
                     }
-                    if (!learned && learnSpell && sServerFacade.LookupSpellInfo(learnSpell))
+                    if (!learned)
                         bot->learnSpell(learnSpell, false);
                 }
             }
@@ -4278,68 +4288,17 @@ void PlayerbotFactory::SetRandomSkill(uint16 id)
 {
     uint32 maxValue = level * 5; // vanilla 60*5 = 300
 
-    SkillLineEntry const* pSkill = sSkillLineStore.LookupEntry(id);
-    if (!pSkill)
-        return;
-
-    SkillRangeType skillType = GetSkillRangeType(pSkill, false);
-
-    // if this is not a profession type of skill or skill that is 1/1
-    if (skillType != SKILL_RANGE_LEVEL && skillType != SKILL_RANGE_MONO)
-    {
-        // do not let skill go beyond limit even if maxlevel > blizzlike
+// do not let skill go beyond limit even if maxlevel > blizzlike
 #ifndef MANGOSBOT_ZERO
-            if (level > 60)
-            {
-#ifdef MANGOSBOT_ONE
-                maxValue = (level + 5) * 5;   // tbc (70 + 5)*5 = 375
-#else
-                maxValue = (level + 10) * 5;  // wotlk (80 + 10)*5 = 450
-#endif
-            }
-#endif
-    }
-    else
+	if (level > 60)
     {
-        // profession based levels. They should learn ranks from trainers, but for now assume
-        // scaling similar to riding skill
-#ifdef MANGOSBOT_ZERO
-        if (bot->GetLevel() >= 35)
-            maxValue = 300;
-        else if (bot->GetLevel() >= 20)
-            maxValue = 225;
-        else if (bot->GetLevel() >= 10)
-            maxValue = 150;
-        else 
-            maxValue = 75;
-#endif
 #ifdef MANGOSBOT_ONE
-        if (bot->GetLevel() >= 50)
-            maxValue = 375;
-        else if (bot->GetLevel() >= 35)
-            maxValue = 300;
-        else if (bot->GetLevel() >= 20)
-            maxValue = 225;
-        else if (bot->GetLevel() >= 10)
-            maxValue = 150;
-        else 
-            maxValue = 75;
+        maxValue = (level + 5) * 5;   // tbc (70 + 5)*5 = 375
+#else
+        maxValue = (level + 10) * 5;  // wotlk (80 + 10)*5 = 450
 #endif
-#ifdef MANGOSBOT_TWO
-        if (bot->GetLevel() >= 65)
-            maxValue = 450;
-        else if (bot->GetLevel() >= 50)
-            maxValue = 375;
-        else if (bot->GetLevel() >= 35)
-            maxValue = 300;
-        else if (bot->GetLevel() >= 20)
-            maxValue = 225;
-        else if (bot->GetLevel() >= 10)
-            maxValue = 150;
-        else 
-            maxValue = 75;
+	}
 #endif
-    }
 
     uint32 value = urand(maxValue - level, maxValue);
     uint32 curValue = bot->GetSkillValue(id);
@@ -4351,7 +4310,7 @@ void PlayerbotFactory::InitAvailableSpells()
 {
     auto pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Spells1");
     bot->learnDefaultSpells();
-    bot->learnClassLevelSpells(true);
+    AutoLearnSpellAction(ai).LearnClassLevelSpells(true);
 
 #ifndef MANGOSBOT_TWO
     if (bot->getClass() == CLASS_PALADIN)
@@ -4374,6 +4333,24 @@ void PlayerbotFactory::InitAvailableSpells()
     // add inferno
     if (bot->getClass() == CLASS_WARLOCK && !bot->HasSpell(1122) && bot->GetLevel() >= 50)
         bot->learnSpell(1122, false);
+
+    // Druid forms nobody teaches. Bear and Aquatic come from the quest "Body and
+    // Heart" and appear on no trainer at all, so a bot never sees them - on the
+    // realm this was found on, one character out of 2183 knew Bear Form while 31
+    // had Cat Form from a trainer. Dire Bear follows from that: sixteen trainers
+    // offer it at 40, but it needs Bear Form first, so nobody had it either.
+    //
+    // Without them a feral druid has no tanking shape at any level, whatever it
+    // is specced as and whatever strategy it is handed.
+    if (bot->getClass() == CLASS_DRUID)
+    {
+        if (bot->GetLevel() >= 10 && !bot->HasSpell(5487))
+            bot->learnSpell(5487, false);   // Bear Form
+        if (bot->GetLevel() >= 16 && !bot->HasSpell(1066))
+            bot->learnSpell(1066, false);   // Aquatic Form
+        if (bot->GetLevel() >= 40 && !bot->HasSpell(9634))
+            bot->learnSpell(9634, false);   // Dire Bear Form
+    }
 
 #ifdef MANGOSBOT_ZERO
     // add book spells
@@ -4460,58 +4437,6 @@ void PlayerbotFactory::InitSpecialSpells()
     }
 }
 
-void PlayerbotFactory::InitTalents(uint32 specNo)
-{
-    uint32 classMask = bot->getClassMask();
-
-    std::map<uint32, std::vector<TalentEntry const*> > spells;
-    for (uint32 i = 0; i < sTalentStore.GetNumRows(); ++i)
-    {
-        TalentEntry const *talentInfo = sTalentStore.LookupEntry(i);
-        if(!talentInfo)
-            continue;
-
-        TalentTabEntry const *talentTabInfo = sTalentTabStore.LookupEntry( talentInfo->TalentTab );
-        if(!talentTabInfo || talentTabInfo->tabpage != specNo)
-            continue;
-
-        if( (classMask & talentTabInfo->ClassMask) == 0 )
-            continue;
-
-        spells[talentInfo->Row].push_back(talentInfo);
-    }
-
-    uint32 freePoints = bot->GetFreeTalentPoints();
-    for (std::map<uint32, std::vector<TalentEntry const*> >::iterator i = spells.begin(); i != spells.end(); ++i)
-    {
-        std::vector<TalentEntry const*> &spells = i->second;
-        if (spells.empty())
-        {
-            sLog.outError("%s: No spells for talent row %d", bot->GetName(), i->first);
-            continue;
-        }
-
-        int attemptCount = 0;
-        while (!spells.empty() && (int)freePoints - (int)bot->GetFreeTalentPoints() < 5 && attemptCount++ < 3 && bot->GetFreeTalentPoints())
-        {
-            int index = urand(0, spells.size() - 1);
-            TalentEntry const *talentInfo = spells[index];
-            for (int rank = 0; rank < MAX_TALENT_RANK && bot->GetFreeTalentPoints(); ++rank)
-            {
-                uint32 spellId = talentInfo->RankID[rank];
-                if (!spellId)
-                    continue;
-
-                bot->learnSpell(spellId, false);
-                bot->UpdateFreeTalentPoints(false);
-            }
-            spells.erase(spells.begin() + index);
-        }
-
-        freePoints = bot->GetFreeTalentPoints();
-    }
-}
-
 ObjectGuid PlayerbotFactory::GetRandomBot()
 {
     std::vector<ObjectGuid> guids;
@@ -4593,7 +4518,8 @@ void PlayerbotFactory::ClearAllItems()
 void PlayerbotFactory::InitAmmo()
 {
     auto pmo = sPerformanceMonitor.start(PERF_MON_RNDBOT, "PlayerbotFactory_Ammo");
-    if (bot->getClass() != CLASS_HUNTER && bot->getClass() != CLASS_ROGUE && bot->getClass() != CLASS_WARRIOR)
+    if (bot->getClass() != CLASS_HUNTER && bot->getClass() != CLASS_ROGUE && bot->getClass() != CLASS_WARRIOR &&
+        !(bot->getClass() == CLASS_PRIEST && bot->getRace() == RACE_HIGH_ELF))
         return;
 
     Item* pItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_RANGED);
@@ -4620,6 +4546,18 @@ void PlayerbotFactory::InitAmmo()
 
     if (!subClass)
         return;
+
+    // TurtleWoW: thrown weapons are single repairable items (Stackable=1), not 200-stack ammo.
+    // Give exactly 1 and return so we don't fill the bot's bags with 200 individual knives.
+    if (subClass == ITEM_SUBCLASS_THROWN)
+    {
+        uint32 entry = sRandomItemMgr.GetAmmo(level, subClass);
+        if (entry && bot->GetItemCount(entry) == 0)
+            bot->StoreNewItemInInventorySlot(entry, 1);
+        if (entry && bot->GetUInt32Value(PLAYER_AMMO_ID) != entry)
+            bot->SetAmmo(entry);
+        return;
+    }
 
     uint32 entry = bot->GetUInt32Value(PLAYER_AMMO_ID);
     // A gear reroll can switch between bows and guns. Stock of the previous
@@ -4747,6 +4685,21 @@ void PlayerbotFactory::InitMounts()
         slow = { 8395, 10796, 10799 };
         fast = { 23241, 23242, 23243 };
         break;
+    case RACE_GOBLIN:
+        for (uint32 item : {80460u, 80461u, 80462u})
+            if (auto spell = sMountMgr.GetMountSpellId(item))
+                slow.push_back(*spell);
+        // Native riding skill upgrades these same rocket cars at level 60.
+        break;
+    case RACE_HIGH_ELF:
+        if (auto spell = sMountMgr.GetMountSpellId(80459))
+            slow.push_back(*spell);
+        for (uint32 item : {80457u, 80458u})
+            if (auto spell = sMountMgr.GetMountSpellId(item))
+                fast.push_back(*spell);
+        break;
+    default:
+        break;
 #ifndef MANGOSBOT_ZERO
     case RACE_DRAENEI:
         slow = { 34406, 35711, 35710 };
@@ -4786,8 +4739,43 @@ void PlayerbotFactory::InitMounts()
         if (bot->GetLevel() < fourthmount && type == 3)
             continue;
 
-        uint32 index = urand(0, mounts[bot->getRace()][type].size() - 1);
-        uint32 spell = mounts[bot->getRace()][type][index];
+        // Keep the factory's normal racial choices, but resolve eligibility
+        // through the native collection items: level, skill, race/class and
+        // reputation checks must hold before granting the resulting spell.
+        static const auto itemsBySpell = []
+        {
+            std::unordered_map<uint32, std::vector<uint32>> result;
+            for (auto const& [item, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
+                if (sObjectMgr.GetItemPrototype(item))
+                    if (auto spell = sMountMgr.GetMountSpellId(item))
+                        result[*spell].push_back(item);
+            return result;
+        }();
+        std::vector<uint32> available;
+        for (uint32 spell : mounts[bot->getRace()][type])
+        {
+            auto items = itemsBySpell.find(spell);
+            if (items == itemsBySpell.end() || !MountValue::IsMountSpell(spell))
+                continue;
+            for (uint32 item : items->second)
+            {
+                ItemPrototype const* proto = sObjectMgr.GetItemPrototype(item);
+                if (proto && bot->CanUseItem(proto) == EQUIP_ERR_OK &&
+                    (!proto->RequiredReputationFaction ||
+                     bot->GetReputationRank(proto->RequiredReputationFaction) >= proto->RequiredReputationRank))
+                {
+                    available.push_back(spell);
+                    break;
+                }
+            }
+        }
+        if (available.empty())
+            continue;
+
+        // Re-running factory repair must not award another color every time.
+        if (std::any_of(available.begin(), available.end(), [this](uint32 spell) { return bot->HasSpell(spell); }))
+            continue;
+        uint32 spell = available[urand(0, available.size() - 1)];
         if (spell)
         {
             bot->learnSpell(spell, false);
@@ -4966,7 +4954,7 @@ void PlayerbotFactory::InitReagents()
 
         Item* newItem = StoreSupplyItem(*i, randCount);
 
-        sLog.outDetail("Bot %d got reagent %s x%d", bot->GetGUIDLow(), proto->Name1, randCount);
+        sLog.outDetail("Bot %d got reagent %s x%d", bot->GetGUIDLow(), proto->Name1.c_str(), randCount);
     }
 
     for (PlayerSpellMap::iterator itr = bot->GetSpellMap().begin(); itr != bot->GetSpellMap().end(); ++itr)
@@ -4997,7 +4985,7 @@ void PlayerbotFactory::InitReagents()
 
                 Item* newItem = StoreSupplyItem(totem, 1);
 
-                sLog.outDetail("Bot %d got totem %s x%d", bot->GetGUIDLow(), proto->Name1, 1);
+                sLog.outDetail("Bot %d got totem %s x%d", bot->GetGUIDLow(), proto->Name1.c_str(), 1);
             }
         }
 #ifndef MANGOSBOT_ZERO
@@ -5026,7 +5014,7 @@ void PlayerbotFactory::InitReagents()
 
                     Item* newItem = StoreSupplyItem(itemId, 1);
 
-                    sLog.outDetail("Bot %d got totem %s x%d", bot->GetGUIDLow(), proto->Name1, 1);
+                    sLog.outDetail("Bot %d got totem %s x%d", bot->GetGUIDLow(), proto->Name1.c_str(), 1);
                 }
             }
         }
@@ -5155,7 +5143,7 @@ void PlayerbotFactory::InitInventoryEquip()
         desiredQuality--;
     }
 
-    for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+    for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
     {
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
         if (!proto)

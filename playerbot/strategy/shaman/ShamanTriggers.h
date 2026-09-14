@@ -52,7 +52,7 @@ namespace ai
                 if (!totem || !totem->IsTotem())
                     continue;
 
-                Unit* totemOwner = totem->GetCreator(totem);
+                Unit* totemOwner = totem->GetCreator();
                 if (!totemOwner || totemOwner != bot)
                     continue;
 
@@ -353,7 +353,7 @@ namespace ai
                     const Aura* aura = *itr;
                     const SpellEntry* entry = aura->GetSpellProto();
                     uint32 spellId = entry->Id;
-                    if (!IsPositiveSpell(spellId) || !IsPositiveAuraEffect(entry, aura->GetEffIndex()))
+                    if (!IsPositiveSpell(spellId) || !entry->IsPositiveEffect(aura->GetEffIndex()))
                         continue;
 
                     std::vector<uint32> ignoreSpells;

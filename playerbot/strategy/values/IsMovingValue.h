@@ -1,6 +1,6 @@
 #pragma once
 #include "playerbot/strategy/Value.h"
-#include "MotionGenerators/TargetedMovementGenerator.h"
+#include "Movement/TargetedMovementGenerator.h"
 
 namespace ai
 {

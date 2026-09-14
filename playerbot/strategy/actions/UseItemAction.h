@@ -9,7 +9,8 @@ namespace ai
     class BotUseItemSpell : public Spell
     {
     public:
-        BotUseItemSpell(WorldObject* caster, SpellEntry const* info, uint32 triggeredFlags, ObjectGuid originalCasterGUID = ObjectGuid(), SpellEntry const* triggeredBy = nullptr, bool itemCheats = false) : Spell(caster, info, triggeredFlags, originalCasterGUID, triggeredBy), itemCheats(itemCheats) {};
+        BotUseItemSpell(WorldObject* caster, SpellEntry const* info, uint32 triggeredFlags, ObjectGuid originalCasterGUID = ObjectGuid(), SpellEntry const* triggeredBy = nullptr, bool itemCheats = false)
+            : Spell(caster->ToUnit() ? caster->ToUnit() : (Unit*)nullptr, info, triggeredFlags != 0, originalCasterGUID, triggeredBy), itemCheats(itemCheats) {};
 
         static BotUseItemSpell* Create(WorldObject* caster, SpellEntry const* info, uint32 triggeredFlags, ObjectGuid originalCasterGUID = ObjectGuid(), SpellEntry const* triggeredBy = nullptr, bool itemCheats = false)
         {
@@ -504,10 +505,6 @@ namespace ai
                     return false;
                 }
             }
-
-            // Do not use consumable if bot can heal self
-            if (ai->IsHeal(bot) && ai->GetManaPercent() > 20)
-                return false;
 
             return true;
         }

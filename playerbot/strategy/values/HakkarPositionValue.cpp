@@ -1,9 +1,9 @@
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -77,9 +77,9 @@ EncounterPosition HakkarPositionValue::Calculate()
 bool ai::HasHakkarPoisonPreparation(Player* bot)
 {
     if (!bot || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() || bot->GetMapId() != 309 ||
-        !bot->GetGroup() || bot->HasCharmer() || bot->IsBeingTeleported() || !bot->GetPlayerbotAI() ||
-        bot->GetPlayerbotAI()->IsRealPlayer()) return false;
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+        !bot->GetGroup() || bot->HasCharmer() || bot->IsBeingTeleported() || !GetBotAI(bot) ||
+        GetBotAI(bot)->IsRealPlayer()) return false;
+    PlayerbotAI* ai = GetBotAI(bot);
     const EncounterPosition plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("hakkar poison position")->Get();
     if (!plan.active || !plan.exclusive || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
     Unit* son = ai->GetUnit(plan.source);
@@ -94,8 +94,8 @@ bool ai::HasHakkarPoisonPreparation(Player* bot)
         if (member && member != boss->GetVictim() && member->IsInWorld() && member->IsAlive() && bot->IsInMap(member) &&
             member->GetGroup() == bot->GetGroup() && !member->IsBeingTeleported() && !member->HasCharmer() &&
             !member->HasAura(24321) && member->GetDistance(son) > radius - 1 && member->GetDistance(son) <= 40 &&
-            member->GetPlayerbotAI() && !member->GetPlayerbotAI()->IsRealPlayer() && member->GetPlayerbotAI()->CanMove() &&
-            member->GetPlayerbotAI()->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT)) return true;
+            GetBotAI(member) && !GetBotAI(member)->IsRealPlayer() && GetBotAI(member)->CanMove() &&
+            GetBotAI(member)->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT)) return true;
     }
     return false;
 }

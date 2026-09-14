@@ -5,68 +5,119 @@
 
 using namespace ai;
 
+// Penqle's Singleton<> requires an explicit instantiation in a .cpp file.
+INSTANTIATE_SINGLETON_1(ai::SharedObjectContext);
+
+// LootAccess methods read from the wrapped Loot* (proper accessor-based
+// access; the original layout-cheat reinterpret_cast pattern was removed).
+
+// Empty static fallbacks used when LootAccess wraps a null Loot* (defensive).
+static const std::set<ObjectGuid> s_emptyGuidSet;
+static const LootItemList s_emptyLootItems;
+
+std::set<ObjectGuid> const& LootAccess::playersLooting() const
+{
+	if (!loot)
+		return s_emptyGuidSet;
+	return loot->GetLootingPlayers();
+}
+
+LootType LootAccess::lootType() const
+{
+	return loot ? loot->loot_type : LOOT_CORPSE;
+}
+
+uint32 LootAccess::gold() const
+{
+	return loot ? loot->gold : 0;
+}
+
+std::set<ObjectGuid> const& LootAccess::playersOpened() const
+{
+	// Penqle has no per-player "released the corpse" tracking; return empty set.
+	return s_emptyGuidSet;
+}
+
+LootItemList const& LootAccess::lootItems() const
+{
+	if (!loot)
+		return s_emptyLootItems;
+	return loot->items;
+}
+
 std::vector<LootItem*> LootAccess::GetLootContentFor(Player* player) const
 {
-	std::vector<LootItem*> retvec;
+    std::vector<LootItem*> result;
+    if (!loot || !player || !loot->IsAllowedLooter(player->GetObjectGuid(), false))
+        return result;
 
-	for (LootItemList::const_iterator lootItemItr = m_lootItems.begin(); lootItemItr != m_lootItems.end(); ++lootItemItr)
-	{
-		retvec.push_back(*lootItemItr);
-	}
+    PermissionTypes permission = OWNER_PERMISSION;
+    if (!loot->m_personal)
+    {
+        Group* group = player->GetGroup();
+        if (!group)
+            return result;
+        switch (group->GetLootMethod())
+        {
+            case MASTER_LOOT: permission = MASTER_PERMISSION; break;
+            case FREE_FOR_ALL: permission = ALL_PERMISSION; break;
+            case ROUND_ROBIN: permission = ROUND_ROBIN_PERMISSION; break;
+            default: permission = GROUP_PERMISSION; break;
+        }
+    }
 
-	return retvec;
+    // The native serializer is read-only despite the historical mutable view.
+    // Actual opening/awarding still goes through native session handlers, which
+    // recheck target ownership, distance and current group rights.
+    Loot* native = const_cast<Loot*>(loot);
+    ByteBuffer view;
+    view << LootView(*native, player, permission);
+    view.read_skip<uint32>(); // money
+    uint8 count;
+    view >> count;
+    for (uint8 i = 0; i < count; ++i)
+    {
+        uint8 slot, type;
+        view >> slot;
+        for (uint8 field = 0; field < 5; ++field)
+            view.read_skip<uint32>();
+        view >> type;
+        if (type != LOOT_SLOT_TYPE_ALLOW_LOOT)
+            continue;
+        if (LootItem* item = native->LootItemInSlot(slot, player->GetGUIDLow()))
+            result.push_back(item);
+    }
+    return result;
 }
 
-// Get loot status for a specified player
 uint32 LootAccess::GetLootStatusFor(Player const* player) const
 {
-	uint32 status = 0;
-
-	if (m_isFakeLoot && m_playersOpened.empty())
-		return LOOT_STATUS_FAKE_LOOT;
-
-	if (m_gold != 0)
-		status |= LOOT_STATUS_CONTAIN_GOLD;
-
-	for (auto lootItem : m_lootItems)
-	{
-		Loot const* loot = reinterpret_cast<Loot const*>(this);
-		LootSlotType slotType = lootItem->GetSlotTypeForSharedLoot(player, loot);
-		if (slotType == MAX_LOOT_SLOT_TYPE)
-			continue;
-
-		status |= LOOT_STATUS_NOT_FULLY_LOOTED;
-
-		if (lootItem->freeForAll)
-			status |= LOOT_STATUS_CONTAIN_FFA;
-
-		if (lootItem->isReleased)
-			status |= LOOT_STATUS_CONTAIN_RELEASED_ITEMS;
-	}
-	return status;
+    if (!loot || !player || !loot->IsAllowedLooter(player->GetObjectGuid(), false))
+        return 0;
+    uint32 status = loot->gold ? LOOT_STATUS_CONTAIN_GOLD : 0;
+    for (LootItem const* item : GetLootContentFor(const_cast<Player*>(player)))
+    {
+        status |= LOOT_STATUS_NOT_FULLY_LOOTED;
+        if (item->freeforall)
+            status |= LOOT_STATUS_CONTAIN_FFA;
+        if (!loot->roundRobinPlayer && !item->freeforall)
+            status |= LOOT_STATUS_CONTAIN_RELEASED_ITEMS;
+    }
+    return status;
 }
 
-// Is there is any loot available for provided player
 bool LootAccess::IsLootedFor(Player const* player) const
 {
-	return (GetLootStatusFor(player) == 0);
+    return GetLootStatusFor(player) == 0;
 }
 
 bool LootAccess::IsLootedForAll() const
 {
-	for (auto itr : m_ownerSet)
-	{
-		Player* player = ObjectAccessor::FindPlayer(itr);
-		if (!player)
-			continue;
-
-		if (!IsLootedFor(player))
-			return false;
-	}
-	return true;
+    // Native count includes remaining per-player quest/FFA/conditional copies.
+    return !loot || loot->isLooted();
 }
 
-LootTemplateAccess const* DropMapValue::GetLootTemplate(ObjectGuid guid, LootType type)
+LootTemplate const* DropMapValue::GetLootTemplate(ObjectGuid guid, LootType type)
 {
 	LootTemplate const* lTemplate = nullptr;
 
@@ -115,16 +166,14 @@ LootTemplateAccess const* DropMapValue::GetLootTemplate(ObjectGuid guid, LootTyp
 		}
 	}
 
-	LootTemplateAccess const* lTemplateA = reinterpret_cast<LootTemplateAccess const*>(lTemplate);
-
-	return lTemplateA;
+	return lTemplate;
 }
 
 DropMap* ItemDropMapValue::Calculate()
 {
 	DropMap* dropMap = new DropMap;
 
-	for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); itemId++)
+	for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
 	{
 		ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(itemId);
 
@@ -134,21 +183,21 @@ DropMap* ItemDropMapValue::Calculate()
 		if (!(proto->Flags & ITEM_FLAG_HAS_LOOT))
 			continue;
 
-		LootTemplateAccess const* lTemplateA = DropMapValue::GetLootTemplate(ObjectGuid(HIGHGUID_ITEM, itemId, uint32(1)), LOOT_CORPSE);
+		LootTemplate const* lTemplateA = DropMapValue::GetLootTemplate(ObjectGuid(HIGHGUID_ITEM, itemId, uint32(1)), LOOT_CORPSE);
 
 		if (lTemplateA)
 		{
-			for (LootStoreItem const& lItem : lTemplateA->Entries)
+			for (LootStoreItem const& lItem : lTemplateA->GetEntries())
 				dropMap->insert(std::make_pair(lItem.itemid, itemId));
 
-			for (LootLootGroupAccess const& group : lTemplateA->Groups)
+			lTemplateA->VisitGroups([&](LootEntryView explicitEntries, LootEntryView equalEntries)
 			{
-				for (LootStoreItem const& lItem : group.ExplicitlyChanced)
+				for (LootStoreItem const& lItem : explicitEntries)
 					dropMap->insert(std::make_pair(lItem.itemid, itemId));
 
-				for (LootStoreItem const& lItem : group.EqualChanced)
+				for (LootStoreItem const& lItem : equalEntries)
 					dropMap->insert(std::make_pair(lItem.itemid, itemId));
-			}
+			});
 		}
 	}
 
@@ -161,59 +210,68 @@ DropMap* DropMapValue::Calculate()
 
 	int32 sEntry;
 
-	for (uint32 entry = 0; entry < sCreatureStorage.GetMaxEntry(); entry++)
+	for (auto const& [entry, nativeTemplate] : sObjectMgr.GetCreatureInfoMap())
 	{
 		sEntry = entry;
 
-		LootTemplateAccess const* lTemplateA = GetLootTemplate(ObjectGuid(HIGHGUID_UNIT, entry, uint32(1)), LOOT_CORPSE);
+		LootTemplate const* lTemplateA = GetLootTemplate(ObjectGuid(HIGHGUID_UNIT, entry, uint32(1)), LOOT_CORPSE);
 
 		if (lTemplateA)
 		{
-			for (LootStoreItem const& lItem : lTemplateA->Entries)
+			for (LootStoreItem const& lItem : lTemplateA->GetEntries())
 				dropMap->insert(std::make_pair(lItem.itemid, sEntry));
 
-			for (LootLootGroupAccess const& group : lTemplateA->Groups)
+			lTemplateA->VisitGroups([&](LootEntryView explicitEntries, LootEntryView equalEntries)
 			{
-				for (LootStoreItem const& lItem : group.ExplicitlyChanced)
+				for (LootStoreItem const& lItem : explicitEntries)
 					dropMap->insert(std::make_pair(lItem.itemid, sEntry));
 
-				for (LootStoreItem const& lItem : group.EqualChanced)
+				for (LootStoreItem const& lItem : equalEntries)
 					dropMap->insert(std::make_pair(lItem.itemid, sEntry));
-			}
+			});
 		}
 	}
 
-	for (uint32 entry = 0; entry < sGOStorage.GetMaxEntry(); entry++)
+	for (auto const& [entry, nativeTemplate] : sObjectMgr.GetGameObjectInfoMap())
 	{
 		sEntry = entry;
 
-		LootTemplateAccess const* lTemplateA = GetLootTemplate(ObjectGuid(HIGHGUID_GAMEOBJECT, entry, uint32(1)), LOOT_CORPSE);
+		LootTemplate const* lTemplateA = GetLootTemplate(ObjectGuid(HIGHGUID_GAMEOBJECT, entry, uint32(1)), LOOT_CORPSE);
 
 		if (lTemplateA)
 		{
-			for (LootStoreItem const& lItem : lTemplateA->Entries)
+			for (LootStoreItem const& lItem : lTemplateA->GetEntries())
 				dropMap->insert(std::make_pair(lItem.itemid, -sEntry));
 
-			for (LootLootGroupAccess const& group : lTemplateA->Groups)
+			lTemplateA->VisitGroups([&](LootEntryView explicitEntries, LootEntryView equalEntries)
 			{
-				for (LootStoreItem const& lItem : group.ExplicitlyChanced)
+				for (LootStoreItem const& lItem : explicitEntries)
 					dropMap->insert(std::make_pair(lItem.itemid, -sEntry));
 
-				for (LootStoreItem const& lItem : group.EqualChanced)
+				for (LootStoreItem const& lItem : equalEntries)
 					dropMap->insert(std::make_pair(lItem.itemid, -sEntry));
-			}
+			});
 		}
 	}
 
 	DropMap* itemDropMap = GAI_VALUE(DropMap*, "item drop map");
+	if (!itemDropMap)
+		return dropMap;
 
 	//Add items that drop from items.
+	// Stage the new pairs first: inserting into dropMap while iterating a range from the same
+	// unordered_multimap can trigger a rehash, which invalidates the range iterators (itr /
+	// range.second) and crashes on the next ++itr. Build the additions, then apply them once.
+	std::vector<std::pair<uint32, int32>> itemSourcedDrops;
 	for (auto& [lootItemId, sourceItemId] : *itemDropMap)
 	{
 		auto range = dropMap->equal_range(sourceItemId);
 		for (auto itr = range.first; itr != range.second; ++itr)
-			dropMap->insert(std::make_pair(lootItemId, itr->second));
+			itemSourcedDrops.emplace_back(lootItemId, itr->second);
 	}
+
+	for (auto& drop : itemSourcedDrops)
+		dropMap->insert(drop);
 
 	return dropMap;
 }
@@ -224,6 +282,8 @@ std::list<int32> ItemDropListValue::Calculate()
 	uint32 itemId = stoi(getQualifier());
 
 	DropMap* dropMap = GAI_VALUE(DropMap*, "drop map");
+	if (!dropMap)
+		return {};
 
 	std::list<int32> entries;
 
@@ -243,6 +303,8 @@ std::list<uint32> EntryLootListValue::Calculate()
 	std::list<uint32> items;
 
 	DropMap* dropMap = GAI_VALUE(DropMap*, "drop map");
+	if (!dropMap)
+		return {};
 	for (auto it = dropMap->begin(); it != dropMap->end(); ++it)
 	{
 		if (it->second == entry)
@@ -260,31 +322,35 @@ float LootChanceValue::Calculate()
 	int32 entry = getMultiQualifierInt(getQualifier(), 0, " ");
 	uint32 itemId = getMultiQualifierInt(getQualifier(), 1, " ");
 
-	LootTemplateAccess const* lTemplateA;
+	LootTemplate const* lTemplateA;
 
 	if (entry > 0)
 		lTemplateA = DropMapValue::GetLootTemplate(ObjectGuid(HIGHGUID_UNIT, entry, uint32(1)), LOOT_CORPSE);
 	else
-		lTemplateA = DropMapValue::GetLootTemplate(ObjectGuid(HIGHGUID_GAMEOBJECT, entry, uint32(1)), LOOT_CORPSE);
+		lTemplateA = DropMapValue::GetLootTemplate(ObjectGuid(HIGHGUID_GAMEOBJECT, -entry, uint32(1)), LOOT_CORPSE);
 
 	if (lTemplateA)
 	{
-		for (auto& item : lTemplateA->Entries)
+		for (auto& item : lTemplateA->GetEntries())
 			if (item.itemid == itemId)
 				return item.chance;
 
-		for (LootLootGroupAccess const& group : lTemplateA->Groups)
+		float chance = 0.0f;
+		bool found = false;
+		lTemplateA->VisitGroups([&](LootEntryView explicitEntries, LootEntryView equalEntries)
 		{
-			for (LootStoreItem const& item : group.ExplicitlyChanced)
+			if (found) return;
+			for (LootStoreItem const& item : explicitEntries)
 				if (item.itemid == itemId)
-					return item.chance;
+				{ chance = item.chance; found = true; return; }
 
-			float equalChance = 100.0f / (float)group.EqualChanced.size();
+			float equalChance = equalEntries.empty() ? 0.0f : 100.0f / float(equalEntries.size());
 
-			for (LootStoreItem const& item : group.EqualChanced)
+			for (LootStoreItem const& item : equalEntries)
 				if (item.itemid == itemId)
-					return item.chance ? item.chance : equalChance;
-		}
+				{ chance = item.chance ? item.chance : equalChance; found = true; return; }
+		});
+		return chance;
 	}
 
 	return 0.0f;
@@ -368,7 +434,11 @@ bool ShouldLootObject::Calculate()
 	if (!object)
 		return false;
 
-	if (!object->m_loot)
+	// Penqle has m_loot only on Creature/GameObject; check via cast.
+	Loot* objLoot = nullptr;
+	if (object->IsCreature()) objLoot = ((Creature*)object)->m_loot;
+	else if (object->IsGameObject()) objLoot = ((GameObject*)object)->m_loot;
+	if (!objLoot)
     {
 		if (!object->IsGameObject())
 			return true;
@@ -401,18 +471,23 @@ bool ShouldLootObject::Calculate()
 		return true;				
     }
 
-	if (object->m_loot->GetGoldAmount() > 0)
+	// Dispatch via cast to access m_loot (lives on Creature/GameObject only).
+	Loot* objLoot2 = nullptr;
+	if (object->IsCreature()) objLoot2 = ((Creature*)object)->m_loot;
+	else if (object->IsGameObject()) objLoot2 = ((GameObject*)object)->m_loot;
+	if (objLoot2 && objLoot2->GetGoldAmount() > 0)
 		return true;
 
-	LootAccess const* lootAccess = reinterpret_cast<LootAccess const*>(object->m_loot);
-
-	if (!lootAccess)
+	// LootAccess wraps a Loot* now.
+	if (!objLoot2)
 		return false;
 
-	if (lootAccess->m_lootMethod != NOT_GROUP_TYPE_LOOT && !lootAccess->m_isChecked) //Open loot once to start rolls.
+	LootAccess lootAccess(objLoot2);
+
+	if (lootAccess.lootMethod() != NOT_GROUP_TYPE_LOOT && !lootAccess.isChecked()) //Open loot once to start rolls.
 		return true;
 
-	for (auto& lItem : lootAccess->GetLootContentFor(bot))
+	for (auto& lItem : lootAccess.GetLootContentFor(bot))
 	{
 		if (!lItem->itemId)
 			continue;
@@ -424,7 +499,7 @@ bool ShouldLootObject::Calculate()
 
 		ItemQualifier ltemQualifier(lItem);
 
-		if (lootAccess->m_lootType != LOOT_SKINNING && !StoreLootAction::IsLootAllowed(ltemQualifier, ai))
+		if (lootAccess.lootType() != LOOT_SKINNING && !StoreLootAction::IsLootAllowed(ltemQualifier, ai))
 			continue;
 
 		return true;
@@ -449,15 +524,11 @@ void ActiveRolls::CleanUp(Player* bot, LootRollMap& rollMap, ObjectGuid guid, ui
 			continue;
 		}
 
-		Loot* loot = sLootMgr.GetLoot(bot, roll->first);
-		if (!loot)
-		{
-			roll = rollMap.erase(roll);
-			continue;
-		}
-
-		GroupLootRoll* lootRoll = loot->GetRollForSlot(roll->second);
-		if (!lootRoll)
+		// Ask the group, not the loot object: this core keeps rolls in
+		// Group::RollId and Loot::GetRollForSlot is a stub returning nullptr,
+		// which used to wipe every entry the moment it was added.
+		Group* group = bot->GetGroup();
+		if (!group || !group->GetActiveRoll(roll->first, roll->second))
 		{
 			roll = rollMap.erase(roll);
 			continue;

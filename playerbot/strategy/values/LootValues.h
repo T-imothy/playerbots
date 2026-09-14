@@ -5,59 +5,52 @@
 
 namespace ai
 { 
-    //Cheat class copy to hack into the loot system
-    class LootLootGroupAccess                               // A set of loot definitions for items (refs are not allowed)
-    {
-    public:
-        LootStoreItemList ExplicitlyChanced;                // Entries with chances defined in DB
-        LootStoreItemList EqualChanced;                     // Zero chances - every entry takes the same chance
-    };
-
-    class LootTemplateAccess
-    {
-    public:
-        typedef std::vector<LootLootGroupAccess> LootGroups;
-        LootStoreItemList Entries;                          // not grouped only
-        LootGroups        Groups;                           // groups have own (optimized) processing, grouped entries go there
-    };
-
+    // LootAccess was originally a "cheat-class" that mirrored cmangos's Loot
+    // layout and was reached via reinterpret_cast<LootAccess*>(loot). Penqle's
+    // Loot has a totally different field layout, so the cast trick reads garbage.
+    //
+    // Reshape: LootAccess holds a Loot* and exposes cmangos-style accessors as
+    // methods. Call sites that previously used reinterpret_cast construct via
+    // LootAccess(loot) instead; sites that read `lootAccess->m_X` use the
+    // matching accessor method.
     class LootAccess
     {
     public:
-        friend struct LootItem;
-        friend class GroupLootRoll;
-        friend class LootMgr;
+        LootAccess() : loot(nullptr) {}
+        explicit LootAccess(Loot const* l) : loot(l) {}
+        explicit LootAccess(Loot* l) : loot(l) {}
 
         std::vector<LootItem*> GetLootContentFor(Player* player) const;
         uint32 GetLootStatusFor(Player const* player) const;
         bool IsLootedFor(Player const* player) const;
         bool IsLootedForAll() const;
 
-        // What is looted
-        WorldObject* m_lootTarget;
-        Item* m_itemTarget;
-        ObjectGuid       m_guidTarget;
+        // Accessor methods replacing the old cmangos-layout fields. Penqle's Loot maps:
+        //   cmangos m_playersLooting -> Penqle::Loot::GetLootingPlayers()
+        //   cmangos m_lootType       -> Penqle::Loot::loot_type
+        //   cmangos m_gold           -> Penqle::Loot::gold
+        //   cmangos m_isChecked      -> no equivalent (always false)
+        //   cmangos m_isFakeLoot     -> no equivalent (always false)
+        //   cmangos m_lootMethod     -> no equivalent (always FREE_FOR_ALL — Penqle uses
+        //                                              Group->m_lootMethod, not Loot->m_lootMethod)
+        //   cmangos m_playersOpened  -> no equivalent (always empty)
+        //   cmangos m_lootItems      -> Penqle::Loot::items
+        // Methods are named to match the bot's call sites (e.g., bot reads `lootAccess->playersLooting()`).
+        // Return type is std::set<ObjectGuid> to match Penqle's Loot::PlayersLooting (the bot uses
+        // .count() which works on both std::set and std::unordered_set).
+        std::set<ObjectGuid> const& playersLooting() const;
+        LootType lootType() const;
+        uint32 gold() const;
+        bool isChecked() const { return false; }
+        bool isFakeLoot() const { return false; }
+        LootMethod lootMethod() const { return FREE_FOR_ALL; }
+        std::set<ObjectGuid> const& playersOpened() const;
+        LootItemList const& lootItems() const;
 
-        LootItemList     m_lootItems;                     // store of the items contained in loot
-        uint32           m_gold;                          // amount of money contained in loot
-        uint32           m_maxSlot;                       // used to increment slot index and get total items count
-        LootType         m_lootType;                      // internal loot type
-        ClientLootType   m_clientLootType;                // client loot type
-        LootMethod       m_lootMethod;                    // used to know what kind of check must be done at loot time
-        ItemQualities    m_threshold;                     // group threshold for items
-        ObjectGuid       m_masterOwnerGuid;               // master loot player or round robin owner
-        ObjectGuid       m_currentLooterGuid;             // current player for under threshold items (Round Robin)
-        GuidSet          m_ownerSet;                      // set of all player who have right to the loot
-        uint32           m_maxEnchantSkill;               // used to know group right to use disenchant option
-        bool             m_haveItemOverThreshold;         // if at least one item in the loot is over threshold
-        bool             m_isChecked;                     // true if at least one player received the loot content
-        bool             m_isChest;                       // chest type object have special loot right
-        bool             m_isChanged;                     // true if at least one item is looted
-        bool             m_isFakeLoot;                    // nothing to loot but will sparkle for empty windows
-        GroupLootRollMap m_roll;                          // used if an item is under rolling
-        GuidSet          m_playersLooting;                // player who opened loot windows
-        GuidSet          m_playersOpened;                 // players that have released the corpse
-        TimePoint        m_createTime;                    // create time (used to refill loot if need)
+        Loot const* GetLoot() const { return loot; }
+
+    private:
+        Loot const* loot;
     };
 
     //DropMap[itemId] = {entry}
@@ -88,7 +81,7 @@ namespace ai
 
         virtual ~DropMapValue() { delete value; }
 
-        static LootTemplateAccess const* GetLootTemplate(ObjectGuid guid, LootType type = LOOT_CORPSE);
+        static LootTemplate const* GetLootTemplate(ObjectGuid guid, LootType type = LOOT_CORPSE);
 
         virtual DropMap* Calculate() override;
 #ifdef GenerateBotHelp

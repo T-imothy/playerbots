@@ -115,7 +115,7 @@ uint32 MoneyNeededForValue::Calculate()
 {
     NeedMoneyFor needMoneyFor = NeedMoneyFor(stoi(getQualifier()));
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
 
     uint32 moneyWanted = 0;
@@ -241,10 +241,10 @@ uint32 MoneyNeededForValue::Calculate()
 
         for (auto& mount : AI_VALUE(std::vector<MountValue>, "mount list"))
         {
-            if (mount.GetSpeed(false) > maxMountSpeed)
+            if (mount.GetSpeedFor(bot, false) > maxMountSpeed)
             {
-                maxMountSpeed = mount.GetSpeed(false);
-                maxFlyMountSpeed = mount.GetSpeed(true);
+                maxMountSpeed = mount.GetSpeedFor(bot, false);
+                maxFlyMountSpeed = mount.GetSpeedFor(bot, true);
             }
         }
 

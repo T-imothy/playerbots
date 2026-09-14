@@ -3,9 +3,9 @@
 #include "TravelAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 #include "World/WorldState.h"
 #include "playerbot/TravelMgr.h"
 
@@ -55,7 +55,7 @@ bool TravelAction::isUseful()
 bool MoveToDarkPortalAction::Execute(Event& event)
 {
     if (bot->GetGroup())
-        if (!ai->IsGroupLeader() && ai->HasActivePlayerMaster() && !bot->GetPlayerbotAI()->GetGroupMaster()->GetPlayerbotAI())
+        if (!ai->IsGroupLeader() && ai->HasActivePlayerMaster() && !GetBotAI(GetBotAI(bot)->GetGroupMaster()))
             return false;
 
 #ifndef MANGOSBOT_ZERO
@@ -128,7 +128,7 @@ bool DarkPortalAzerothAction::Execute(Event& event)
         WorldPacket packet(CMSG_AREATRIGGER);
         packet << 4354;
 
-        return bot->GetPlayerbotAI()->DoSpecificAction("reach area trigger", Event("travel action", packet));
+        return GetBotAI(bot)->DoSpecificAction("reach area trigger", Event("travel action", packet));
     }
 #endif
     return false;

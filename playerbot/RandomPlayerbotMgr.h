@@ -10,6 +10,7 @@
 #include <list>
 #include <set>
 #include <unordered_set>
+#include <mutex>
 #include <vector>
 
 class WorldPacket;
@@ -70,6 +71,7 @@ class RandomPlayerbotMgr : public PlayerbotHolder
         }
 
         virtual void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
+        void PrimeEventCache();
 private:
         void ScaleBotActivity();
         void LogPlayerLocation();
@@ -227,6 +229,7 @@ public:
         std::list<std::string> HandleRandomizeFirst(Player* bot);
         std::list<std::string> HandleUpdateGearSpells(Player* bot);
         std::list<std::string> HandleRefresh(Player* bot);
+        std::list<std::string> HandleInspect(Player* bot);
         std::list<std::string> HandleRandomTeleportForLevel(Player* bot);
         std::list<std::string> HandleRandomTeleportForRpg(Player* bot);
         std::list<std::string> HandleRevive(Player* bot);
@@ -244,6 +247,8 @@ public:
 		std::map<uint32, std::map<uint32, std::vector<WorldLocation> > > rpgLocsCacheLevel;
         std::map<uint32, std::map<uint32, std::vector<std::pair<ObjectGuid, WorldLocation>> > > innCacheLevel;
         std::map<Team, std::map<BattleGroundTypeId, std::list<uint32> > > BattleMastersCache;
+        mutable std::recursive_mutex eventCacheMutex;
+        bool eventCachePrimed = false;
         std::map<uint32, std::map<std::string, CachedEvent> > eventCache;
         std::unordered_set<uint32> loadedEventBots;
         std::unordered_map<uint32, time_t> pendingBotLogins;

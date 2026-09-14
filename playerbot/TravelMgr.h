@@ -46,6 +46,7 @@ namespace ai
 		const WorldPosition& GetPosition() const { return position; }
 		Team GetTeam() const { return team; }
 		uint32 GetLevel() const  { return level; }
+        uint32 GetIdentitySeed() const { return identitySeed; }
 		uint16 GetCurrentSkill(SkillType skillType) const  { return currentSkill[skillType]; }
 		uint16 GetSkillMax(SkillType skillType) const { return skillMax[skillType]; }
 		bool IsInRaid() const { return groupSize > 5; }
@@ -64,6 +65,7 @@ namespace ai
 		WorldPosition position;
 		Team team = TEAM_NONE;
 		uint32 level = 0;
+        uint32 identitySeed = 0;
 		uint16 currentSkill[MAX_SKILL_TYPE] = {0};
 		uint16 skillMax[MAX_SKILL_TYPE] = { 0 };
 		uint8 groupSize = 0;
@@ -173,12 +175,12 @@ namespace ai
 	class EntryTravelDestination : public TravelDestination
 	{
 	public:
-		EntryTravelDestination(TravelDestinationPurpose purpose, int32 entry) : TravelDestination(), purpose(purpose), entry(entry) { if (entry > 0) creatureInfo = ObjectMgr::GetCreatureTemplate(entry); else goInfo = ObjectMgr::GetGameObjectInfo(-1 * entry); }
+		EntryTravelDestination(TravelDestinationPurpose purpose, int32 entry) : TravelDestination(), purpose(purpose), entry(entry) { if (entry > 0) creatureInfo = sObjectMgr.GetCreatureTemplate(entry); else goInfo = sObjectMgr.GetGameObjectInfo(-1 * entry); }
 		virtual int32 GetEntry() const override { return entry; }
 		virtual GameObjectInfo const* GetGoInfo() const { return goInfo; }
 		virtual CreatureInfo const* GetCreatureInfo() const { return creatureInfo; }
 		virtual TravelDestinationPurpose GetPurpose() const override { return purpose; }
-		bool HasNpcFlag(uint32 flag) { if(GetCreatureInfo() && (GetCreatureInfo()->NpcFlags & flag)) return true; return false; }
+        bool HasNpcFlag(uint32 flag) const { if(GetCreatureInfo() && (GetCreatureInfo()->NpcFlags & flag)) return true; return false; }
 
 		virtual std::string GetShortName() const override;
 	private:
@@ -249,7 +251,7 @@ namespace ai
 	{
 	public:
 		ZoneTravelDestination(TravelDestinationPurpose purpose, uint32 /*id*/, int32 entry) : EntryTravelDestination(purpose, entry) {
-			SetExpireFast(); SetCooldownShort(); if (auto area = GetArea()) { title = area->area_name[0]; level = area->area_level; }
+			SetExpireFast(); SetCooldownShort(); if (auto area = GetArea()) { title = area->area_name; level = area->area_level; }
 		}
 	protected:
 		virtual std::string GetZoneName() const { return title; }
@@ -416,15 +418,6 @@ namespace ai
 	class TravelMgr
 	{
 	public:
-        struct CacheStats
-        {
-            uint64 destinations = 0;
-            uint64 points = 0;
-            uint64 fishPoints = 0;
-            uint64 areaLevels = 0;
-            uint64 badMmaps = 0;
-            uint64 mapTransfers = 0;
-        };
 		TravelMgr() {};
         ~TravelMgr() { Clear(); };
         void LoadQuestTravelTable(bool includeQuests = true);
@@ -446,7 +439,7 @@ namespace ai
 
 		DestinationList GetDestinations(const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f) const;
 		void GetPartitionsLock(bool getLock = true);
-		static bool IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info);
+		static bool IsLocationLevelValid(const WorldPosition& position, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None);
 		PartitionedTravelList GetPartitions(const WorldPosition& center, const std::vector<uint32>& distancePartitions, const PlayerTravelInfo& info, uint32 purposeFlag = (uint32)TravelDestinationPurpose::None, const std::vector<int32>& entries = {}, bool onlyPossible = true, float maxDistance = 10000.0f) const;
 		static void ShuffleTravelPoints(std::vector<TravelPoint>& points);
 
@@ -461,7 +454,6 @@ namespace ai
 
 		int32 GetAreaLevel(uint32 area_id);
 		void LoadAreaLevels();
-        CacheStats GetCacheStats() const;
 	private:
 		void Clear();
 		void SetMobAvoidAreaMap(uint32 mapId);

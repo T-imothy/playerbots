@@ -21,11 +21,17 @@ bool GuildShareItemAction::Execute(Event& event)
     if (!shareTarget.IsValid())
         return false;
 
-    Player* receiver = shareTarget.receiver;
+    // A cached share plan may outlive the receiver's login or location.
+    Player* receiver = sObjectMgr.GetPlayer(shareTarget.receiver);
+    if (!receiver || !receiver->IsInWorld() || receiver->IsBeingTeleported() ||
+        receiver->GetMapId() != bot->GetMapId() || receiver->GetInstanceId() != bot->GetInstanceId() ||
+        !bot->GetGuildId() || receiver->GetGuildId() != bot->GetGuildId() ||
+        sServerFacade.GetDistance2d(bot, receiver) > INTERACTION_DISTANCE)
+        return false;
     uint32 itemId = shareTarget.itemId;
     uint32 shareAmount = shareTarget.amount; // 0 = give all (existing behavior)
 
-    PlayerbotAI* receiverAi = receiver->GetPlayerbotAI();
+    PlayerbotAI* receiverAi = GetBotAI(receiver);
     if (!receiverAi)
         return false;
 
@@ -41,12 +47,11 @@ bool GuildShareItemAction::Execute(Event& event)
         if (giveCount == stackCount)
         {
             ItemPosCountVec dest;
-            uint8 bagSlot;
-            InventoryResult msg = receiver->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, bagSlot, false);
+            InventoryResult msg = receiver->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false);
             if (msg != EQUIP_ERR_OK)
             {
                 sLog.outDetail("Bot #%d <%s> cannot give %s to %s - bags full",
-                    bot->GetGUIDLow(), bot->GetName(), item->GetProto()->Name1, receiver->GetName());
+                    bot->GetGUIDLow(), bot->GetName(), item->GetProto()->Name1.c_str(), receiver->GetName());
                 return false;
             }
 
@@ -65,7 +70,7 @@ bool GuildShareItemAction::Execute(Event& event)
             if (msg != EQUIP_ERR_OK)
             {
                 sLog.outDetail("Bot #%d <%s> cannot give %s to %s - bags full",
-                    bot->GetGUIDLow(), bot->GetName(), item->GetProto()->Name1, receiver->GetName());
+                    bot->GetGUIDLow(), bot->GetName(), item->GetProto()->Name1.c_str(), receiver->GetName());
                 return false;
             }
 

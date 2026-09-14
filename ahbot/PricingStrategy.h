@@ -1,6 +1,6 @@
 #pragma once
 #include "Config/Config.h"
-#include "Entities/ItemPrototype.h"
+#include "Objects/ItemPrototype.h"
 
 namespace ahbot
 {

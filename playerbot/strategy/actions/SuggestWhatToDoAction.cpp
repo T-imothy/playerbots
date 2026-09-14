@@ -32,7 +32,7 @@ SuggestWhatToDoAction::SuggestWhatToDoAction(PlayerbotAI* ai, std::string name)
 
 bool SuggestWhatToDoAction::isUseful()
 {
-    if (!sRandomPlayerbotMgr.IsRandomBot(bot) || bot->GetGroup() || bot->GetInstanceId())
+    if (!sRandomPlayerbotMgr.IsRandomBot(bot) || bot->GetGroup() || !bot->GetMap()->IsContinent())
         return false;
 
     std::string qualifier = "suggest what to do";
@@ -147,9 +147,9 @@ void SuggestWhatToDoAction::grindMaterials()
 
     if (vec.size() > 0)
     {
-        uint32 randomItemId = vec[urand() % vec.size()];
+        uint32 randomItemId = vec[urand(0, uint32(vec.size() - 1))];
 
-        const ItemPrototype* proto = ObjectMgr::GetItemPrototype(randomItemId);
+        const ItemPrototype* proto = sObjectMgr.GetItemPrototype(randomItemId);
         if (proto)
         {
             BroadcastHelper::BroadcastSuggestGrindMaterials(ai, ai->GetChatHelper()->formatItem(proto), bot);
@@ -271,7 +271,7 @@ private:
 
 bool SuggestTradeAction::isUseful()
 {
-    if (!sRandomPlayerbotMgr.IsRandomBot(bot) || bot->GetGroup() || bot->GetInstanceId())
+    if (!sRandomPlayerbotMgr.IsRandomBot(bot) || bot->GetGroup() || !bot->GetMap()->IsContinent())
         return false;
 
     return true;

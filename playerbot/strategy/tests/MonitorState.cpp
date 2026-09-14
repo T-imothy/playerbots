@@ -2,7 +2,7 @@
 #include "MonitorState.h"
 #include "playerbot/WorldPosition.h"
 #include "playerbot/ChatHelper.h"
-#include "Server/DBCStores.h"
+#include "Database/DBCStores.h"
 #include <cctype>
 #include <set>
 
@@ -112,21 +112,11 @@ bool MonitorStateStarterGearCount::IsConditionMet(const std::string& monitorStr,
     if (TryParseUInt32Strict(valueStr, threshold, parseMessage, GetName()) != TestResult::PASS)
         return false;
 
-    uint32 packed = bot->GetUInt32Value(UNIT_FIELD_BYTES_0) & 0x00FFFFFF;
     std::set<uint32> starterItems;
-    for (uint32 i = 0; i < sCharStartOutfitStore.GetNumRows(); ++i)
-    {
-        CharStartOutfitEntry const* entry = sCharStartOutfitStore.LookupEntry(i);
-        if (!entry || entry->RaceClassGender != packed)
-            continue;
-
-        for (int32 itemId : entry->ItemId)
-        {
-            if (itemId > 0)
-                starterItems.insert(static_cast<uint32>(itemId));
-        }
-        break;
-    }
+    // Penqle creates outfits from playercreateinfo_item, including Turtle races.
+    if (PlayerInfo const* info = sObjectMgr.GetPlayerInfo(bot->GetRace(), bot->GetClass()))
+        for (PlayerCreateInfoItem const& item : info->item)
+            if (item.item_id && item.item_amount) starterItems.insert(item.item_id);
 
     uint32 count = 0;
     for (uint8 slot = 0; slot < EQUIPMENT_SLOT_END; ++slot)
@@ -245,7 +235,7 @@ bool MonitorStateAreaLevelDiff::IsConditionMet(const std::string& monitorStr, Pl
 bool MonitorAiValue::IsConditionMet(const std::string& monitorStr, Player* bot, TestContext& ctx) const
 {
     //monitor value uint32 item count::2313 > 0 => pass \"Item withdrawn to inventory\"
-    AiObjectContext* context = bot->GetPlayerbotAI()->GetAiObjectContext();
+    AiObjectContext* context = GetBotAI(bot)->GetAiObjectContext();
     std::string valueStr;
     std::string valueToCompareTo;
     std::string parseMessage;
@@ -294,7 +284,7 @@ bool MonitorOutgoingMessage::IsConditionMet(const std::string& monitorStr, Playe
     if (splitResult != TestResult::PASS)
         return false;
     
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
 
     bool isFound = false;
 

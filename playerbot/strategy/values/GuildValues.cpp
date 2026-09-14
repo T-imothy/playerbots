@@ -6,18 +6,9 @@
 #include "playerbot/strategy/values/SharedValueContext.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/ServerFacade.h"
-#include "Guilds/GuildMgr.h"
+#include "Guild/GuildMgr.h"
 
 using namespace ai;
-
-#ifndef MANGOSBOT_ZERO
-Item* GuildAccess::GetGuildItem(uint8 TabId, uint8 SlotId)
-{
-    if (TabId >= GetPurchasedTabs() || SlotId >= GUILD_BANK_MAX_SLOTS)
-        return nullptr;
-    return m_TabList[TabId].Slots[SlotId];
-}
-#endif
 
 std::string GuildOrderValue::TrimWhitespace(const std::string& str)
 {
@@ -56,7 +47,7 @@ uint32 GuildOrderValue::FindItemByName(const std::string& name)
 
     uint32 substringMatch = 0;
 
-    for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+    for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
     {
         ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(itemId);
         if (!proto)
@@ -67,7 +58,7 @@ uint32 GuildOrderValue::FindItemByName(const std::string& name)
             proto->Class == ITEM_CLASS_ARMOR)
             continue;
 
-        if (name.size() == strlen(proto->Name1) && strstri(proto->Name1, name.c_str()))
+        if (name.size() == proto->Name1.size() && strstri(proto->Name1, name.c_str()))
         {
             s_cache[lowerName] = itemId;
             return itemId;
@@ -157,7 +148,7 @@ uint32 ai::CountGuildFinishedItemDeficit(Player* bot, uint32 itemId, const std::
                     continue;
 
                 uint32 has = 0;
-                if (PlayerbotAI* memberAi = player->GetPlayerbotAI())
+                if (PlayerbotAI* memberAi = GetBotAI(player))
                     has = memberAi->GetInventoryItemsCountWithId(itemId);
                 else
                     has = player->GetItemCount(itemId, true);
@@ -215,7 +206,7 @@ static std::unordered_map<uint32, uint32> CountGuildFinishedItemDeficits(
                     continue;
 
                 uint32 has = 0;
-                PlayerbotAI* memberAi = player->GetPlayerbotAI();
+                PlayerbotAI* memberAi = GetBotAI(player);
                 if (memberAi)
                     has = memberAi->GetInventoryItemsCountWithId(entry.itemId);
                 else
@@ -302,7 +293,7 @@ static bool HasSkipOrderNote(Player* bot)
     if (!member)
         return false;
 
-    std::string note = member->OFFnote;
+    std::string note = member->OfficerNote;
     if (note.empty())
         return false;
 
@@ -330,7 +321,7 @@ GuildOrder GuildOrderValue::Calculate()
     if (!member)
         return order;
 
-    std::string note = member->OFFnote;
+    std::string note = member->OfficerNote;
 
     if (!note.empty())
     {
@@ -486,7 +477,7 @@ bool GuildShareItemEntry::MatchesPlayer(Player* player) const
 
     case GuildShareFilter::FILTER_MELEE:
     {
-        PlayerbotAI* ai = player->GetPlayerbotAI();
+        PlayerbotAI* ai = GetBotAI(player);
         if (!ai)
             return true;
         return !ai->IsRanged(player, false);
@@ -494,7 +485,7 @@ bool GuildShareItemEntry::MatchesPlayer(Player* player) const
 
     case GuildShareFilter::FILTER_RANGED:
     {
-        PlayerbotAI* ai = player->GetPlayerbotAI();
+        PlayerbotAI* ai = GetBotAI(player);
         if (!ai)
             return true;
         return ai->IsRanged(player, false);
@@ -502,7 +493,7 @@ bool GuildShareItemEntry::MatchesPlayer(Player* player) const
 
     case GuildShareFilter::FILTER_TANK:
     {
-        PlayerbotAI* ai = player->GetPlayerbotAI();
+        PlayerbotAI* ai = GetBotAI(player);
         if (!ai)
             return true;
         return ai->IsTank(player, false);
@@ -510,7 +501,7 @@ bool GuildShareItemEntry::MatchesPlayer(Player* player) const
 
     case GuildShareFilter::FILTER_DPS:
     {
-        PlayerbotAI* ai = player->GetPlayerbotAI();
+        PlayerbotAI* ai = GetBotAI(player);
         if (!ai)
             return true;
         return !ai->IsTank(player, false) && !ai->IsHeal(player, false);
@@ -518,7 +509,7 @@ bool GuildShareItemEntry::MatchesPlayer(Player* player) const
 
     case GuildShareFilter::FILTER_HEAL:
     {
-        PlayerbotAI* ai = player->GetPlayerbotAI();
+        PlayerbotAI* ai = GetBotAI(player);
         if (!ai)
             return true;
         return ai->IsHeal(player, false);
@@ -1062,7 +1053,7 @@ GuildShareTarget GuildShareTargetValue::Calculate()
         if (player->GetGuildId() != bot->GetGuildId())
             continue;
 
-        PlayerbotAI* targetAi = player->GetPlayerbotAI();
+        PlayerbotAI* targetAi = GetBotAI(player);
         if (!targetAi)
             continue;
 
@@ -1103,7 +1094,7 @@ GuildShareTarget GuildShareTargetValue::Calculate()
                     needed = canGive;
             }
 
-            result.receiver = player;
+            result.receiver = player->GetObjectGuid();
             result.itemId = entry.itemId;
             result.amount = needed;
             return result;

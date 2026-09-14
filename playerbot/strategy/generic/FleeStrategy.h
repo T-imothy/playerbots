@@ -1,8 +1,21 @@
 #pragma once
 #include "playerbot/strategy/Strategy.h"
+#include "playerbot/strategy/Multiplier.h"
 
 namespace ai
 {
+    // Breaks the ranged-caster flee loop: once a bot has fled repeatedly with no progress the
+    // "flee" action is dampened below the nukes so it casts instead of running forever, and an
+    // in-progress non-instant cast is never interrupted by flee (see GetValue).
+    class FleeMultiplier : public Multiplier
+    {
+    public:
+        FleeMultiplier(PlayerbotAI* ai) : Multiplier(ai, "flee") {}
+
+    public:
+        float GetValue(Action* action) override;
+    };
+
     class FleeStrategy : public Strategy
     {
     public:
@@ -17,6 +30,7 @@ namespace ai
 #endif
     private:
         void InitCombatTriggers(std::list<TriggerNode*> &triggers) override;
+        void InitCombatMultipliers(std::list<Multiplier*> &multipliers) override;
     };
 
     class FleeFromAddsStrategy : public Strategy

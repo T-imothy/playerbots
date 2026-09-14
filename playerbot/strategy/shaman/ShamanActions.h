@@ -1,4 +1,4 @@
-#include "Entities/Totem.h"
+#include "Objects/Totem.h"
 #include "playerbot/strategy/MeleeCombatPolicy.h"
 #pragma once
 #include "playerbot/strategy/actions/HealerSupportActions.h"
@@ -12,6 +12,20 @@ char* strstri(const char* haystack, const char* needle);
 
 namespace ai
 {
+    // Like the baseline priest's Mind Soothe, this is a requested utility
+    // action. Do not spend combat turns trying to pacify engaged enemies.
+    class CastCalmElementsAction : public CastRangedDebuffSpellAction
+    {
+    public:
+        CastCalmElementsAction(PlayerbotAI* ai) : CastRangedDebuffSpellAction(ai, "calm elements") {}
+        bool isUseful() override
+        {
+            Unit* target = GetTarget();
+            return !bot->IsInCombat() && target && !target->IsInCombat() &&
+                CastRangedDebuffSpellAction::isUseful();
+        }
+    };
+
 #ifdef MANGOSBOT_TWO
     BUFF_ACTION(CastFeralSpiritAction, "feral spirit");
     SPELL_ACTION(CastLavaBurstAction, "lava burst");
@@ -155,18 +169,11 @@ namespace ai
                 if (!member->IsInWorld() || member->GetMapId() != bot->GetMapId())
                     continue;
 
-                if (!bot->IsWithinDistInMap(member, sPlayerbotAIConfig.spellDistance, false))
+                if (!bot->IsWithinDistInMap(member, 100.0f, false))
                     continue;
 
-                // TODO: Implement a better check if member is affected
-                // The aura we want to check is not the same as the spell to summon the totem
-                // While all totems give an aura, aura behavior and naming is not consistent.
-                // The consistent option between all totems is to check if the member is in range to the totem
-                
-                // This is somewhat inaccurate but a much simpler check: if the totem is down already,
-                // then casting the totem is useless. This also checks proximity to owner. 
-                // And if we are not within spell distance of other members, then dropping the totem won't help them. 
-                return !AI_VALUE2(bool, "has totem", name);
+                if (!ai->HasAura(GetSpellName(), member, false, true))
+                    return true;
             }
 
             return false;

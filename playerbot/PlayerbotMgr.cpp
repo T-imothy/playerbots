@@ -1,3 +1,14 @@
+// std::regex used to arrive through botpch.h (line 57). The module build has
+// no per-module precompiled header - the aggregate `modules` target compiles
+// two modules' sources - so a use has to name its own header.
+#include <set>
+#include "playerbot/strategy/actions/AutoLearnSpellAction.h"
+#include <mutex>
+#include <regex>
+#include "DetailedWorkDiagnostics.h"
+#include "ExecutionWatch.h"
+#include "WorkSlice.h"
+
 #include "playerbot/playerbot.h"
 #include "BotRecruitment.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -7,24 +18,363 @@
 #include "playerbot/RandomPlayerbotMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/PlayerbotLoginMgr.h"
+#include "BotDiagnostics.h"
+#include "BotActionLog.h"
 #include "Chat/ChannelMgr.h"
-#include "Social/SocialMgr.h"
-#include "Accounts/AccountMgr.h"
+#include "SocialMgr.h"
+#include "AccountMgr.h"
 #include "strategy/actions/ChangeTalentsAction.h"
 #include "strategy/actions/InviteToGroupAction.h"
 #include "AiFactory.h"
-#include "Guilds/GuildMgr.h"
+#include "Guild/GuildMgr.h"
+#include "World.h"
+#include "Database/DatabaseImpl.h"
+#include "ObjectMgr.h"
+#include "PlayerLoginQueryHolder.h"
 
 #ifdef GenerateBotTests
 #include "strategy/tests/TestAction.h"
 #include "strategy/tests/TestRegistry.h"
 #endif
 
-class LoginQueryHolder;
 class CharacterHandler;
+
+// real bot login flow.
+//
+// AddPlayerBot creates a synthetic WorldSession for the bot if needed, queues the bot's
+// character data load via the standard Penqle CharacterDatabase pipeline, and routes the
+// callback to HandlePlayerBotLoginCallback below. After the holder fires, we hand it off
+// to WorldSession::HandlePlayerLogin (the same path real players use), then attach the
+// PlayerbotAI via OnBotLogin.
+//
+// PlayerbotLoginQueryHolder is defined in PlayerbotLoginMgr.cpp (file-local class). Since
+// it's not exported, we use Penqle's plain LoginQueryHolder here â€” the bot doesn't need
+// the cmangos extra fields (masterAccountId stored on the holder is convenient but
+// non-essential; we already have it via the m_pendingBotLogins map below).
+
+// Pending logins: maps holder pointer to (botGuid, masterAccountId) so the callback can
+// resolve which bot is being added. Cleared on callback completion.
+namespace {
+    struct PendingBotLogin {
+        ObjectGuid botGuid;
+        uint32 masterAccountId;
+        PlayerbotHolder* owner;
+        uint64 ownerGeneration;
+    };
+    std::mutex& HolderRegistryLock();
+    std::map<PlayerbotHolder*, uint64>& HolderRegistry();
+    std::map<SqlQueryHolder*, PendingBotLogin> m_pendingBotLogins;
+}
+
+void PlayerbotHolder::RegisterPendingBotLogin(SqlQueryHolder* holder, uint32 guidLow, uint32 masterAccountId)
+{
+    if (!holder)
+        return;
+
+    std::lock_guard<std::mutex> lock(HolderRegistryLock());
+    m_pendingBotLogins[holder] = { ObjectGuid(HIGHGUID_PLAYER, guidLow), masterAccountId,
+        this, HolderRegistry().at(this) };
+}
+
+uint32 PlayerbotHolder::GetPendingBotLoginCount() const
+{
+    uint32 count = 0;
+    for (auto const& entry : m_pendingBotLogins)
+        if (entry.second.owner == this) ++count;
+    return count;
+}
+
+bool PlayerbotHolder::HasPendingBotLogin(uint32 guid) const
+{
+    for (auto const& entry : m_pendingBotLogins)
+        if (entry.second.botGuid.GetCounter() == guid) return true;
+    return false;
+}
+
+void PlayerbotHolder::AddPlayerBot(uint32 guidLow, uint32 masterAccountId)
+{
+    if (!sPlayerbotAIConfig.enabled || HasPendingBotLogin(guidLow))
+        return;
+
+    ObjectGuid botGuid(HIGHGUID_PLAYER, guidLow);
+
+    // 1. Resolve the bot's account from its character GUID (just to validate; not used here).
+    uint32 botAccountId = sObjectMgr.GetPlayerAccountIdByGUID(botGuid);
+    if (!botAccountId)
+    {
+        sLog.outError("[PlayerBots] AddPlayerBot: no account for guid %u", guidLow);
+        return;
+    }
+
+    // 2. If the bot character is already in world, just attach AI (idempotent).
+    Player* existing = sObjectMgr.GetPlayer(botGuid, false);
+    if (existing && existing->IsInWorld())
+    {
+        SC_LOG("AddPlayerBot guid=%u â€” already in-world, attaching via OnBotLogin", guidLow);
+        OnBotLogin(existing);
+        return;
+    }
+
+    // 2b. ghost-online guard.
+    // The Player object can sit in the global HashMapHolder<Player> registry
+    // while not being in any Map (i.e. IsInWorld() == false). This happens
+    // when a bot far-teleport starts (Player is removed from world map) but
+    // the worldport ACK never fires (e.g. UpdateSessions wasn't ticking, or
+    // the bot's master logged off mid-port). FindPlayer() filters on IsInWorld
+    // so the check above misses this. If we then proceed to queue a fresh
+    // LoginQueryHolder, HandlePlayerLogin sees the existing entry in
+    // HashMapHolder and rejects with "[CRASH] Trying to login already ingame
+    // character guid X" + KickPlayer(). The user reports `.bot add` doing
+    // nothing in this state, with no apparent logout possible because the
+    // bot isn't in playerBots either (master never re-attached after the
+    // botched teleport).
+    Player* ghost = HashMapHolder<Player>::Find(botGuid);
+    if (ghost && !ghost->IsInWorld())
+    {
+        SC_LOG("AddPlayerBot guid=%u â€” GHOST detected (in HashMapHolder, not in world). isBeingTeleported=%d",
+               guidLow, (int)ghost->IsBeingTeleported());
+
+        // Try to force-finish a stuck teleport. If the bot was mid-far-teleport
+        // and an ACK never arrived, we drive it through HandleMoveWorldportAckOpcode
+        // here so the bot lands and re-enters the world. Then OnBotLogin attaches.
+        if (ghost->IsBeingTeleportedFar())
+        {
+            SC_LOG("AddPlayerBot guid=%u â€” driving stuck worldport ACK", guidLow);
+            ghost->GetSession()->HandleMoveWorldportAckOpcode();
+        }
+        else if (ghost->IsBeingTeleportedNear())
+        {
+            // Near-teleport ACK uses MSG_MOVE_TELEPORT_ACK; less common but cover it.
+            WorldPacket p(MSG_MOVE_TELEPORT_ACK, 8 + 4 + 4);
+            p << ghost->GetObjectGuid();
+            p << ghost->GetLastCounterForMovementChangeType(TELEPORT);
+            p << uint32(time(0));
+            ghost->GetSession()->HandleMoveTeleportAckOpcode(p);
+        }
+
+        // After ACK, the player should be in-world again. If so, treat it
+        // exactly like the in-world path. If not, we leave it alone and warn â€”
+        // forcibly destroying the Player from here is unsafe (could be mid-tick).
+        if (ghost->IsInWorld())
+        {
+            SC_LOG("AddPlayerBot guid=%u â€” ghost recovered after ACK, attaching", guidLow);
+            OnBotLogin(ghost);
+            return;
+        }
+        else
+        {
+            sLog.outError("[PlayerBots] AddPlayerBot: bot %u is in HashMapHolder but not in world and not "
+                          "mid-teleport â€” refusing to retry login (would cause [CRASH] kick). Use `.bot remove` "
+                          "or restart the server to recover.", guidLow);
+            return;
+        }
+    }
+
+    // 3. Queue the bot's character data load via the standard pipeline.
+    //    Critically, we do NOT pre-create a WorldSession here â€” the callback below allocates
+    //    a fresh, free-floating session per bot. This avoids stomping the master's existing
+    //    session when the bot is on the master's own account (alt-bot pattern, the common case).
+    LoginQueryHolder* holder = new LoginQueryHolder(botAccountId, botGuid, SessionTransport::Headless);
+    if (!holder->Initialize())
+    {
+        sLog.outError("[PlayerBots] AddPlayerBot: holder Initialize() failed for guid %u", guidLow);
+        delete holder;
+        return;
+    }
+
+    RegisterPendingBotLogin(holder, guidLow, masterAccountId);
+
+    // MUST be the Unsafe (main-thread) variant: the plain DelayQueryHolder marks the callback
+    // threadSafe and SqlResultQueue::Update farms it out to a 6-thread callback pool, running
+    // HandlePlayerBotLoginCallback concurrently. That callback does real login work â€” it erases
+    // from the shared m_pendingBotLogins map and inserts the bot Player into the world/ObjectAccessor
+    // â€” none of which is thread-safe. Concurrent map erase corrupts the RB-tree (SIGSEGV in
+    // _Rb_tree_rebalance_for_erase) when many bots log in at once. The engine's own player login
+    // uses DelayQueryHolderUnsafe for exactly this reason (see CharacterHandler.cpp:493).
+    // Dispatch through the process-lifetime manager, never a player's manager
+    // which can be destroyed while the database bundle is still queued.
+    PlayerbotHolder* dispatcher = &sRandomPlayerbotMgr;
+    bool const queued = masterAccountId ?
+        CharacterDatabase.DelayQueryHolderUnsafePriority(dispatcher, &PlayerbotHolder::HandlePlayerBotLoginCallback, holder) :
+        CharacterDatabase.DelayQueryHolderUnsafe(dispatcher, &PlayerbotHolder::HandlePlayerBotLoginCallback, holder);
+    if (!queued)
+    {
+        m_pendingBotLogins.erase(holder);
+        delete holder;
+        sLog.outError("[PlayerBots] AddPlayerBot: query dispatch failed for guid %u", guidLow);
+    }
+}
+
+// Called when CharacterDatabase finishes the holder's queries. Allocates a fresh WorldSession
+// for the bot (NOT registered in sWorld.m_sessions â€” free-floating, owned by the bot's AI),
+// hands the holder off to WorldSession::HandlePlayerLogin (which materializes the Player into
+// THIS new session, not the master's), then attaches PlayerbotAI.
+//
+// Why a fresh session rather than reusing master's: WoW sessions are keyed by accountId; only
+// one active session per account in sWorld.m_sessions. For alt-bots on the master's account,
+// reusing the master's session would stomp the master's Player. cmangos's reference solves this
+// by creating a parallel free-floating WorldSession (bypassing sWorld.AddSession) â€” the master's
+// session keeps owning the master's Player, the bot's session owns the bot's Player, both are
+// active simultaneously even though they share an accountId.
+void PlayerbotHolder::HandlePlayerBotLoginCallback(QueryResult* /*dummy*/, SqlQueryHolder* holder)
+{
+    if (!holder)
+        return;
+
+    auto it = m_pendingBotLogins.find(holder);
+    if (it == m_pendingBotLogins.end())
+    {
+        // The requesting manager logged out or explicitly cancelled the request.
+        // The database has finished with the bundle; this callback owns deletion.
+        delete holder;
+        return;
+    }
+
+    PendingBotLogin info = it->second;
+    m_pendingBotLogins.erase(it);
+    PlayerbotHolder* owner = info.owner;
+    {
+        std::lock_guard<std::mutex> lock(HolderRegistryLock());
+        auto current = HolderRegistry().find(owner);
+        if (current == HolderRegistry().end() || current->second != info.ownerGeneration)
+        {
+            delete holder;
+            return;
+        }
+    }
+
+    if (owner == &sRandomPlayerbotMgr && !sPlayerbotAIConfig.asyncBotLogin)
+    {
+        // A failed/rejected completion must not leave a permanent "login" event.
+        sRandomPlayerbotMgr.SetValue(info.botGuid.GetCounter(), "login", 0);
+        uint32 const target = sRandomPlayerbotMgr.GetValue(uint32(0), "bot_count");
+        if (owner->GetPlayerbotsAmount() >= target)
+        {
+            delete holder;
+            return;
+        }
+    }
+
+    LoginQueryHolder* lqh = static_cast<LoginQueryHolder*>(holder);
+
+    // Already loaded? (race protection)
+    if (sObjectMgr.GetPlayer(lqh->GetGuid(), false))
+    {
+        delete holder;
+        return;
+    }
+
+    ObjectGuid const guid = lqh->GetGuid();
+    // The scheduler already loaded this bundle; the native host adopts it without
+    // issuing a second query batch. The host remains the only session owner.
+    if (sWorld.StartPreparedHeadlessSession(lqh, LOCALE_enUS, "ManTechPlayerbots") !=
+        HeadlessSessionStartResult::Started)
+        return;
+    if (Player* bot = sObjectMgr.GetPlayer(guid, false))
+        owner->OnBotLogin(bot);
+
+}
+
+// Every live holder: the singleton RandomPlayerbotMgr plus one PlayerbotMgr per
+// session. A destroyed Player has to be cleared from all of them, and there was
+// no way to enumerate them before.
+namespace
+{
+    std::mutex& HolderRegistryLock()
+    {
+        static std::mutex instance;
+        return instance;
+    }
+    std::map<PlayerbotHolder*, uint64>& HolderRegistry()
+    {
+        static std::map<PlayerbotHolder*, uint64> instance;
+        return instance;
+    }
+    uint64& HolderGeneration()
+    {
+        static uint64 generation = 0;
+        return generation;
+    }
+}
+
+void PlayerbotHolder::NotePlayerDestroyed(Player const* player)
+{
+    if (!player)
+        return;
+    uint32 const guid = player->GetGUIDLow();
+
+    std::lock_guard<std::mutex> lock(HolderRegistryLock());
+    for (auto const& entry : HolderRegistry())
+    {
+        PlayerbotHolder* holder = entry.first;
+        auto const it = holder->playerBots.find(guid);
+        // Only when it is THIS Player. A slot already refilled by a new login
+        // on the same guid must not be cleared.
+        if (it != holder->playerBots.end() && it->second == player)
+            it->second = nullptr;   // tombstone; Cleanup() sweeps it later
+    }
+}
+
+void PlayerbotHolder::UpdateAllHolderSessions(uint32 elapsed)
+{
+    // Called on the world owner after map jobs join. Handlers can destroy a
+    // later holder or construct another at its address, so a raw-pointer
+    // snapshot alone is insufficient. New holders wait until the next pass.
+    std::vector<std::pair<PlayerbotHolder*, uint64>> holders;
+    {
+        std::lock_guard<std::mutex> lock(HolderRegistryLock());
+        holders.assign(HolderRegistry().begin(), HolderRegistry().end());
+    }
+    for (auto const& entry : holders)
+    {
+        {
+            std::lock_guard<std::mutex> lock(HolderRegistryLock());
+            auto const current = HolderRegistry().find(entry.first);
+            if (current == HolderRegistry().end() || current->second != entry.second)
+                continue;
+        }
+        // Never hold the registry mutex across native packet/teleport callbacks.
+        entry.first->UpdateSessions(elapsed);
+    }
+}
+
+void PlayerbotHolder::UpdateAllMasterAIs(uint32 elapsed)
+{
+    // Called on the world owner after map jobs join. Handlers can destroy a
+    // later holder or construct another at its address, so a raw-pointer
+    // snapshot alone is insufficient. New holders wait until the next pass.
+    std::vector<std::pair<PlayerbotHolder*, uint64>> holders;
+    {
+        std::lock_guard<std::mutex> lock(HolderRegistryLock());
+        holders.assign(HolderRegistry().begin(), HolderRegistry().end());
+    }
+    for (auto const& entry : holders)
+    {
+        {
+            std::lock_guard<std::mutex> lock(HolderRegistryLock());
+            auto const current = HolderRegistry().find(entry.first);
+            if (current == HolderRegistry().end() || current->second != entry.second)
+                continue;
+        }
+        // Never hold the registry mutex across native packet/teleport callbacks.
+        if (auto* manager = dynamic_cast<PlayerbotMgr*>(entry.first))
+        {
+            struct StopScope {
+                StopScope() { sWorld.BeginHeadlessStopDeferral(); }
+                ~StopScope() { sWorld.EndHeadlessStopDeferral(); }
+            } scope;
+            manager->UpdateAI(elapsed);
+        }
+    }
+}
 
 PlayerbotHolder::PlayerbotHolder() : PlayerbotAIBase()
 {
+    {
+        std::lock_guard<std::mutex> lock(HolderRegistryLock());
+        HolderRegistry().emplace(this, ++HolderGeneration());
+    }
     m_holderHandlers["list"] = &PlayerbotHolder::HandleList;
     m_holderHandlers["help"] = &PlayerbotHolder::HandleHelp;
     m_holderHandlers["reload"] = &PlayerbotHolder::HandleReload;
@@ -70,6 +420,9 @@ PlayerbotHolder::PlayerbotHolder() : PlayerbotAIBase()
     m_botCommandHandlers["levelup"] = &PlayerbotHolder::HandleBotLevelUp;
     m_botCommandHandlers["level"] = &PlayerbotHolder::HandleBotLevelUp;
     m_botCommandHandlers["random"] = &PlayerbotHolder::HandleBotRandom;
+    m_botCommandHandlers["summon"] = &PlayerbotHolder::HandleBotSummon;
+    m_botCommandHandlers["recall"] = &PlayerbotHolder::HandleBotSummon;
+    m_botCommandHandlers["come"]   = &PlayerbotHolder::HandleBotSummon;
 
     m_botCommandHandlers["always"] = &PlayerbotHolder::HandleBotAlways;
     m_botCommandHandlers["debug"] = &PlayerbotHolder::HandleBotDebug;
@@ -90,6 +443,12 @@ PlayerbotHolder::PlayerbotHolder() : PlayerbotAIBase()
 
 PlayerbotHolder::~PlayerbotHolder()
 {
+    std::lock_guard<std::mutex> lock(HolderRegistryLock());
+    HolderRegistry().erase(this);
+    // The DB still owns queued bundles; invalidate only their recipients.
+    for (auto pending = m_pendingBotLogins.begin(); pending != m_pendingBotLogins.end(); )
+        if (pending->second.owner == this) pending = m_pendingBotLogins.erase(pending);
+        else ++pending;
 }
 
 void PlayerbotHolder::ForEachPlayerbot(std::function<void(Player*)> callback) const
@@ -97,10 +456,11 @@ void PlayerbotHolder::ForEachPlayerbot(std::function<void(Player*)> callback) co
     for (auto& itr : playerBots)
     {
         Player* bot = itr.second;
-        if (bot)
-        {
-            callback(bot);
-        }
+        if (!bot)
+            continue;
+        // See GetPlayerBot above: the GUID cross-check that used to sit here
+        // was an outage, not a fix.
+        callback(bot);
     }
 }
 
@@ -126,23 +486,139 @@ void PlayerbotHolder::UpdateAIInternal(uint32 elapsed, bool minimal)
 
 void PlayerbotHolder::UpdateSessions(uint32 elapsed)
 {
-    ForEachPlayerbot([&](Player* bot)
+    DetailedWork::Scope sessionsWork(DetailedWork::Sessions);
+    ExecutionWatch::Scope sessionsWatch(ExecutionWatch::BotSessions);
+    auto updateOne = [&](Player* bot)
     {
-        if (bot->GetPlayerbotAI() && bot->IsBeingTeleported())
+        WorldSession* const initialSession = bot->GetSession();
+        if (!initialSession || initialSession->GetPlayer() != bot)
+            return;
+        uint32 const initialGuid = bot->GetGUIDLow();
+        // Per-iteration diagnostic snapshot. We only emit it for "interesting"
+        // states (mid-teleport, ghost, logout-pending) to keep log volume sane â€”
+        // a healthy in-world bot looks identical every tick. If a bot is stuck
+        // mid-teleport, this line will fire every master tick and we'll be able
+        // to see exactly how long it's been stuck.
+        const bool isMidTeleport = bot->IsBeingTeleported();
+        const bool isInWorld     = bot->IsInWorld();
+        const bool isLoading     = bot->GetSession() && bot->GetSession()->PlayerLoading();
+        // True ghost: not in world, not mid-teleport, not mid-login. The login
+        // path can briefly land in (!IsInWorld && !IsBeingTeleported) before
+        // SetMap finishes; we must not yank such a bot to homebind.
+        const bool isGhost       = !isInWorld && !isMidTeleport && !isLoading;
+        const bool wantsLogout   = GetBotAI(bot) && GetBotAI(bot)->GetShouldLogOut();
+        if (isMidTeleport || isGhost || wantsLogout)
         {
-            bot->GetPlayerbotAI()->HandleTeleportAck();
+            SC_LOG("UpdateSessions iter bot=%s guid=%u midTeleport=%d inWorld=%d "
+                   "ghost=%d wantsLogout=%d isBeingTeleportedFar=%d isBeingTeleportedNear=%d",
+                   bot->GetName(), bot->GetGUIDLow(),
+                   (int)isMidTeleport, (int)isInWorld, (int)isGhost, (int)wantsLogout,
+                   (int)bot->IsBeingTeleportedFar(),
+                   (int)bot->IsBeingTeleportedNear());
+        }
+
+        if (bot->IsBeingTeleported())
+        {
+            DetailedWork::Scope work(DetailedWork::TeleportAck, bot->GetGUIDLow());
+            ExecutionWatch::Scope watch(ExecutionWatch::BotTeleportAck, 0, 0, bot->GetGUIDLow());
+            if (GetBotAI(bot))
+                GetBotAI(bot)->HandleTeleportAck();
+            else if (!initialSession->GetSocket() && bot->IsBeingTeleportedFar())
+            {
+                // AI-registry-less bots (DC party bots live in this mgr registry
+                // but not the AI registry) still need their synthetic worldport
+                // ACK driven, or the cross-map port into a dungeon instance never
+                // completes and the bot rots in far-teleport limbo until it goes
+                // ghost -> "tank did not arrive at the dungeon entrance".
+                initialSession->HandleMoveWorldportAckOpcode();
+            }
+            else if (!initialSession->GetSocket() && bot->IsBeingTeleportedNear())
+            {
+                WorldPacket ack(MSG_MOVE_TELEPORT_ACK, 8 + 4 + 4);
+                ack << bot->GetObjectGuid();
+                ack << bot->GetLastCounterForMovementChangeType(TELEPORT);
+                ack << uint32(time(nullptr));
+                initialSession->HandleMoveTeleportAckOpcode(ack);
+            }
+            // Invalid destinations and native script hooks can detach the
+            // player. Revalidate ownership before the remaining logout checks.
+            if (GetPlayerBot(initialGuid) != bot || initialSession->GetPlayer() != bot)
+            {
+                if (!initialSession->IsHeadless() && !initialSession->GetPlayer() && !initialSession->GetSocket() &&
+                    sWorld.FindSession(initialSession->GetAccountId()) != initialSession)
+                    delete initialSession;
+                return;
+            }
         }
         else if (bot->IsInWorld())
         {
-            bot->GetSession()->HandleBotPackets();
+            uint32 const guid = bot->GetGUIDLow();
+            DetailedWork::Scope work(DetailedWork::BotPackets, guid);
+            WorldSession* session = bot->GetSession();
+            if (!session->IsHeadless())
+                session->HandleBotPackets();
+            // Immediate logout destroys Player, but a free-floating session
+            // is not in World::m_sessions and needs an explicit owner cleanup.
+            if (!session->GetPlayer())
+            {
+                if (!session->IsHeadless() && !session->GetSocket() && sWorld.FindSession(session->GetAccountId()) != session)
+                    delete session;
+                return;
+            }
+            // A queued logout can detach/delete the player. Never dereference
+            // the old pointer after dispatch without checking holder ownership.
+            if (GetPlayerBot(guid) != bot)
+                return;
+        }
+        else if (isGhost)
+        {
+            // Underlying root-cause fix candidate (ghost branch). Bot has no
+            // teleport flag but is also not in world. This is the limbo state
+            // that produces "Trying to login already ingame" on the next
+            // .bot add. Most likely cause: HandleMoveWorldportAckOpcode's
+            // map->Add returned false and HandleReturnOnTeleportFail's
+            // chained TeleportTo also failed â€” leaving the Player removed
+            // from old map but never added to any new map. SemaphoreTeleportFar
+            // was reset by HandleReturnOnTeleportFail so we can no longer
+            // re-drive the ACK.
+            //
+            // Recovery: kick the bot to homebind synchronously so it lands
+            // *somewhere* in-world. Better than ghost-state forever.
+            if (GetBotAI(bot))
+            {
+                DetailedWork::Scope work(DetailedWork::GhostRecovery, bot->GetGUIDLow());
+                ExecutionWatch::Scope watch(ExecutionWatch::BotGhostRecovery, 0, 0, bot->GetGUIDLow());
+                SC_LOG("UpdateSessions GHOST RECOVERY bot=%s guid=%u â€” driving "
+                       "TeleportToHomebind to break out of limbo",
+                       bot->GetName(), bot->GetGUIDLow());
+                bot->TeleportToHomebind();
+            }
         }
 
-        if (bot->GetPlayerbotAI() && bot->GetPlayerbotAI()->GetShouldLogOut() && !bot->IsStunnedByLogout() && !bot->GetSession()->isLogingOut())
+        if (bot->GetSession()->ShouldLogOut(time(nullptr)))
+        {
+            LogoutPlayerBot(bot->GetGUIDLow());
+            return;
+        }
+        if (GetBotAI(bot) && GetBotAI(bot)->GetShouldLogOut() && !bot->IsStunnedByLogout() && !bot->GetSession()->isLogingOut())
         {
             LogoutPlayerBot(bot->GetObjectGuid().GetRawValue());
         }
-    });
+    };
 
+    // A per-session packet limit alone multiplies by the entire population.
+    // Resume by GUID under one holder budget; never retain a Player/iterator
+    // across a handler that can remove it. Companions use their own holder.
+    WorkSlice slice(TurtleDiagnostics::Micros(), 8192, 2000);
+    size_t remaining = playerBots.size();
+    while (remaining-- && !playerBots.empty() && slice.Take(TurtleDiagnostics::Micros()))
+    {
+        auto it = playerBots.upper_bound(sessionCursorGuid);
+        if (it == playerBots.end()) it = playerBots.begin();
+        sessionCursorGuid = it->first;
+        Player* bot = it->second;
+        if (bot) updateOne(bot);
+    }
     Cleanup();
 }
 
@@ -164,13 +640,22 @@ void PlayerbotHolder::Cleanup()
 
 void PlayerbotHolder::LogoutAllBots()
 {
+    int total = 0, kept = 0, skippedRealPlayer = 0, skippedNoAI = 0, loggedOut = 0;
     ForEachPlayerbot([&](Player* bot)
     {
-        if (bot->GetPlayerbotAI() && !bot->GetPlayerbotAI()->IsRealPlayer())
-        {
-            LogoutPlayerBot(bot->GetGUIDLow());
-        }
+        ++total;
+        const bool hasAI    = GetBotAI(bot) != nullptr;
+        const bool realPlay = hasAI && GetBotAI(bot)->IsRealPlayer();
+        if (!hasAI)        { ++skippedNoAI; return; }
+        if (realPlay)      { ++skippedRealPlayer; return; }
+        SC_LOG("LogoutAllBots: logging out bot=%s guid=%u (remote=%s)",
+               bot->GetName(), bot->GetGUIDLow(),
+               bot->GetSession() ? bot->GetSession()->GetRemoteAddress().c_str() : "(no-session)");
+        LogoutPlayerBot(bot->GetGUIDLow());
+        ++loggedOut;
     });
+    SC_LOG("LogoutAllBots summary: total=%d loggedOut=%d skippedRealPlayer=%d skippedNoAI=%d",
+           total, loggedOut, skippedRealPlayer, skippedNoAI);
 
     Cleanup();
 }
@@ -183,7 +668,7 @@ void PlayerbotMgr::CancelLogout()
 
     ForEachPlayerbot([&](Player* bot)
     {
-        PlayerbotAI* ai = bot->GetPlayerbotAI();
+        PlayerbotAI* ai = GetBotAI(bot);
         if (ai && !ai->IsRealPlayer())
         {
             if (bot->IsStunnedByLogout() || bot->GetSession()->isLogingOut())
@@ -197,7 +682,7 @@ void PlayerbotMgr::CancelLogout()
 
     sRandomPlayerbotMgr.ForEachPlayerbot([&](Player* bot)
     {
-        PlayerbotAI* ai = bot->GetPlayerbotAI();
+        PlayerbotAI* ai = GetBotAI(bot);
         if (ai && !ai->IsRealPlayer() && ai->GetMaster() == master)
         {
             if (bot->IsStunnedByLogout() || bot->GetSession()->isLogingOut())
@@ -211,12 +696,35 @@ void PlayerbotMgr::CancelLogout()
 
 void PlayerbotHolder::LogoutPlayerBot(uint32 guid, bool allowInstant, bool forDelete)
 {
+    SC_LOG("LogoutPlayerBot entry guid=%u allowInstant=%d forDelete=%d",
+           guid, (int)allowInstant, (int)forDelete);
     Player* bot = GetPlayerBot(guid);
     if (bot)
     {
-        PlayerbotAI* ai = bot->GetPlayerbotAI();
+        SC_LOG("LogoutPlayerBot bot=%s found in playerBots map", bot->GetName());
+        PlayerbotAI* ai = GetBotAI(bot);
         if (!ai)
+        {
+            SC_LOG("LogoutPlayerBot bot=%s has no AI â€” early return", bot->GetName());
             return;
+        }
+
+        // The farewells below (logout_start / goodbye) go THROUGH the security
+        // check, which dereferences the master. A master who disconnected a
+        // moment ago leaves a dangling pointer that `if (master)` cannot catch -
+        // four crashes on 2026-08-22 in IsOpposing, reached from TellPlayer with
+        // the text "Have fun". The tick revalidates the pointer; logout never
+        // did, so do it here before anything can speak to the master.
+        ai->RevalidateMasterPointer();
+
+        // BotActionLog: write LIFECYCLE LOGOUT and close the per-bot log
+        // file. Done early in the logout sequence so the file flushes
+        // before any potentially-crashing teardown work runs.
+        ai::botdiag::BotActionLog::Write(ai, "LIFECYCLE",
+            "event=LOGOUT bot=%s guid=%u allowInstant=%d forDelete=%d",
+            bot->GetName(), guid, (int)allowInstant, (int)forDelete);
+        ai::botdiag::BotActionLog::LogState(ai, "pre-logout");
+        ai::botdiag::BotActionLog::Close(ai);
 
         if (!sPlayerbotAIConfig.bExplicitDbStoreSave)
         {
@@ -226,9 +734,11 @@ void PlayerbotHolder::LogoutPlayerBot(uint32 guid, bool allowInstant, bool forDe
               sPlayerbotDbStore.Save(ai);
            }
         }
+        SC_LOG("LogoutPlayerBot bot=%s â€” about to SaveToDB", bot->GetName());
         sLog.outDebug("Bot %s logging out", bot->GetName());
         if (!forDelete)
             bot->SaveToDB();
+        SC_LOG("LogoutPlayerBot bot=%s â€” SaveToDB done", bot->GetName());
 
         WorldSession* botWorldSessionPtr = bot->GetSession();
         WorldSession* masterWorldSessionPtr = nullptr;
@@ -249,11 +759,13 @@ void PlayerbotHolder::LogoutPlayerBot(uint32 guid, bool allowInstant, bool forDe
             }
             else if (bot)
             {
+                SC_LOG("LogoutPlayerBot bot=%s â€” queueing CMSG_LOGOUT_REQUEST", bot->GetName());
                 ai->TellPlayer(ai->GetMaster(), BOT_TEXT("logout_start"));
 
                 WorldPacket p(CMSG_LOGOUT_REQUEST);
                 std::unique_ptr<WorldPacket> packet(new WorldPacket(p));
                 botWorldSessionPtr->QueuePacket(std::move(packet));
+                SC_LOG("LogoutPlayerBot bot=%s â€” CMSG_LOGOUT_REQUEST queued, returning", bot->GetName());
 
                 //WorldPacket p;
                 //botWorldSessionPtr->HandleLogoutRequestOpcode(p);
@@ -278,6 +790,11 @@ void PlayerbotHolder::LogoutPlayerBot(uint32 guid, bool allowInstant, bool forDe
         {
             ai->TellPlayer(ai->GetMaster(), BOT_TEXT("goodbye"));
             playerBots[guid] = nullptr;    // deletes bot player ptr inside this WorldSession PlayerBotMap
+            if (botWorldSessionPtr->IsHeadless())
+            {
+                sWorld.StopHeadlessSession(ObjectGuid(HIGHGUID_PLAYER, guid), !forDelete);
+                return;
+            }
             botWorldSessionPtr->LogoutPlayer(); // this will delete the bot Player object and PlayerbotAI object
             //botWorldSessionPtr->LogoutPlayer(true); // this will delete the bot Player object and PlayerbotAI object
             if(!sWorld.FindSession(botWorldSessionPtr->GetAccountId())) //Real player sessions will get removed later.
@@ -291,19 +808,19 @@ void PlayerbotHolder::DisablePlayerBot(uint32 guid, bool logOutPlayer)
     Player* bot = GetPlayerBot(guid);
     if (bot)
     {
-        if (logOutPlayer && bot->GetPlayerbotAI()->IsRealPlayer() && bot->GetGroup() && sPlayerbotAIConfig.IsFreeAltBot(guid))
+        if (logOutPlayer && GetBotAI(bot)->IsRealPlayer() && bot->GetGroup() && sPlayerbotAIConfig.IsFreeAltBot(guid))
             bot->GetSession()->SetOffline(); //Prevent groupkick
-        bot->GetPlayerbotAI()->TellPlayer(bot->GetPlayerbotAI()->GetMaster(), BOT_TEXT("goodbye"));
-        bot->GetPlayerbotAI()->StopMoving();
+        GetBotAI(bot)->TellPlayer(GetBotAI(bot)->GetMaster(), BOT_TEXT("goodbye"));
+        GetBotAI(bot)->StopMoving();
         MotionMaster& mm = *bot->GetMotionMaster();
         mm.Clear();
 
         if (!sPlayerbotAIConfig.bExplicitDbStoreSave)
         {
            Group* group = bot->GetGroup();
-           if (group && !bot->InBattleGround() && !bot->InBattleGroundQueue() && bot->GetPlayerbotAI()->HasActivePlayerMaster())
+           if (group && !bot->InBattleGround() && !bot->InBattleGroundQueue() && GetBotAI(bot)->HasActivePlayerMaster())
            {
-              sPlayerbotDbStore.Save(bot->GetPlayerbotAI());
+              sPlayerbotDbStore.Save(GetBotAI(bot));
            }
         }
 
@@ -313,9 +830,9 @@ void PlayerbotHolder::DisablePlayerBot(uint32 guid, bool logOutPlayer)
         WorldSession* botWorldSessionPtr = bot->GetSession();
         playerBots[guid] = nullptr;    // deletes bot player ptr inside this WorldSession PlayerBotMap
 
-        if (bot->GetPlayerbotAI()) 
+        if (GetBotAI(bot)) 
         {
-            bot->RemovePlayerbotAI();
+            RemoveBotAI(bot);
         }
     }
 }
@@ -323,13 +840,29 @@ void PlayerbotHolder::DisablePlayerBot(uint32 guid, bool logOutPlayer)
 Player* PlayerbotHolder::GetPlayerBot(uint32 playerGuid) const
 {
     PlayerBotMap::const_iterator it = playerBots.find(playerGuid);
-    return (it == playerBots.end()) ? nullptr : it->second ? it->second : nullptr;
+    // NO GUID CROSS-CHECK HERE. One was added on 2026-09-01 to reject entries
+    // whose Player had been destroyed, and it was measured a total outage: a
+    // Player mid-teleport is briefly not findable through sObjectMgr, so the
+    // check threw away perfectly live bots. 89 bosses died in the two hours
+    // before it and ZERO in the three after, with 188 "tank did not arrive at
+    // the dungeon entrance" and 84 "bot vanished before teleport" - the log
+    // naming the exact window the check was wrong about.
+    //
+    // The stale-pointer crash it aimed at (crash_2026-09-01_08-26-40 and
+    // _14-34-37) is real and still open. The fix has to be a validity test that
+    // does not confuse "between maps" with "destroyed" - the entry's own
+    // lifecycle, not a second registry's opinion of it.
+    Player* const held = (it == playerBots.end()) ? nullptr : it->second;
+    if (!held)
+        return nullptr;
+
+    return held;
 }
 
 void PlayerbotHolder::JoinChatChannels(Player* bot)
 {
-    // bots join World chat if not solo oriented
-    if (bot->GetLevel() >= 10 && sRandomPlayerbotMgr.IsFreeBot(bot) && bot->GetPlayerbotAI() && bot->GetPlayerbotAI()->GetGrouperType() != GrouperType::SOLO)
+    // bots join World chat if they are free random bots
+    if (sRandomPlayerbotMgr.IsFreeBot(bot))
     {
         // TODO make action/config
         // Make the bot join the world channel for chat
@@ -344,9 +877,9 @@ void PlayerbotHolder::JoinChatChannels(Player* bot)
     // join standard channels
     uint8 locale = BroadcastHelper::GetLocale();
 
-    AreaTableEntry const* current_zone = bot->GetPlayerbotAI()->GetCurrentZone();
+    AreaTableEntry const* current_zone = GetBotAI(bot)->GetCurrentZone();
     ChannelMgr* cMgr = channelMgr(bot->GetTeam());
-    std::string current_zone_name = current_zone ? bot->GetPlayerbotAI()->GetLocalizedAreaName(current_zone) : "";
+    std::string current_zone_name = current_zone ? GetBotAI(bot)->GetLocalizedAreaName(current_zone) : "";
 
     if (current_zone && cMgr)
     {
@@ -382,7 +915,7 @@ void PlayerbotHolder::JoinChatChannels(Player* bot)
                         new_channel_name_buf,
                         100,
                         channel->pattern[locale],
-                        bot->GetPlayerbotAI()->GetLocalizedAreaName(GetAreaEntryByAreaID(ImportantAreaId::CITY)).c_str()
+                        GetBotAI(bot)->GetLocalizedAreaName(GetAreaEntryByAreaID(ImportantAreaId::CITY)).c_str()
                     );
 
 #ifdef MANGOSBOT_ZERO
@@ -416,12 +949,18 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
     if (!sPlayerbotAIConfig.enabled)
         return;
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
     {
-        bot->CreatePlayerbotAI();
-        ai = bot->GetPlayerbotAI();
+        CreateBotAI(bot);
+        ai = GetBotAI(bot);
     }
+
+    // Clear intro cinematic state â€” bots never watch it but HandlePlayerLogin sets
+    // watching_cinematic_entry for characters that haven't logged in via a real client,
+    // which makes IsTargetable() return false and breaks combat entirely.
+    if (bot->watching_cinematic_entry != 0)
+        bot->CinematicEnd();
 
     if(!ai->HasRealPlayerMaster())
 	    OnBotLoginInternal(bot);
@@ -499,14 +1038,40 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
         uint32 lowguid = bot->GetObjectGuid().GetCounter();
         auto result = CharacterDatabase.PQuery("SELECT 1 FROM character_social WHERE flags='%u' and friend='%d'", SOCIAL_FLAG_FRIEND, lowguid);
         if (result)
-            bot->GetPlayerbotAI()->SetPlayerFriend(true);
+            GetBotAI(bot)->SetPlayerFriend(true);
         else
-            bot->GetPlayerbotAI()->SetPlayerFriend(false);
+            GetBotAI(bot)->SetPlayerFriend(false);
 
-        if (sPlayerbotAIConfig.instantRandomize && !sPlayerbotAIConfig.disableRandomLevels && !bot->GetTotalPlayedTime() && !sPlayerbotAIConfig.IsFreeAltBot(bot))
+        if (sPlayerbotAIConfig.instantRandomize && !sPlayerbotAIConfig.disableRandomLevels && !bot->GetTotalPlayedTime())
         {
             sRandomPlayerbotMgr.InstaRandomize(bot);
         }
+
+        // A freshly-created bot force-started above level 1 (randombotStartingLevel,
+        // applied at creation via GiveLevel) never went through a real level-up event,
+        // so the "levelup" trigger that normally fires "auto learn spell"
+        // (WorldPacketHandlerStrategy.cpp) never ran for it - it would otherwise sit at
+        // its starting level with none of the trainer-taught abilities a real character
+        // of that level would have. Catch it up once, on its first ever login.
+        // ...and not only that bot. On this core the cmangos training helpers the
+        // factory relies on (Player::learnClassLevelSpells / learnDefaultSpells)
+        // are no-op compatibility stubs, so PlayerbotFactory::InitAvailableSpells
+        // teaches no class spells at all; the ONLY teacher is "auto learn spell"
+        // (a trainer scan, gated on AiPlayerbot.AutoLearnTrainerSpells). It ran on
+        // the SMSG_LEVELUP_INFO packet, on the first login above, and on talent
+        // chat commands - nothing else. A bot levelled or randomized while the
+        // setting was off (the shipped default IS off) therefore stayed without
+        // its trainer spells for good; switching the setting on later changed
+        // nothing until the bot happened to level again. Reported downstream on
+        // 2026-09-04 ("tried 0/0/0 and 1/1/1, no dice"). Catch every bot up on
+        // login instead: the scan learns only what is GREEN at the trainer and
+        // not yet known, so it is idempotent and a no-op for a complete bot.
+        if (sPlayerbotAIConfig.disableRandomLevels && !bot->GetTotalPlayedTime())
+        {
+            ai->DoSpecificAction("auto learn spell");
+        }
+        else if (sPlayerbotAIConfig.autoLearnTrainerSpells)
+            AutoLearnSpellAction(ai).CatchUpTrainerSpells();
     }
 
     if (!bot->HasItemCount(6948, 1)
@@ -595,7 +1160,7 @@ bool PlayerbotMgr::HandlePlayerbotMgrCommand(ChatHandler* handler, char const* a
     Player* player = m_session->GetPlayer();
     if (BotRecruitment::HandleCommand(player, args ? args : ""))
         return true;
-    PlayerbotMgr* mgr = player->GetPlayerbotMgr();
+    PlayerbotMgr* mgr = GetBotMgr(player);
     if (!mgr)
     {
         handler->PSendSysMessage("you cannot control bots yet");
@@ -608,20 +1173,7 @@ bool PlayerbotMgr::HandlePlayerbotMgrCommand(ChatHandler* handler, char const* a
 
     for (std::list<std::string>::iterator i = messages.begin(); i != messages.end(); ++i)
     {
-        WorldSession* activeSession = handler->GetSession();
-        if (!activeSession || !activeSession->GetPlayer())
-            break;
-
-        try
-        {
-            handler->PSendSysMessage("%s", i->c_str());
-        }
-        catch (...)
-        {
-            // RA/client can disconnect while a long response is being streamed.
-            // Stop sending remaining lines instead of risking a server-side crash.
-            break;
-        }
+        handler->PSendSysMessage("%s",i->c_str());
     }
 
     return true;
@@ -667,17 +1219,13 @@ std::list<std::string> PlayerbotHolder::HandlePlayerbotCommand(const std::string
 
     if (charname.empty())
     {
-        if (master && master->GetTarget() && master->GetTarget()->IsPlayer() && !((Player*)master->GetTarget())->isRealPlayer())
+        if (master && master->GetTarget() && master->GetTarget()->IsPlayer() && !IsRealPlayer((Player*)master->GetTarget()))
         {
             bots.insert(master->GetTarget()->GetName());
         }
-        if (args == "always")
-        {
-            bots.insert(master->GetName());
-        }
         else
         {
-            std::string helpText = GetCommandTexts("help");
+            std::string helpText = GetCommandTexts("");
             messages.push_back(helpText);
             return messages;
         }
@@ -956,9 +1504,13 @@ void PlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
     SetAIInternalUpdateDelay(sPlayerbotAIConfig.reactDelay);
     CheckTellErrors(elapsed);
+
+    // Sessions are driven by PlayerbotWorldScript, outside map jobs. A
+    // companion's group/guild/quest packets must not mutate world state from
+    // its master's map worker or wait for this manager's react delay.
 }
 
-void PlayerbotMgr::HandleCommand(uint32 type, const std::string& text, uint32 lang)
+void PlayerbotMgr::HandleCommand(uint32 type, const std::string& text, uint32 lang, const std::string& to)
 {
     Player *master = GetMaster();
     if (!master)
@@ -973,13 +1525,16 @@ void PlayerbotMgr::HandleCommand(uint32 type, const std::string& text, uint32 la
         split(commands, text, sPlayerbotAIConfig.commandSeparator.c_str());
         for (std::vector<std::string>::iterator i = commands.begin(); i != commands.end(); ++i)
         {
-            HandleCommand(type, *i,lang);
+            HandleCommand(type, *i, lang, to);
         }
         return;
     }
 
     ForEachPlayerbot([&](Player *bot)
     {
+        if (type == CHAT_MSG_WHISPER && !to.empty() && bot->GetName() != to)
+            return;
+
         if (type == CHAT_MSG_SAY)
             if (bot->GetMapId() != master->GetMapId() || sServerFacade.GetDistance2d(bot, master) > 25)
                 return;
@@ -988,11 +1543,14 @@ void PlayerbotMgr::HandleCommand(uint32 type, const std::string& text, uint32 la
             if (bot->GetMapId() != master->GetMapId() || sServerFacade.GetDistance2d(bot, master) > 300)
                return;
 
-        bot->GetPlayerbotAI()->HandleCommand(type, text, *master, lang);
+        GetBotAI(bot)->HandleCommand(type, text, *master, lang);
     });
 
     sRandomPlayerbotMgr.ForEachPlayerbot([&](Player* bot)
     {
+        if (type == CHAT_MSG_WHISPER && !to.empty() && bot->GetName() != to)
+            return;
+
         if (type == CHAT_MSG_SAY)
             if (bot->GetMapId() != master->GetMapId() || sServerFacade.GetDistance2d(bot, master) > 25)
                return;
@@ -1001,8 +1559,8 @@ void PlayerbotMgr::HandleCommand(uint32 type, const std::string& text, uint32 la
             if (bot->GetMapId() != master->GetMapId() || sServerFacade.GetDistance2d(bot, master) > 300)
                return;
 
-        if (bot->GetPlayerbotAI()->GetMaster() == master)
-            bot->GetPlayerbotAI()->HandleCommand(type, text, *master, lang);
+        if (GetBotAI(bot)->GetMaster() == master)
+            GetBotAI(bot)->HandleCommand(type, text, *master, lang);
     });
 }
 
@@ -1010,13 +1568,13 @@ void PlayerbotMgr::HandleMasterIncomingPacket(const WorldPacket& packet)
 {
     ForEachPlayerbot([&](Player* bot)
     {
-        bot->GetPlayerbotAI()->HandleMasterIncomingPacket(packet);
+        GetBotAI(bot)->HandleMasterIncomingPacket(packet);
     });
 
     sRandomPlayerbotMgr.ForEachPlayerbot([&](Player* bot)
     {
-        if (bot->GetPlayerbotAI()->GetMaster() == GetMaster())
-            bot->GetPlayerbotAI()->HandleMasterIncomingPacket(packet);
+        if (GetBotAI(bot)->GetMaster() == GetMaster())
+            GetBotAI(bot)->HandleMasterIncomingPacket(packet);
     });
 
     switch (packet.GetOpcode())
@@ -1039,16 +1597,16 @@ void PlayerbotMgr::HandleMasterOutgoingPacket(const WorldPacket& packet)
 {
    ForEachPlayerbot([&](Player* bot)
    {
-        if (!bot->GetPlayerbotAI())
+        if (!GetBotAI(bot))
             return;
 
-        bot->GetPlayerbotAI()->HandleMasterOutgoingPacket(packet);
+        GetBotAI(bot)->HandleMasterOutgoingPacket(packet);
     });
 
     sRandomPlayerbotMgr.ForEachPlayerbot([&](Player* bot)
     {
-        if (bot->GetPlayerbotAI()->GetMaster() == GetMaster())
-            bot->GetPlayerbotAI()->HandleMasterOutgoingPacket(packet);
+        if (GetBotAI(bot)->GetMaster() == GetMaster())
+            GetBotAI(bot)->HandleMasterOutgoingPacket(packet);
     });
 }
 
@@ -1061,15 +1619,15 @@ void PlayerbotMgr::SaveToDB()
 
     sRandomPlayerbotMgr.ForEachPlayerbot([&](Player* bot)
     {
-        if (bot->GetPlayerbotAI()->GetMaster() == GetMaster())
+        if (GetBotAI(bot)->GetMaster() == GetMaster())
             bot->SaveToDB();
     });
 }
 
 void PlayerbotMgr::OnBotLoginInternal(Player * const bot)
 {
-    bot->GetPlayerbotAI()->SetMaster(master);
-    bot->GetPlayerbotAI()->ResetStrategies();
+    GetBotAI(bot)->SetMaster(master);
+    GetBotAI(bot)->ResetStrategies();
     sLog.outDebug("Bot %s logged in", bot->GetName());
 }
 
@@ -1281,7 +1839,7 @@ std::string PlayerbotHolder::HandleBotAlways(Player* bot, Player* master, const 
         sRandomPlayerbotMgr.SetValue(guid.GetCounter(), "always", (uint32)BotAlwaysOnline::DISABLED_BY_COMMAND);
 
         Player* onlineBot = sObjectMgr.GetPlayer(guid, false);
-        if (onlineBot && onlineBot->GetPlayerbotAI())
+        if (onlineBot && GetBotAI(onlineBot))
         {
             if (!master || guid != master->GetObjectGuid())
             {
@@ -1312,7 +1870,7 @@ std::list<std::string> PlayerbotHolder::HandleSelf(Player* master, const std::st
         return messages;
     }
 
-    if (master->GetPlayerbotAI())
+    if (GetBotAI(master))
     {
         DisablePlayerBot(master->GetGUIDLow(), false);
        
@@ -1348,7 +1906,7 @@ std::string PlayerbotHolder::HandleBotDebug(Player* bot, Player* master, const s
     if (!bot)
         return "debug requires a bot";
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return "Bot has no AI";
 
@@ -1378,7 +1936,7 @@ std::string PlayerbotHolder::HandleBotC(Player* bot, Player* master, const std::
     if (!bot)
         return "c requires a bot";
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return "Bot has no AI";
 
@@ -1395,7 +1953,7 @@ std::string PlayerbotHolder::HandleConsoleWhisper(Player* bot, Player* master, c
     if (!reciever)
         return "d requires a bot";
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return "Bot has no AI";
 
@@ -1427,9 +1985,9 @@ std::string PlayerbotHolder::HandleConsoleWhisper(Player* bot, Player* master, c
     if (message.empty())
     {
         std::ostringstream out;
-        if (!sender->GetPlayerbotAI())
+        if (!GetBotAI(sender))
             out << "Player ";
-        if (!sender->GetPlayerbotAI()->IsRealPlayer())
+        if (!GetBotAI(sender)->IsRealPlayer())
             out << "Player bot ";
         else if (sRandomPlayerbotMgr.IsRandomBot(sender))
             out << "Random bot ";
@@ -1443,8 +2001,8 @@ std::string PlayerbotHolder::HandleConsoleWhisper(Player* bot, Player* master, c
         out << " " << ChatHelper::formatRace(reciever->getRace());
         out << " " << ChatHelper::formatClass(reciever->getClass());
 
-        if (sender->GetPlayerbotAI() && sender->GetPlayerbotAI()->GetMaster())
-            out << " (master " << sender->GetPlayerbotAI()->GetMaster()->GetName() << ")";
+        if (GetBotAI(sender) && GetBotAI(sender)->GetMaster())
+            out << " (master " << GetBotAI(sender)->GetMaster()->GetName() << ")";
 
         return out.str(); 
     }
@@ -1470,7 +2028,7 @@ std::string PlayerbotHolder::HandleConsoleCmd(Player* bot, Player* master, const
     if (!bot)
         return "do requires a bot";
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return "Bot has no AI";
 
@@ -1491,7 +2049,7 @@ std::string PlayerbotHolder::HandleBotTest(Player* bot, Player* master, const st
     if (!bot)
         return "test requires a bot";
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return "Bot has no AI";
 
@@ -1512,7 +2070,7 @@ std::string PlayerbotHolder::HandleBotDo(Player* bot, Player* master, const std:
     if (!bot)
         return "do requires a bot";
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return "Bot has no AI";
 
@@ -1579,7 +2137,7 @@ std::string PlayerbotHolder::HandleBotRecord(Player* bot, Player* master, const 
     if (!bot)
         return "record requires a bot";
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return "Bot has no AI";
 
@@ -1592,7 +2150,7 @@ std::string PlayerbotHolder::HandleBotRead(Player* bot, Player* master, const st
     if (!bot)
         return "read requires a bot";
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return "Bot has no AI";
 
@@ -1614,7 +2172,7 @@ std::string PlayerbotHolder::HandleBotClear(Player* bot, Player* master, const s
     if (!bot)
         return "clear requires a bot";
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return "Bot has no AI";
 
@@ -1813,8 +2371,16 @@ std::list<std::string> PlayerbotHolder::HandleRaidLeader(Player* master, const s
 
 std::string PlayerbotHolder::HandleBotAddLogin(Player* bot, Player* master, const std::string param)
 {
+    SC_LOG("HandleBotAddLogin entry bot=%s master=%s param=%s",
+           bot ? bot->GetName() : "(null)",
+           master ? master->GetName() : "(null)",
+           param.c_str());
+
     if (bot)
+    {
+        SC_LOG("HandleBotAddLogin bot already online â€” returning early");
         return "Player already logged in";
+    }
 
     if (!Qualified::isValidNumberString(param))
         return "Add: Error parsing " + param;
@@ -1828,18 +2394,48 @@ std::string PlayerbotHolder::HandleBotAddLogin(Player* bot, Player* master, cons
     bool isMasterAccount = (masterAccountId == botAccount);
     bool isRandomAccount = sPlayerbotAIConfig.IsInRandomAccountList(botAccount);
 
-    if (isRandomAccount)
-        sRandomPlayerbotMgr.AddRandomBot(guid);
-    else if (isMasterAccount || sPlayerbotAIConfig.allowMultiAccountAltBots)
-        AddPlayerBot(guid, masterAccountId);
-    else
-        return "Not in your account";
+    SC_LOG("HandleBotAddLogin guid=%u botAccount=%u masterAccount=%u isMaster=%d isRandom=%d",
+           guid.GetCounter(), botAccount, masterAccountId,
+           (int)isMasterAccount, (int)isRandomAccount);
 
+    if (isRandomAccount)
+    {
+        SC_LOG("HandleBotAddLogin -> RandomPlayerbotMgr.AddRandomBot");
+        sRandomPlayerbotMgr.AddRandomBot(guid);
+    }
+    else if (isMasterAccount || sPlayerbotAIConfig.allowMultiAccountAltBots)
+    {
+        SC_LOG("HandleBotAddLogin -> AddPlayerBot (master-account path)");
+        AddPlayerBot(guid, masterAccountId);
+    }
+    else
+    {
+        SC_LOG("HandleBotAddLogin -> rejected: not in account");
+        return "Not in your account";
+    }
+
+    SC_LOG("HandleBotAddLogin returning ok bot=%u", guid.GetCounter());
     return "ok";
+}
+
+// All summon aliases share the imported recruitment coordinator. It validates
+// control, interrupts autonomous work, and reports the actual transfer/arrival.
+std::string PlayerbotHolder::HandleBotSummon(Player* bot, Player* master, const std::string param)
+{
+    if (!bot)
+        return "Bot is offline (use `.bot add <name>` first)";
+    if (!master)
+        return "An in-world player is required";
+    return BotRecruitment::Queue(master, bot, "summon") ?
+        "summon request queued" : "Summon request could not be queued";
 }
 
 std::string PlayerbotHolder::HandleBotRemoveLogout(Player* bot, Player* master, const std::string param)
 {
+    SC_LOG("HandleBotRemoveLogout entry bot=%s master=%s",
+           bot ? bot->GetName() : "(null)",
+           master ? master->GetName() : "(null)");
+
     if (!bot)
         return "Player is offline";
 
@@ -1849,6 +2445,26 @@ std::string PlayerbotHolder::HandleBotRemoveLogout(Player* bot, Player* master, 
     uint32 botAccount = sObjectMgr.GetPlayerAccountIdByGUID(bot->GetObjectGuid());
     bool isMasterAccount = (masterAccountId == botAccount);
     bool isRandomAccount = sPlayerbotAIConfig.IsInRandomAccountList(botAccount);
+
+    SC_LOG("HandleBotRemoveLogout botAccount=%u masterAccount=%u isMaster=%d isRandom=%d",
+           botAccount, masterAccountId, (int)isMasterAccount, (int)isRandomAccount);
+
+    //:
+    // Refuse `.rndbot remove` for random-account bots that aren't currently
+    // master-linked to the player issuing the command. Symptom we're guarding
+    // against: WorldSession::LogoutPlayer crashed during the group-cleanup
+    // chain (between CleanupChannels and SMSG_LOGOUT_COMPLETE) for a bot
+    // whose group/master pointers may have been left dangling by the
+    // previous mangosd session. By requiring an explicit master-link, we
+    // ensure the bot's state is "fresh" enough to logout safely. The user
+    // can still acquire-then-remove via /invite ... /uninvite ... or via
+    // the standard `.bot rm` path for master-account bots.
+    if (isRandomAccount && master)
+    {
+        PlayerbotAI* botAi = GetBotAI(bot);
+        if (!botAi || botAi->GetMaster() != master)
+            return "This bot isn't bound to you. /invite first to acquire, then /uninvite + .rndbot remove.";
+    }
 
     if (isRandomAccount)
         sRandomPlayerbotMgr.Remove(bot);
@@ -1970,21 +2586,23 @@ void PlayerbotHolder::CreateBot(Player* master, const std::string param, std::li
         name = RandomPlayerbotFactory::CreateRandomBotName(raceAndGender);
     }
 
+    // remote_ip MUST be "disconnected/bot" â€” see comment in HandlePlayerBotLoginCallback above.
+    // Empty string makes PlayerbotAI::IsRealPlayer() return TRUE, breaking HandleTeleportAck.
     WorldSession* botSession = new WorldSession(accountId, NULL, SEC_PLAYER,
 #ifdef MANGOSBOT_TWO
         2,
         0,
         LOCALE_enUS,
-        "",
+        "disconnected/bot",
         0,
         0,
         false);
 #endif
 #ifdef MANGOSBOT_ONE
-        2, 0, LOCALE_enUS, "", 0, 0, false);
+        2, 0, LOCALE_enUS, "disconnected/bot", 0, 0, false);
 #endif
 #ifdef MANGOSBOT_ZERO
-        0, LOCALE_enUS, "", 0);
+        0, LOCALE_enUS, "disconnected/bot", 0);
 #endif
 
         botSession->SetNoAnticheat();
@@ -2023,11 +2641,17 @@ void PlayerbotHolder::CreateBot(Player* master, const std::string param, std::li
             ChangeTalentsAction::AutoSelectTalents(newBot, &out, role);
 
             sRandomPlayerbotMgr.SetValue(botGuid, "create levelup", 1);
-            sRandomPlayerbotMgr.SetValue(botGuid, "create group", 1, groupWith);
             sRandomPlayerbotMgr.SetValue(botGuid, "create gear", 1, gear);
         }
         else
             newBot->SetLevel(1);
+
+        // Grouping means something at every level, gear and talents do not, so
+        // this does not belong in the branch above. HandleGroup passes the
+        // master's own level into create, so a level 1 master never reached it
+        // and never got the deferred auto-invite at all.
+        if (!groupWith.empty())
+            sRandomPlayerbotMgr.SetValue(botGuid, "create group", 1, groupWith);
 
         if (!testName.empty())
         {
@@ -2047,6 +2671,33 @@ void PlayerbotHolder::CreateBot(Player* master, const std::string param, std::li
         }
 
         newBot->SaveToDB();
+
+        // Register the new character in the player cache by hand.
+        //
+        // botSession is a throwaway and never has SetPlayer() called on it, so
+        // the `if (_player)` body of LogoutPlayer() below - which is what
+        // normally registers a character - does nothing here. The character
+        // then misses from m_playerNameToGuid, which breaks
+        // `.rndbot add/summon <name>`, and from m_playerCacheData, so
+        // GetPlayerAccountIdByGUID answers 0, AddPlayerBot refuses to log the
+        // bot in, and it retries every tick for as long as the server runs.
+        //
+        // Re-reading the row is not enough on its own for a character created
+        // mid-session: SaveToDB has not necessarily become visible to the next
+        // SELECT yet. So check afterwards, and fall back to the Player object
+        // that is still in memory.
+        {
+            ObjectGuid const cacheGuid(HIGHGUID_PLAYER, botGuid);
+
+            sObjectMgr.LoadPlayerCacheData(botGuid);
+
+            if (!sObjectMgr.GetPlayerAccountIdByGUID(cacheGuid))
+            {
+                if (!sObjectMgr.InsertPlayerInCache(newBot))
+                    sLog.outError("PlayerbotHolder::CreateBot: could not put %s (guid %u) into the player cache - "
+                                  "the bot will not be loginable by name", name.c_str(), botGuid);
+            }
+        }
 
         messages.push_back("Bot created: " + name);
 
@@ -2201,29 +2852,14 @@ std::list<std::string> PlayerbotHolder::HandleGroup(Player* master, const std::s
 std::list<std::string> PlayerbotHolder::HandleRunTest(Player* master, const std::string param, AccountTypes security)
 {    
     std::list<std::string> messages;
-    static constexpr size_t maxListLines = 200;
 
     if (param.empty())
     {
         messages.push_back("Usage: .rndbot runtest <testnamepart> [count]");
         messages.push_back("Available tests:");
         std::vector<std::string> availableTests = TestRegistry::GetAvailableTests();
-        size_t shown = 0;
         for (const auto& test : availableTests)
-        {
-            if (shown >= maxListLines)
-                break;
             messages.push_back("  " + test);
-            ++shown;
-        }
-
-        if (availableTests.size() > shown)
-        {
-            std::ostringstream out;
-            out << "... " << (availableTests.size() - shown) << " more tests not shown. Use '.rndbot runtest ?<namepart> [count]' to narrow results.";
-            messages.push_back(out.str());
-        }
-
         return messages;
     }
 
@@ -2284,16 +2920,12 @@ std::list<std::string> PlayerbotHolder::HandleRunTest(Player* master, const std:
     {
         std::string lowerTest = test;
         std::transform(lowerTest.begin(), lowerTest.end(), lowerTest.begin(), ::tolower);
-        if (lowerTest.find(testNamePart) == 0 || testNamePart == "*")
+        if (lowerTest.find(testNamePart) != std::string::npos || testNamePart == "*")
         {
             matchingTests.push_back(test);
+            if (maxTests && matchingTests.size() >= maxTests)
+                break;
         }
-    }
-
-    if (maxTests && matchingTests.size() > maxTests)
-    {
-        std::shuffle(matchingTests.begin(), matchingTests.end(), *GetRandomGenerator());
-        matchingTests.resize(maxTests);
     }
 
     if (matchingTests.empty())
@@ -2305,22 +2937,8 @@ std::list<std::string> PlayerbotHolder::HandleRunTest(Player* master, const std:
     if (listTests)
     {
         messages.push_back("Tests matching '" + param + "':");
-        size_t shown = 0;
         for (const auto& test : matchingTests)
-        {
-            if (shown >= maxListLines)
-                break;
             messages.push_back("  " + test);
-            ++shown;
-        }
-
-        if (matchingTests.size() > shown)
-        {
-            std::ostringstream out;
-            out << "... " << (matchingTests.size() - shown) << " more tests not shown. Add [count] to limit, e.g. '.rndbot runtest " << testNamePart << " 20'.";
-            messages.push_back(out.str());
-        }
-
         return messages;
     }
 
@@ -2484,7 +3102,7 @@ std::string PlayerbotHolder::HandleBotDelete(Player* bot, Player* master, const 
     }
 
     uint32 masterAccountId = master ? master->GetSession()->GetAccountId() : 0;
-    PlayerbotMgr* mgr = master ? master->GetPlayerbotMgr() : nullptr;
+    PlayerbotMgr* mgr = master ? GetBotMgr(master) : nullptr;
     
     uint32 botAccount = sObjectMgr.GetPlayerAccountIdByGUID(guid);
     bool isRandomAccount = sPlayerbotAIConfig.IsInRandomAccountList(botAccount);
@@ -2502,12 +3120,6 @@ std::string PlayerbotHolder::HandleBotDelete(Player* bot, Player* master, const 
 
 std::string PlayerbotHolder::HandleBotGear(Player* bot, Player* master, const std::string param)
 {
-    if (!bot)
-        return "Player is offline";
-
-    if (bot->isRealPlayer() || !bot->GetPlayerbotAI())
-        return "Target is not a bot";
-
     if (param.empty())
     {
         PlayerbotFactory factory(bot, bot->GetLevel());
@@ -2563,7 +3175,10 @@ std::string PlayerbotHolder::HandleBotGear(Player* bot, Player* master, const st
 std::string PlayerbotHolder::HandleBotTrainLearn(Player* bot, Player* master, const std::string param)
 {
 #ifndef MANGOSBOT_ONE
-    bot->learnClassLevelSpells();
+    PlayerbotAI* ai = GetBotAI(bot);
+    if (!ai)
+        return "bot AI unavailable";
+    AutoLearnSpellAction(ai).LearnClassLevelSpells();
 #endif
     return "class level spells learned";
 }
@@ -2845,4 +3460,13 @@ std::list<std::string> PlayerbotHolder::HandleSpoof(Player* master, const std::s
     
     messages.push_back("Spoof set to: " + playerName + " (" + std::to_string(guid.GetCounter()) + ")");
     return messages;
+}
+
+
+// Core -> module seam, same shape as the BotActionLog_ probes: the core calls
+// this unconditionally from Player::~Player and PlayerbotStubs.cpp supplies an
+// empty body for BUILD_PLAYERBOTS=OFF builds.
+void Playerbot_OnPlayerDestroyed(Player const* player)
+{
+    PlayerbotHolder::NotePlayerDestroyed(player);
 }

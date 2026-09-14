@@ -3,8 +3,8 @@
 #include "CasterCombatPolicy.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/strategy/triggers/GenericTriggers.h"
-#include "Entities/GameObject.h"
-#include "Entities/Totem.h"
+#include "Objects/GameObject.h"
+#include "Objects/Totem.h"
 #include "Spells/Spell.h"
 
 namespace ai

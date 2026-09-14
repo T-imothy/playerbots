@@ -2,15 +2,15 @@
 #define _ServerFacade_H
 
 #include "Common.h"
-#include "Entities/Unit.h"
-#include "Entities/Player.h"
+#include "Objects/Unit.h"
+#include "Objects/Player.h"
 #ifdef CMANGOS
-#include "Entities/GameObject.h"
+#include "Objects/GameObject.h"
 #endif
 #ifdef MANGOS
-#include "Object/GameObject.h"
+#include "Objects/GameObject.h"
 #endif
-#include "BattleGround/BattleGroundMgr.h"
+#include "Battlegrounds/BattleGroundMgr.h"
 #include "PlayerbotAIBase.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/WorldPosition.h"
@@ -36,9 +36,9 @@ class ServerFacade
             return unit->IsDead();
 #endif
         }
-        float GetDistance(Unit *unit, WorldObject* wo);
+
         float GetDistance2d(Unit *unit, WorldObject* wo);
-        float GetDistance(Unit *unit, float x, float y, float z);
+
         float GetDistance2d(Unit *unit, float x, float y);
 
         DeathState GetDeathState(Unit *unit)
@@ -181,17 +181,6 @@ class ServerFacade
 #endif
         }
 
-        CreatureInfo const* LookupCreatureInfo(uint32 creatureId)
-        {
-#ifdef MANGOS
-            return sCreatureStore.LookupEntry(creatureId);
-#endif
-#ifdef CMANGOS
-            return sCreatureStorage.LookupEntry<CreatureInfo>(creatureId);
-#endif
-        } 
-        
-
         SpellEntry const* LookupSpellInfo(uint32 spellId)
         {
 #ifdef MANGOS
@@ -200,6 +189,37 @@ class ServerFacade
 #ifdef CMANGOS
             return sSpellTemplate.LookupEntry<SpellEntry>(spellId);
 #endif
+        }
+
+        // True for an ownerless GAMEOBJECT_TYPE_TRAP whose spell deals
+        // SPELL_EFFECT_ENVIRONMENTAL_DAMAGE - e.g. a "Campfire" GO that also carries a
+        // fire-damage aura (matches the exact condition GameObject::Update uses to hit any
+        // player in range, src/game/Objects/GameObject.cpp:459-538). Shared by
+        // EnvironmentalHazardTrigger (reactive avoidance) and ChooseRpgTargetAction (so bots
+        // never pick this GO as an RPG destination in the first place - the reactive fix alone
+        // can't fully solve this when the hazard sits at/right next to a legitimate RPG/social
+        // spot, e.g. a campfire with chairs around it).
+        bool IsEnvironmentalDamageTrap(GameObject* go)
+        {
+            if (!go)
+                return false;
+
+            GameObjectInfo const* goInfo = go->GetGOInfo();
+            if (!goInfo || goInfo->type != GAMEOBJECT_TYPE_TRAP)
+                return false;
+
+            if (!go->GetOwnerGuid().IsEmpty())
+                return false;
+
+            SpellEntry const* spellInfo = LookupSpellInfo(goInfo->trap.spellId);
+            if (!spellInfo)
+                return false;
+
+            for (uint32 effect : spellInfo->Effect)
+                if (effect == SPELL_EFFECT_ENVIRONMENTAL_DAMAGE)
+                    return true;
+
+            return false;
         }
 
         SpellRangeEntry const* LookupSpellRangeEntry(uint32 rangeIndex)

@@ -2,7 +2,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/Value.h"
-#include "Groups/Group.h"
+#include "Group/Group.h"
 #include "TargetValue.h"
 #include "PossibleTargetsValue.h"
 
@@ -45,7 +45,7 @@ namespace ai
             if (!guid)
                 return NULL;
 
-            std::list<ObjectGuid> attackers = context->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get();
+            std::list<ObjectGuid> attackers = context->GetValue<std::list<ObjectGuid>>("possible targets")->Get();
             if (std::find(attackers.begin(), attackers.end(), guid) == attackers.end()) return NULL;
 
             Unit* unit = ai->GetUnit(ObjectGuid(guid));

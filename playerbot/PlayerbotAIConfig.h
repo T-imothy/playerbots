@@ -1,8 +1,9 @@
 #pragma once
 
+#include <unordered_set>
 #include "Config/Config.h"
 #include "Talentspec.h"
-#include "Globals/SharedDefines.h"
+#include "SharedDefines.h"
 #include "SystemConfig.h"
 
 class Player;
@@ -68,16 +69,14 @@ enum class BotLoginCriteriaType : uint8
 
 #define MAX_GEAR_PROGRESSION_LEVEL 6
 
+// Enumerate through the native Config API; never reinterpret its storage.
 class ConfigAccess
 {
-private:
-    std::string m_filename;
-    std::string m_envVarPrefix;
-    std::unordered_map<std::string, std::string> m_entries; // keys are converted to lower case.  values cannot be.
-
 public:
+    explicit ConfigAccess(Config& source) : source(source) {}
     std::vector<std::string> GetValues(const std::string& name) const;
-    std::mutex m_configLock;
+private:
+    Config& source;
 };
 
 struct ParsedUrl {
@@ -112,15 +111,29 @@ public:
 	bool IsInPvpProhibitedZone(uint32 id);
 
     bool enabled;
+    bool autoEnchantUpgradeLoot = false;
+    // mod-playerbots caps how many bots one account may .add; the dungeon-clear
+    // test runner reads it to size its parties. Zero keeps that gate open, the
+    // same default mod-playerbots ships.
+    uint32 maxAddedBots = 0;
+    // mod-playerbots rest threshold: mana percent above which a bot counts as
+    // rested. Their shipped default.
+    uint32 highMana = 65;
+    // mod-playerbots gear ceiling for auto-equip; 0 is their shipped default
+    // and means unlimited, which is also the only behaviour this tree has.
+    uint32 autoGearScoreLimit = 0;
+    uint32 autoGearQualityLimit = 0;  // like autoGearScoreLimit: 0 = no cap (mod-dungeon-clear reads it for its test sidecar)
     bool allowGuildBots;
     bool allowMultiAccountAltBots;
-    uint32 globalCoolDown, reactDelay, pathFailureRetryMs, maxWaitForMove, expireActionTime, dispelAuraDuration, passiveDelay, repeatDelay,
-        errorDelay, rpgDelay, sitDelay, returnDelay, lootDelay, valueCacheCleanupInterval,
-        failedActionRetryBase, failedActionRetryMax, failedActionCacheTtl, failedActionCacheMaxEntries;
+    uint32 pathFailureRetryMs = 3000;
+    uint32 failedActionRetryBase = 250, failedActionRetryMax = 2000;
+    uint32 failedActionCacheTtl = 30000, failedActionCacheMaxEntries = 64;
+    uint32 globalCoolDown, reactDelay, maxWaitForMove, expireActionTime, dispelAuraDuration, passiveDelay, repeatDelay,
+        errorDelay, rpgDelay, sitDelay, returnDelay, lootDelay, valueCacheCleanupInterval, memoryTelemetryInterval;
     float sightDistance, spellDistance, reactDistance, grindDistance, lootDistance, groupMemberLootDistance, groupMemberLootDistanceWithActiveMaster,
         gatheringDistance, groupMemberGatheringDistance, groupMemberGatheringDistanceWithActiveMaster, shootDistance,
         fleeDistance, tooCloseDistance, meleeDistance, followDistance, raidFollowDistance, wanderMinDistance, wanderMaxDistance, whisperDistance, contactDistance,
-        aoeRadius, rpgDistance, targetPosRecalcDistance, farDistance, healDistance, aggroDistance, proximityDistance, maxFreeMoveDistance, freeMoveDelay, walkDistance;
+        aoeRadius, rpgDistance, targetPosRecalcDistance, farDistance, healDistance, healDistanceBg, aggroDistance, proximityDistance, maxFreeMoveDistance, freeMoveDelay, walkDistance;
     uint32 criticalHealth, lowHealth, mediumHealth, almostFullHealth;
     uint32 lowMana, mediumMana;
 
@@ -131,6 +144,7 @@ public:
     std::vector<uint32> randomBotMaps;
     std::list<uint32> randomBotQuestItems;
     std::list<uint32> randomBotAccounts;
+    std::unordered_set<uint32> nonRandomBotAccounts;
     std::list<uint32> randomBotSpellIds;
     std::list<uint32> randomBotQuestIds;
     std::list<uint32> immuneSpellIds;
@@ -212,14 +226,13 @@ public:
     std::string randomBotCombatStrategies, randomBotNonCombatStrategies, randomBotReactStrategies, randomBotDeadStrategies;
     uint32 randomBotMinLevel, randomBotMaxLevel;
     float randomChangeMultiplier;
-    uint32 specProbability[MAX_CLASSES][10];
     std::string premadeLevelSpec[MAX_CLASSES][10][91]; //lvl 10 - 100
     uint32 classRaceProbabilityTotal;
     uint32 classRaceProbability[MAX_CLASSES][MAX_RACES];
     bool useFixedClassRaceCounts;
     using ClassRacePair = std::pair<uint8, uint8>;
     std::map<ClassRacePair, uint32> fixedClassRaceCounts;
-    uint32 levelProbability[DEFAULT_MAX_LEVEL + 1];
+    uint32 levelProbability[PLAYER_STRONG_MAX_LEVEL + 1];   // see levelBucket in PlayerbotLoginMgr.h
     ClassSpecs classSpecs[MAX_CLASSES];
     GlyphPrioritySpecMap glyphPriorityMap[MAX_CLASSES];
     bool gearProgressionSystemEnabled;
@@ -227,6 +240,28 @@ public:
     int32 gearProgressionSystemItems[MAX_GEAR_PROGRESSION_LEVEL][MAX_CLASSES][4][SLOT_EMPTY];
     std::string commandPrefix, commandSeparator;
     std::string randomBotAccountPrefix;
+    // Character names that stay online and are never teleported away.
+    // Resolved to guids by RandomPlayerbotMgr, which has the database.
+    std::list<std::string> pinnedBotNames;
+
+    // Bots per team a battleground may fill while no real player is queuing for
+    // that bracket, keyed by BattleGroundTypeId. Deliberately below the
+    // template maximum so a player who queues later drops into the running
+    // match rather than starting a second one. Empty means no cap.
+    std::map<uint32, uint32> bgBotTeamCap;
+
+    // -1 when the type is not listed at all, otherwise the configured number.
+    // Zero is meaningful: it switches the battleground off for bots entirely,
+    // which is what a map disabled by the client patch needs.
+    // How many battleground instances of one type and bracket bots may keep
+    // running at once while nobody real is waiting. Was hardcoded to 1, which
+    // took Warsong from 400 matches a day down to 12.
+    uint32 bgMaxInstancesPerBracket;
+    int32 GetBgBotTeamCap(uint32 bgTypeId) const
+    {
+        auto it = bgBotTeamCap.find(bgTypeId);
+        return it == bgBotTeamCap.end() ? -1 : (int32)it->second;
+    }
     uint32 randomBotAccountCount;
     bool deleteRandomBotAccounts;
     uint32 randomBotGuildCount;
@@ -268,6 +303,18 @@ public:
     bool randomBotFormGuild;
     bool randomBotRandomPassword;
     bool inviteChat;
+    bool botsSilent;
+    // Opt-in diagnostic logging: when true, [BOT] log lines and per-bot action
+    // log files (logs/bots/<name>_acc<id>_<timestamp>.log) are emitted. Default
+    // off so production servers don't pay disk I/O / branch overhead.
+    bool enableActionLog;
+    bool behaviorTrace = false;
+    uint32 behaviorTraceMap = 0;
+    float behaviorTraceX = -800.0f, behaviorTraceY = -530.0f, behaviorTraceRadius = 200.0f;
+    // Filename (relative to LogsDir) for the bot subsystem log. When set,
+    // all sLog calls from bot .cpp files are redirected there instead of
+    // writing to the main server log. Default: "bots.log". Empty = disabled.
+    std::string botLogFile;
     bool enableOffSpecStrategies;
     bool useWanderAsDefaultFollowStrategy;
     std::string defaultFormation;
@@ -347,7 +394,6 @@ public:
 
     std::string autoPickReward;
     bool autoEquipUpgradeLoot;
-    bool autoEnchantUpgradeLoot;
     bool syncQuestWithPlayer;
     bool syncQuestForPlayer;
     std::string autoTrainSpells;
@@ -371,8 +417,6 @@ public:
     uint32 loginBotsNearPlayerRange;
     std::vector<std::string> defaultLoginCriteria;
     std::vector<std::vector<std::string>> loginCriteria;
-    std::vector<std::string> startupRunTests;
-    bool startupRunTestsPending = false;
 
     bool jumpInBg;
     bool jumpWithPlayer;
@@ -437,8 +481,25 @@ public:
     bool hasLog(std::string fileName) { return std::find(allowedLogFiles.begin(), allowedLogFiles.end(), fileName) != allowedLogFiles.end(); };
     bool openLog(std::string fileName, char const* mode = "a", bool haslog = false);
     bool isLogOpen(std::string fileName) { auto it = logFiles.find(fileName); return it != logFiles.end() && it->second.second;}
-    void log(std::string fileName, const char* str, ...);
+    // Writes the line verbatim. Nearly every caller here hands over text it has
+    // already assembled, and a percent sign anywhere in it - a bot name, a mob
+    // name, an item name - used to be read as a conversion specifier. glibc
+    // printed nonsense; the Microsoft runtime aborted the server.
+    void log(std::string fileName, const char* line);
 
+    // The formatting variant, for the callers that actually pass arguments.
+#if defined(__GNUC__) || defined(__clang__)
+    void logf(std::string fileName, const char* format, ...)
+        __attribute__((format(printf, 3, 4)));
+#else
+    void logf(std::string fileName, const char* format, ...);
+#endif
+
+    template<class... Args>
+    void log(std::string fileName, char const* format, Args... args)
+    {
+        logf(std::move(fileName), format, args...);
+    }
     void logEvent(PlayerbotAI* ai, std::string eventName, std::string info1 = "", std::string info2 = "");
     void logEvent(PlayerbotAI* ai, std::string eventName, ObjectGuid guid, std::string info2);
 

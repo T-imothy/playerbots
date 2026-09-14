@@ -1,8 +1,20 @@
 
 #include "playerbot/playerbot.h"
 #include "WorldPacketHandlerStrategy.h"
+#include "playerbot/strategy/triggers/WorldPacketTrigger.h"
+#include "playerbot/strategy/AiObjectContext.h"
 
 using namespace ai;
+
+bool MailAvailableTrigger::IsActive()
+{
+            if (ai->GetMaster() || bot->InBattleGround() || bot->IsInCombat() || !bot->GetMailSize())
+                return false;
+            // The immediately preceding often node already checked its rate/delay.
+            // Engine resets both triggers after collecting all handlers.
+            Trigger* often = context->GetTrigger("often");
+            return often && often->IsAlreadyTriggered();
+        }
 
 WorldPacketHandlerStrategy::WorldPacketHandlerStrategy(PlayerbotAI* ai) : PassTroughStrategy(ai)
 {
@@ -34,6 +46,8 @@ void WorldPacketHandlerStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &
         NextAction::array(0, new NextAction("hold summoning ritual", 100.0f), NULL)));
     triggers.push_back(new TriggerNode("assist summoning ritual",
         NextAction::array(0, new NextAction("assist summoning ritual", 80.0f), NULL)));
+    triggers.push_back(new TriggerNode("assist uldaman altar",
+        NextAction::array(0, new NextAction("assist uldaman altar", 80.0f), NULL)));
 #ifdef MANGOSBOT_TWO
     triggers.push_back(new TriggerNode("continue ritual summon",
         NextAction::array(0, new NextAction("continue ritual summon", 81.0f), NULL)));
@@ -116,7 +130,11 @@ void WorldPacketHandlerStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &
 
     triggers.push_back(new TriggerNode(
         "often",
-        NextAction::array(0, new NextAction("security check", relevance), new NextAction("check mail", relevance), NULL)));
+        NextAction::array(0, new NextAction("security check", relevance), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "mail available",
+        NextAction::array(0, new NextAction("check mail", relevance), NULL)));
 
     triggers.push_back(new TriggerNode(
         "guild accept",

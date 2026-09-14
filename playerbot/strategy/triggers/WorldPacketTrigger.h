@@ -4,13 +4,21 @@
 
 namespace ai
 {
+    class MailAvailableTrigger : public Trigger
+    {
+    public:
+        MailAvailableTrigger(PlayerbotAI* ai) : Trigger(ai, "mail available") {}
+        bool IsActive() override;
+    };
+
     class WorldPacketTrigger : public Trigger {
     public:
         WorldPacketTrigger(PlayerbotAI* ai, std::string command) : Trigger(ai, command), triggered(false) {}
 
         virtual void ExternalEvent(WorldPacket &packet, Player* owner = NULL) override
         {
-            this->packet = packet;
+            // Penqle's WorldPacket has a deleted copy operator=; copy-construct + move-assign instead.
+            this->packet = WorldPacket(packet);
             this->owner = owner;
             triggered = true;
         }

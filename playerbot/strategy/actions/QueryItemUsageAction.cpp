@@ -200,8 +200,6 @@ std::string QueryItemUsageAction::QueryItemUsage(ItemQualifier& qualifier, bool 
         return "(forced) need";
     case ItemUsage::ITEM_USAGE_FORCE_GREED:
         return "(forced) greed";
-    case ItemUsage::ITEM_USAGE_BANK:
-        return "Bank for later use";
     }
 
     return "";
@@ -294,7 +292,7 @@ std::string QueryItemUsageAction::QueryItemPower(ItemQualifier& qualifier)
 {
     uint32 power = sRandomItemMgr.ItemStatWeight(bot, qualifier);
 
-    ItemPrototype const* proto = ObjectMgr::GetItemPrototype(qualifier.GetId());
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(qualifier.GetId());
 
     if (power)
     {

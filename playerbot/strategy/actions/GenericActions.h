@@ -97,6 +97,8 @@ namespace ai
     class ChatCommandAction : public Action
     {
     public:
+        // Command inheritance does not imply global state: item use, mounts and
+        // other owner-local actions share this base. Global actions opt in explicitly.
         ChatCommandAction(PlayerbotAI* ai, std::string name, uint32 duration = sPlayerbotAIConfig.reactDelay) : Action(ai, name, duration) {}
     public:
         virtual bool Execute(Event& event) override { return true; }

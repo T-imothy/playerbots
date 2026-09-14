@@ -15,13 +15,14 @@ public:
 public:
     bool IsActive() const;
     virtual void UpdateAI(uint32 elapsed);
-    // Advance the inexpensive AI wake-up timer on the owning map thread.
-    // Returning false lets the map avoid allocating and dispatching a worker
-    // for an idle bot whose passive AI is not due yet.
-    bool AdvanceMinimalUpdateDelay(uint32 elapsed);
-    void ScheduleNextMinimalUpdate(uint32 salt, uint32 jitterMs);
     
     uint32 GetAIInternalUpdateDelay() const { return aiInternalUpdateDelay; }
+    void AdvanceMinimalUpdateDelay(uint32 elapsed);
+
+    // mod-playerbots spelling of SetAIInternalUpdateDelay: how long before this
+    // AI is asked again. Public because it is public there and module code
+    // outside the class calls it; the protected original stays as it is.
+    void SetNextCheckDelay(const uint32 delay);
 
 protected:
     virtual void UpdateAIInternal(uint32 elapsed, bool minimal = false);

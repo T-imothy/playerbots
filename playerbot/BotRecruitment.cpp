@@ -7,7 +7,7 @@
 #include "Talentspec.h"
 #include "strategy/actions/WhoAction.h"
 #include "strategy/actions/UseMeetingStoneAction.h"
-#include "Social/SocialMgr.h"
+#include "SocialMgr.h"
 #include <chrono>
 #include <deque>
 #include <mutex>
@@ -87,7 +87,7 @@ namespace
     Group* Party(Player* player)
     {
         Group* group = player ? player->GetGroup() : nullptr;
-        return group && group->IsBattleGroup() ? player->GetOriginalGroup() : group;
+        return group && group->isBGGroup() ? player->GetOriginalGroup() : group;
     }
     Group* InvitingGroup(Player* player)
     {
@@ -96,7 +96,7 @@ namespace
     }
     bool IsBot(Player* player)
     {
-        return Connected(player) && player->GetPlayerbotAI() && !player->isRealPlayer();
+        return Connected(player) && GetBotAI(player) && !IsRealPlayer(player);
     }
     void Tell(Player* owner, const std::string& text)
     {
@@ -139,7 +139,7 @@ namespace
     }
     std::string Identity(Player* owner, Player* bot)
     {
-        if (!Connected(owner) || !owner->isRealPlayer()) return "requester_offline";
+        if (!Connected(owner) || !IsRealPlayer(owner)) return "requester_offline";
         if (!IsBot(bot)) return "not_available_bot";
         uint32 account = bot->GetSession()->GetAccountId();
         bool own = account == owner->GetSession()->GetAccountId();
@@ -157,12 +157,12 @@ namespace
         if (!reason.empty()) return reason;
         Group* group = Party(bot);
         if (group && group != Party(owner)) return "external_group";
-        Player* master = bot->GetPlayerbotAI()->GetMaster();
-        if (master && master->isRealPlayer() && master != owner) return "other_controller";
+        Player* master = GetBotAI(bot)->GetMaster();
+        if (master && IsRealPlayer(master) && master != owner) return "other_controller";
         bool own = owner->GetSession()->GetAccountId() == bot->GetSession()->GetAccountId();
         if (!own && master != owner && (!group || !group->IsLeader(owner->GetObjectGuid())))
             return "not_controller";
-        if (!bot->GetPlayerbotAI()->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, owner))
+        if (!GetBotAI(bot)->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, owner))
             return "not_authorized";
         return "";
     }
@@ -351,9 +351,9 @@ namespace
             { Whisper(owner,bot,"Recruitment unavailable: " + reason); return; }
             if (!bot->IsInWorld() || bot->IsBeingTeleported())
             { Whisper(owner,bot,"Recruitment pending: transfer"); return; }
-            WhoAction action(bot->GetPlayerbotAI());
+            WhoAction action(GetBotAI(bot));
             std::string reply = action.QuerySpec("");
-            Player* master = bot->GetPlayerbotAI()->GetMaster();
+            Player* master = GetBotAI(bot)->GetMaster();
             if (master) reply += ", playing with " + std::string(master->GetName());
             Whisper(owner,bot,reply);
             return;
@@ -427,7 +427,7 @@ namespace
                 request.arguments != "consumes" && request.arguments != "reagents" && request.arguments != "ammo") { Report(request,"refused","unsupported_preparation"); return; }
             // Explicit IDs provide replay safety; no implicit legacy deduplication here.
             state.explicitPreparation = true;
-            PlayerbotHolder* holder = owner->GetPlayerbotMgr();
+            PlayerbotHolder* holder = GetBotMgr(owner);
             if (!holder) holder = &sRandomPlayerbotMgr;
             std::string result = holder->ProcessBotCommand(request.arguments,request.bot,request.owner,
                 false,owner->GetSession()->GetAccountId(),owner->GetGuildId());
@@ -445,20 +445,20 @@ std::string BotRecruitment::Eligibility(Player* owner, Player* bot)
     if (!reason.empty()) return reason;
     Group* group = Party(bot);
     if (group) return group == Party(owner) ? "existing" : "external_group";
-    Player* master = bot->GetPlayerbotAI()->GetMaster();
-    if (master && master->isRealPlayer() && master != owner) return "other_controller";
+    Player* master = GetBotAI(bot)->GetMaster();
+    if (master && IsRealPlayer(master) && master != owner) return "other_controller";
     if (owner->InBattleGround()) return "requester_battleground";
     if (bot->GetGroupInvite() && bot->GetGroupInvite() != InvitingGroup(owner)) return "invited_elsewhere";
     // Queue enrollment is autonomous activity, not ownership. Keep every other
     // permission check, then cancel personal queues only when accepting the invite.
-    if (bot->GetPlayerbotAI()->GetSecurity()->LevelFor(owner, nullptr, false, true) <
+    if (GetBotAI(bot)->GetSecurity()->LevelFor(owner, nullptr, false, true) <
         PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE) return "recruitment_policy";
     return "";
 }
 
 bool BotRecruitment::CanInvite(Player* owner, Player* bot)
 {
-    if (!owner || !owner->isRealPlayer() || !bot || !bot->GetPlayerbotAI() || bot->isRealPlayer()) return true;
+    if (!owner || !IsRealPlayer(owner) || !bot || !GetBotAI(bot) || IsRealPlayer(bot)) return true;
     std::string reason = Eligibility(owner,bot);
     auto reservation = State().reservations.find(bot->GetGUIDLow());
     if (reason.empty() && reservation != State().reservations.end() && reservation->second.expires > Now() && reservation->second.owner != owner->GetObjectGuid()) reason = "reserved";
@@ -470,7 +470,7 @@ bool BotRecruitment::CanInvite(Player* owner, Player* bot)
 
 void BotRecruitment::OnInvite(Player* owner, Player* bot)
 {
-    if (!owner || !owner->isRealPlayer() || !IsBot(bot) || !bot->GetGroupInvite()) return;
+    if (!owner || !IsRealPlayer(owner) || !IsBot(bot) || !bot->GetGroupInvite()) return;
     Request request;
     request.ownerIdentity = EventOwner(owner); request.botIdentity = EventOwner(bot);
     request.owner = owner->GetObjectGuid(); request.bot = bot->GetObjectGuid(); request.operation = "accept";
@@ -494,7 +494,7 @@ bool BotRecruitment::HasPendingInvite(Player* bot)
 
 bool BotRecruitment::Queue(Player* owner, Player* bot, const std::string& operation)
 {
-    if (!owner || !bot || !owner->isRealPlayer() || bot->isRealPlayer()) return false;
+    if (!owner || !bot || !IsRealPlayer(owner) || IsRealPlayer(bot)) return false;
     Request request;
     request.ownerIdentity = EventOwner(owner); request.botIdentity = EventOwner(bot);
     request.owner = owner->GetObjectGuid(); request.bot = bot->GetObjectGuid(); request.operation = operation;
@@ -573,13 +573,9 @@ void BotRecruitment::Update(uint32 diff)
                 request.queuesCancelled = std::make_shared<bool>(false);
                 it->second.queuesCancelled = request.queuesCancelled;
                 SummonAction::CancelAutonomousQueues(bot);
-                // Drain earlier LFG matchmaking callbacks before accepting. Otherwise
-                // an already queued match could move this bot out of its new party.
+                // FIFO barrier after cancellation, before the next matchmaking pass.
                 auto ready = request.queuesCancelled;
-                sWorld.GetLFGQueue().GetMessager().AddMessage([ready](LFGQueue*)
-                {
-                    sWorld.GetMessager().AddMessage([ready](World*) { *ready = true; });
-                });
+                sWorld.AddAsyncTask([ready]() { *ready = true; });
             }
             if (!*request.queuesCancelled) { ++it; continue; }
             ++accepted;
@@ -589,8 +585,8 @@ void BotRecruitment::Update(uint32 diff)
             if (Party(bot) && Party(bot) == Party(owner))
             {
                 // Preserve health, death state, equipment, talents and combat.
-                bot->GetPlayerbotAI()->SetMaster(owner);
-                bot->GetPlayerbotAI()->ChangeStrategy("-lfg,-bg,+" + bot->GetPlayerbotAI()->GetDefaultMovementStrategy(),BotState::BOT_STATE_NON_COMBAT);
+                GetBotAI(bot)->SetMaster(owner);
+                GetBotAI(bot)->ChangeStrategy("-lfg,-bg,+" + GetBotAI(bot)->GetDefaultMovementStrategy(),BotState::BOT_STATE_NON_COMBAT);
                 Report(request,"joined","ok");
             }
             else { ClearInvite(request); Report(request,"refused","accept_failed"); }
@@ -619,7 +615,7 @@ void BotRecruitment::Update(uint32 diff)
         }
         if (!reason.empty())
         { Report(request,reason == "deadline" ? "timed_out" : "refused",reason); it = state.summons.erase(it); continue; }
-        if (request.started) bot->GetPlayerbotAI()->CompleteSummonRevival();
+        if (request.started) GetBotAI(bot)->CompleteSummonRevival();
         // Confirm the accepted landing point, not the requester's later position.
         // A moving leader must not turn a successful teleport into a timeout.
         bool landed = request.started && bot->IsInWorld() && !bot->IsBeingTeleported() &&
@@ -651,7 +647,7 @@ void BotRecruitment::Update(uint32 diff)
             if (owner->GetMapId() == bot->GetMapId() && owner->GetInstanceId() != bot->GetInstanceId() &&
                 owner->GetMap()->Instanceable())
             { Report(request,"refused","different_instance"); it = state.summons.erase(it); continue; }
-            SummonAction action(bot->GetPlayerbotAI());
+            SummonAction action(GetBotAI(bot));
             Event event("summon", "", owner);
             request.map = owner->GetMapId(); request.instance = owner->GetInstanceId();
             request.started = action.ExecuteImmediate(event);

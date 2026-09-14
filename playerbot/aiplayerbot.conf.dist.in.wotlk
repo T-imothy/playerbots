@@ -323,9 +323,8 @@ AiPlayerbot.RandomBotQuestIds = 7848,3802,5505,6502,7761
 # prefix is used as a word in "<word> [item link]"
 # AiPlayerbot.ToxicLinksPrefix = gnomes
 #
-# Chance to suggest Thunderfury. Disabled by default to prevent large bot populations
-# from creating self-sustaining world-chat reply cascades.
-AiPlayerbot.BroadcastChanceSuggestThunderfury = 0
+# chance to suggest thunderfury
+# AiPlayerbot.BroadcastChanceSuggestThunderfury = 1
 #
 # does not depend on global chance
 # AiPlayerbot.BroadcastChanceGuildManagement = 30000
@@ -334,8 +333,8 @@ AiPlayerbot.BroadcastChanceSuggestThunderfury = 0
 
 # Chance to reply to toxic links with toxic links (0-100)
 # AiPlayerbot.ToxicLinksRepliesChance = 30
-# Chance to reply to Thunderfury with Thunderfury (0-100).
-AiPlayerbot.ThunderfuryRepliesChance = 0
+# Chance to reply to thunderfury with thunderfury (0-100)
+# AiPlayerbot.ThunderfuryRepliesChance = 40
 # Bots will chat in guild about certain events (int) (0-100)
 # AiPlayerbot.GuildRepliesRate = 100         # Reply someone saying something.
 
@@ -364,10 +363,6 @@ AiPlayerbot.AutoPickReward = yes
 # Bots equip upgrades (Bots will equip any item obtained from looting or a quest if they are upgrades)
 # Default: 0 (disabled)
 AiPlayerbot.AutoEquipUpgradeLoot = 1
-
-# Bots enchant upgrades automatically
-# Default: 0 (disabled)
-AiPlayerbot.AutoEnchantUpgradeLoot = 0
 
 # Sync quests with player (Bots will complete quests the moment you hand them in. Bots will ignore looting quest items.)
 # Default: 0 (disabled)
@@ -823,7 +818,7 @@ AiPlayerbot.PremadeSpecGlyp.11.8.80 = Aquatic Form,Challenging Roar,Claw|1082,Da
 #AiPlayerbot.CommandPrefix =
 
 # Max AI iterations per tick
-AiPlayerbot.IterationsPerTick = 10
+#AiPlayerbot.IterationsPerTick = 10
 
 # Allow/deny bots from your guild
 AiPlayerbot.AllowGuildBots = 1
@@ -840,16 +835,8 @@ AiPlayerbot.GlobalCooldown = 1500
 # Delay between two bot actions (default 100)
 AiPlayerbot.ReactDelay = 500
 
-# Backoff for an unchanged failed navigation request (milliseconds)
-AiPlayerbot.PathFailureRetryMs = 3000
-
 # Inactivity delay
 AiPlayerbot.PassiveDelay = 10000
-AiPlayerbot.ValueCacheCleanupInterval = 60000
-AiPlayerbot.FailedActionRetryBase = 250
-AiPlayerbot.FailedActionRetryMax = 2000
-AiPlayerbot.FailedActionCacheTtl = 30000
-AiPlayerbot.FailedActionCacheMaxEntries = 64
 
 # Minimum delay between repeating actions (chat messages, emotes etc)
 AiPlayerbot.RepeatDelay = 5000
@@ -914,16 +901,6 @@ AiPlayerbot.FleeingEnabled = 1
 
 # Random bot default strategies (applied after defaults)
 #AiPlayerbot.RandomBotCombatStrategies = +dps,+dps assist,-threat
-
-# ManTech diagnostics mode: 0=off, 1=low-cost production aggregates, 2=deep analysis.
-# Mode is authoritative; Enabled remains a backward-compatible alias.
-AiPlayerbot.Diagnostics.Enabled = 0
-AiPlayerbot.Diagnostics.Mode = 0
-AiPlayerbot.Diagnostics.Interval = 30000
-AiPlayerbot.Diagnostics.EngineSampleRate = 16
-AiPlayerbot.Diagnostics.TopFailures = 10
-AiPlayerbot.Diagnostics.MaxFailureKeys = 2048
-AiPlayerbot.Diagnostics.LogFile = PlayerbotDiagnostics.log
 #AiPlayerbot.RandomBotNonCombatStrategies = +grind,+loot,+rpg,+custom::say
 #AiPlayerbot.RandomBotReactStrategies = 
 #AiPlayerbot.RandomBotDeadStrategies = 
@@ -953,11 +930,8 @@ AiPlayerbot.Diagnostics.LogFile = PlayerbotDiagnostics.log
 #AiPlayerbot.OpenGoSpell = 6477
 
 # Intervals
-AiPlayerbot.RandomBotUpdateInterval = 1000
+#AiPlayerbot.RandomBotUpdateInterval = 1000
 #AiPlayerbot.RandomBotsMaxLoginsPerInterval = 10
-AiPlayerbot.RandomBotLoginDbQueueLimit = 256
-AiPlayerbot.RandomBotDatabasePingInterval = 10000
-AiPlayerbot.PerformanceMapScanInterval = 30000
 AiPlayerbot.RandomBotCountChangeMinInterval = 1800
 AiPlayerbot.RandomBotCountChangeMaxInterval = 7200
 #AiPlayerbot.MinRandomBotInWorldTime = 3600

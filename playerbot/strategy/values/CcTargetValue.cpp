@@ -5,9 +5,9 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/Action.h"
 #include "playerbot/strategy/values/RtiTargetValue.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -39,9 +39,9 @@ namespace
             if (!member || !member->IsInWorld() || !member->IsAlive() || !bot->IsInMap(member) ||
                 member->GetGroup() != bot->GetGroup() || member->IsBeingTeleported() || member->HasCharmer() ||
                 member->getClass() != CLASS_WARLOCK || (!member->HasSpell(710) && !member->HasSpell(18647)) ||
-                member->GetDistance(boss) > sPlayerbotAIConfig.sightDistance || !member->GetPlayerbotAI() ||
-                member->GetPlayerbotAI()->IsRealPlayer() ||
-                !member->GetPlayerbotAI()->HasStrategy("cc", BotState::BOT_STATE_COMBAT)) continue;
+                member->GetDistance(boss) > sPlayerbotAIConfig.sightDistance || !GetBotAI(member) ||
+                GetBotAI(member)->IsRealPlayer() ||
+                !GetBotAI(member)->HasStrategy("cc", BotState::BOT_STATE_COMBAT)) continue;
             warlocks.push_back(member);
         }
         std::sort(warlocks.begin(), warlocks.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });

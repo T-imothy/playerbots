@@ -9,6 +9,8 @@
 #include "playerbot/BotState.h"
 
 #include <atomic>
+#include <functional>
+#include <memory>
 #include <unordered_map>
 
 namespace ai
@@ -59,7 +61,8 @@ namespace ai
         ACTION_RESULT_OK,
         ACTION_RESULT_IMPOSSIBLE,
         ACTION_RESULT_USELESS,
-        ACTION_RESULT_FAILED
+        ACTION_RESULT_FAILED,
+        ACTION_RESULT_DEFERRED
     };
 
     class Engine : public PlayerbotAIAware
@@ -110,6 +113,13 @@ namespace ai
     protected:
         bool MultiplyAndPush(NextAction** actions, float forceRelevance, bool skipPrerequisites, const Event& event, const char* pushType);
         void Reset();
+        bool WorldContinuationPending() const { return !pendingWorldDecision.expired(); }
+        bool ScheduleWorldContinuation(const Event&, std::function<void(Engine&)>);
+        std::shared_ptr<int> worldContinuationEpoch = std::make_shared<int>(0);
+        std::weak_ptr<int> pendingWorldDecision;
+        // A decision may cross map/world ownership more than once. Its triggers
+        // are populated once, until an action runs or the plan is exhausted.
+        bool decisionPrepared = false;
         void ProcessTriggers(bool minimal);
         void PushDefaultActions();
         void PushAgain(ActionNode* actionNode, float relevance, const Event& event, bool skipPrerequisites = true);

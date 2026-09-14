@@ -3,6 +3,7 @@
 #include "triggers/WorldPacketTrigger.h"
 #include "playerbot/ChatHelper.h"
 
+#include "playerbot/BotSlots.h"
 namespace ai
 {
     class ExternalEventHelper 
@@ -49,7 +50,7 @@ namespace ai
                 return true;
             }
 
-            if (owner->isRealPlayer())
+            if (IsRealPlayer(owner))
             {
                 HandleCommand("c", command, owner);
                 HandleCommand("t", command, owner);
@@ -57,10 +58,12 @@ namespace ai
             return true;
         }
 
-        bool HandlePacket(std::map<uint16, std::string> &handlers, const WorldPacket &packet, Player* owner = NULL)
+        bool HandlePacket(const std::map<uint16, std::string>& handlers, const WorldPacket &packet, Player* owner = NULL)
         {
             uint16 opcode = packet.GetOpcode();
-            std::string name = handlers[opcode];
+            auto found = handlers.find(opcode);
+            if (found == handlers.end()) return true;
+            const std::string& name = found->second;
             if (name.empty())
                 return true;
 

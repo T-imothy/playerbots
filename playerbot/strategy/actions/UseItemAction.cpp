@@ -20,23 +20,30 @@ constexpr std::string_view LOS_GOS_PARAM = "los gos";
 
 SpellCastResult BotUseItemSpell::ForceSpellStart(SpellCastTargets const* targets, Aura* triggeredByAura)
 {
-    WorldObject* truecaster = GetTrueCaster();
-    if (!truecaster)
-    {
-        truecaster = m_caster;
-    }
-
-    m_spellState = SPELL_STATE_TARGETING;
+    // USE-AFTER-FREE FIX.
+    //
+    // Original bug: this method pre-queued a `SpellEvent` (lines 37-38 in
+    // the prior code) and then called `Prepare()`, which calls
+    // `Spell::prepare()`, which queues a SECOND SpellEvent for the same
+    // Spell*. When the cast finished, the first SpellEvent's destructor
+    // called `m_Spell->Delete()` (frees the Spell). The second SpellEvent
+    // remained in the EventProcessor queue with a dangling m_Spell —
+    // next tick its Execute() crashed reading m_spellState (offset 0x268)
+    // on freed memory.
+    //
+    // Symptom: ~1-2 min into bot combat with consumable use (Dark Rune
+    // mana potion / healthstone / dispel trinket) → ACCESS_VIOLATION READ
+    // at +0x268 from a freed Spell. Repro 100% under PageHeap.
+    //
+    // Fix: drop the manual SpellEvent queue. Let `prepare()` be the sole
+    // owner of the Spell + SpellEvent lifecycle. The `m_targets` assignment
+    // is kept BEFORE PreCastCheck because lock-check / reagent-check read
+    // m_targets. On the failure path we must `Delete()` ourselves since no
+    // SpellEvent owns this Spell yet.
     m_targets = *targets;
 
     if (triggeredByAura)
-    {
         m_triggeredByAuraSpell = triggeredByAura->GetSpellProto();
-    }
-
-    // create and add update event for this spell
-    SpellEvent* Event = new SpellEvent(this);
-    truecaster->m_events.AddEvent(Event, truecaster->m_events.CalculateTime(1));
 
     SpellCastResult result = PreCastCheck();
     bool failed = result != SPELL_CAST_OK;
@@ -56,13 +63,15 @@ SpellCastResult BotUseItemSpell::ForceSpellStart(SpellCastTargets const* targets
     {
         SendCastResult(result);
         finish(false);
+        // No SpellEvent owns this Spell, so the standard destruction path
+        // (~SpellEvent → m_Spell->Delete()) won't fire. Delete ourselves.
+        Delete();
         return result;
     }
-    else
-    {
-        Prepare();
-        return SPELL_CAST_OK;
-    }
+
+    // Hand off to Spell::prepare which creates exactly one SpellEvent and
+    // becomes the sole owner of this Spell.
+    return prepare(*targets, triggeredByAura);
 }
 
 bool BotUseItemSpell::OpenLockCheck()
@@ -302,31 +311,28 @@ bool UseAction::Execute(Event& event)
                 targetItem = bot->GetItemByEntry(items[1]);
             }
         }
-        if (!targetItem)
-        {
-            std::list<ObjectGuid> gos = chat->parseGameobjects(useName);
-            if (!gos.empty())
-            {
-                targetGameObject = ai->GetGameObject(*gos.begin());
-            }
 
-            float closest = 9999.0f;
-            std::list<ObjectGuid> nearestGOs = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
-            for (const ObjectGuid& goGUID : nearestGOs)
+        std::list<ObjectGuid> gos = chat->parseGameobjects(useName);
+        if (!gos.empty())
+        {
+            targetGameObject = ai->GetGameObject(*gos.begin());
+        }
+
+        float closest = 9999.0f;
+        std::list<ObjectGuid> nearestGOs = AI_VALUE(std::list<ObjectGuid>, "nearest game objects no los");
+        for (const ObjectGuid& goGUID : nearestGOs)
+        {
+            GameObject* go = ai->GetGameObject(goGUID);
+            if (go && std::string(go->GetName()).find(useName))
             {
-                GameObject* go = ai->GetGameObject(goGUID);
-                if (go && std::string(go->GetName()).find(useName))
+                const float distance = bot->GetDistance(go);
+                if (distance < closest)
                 {
-                    const float distance = bot->GetDistance(go);
-                    if (distance < closest)
-                    {
-                        targetGameObject = go;
-                        closest = distance;
-                    }
+                    targetGameObject = go;
+                    closest = distance;
                 }
             }
         }
-
     }
 
     if (targetGameObject != nullptr)

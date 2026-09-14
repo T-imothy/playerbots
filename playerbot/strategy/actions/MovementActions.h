@@ -4,7 +4,7 @@
 #include "playerbot/strategy/NamedObjectContext.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/TravelNode.h"
-#include "MotionGenerators/WaypointMovementGenerator.h"
+#include "Movement/WaypointMovementGenerator.h"
 #include "playerbot/strategy/values/HazardsValue.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
 

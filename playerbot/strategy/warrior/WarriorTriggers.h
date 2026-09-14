@@ -51,18 +51,14 @@ namespace ai
 
         bool IsActive() override
         {
-            uint32 comShout = AI_VALUE2(uint32, "spell id", "commanding shout");
-            uint32 batShout = AI_VALUE2(uint32, "spell id", "battle shout");
-            if (!batShout)
-                return false;
+            static const std::vector<uint32> battleShoutIds = {6673, 5242, 6192, 11549, 11550, 11551, 25289, 2048, 47436};
 
-            if (comShout && bot->HasSpell(comShout))
-                return !ai->HasAura("battle shout", bot) && !ai->HasMyAura("commanding shout", bot);
-
-            if (bot->HasSpell(batShout))
-                return !ai->HasAura("battle shout", bot);
-
-            return false;
+            for (uint32 id : battleShoutIds)
+            {
+                if (bot->HasAura(id))
+                    return false;
+            }
+            return true;
         }
     };
 
@@ -149,5 +145,36 @@ namespace ai
     {
     public:
         SlamTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "slam") {}
+    };
+
+    // TurtleWoW Protection Warrior: Defensive Tactics 3/3 = 180% threat
+    // retention in non-Defensive stances when wearing a shield.
+    //
+    // At max rank, Berserker Stance retains MORE than 100% of Defiance's
+    // +30% threat boost AND adds +10% damage. The bot wants Berserker
+    // Stance whenever survival isn't at risk.
+    //
+    // This trigger fires when:
+    //   - Bot is missing Berserker Stance (BerserkerStanceTrigger semantics)
+    //   - Bot is in combat
+    //   - Bot HP > 70% (safety threshold)
+    //
+    // Only used in ProtectionWarriorStrategy — implied "DT talent + shield".
+    // If bot doesn't actually have DT or shield, the threat-retention won't
+    // hold and the existing "lose aggro" trigger will self-correct via
+    // Heroic Throw Taunt.
+    class DefensiveTacticsBerserkerStanceTrigger : public BerserkerStanceTrigger
+    {
+    public:
+        DefensiveTacticsBerserkerStanceTrigger(PlayerbotAI* ai) : BerserkerStanceTrigger(ai) {}
+
+        virtual bool IsActive() override
+        {
+            if (!BerserkerStanceTrigger::IsActive())
+                return false;
+            if (!sServerFacade.IsInCombat(bot))
+                return false;
+            return AI_VALUE2(uint8, "health", "self target") > 70;
+        }
     };
 }

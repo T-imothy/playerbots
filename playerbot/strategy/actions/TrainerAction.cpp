@@ -8,6 +8,9 @@ using namespace ai;
 
 void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, TrainerSpell const* tSpell, std::ostringstream& msg)
 {
+    SpellEntry const* proto = tSpell ? sServerFacade.LookupSpellInfo(tSpell->spell) : nullptr;
+    if (!proto)
+        return;
     if (sPlayerbotAIConfig.autoTrainSpells != "free" &&  !ai->HasCheat(BotCheatMask::gold))
     {
         if (AI_VALUE2(uint32, "free money for", (uint32)NeedMoneyFor::spells) < cost)
@@ -18,10 +21,6 @@ void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, T
 
         bot->ModifyMoney(-int32(cost));
     }
-
-    SpellEntry const* proto = sServerFacade.LookupSpellInfo(tSpell->spell);
-    if (!proto)
-        return;
 
 #ifdef MANGOSBOT_ZERO
     if (tSpell->learnedSpell)
@@ -57,7 +56,7 @@ void TrainerAction::Learn(uint32 cost, ObjectGuid trainerGuid, uint32 spellId, T
 
     if (tSpell->IsCastable())
         bot->CastSpell(bot, tSpell->spell, TRIGGERED_OLD_TRIGGERED);
-    else if (spellId && sServerFacade.LookupSpellInfo(spellId))
+    else
         bot->learnSpell(spellId, false);
 #endif
 

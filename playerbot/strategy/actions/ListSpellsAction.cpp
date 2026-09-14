@@ -47,7 +47,7 @@ bool CompareSpells(std::pair<uint32, std::string>& s1, std::pair<uint32, std::st
 
     if (p1 == p2)
     {
-        return strcmp(si1->SpellName[0], si1->SpellName[1]) > 0;
+        return strcmp(si1->SpellName[0].c_str(), si1->SpellName[1].c_str()) > 0;
     }
 
     return p1 > p2;

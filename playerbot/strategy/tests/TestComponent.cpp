@@ -1,9 +1,9 @@
 #include "TestComponent.h"
 #include "playerbot/WorldPosition.h"
 #include "playerbot/PlayerbotTextMgr.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 #include <cerrno>
 #include <cmath>
 #include <cstdlib>

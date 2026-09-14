@@ -3,7 +3,7 @@
 #include "SnareTargetValue.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
-#include "MotionGenerators/TargetedMovementGenerator.h"
+#include "Movement/TargetedMovementGenerator.h"
 
 using namespace ai;
 

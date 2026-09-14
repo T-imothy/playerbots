@@ -7,8 +7,20 @@ Run from a Visual Studio developer shell: python recruitment_regression.py <repo
 from pathlib import Path
 import subprocess, tempfile, sys
 root=Path(sys.argv[1])
-source=(root/'playerbot/BotRecruitment.cpp').read_text()
-command=(root/'playerbot/PlayerbotAI.cpp').read_text().split('void PlayerbotAI::HandleCommand(',1)[1].split('void PlayerbotAI::HandleBotOutgoingPacket(',1)[0]
+source=(root/'playerbot/BotRecruitment.cpp').read_text(encoding="utf-8")
+host=root.parent.parent
+hooks=(root/'playerbot/PlayerbotScripts.cpp').read_text(encoding='utf-8')
+group=(host/'src/game/Handlers/GroupHandler.cpp').read_text(encoding='utf-8',errors='replace')
+assert 'new PlayerbotGroupScript();' in hooks
+assert 'ai::BotRecruitment::Update(diff);' in hooks
+assert 'ai::BotRecruitment::CanInvite(inviter, target)' in hooks
+assert 'ai::BotRecruitment::OnInvite(inviter, target)' in hooks
+invite=group.split('void WorldSession::HandleGroupInviteOpcode',1)[1].split('void WorldSession::HandleGroupAcceptOpcode',1)[0]
+assert invite.index('CanInvitePlayer(') < invite.index('group = new Group')
+assert invite.index('group->AddInvite(player)') < invite.index('OnPlayerInvited(')
+assert 'PACKET_PROCESS_GROUP = PACKET_PROCESS_WORLD' in (host/'src/game/WorldSession.h').read_text(encoding='utf-8')
+
+command=(root/'playerbot/PlayerbotAI.cpp').read_text(encoding="utf-8").split('void PlayerbotAI::HandleCommand(',1)[1].split('void PlayerbotAI::HandleBotOutgoingPacket(',1)[0]
 routing=command.index('BotRecruitment::Queue(')
 assert command.index('chatFilter.Filter(') < routing < command.index('chatCommands.push(')
 assert command.index('PLAYERBOT_SECURITY_ALLOW_ALL') < routing
@@ -16,7 +28,7 @@ assert 'type == CHAT_MSG_PARTY || type == CHAT_MSG_RAID' in command[:routing]
 source='\n'.join(x for x in source.splitlines() if not x.startswith('#include "'))
 start=source.index('    uint64 Now()'); end=source.index('\n    struct Request',start)
 source=source[:start]+'    uint64 Now() { return fakeNow; }\n'+source[end:]
-header=(root/'playerbot/BotRecruitment.h').read_text().replace('#include "Common.h"','').replace('#pragma once','')
+header=(root/'playerbot/BotRecruitment.h').read_text(encoding="utf-8").replace('#include "Common.h"','').replace('#pragma once','')
 stubs=r'''
 #include <cassert>
 #include <cstdint>
@@ -59,7 +71,7 @@ struct WorldSession {Player* player=nullptr;uint32 account=1;bool logout=false;s
  void HandleGroupAcceptOpcode(WorldPacket&);void HandleGroupInviteOpcode(WorldPacket&);
 };
 struct Group {ObjectGuid leader,assistant;unsigned count=1;bool raid=false,bg=false;
- bool IsBattleGroup(){return bg;}ObjectGuid GetLeaderGuid(){return leader;}bool IsLeader(ObjectGuid g){return leader==g;}
+ bool IsBattleGroup(){return bg;}bool isBGGroup(){return bg;}ObjectGuid GetLeaderGuid(){return leader;}bool IsLeader(ObjectGuid g){return leader==g;}
  bool IsAssistant(ObjectGuid guid){return assistant==guid;}unsigned GetMembersCount(){return count;}bool IsRaidGroup(){return raid;}};
 std::vector<std::unique_ptr<Group>> groups;
 struct Player {
@@ -86,12 +98,16 @@ struct Player {
  uint32 GetLevel(){return level;}bool isAFK(){return afk;}void ToggleAFK(){afk=!afk;}
  void UninviteFromGroup(){invite=nullptr;}PlayerbotHolder* GetPlayerbotMgr(){return &holder;}
 };
+AI* GetBotAI(Player* p){return p?p->GetPlayerbotAI():nullptr;}
+PlayerbotHolder* GetBotMgr(Player* p){return p?p->GetPlayerbotMgr():nullptr;}
+bool IsRealPlayer(Player* p){return p&&p->isRealPlayer();}
 struct Config {bool allowGuildBots=false,recruitmentRevive=true;bool IsInRandomAccountList(uint32 n){return n==1000;}
  bool IsFreeAltBot(Player*){return false;}} sPlayerbotAIConfig;
 struct LFGQueue {bool IsPlayerInQueue(ObjectGuid){return false;}LFGQueue& GetMessager(){return *this;}template<class F>void AddMessage(F f){f(this);}};
 struct World {bool cross=false;using Queue=LFGQueue;Queue queue;
  bool defer=false;std::vector<std::function<void(World*)>> callbacks;World& GetMessager(){return *this;}
  template<class F>void AddMessage(F f){if(defer)callbacks.push_back(f);else f(this);}
+ void AddAsyncTask(std::function<void()> f){AddMessage([f](World*){f();});}
  void Drain(){auto pending=std::move(callbacks);callbacks.clear();for(auto& f:pending)f(this);}
  uint32 getConfig(int which){return which==CONFIG_UINT32_MAX_PLAYER_LEVEL?80:cross;}Queue& GetLFGQueue(){return queue;}}sWorld;
 struct RandomMgr:PlayerbotHolder {std::map<uint32,Player*>& GetAllBots(){return players;}}sRandomPlayerbotMgr;
@@ -241,7 +257,7 @@ int main(){
  std::cout<<"PASS: actual coordinator permissions, native-invite scheduling, stale/replaced invites, ownership, combat/death, session loss, transports, arrival, replay, cancellation, mixed 40-member capacity, bounded discovery/work\n";
 }
 '''
-policy=(root/'playerbot/RecruitmentPolicy.h').read_text().replace('#pragma once','')
+policy=(root/'playerbot/RecruitmentPolicy.h').read_text(encoding="utf-8").replace('#pragma once','')
 with tempfile.TemporaryDirectory(prefix='pb-recruitment-') as directory:
     folder=Path(directory);cpp=folder/'test.cpp';exe=folder/'test.exe'
     cpp.write_text(stubs+'\n'+policy+'\n'+header+'\n'+source+'\n'+tests)

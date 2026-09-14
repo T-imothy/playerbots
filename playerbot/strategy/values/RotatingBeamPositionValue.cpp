@@ -1,9 +1,9 @@
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 #include "Spells/SpellMgr.h"
 
 using namespace ai;
@@ -44,8 +44,19 @@ bool ai::ReadRotatingBeam(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan, 
     const SpellEntry* rotation = sSpellTemplate.LookupEntry<SpellEntry>(aura);
     if (!rotation || !rotation->EffectAmplitude[EFFECT_INDEX_0]) return false;
     const float period = rotation->EffectAmplitude[EFFECT_INDEX_0] / 1000.0f;
-    const SpellCone* cone = sSpellCones.LookupEntry<SpellCone>(sSpellMgr.GetFirstSpellInChain(payload));
-    const float degrees = cone ? float(cone->coneAngle) : 60.0f;
+    const SpellEntry* damage = sSpellMgr.GetSpellEntry(payload);
+    if (!damage) return false;
+    float degrees = 0.0f;
+    // Read the target modes used by native Spell::SetTargetMap/FillAreaTargets.
+    // Penqle has no CMaNGOS spell_cone table; its visual selects narrow cones.
+    for (uint32 effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+        for (uint32 mode : {damage->EffectImplicitTargetA[effect], damage->EffectImplicitTargetB[effect]})
+            if (mode == TARGET_ENUM_UNITS_ENEMY_IN_CONE_24 && damage->SpellVisual != 3879)
+                degrees = std::max(degrees, (damage->SpellVisual == 7441 || damage->SpellVisual == 7619) ? 15.0f : 120.0f);
+            else if (mode == TARGET_ENUM_UNITS_ENEMY_IN_CONE_54)
+                degrees = std::max(degrees, 90.0f);
+            else if (mode == TARGET_ENUM_UNITS_SCRIPT_IN_CONE_60)
+                degrees = std::max(degrees, 15.0f);
     const float radius = NativeEncounterSpellRadius(payload);
     if (!std::isfinite(degrees) || degrees <= 0 || degrees >= 180 ||
         !std::isfinite(radius) || radius <= 0 || radius > 150 || period <= 0) return false;

@@ -2,8 +2,8 @@
 #include "playerbot/playerbot.h"
 #include "AutoLearnSpellAction.h"
 #include "playerbot/ServerFacade.h"
-#include "Entities/Item.h"
-#include <Mails/Mail.h>
+#include "Objects/Item.h"
+#include <Mail/Mail.h>
 
 using namespace ai;
 
@@ -39,8 +39,7 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
     if (sPlayerbotAIConfig.autoLearnQuestSpells)
         LearnQuestSpells(out);
 
-    if (sPlayerbotAIConfig.autoLearnTrainerSpells)
-        LearnTrainerSpells(out);
+    CatchUpTrainerSpells(out);
 
 #ifdef MANGOSBOT_ZERO
     if (sPlayerbotAIConfig.autoLearnDroppedSpells)
@@ -62,11 +61,41 @@ void AutoLearnSpellAction::LearnSpells(std::ostringstream* out)
     }
 }
 
-void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
+void AutoLearnSpellAction::CatchUpTrainerSpells(std::ostringstream* out)
 {
+    if (!sPlayerbotAIConfig.autoLearnTrainerSpells)
+        return;
     bot->learnDefaultSpells();
+    auto const entries = sObjectMgr.GetBotTrainerEntries(bot->getClass());
+    // A native spell reset leaves removed entries in the map. Track actual new
+    // spells, not map size, so every prerequisite rank can be restored.
+    while (LearnTrainerSpells(out, entries)) {}
+}
 
-    for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
+void AutoLearnSpellAction::LearnClassLevelSpells(bool includeHighLevelQuestRewards)
+{
+    // Preserve the baseline factory/train convenience policy, using Turtle's
+    // actual class/race/level eligibility and reward spell implementation.
+    for (auto const& entry : sObjectMgr.GetQuestTemplates())
+    {
+        Quest const* quest = entry.second.get();
+        if (!quest || !quest->GetRequiredClasses() ||
+            !bot->SatisfyQuestClass(quest, false) ||
+            !bot->SatisfyQuestRace(quest, false) ||
+            !bot->SatisfyQuestLevel(quest, false) ||
+            (!includeHighLevelQuestRewards && quest->GetMinLevel() >= 60))
+            continue;
+        bot->LearnQuestRewardedSpells(quest);
+    }
+    auto const entries = sObjectMgr.GetBotTrainerEntries(bot->getClass());
+    while (LearnTrainerSpells(nullptr, entries, true)) {}
+}
+
+bool AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out, std::vector<uint32> const& entries, bool classOnly)
+{
+    bool learned = false;
+    std::set<TrainerSpellData const*> visited;
+    for (uint32 id : entries)
     {
         CreatureInfo const* co = sCreatureStorage.LookupEntry<CreatureInfo>(id);
         if (!co)
@@ -83,51 +112,51 @@ void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
         if ((co->TrainerType == TRAINER_TYPE_CLASS || co->TrainerType == TRAINER_TYPE_PETS) && co->TrainerClass != bot->getClass())
             continue;
 
-        uint32 trainerId = co->TrainerTemplateId;
-        if (!trainerId)
-            trainerId = co->Entry;
-
-        TrainerSpellData const* trainer_spells = sObjectMgr.GetNpcTrainerTemplateSpells(trainerId);
-        if (!trainer_spells)
-            trainer_spells = sObjectMgr.GetNpcTrainerSpells(trainerId);
-
-        if (!trainer_spells)
+        if (classOnly && co->TrainerType != TRAINER_TYPE_CLASS)
             continue;
 
-        for (TrainerSpellMap::const_iterator itr = trainer_spells->spellList.begin(); itr != trainer_spells->spellList.end(); ++itr)
+        // Native NPCs may provide both an entry-specific and a shared list.
+        TrainerSpellData const* lists[] = {
+            sObjectMgr.GetNpcTrainerSpells(co->Entry),
+            co->TrainerTemplateId ? sObjectMgr.GetNpcTrainerTemplateSpells(co->TrainerTemplateId) : nullptr
+        };
+        for (TrainerSpellData const* trainer_spells : lists)
         {
-            TrainerSpell const* tSpell = &itr->second;
-
-            if (!tSpell)
+            if (!trainer_spells || !visited.insert(trainer_spells).second)
                 continue;
 
-            uint32 reqLevel = 0;
-
-            reqLevel = tSpell->isProvidedReqLevel ? tSpell->reqLevel : std::max(reqLevel, tSpell->reqLevel);
-            TrainerSpellState state = bot->GetTrainerSpellState(tSpell, reqLevel);
-            if (state != TRAINER_SPELL_GREEN)
-                continue;
-            
-            if (co->TrainerType == TRAINER_TYPE_TRADESKILLS)
+            for (TrainerSpellMap::const_iterator itr = trainer_spells->spellList.begin(); itr != trainer_spells->spellList.end(); ++itr)
             {
-                SpellEntry const* spell = sServerFacade.LookupSpellInfo(tSpell->spell);
-                if (spell)
-                {
-                    std::string SpellName = spell->SpellName[0];
-#ifdef MANGOSBOT_ZERO
-                    if (spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL_STEP)
-#elif defined(MANGOSBOT_ONE) || defined(MANGOSBOT_TWO) // TBC OR WOTLK
-                        if (spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL || spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL_STEP)
-#endif
-                        {
-                            uint32 skill = spell->EffectMiscValue[EFFECT_INDEX_1];
+                TrainerSpell const* tSpell = &itr->second;
 
-                            if (skill)
+                if (!tSpell)
+                    continue;
+
+                SpellEntry const* teaching = sServerFacade.LookupSpellInfo(tSpell->spell);
+                if (!teaching || !sServerFacade.LookupSpellInfo(teaching->EffectTriggerSpell[0]))
+                    continue;
+                TrainerSpellState state = bot->GetTrainerSpellState(tSpell);
+                if (state != TRAINER_SPELL_GREEN)
+                    continue;
+
+                if (co->TrainerType == TRAINER_TYPE_TRADESKILLS)
+                {
+                    SpellEntry const* spell = sServerFacade.LookupSpellInfo(tSpell->spell);
+                    if (spell)
+                    {
+                        std::string SpellName = spell->SpellName[0];
+#ifdef MANGOSBOT_ZERO
+                        if (spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL_STEP)
+#elif defined(MANGOSBOT_ONE) || defined(MANGOSBOT_TWO) // TBC OR WOTLK
+                            if (spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL || spell->Effect[EFFECT_INDEX_1] == SPELL_EFFECT_SKILL_STEP)
+#endif
                             {
-                                SkillLineEntry const* pSkill = sSkillLineStore.LookupEntry(skill);
-                                if (pSkill)
+                                uint32 skill = spell->EffectMiscValue[EFFECT_INDEX_1];
+
+                                if (skill)
                                 {
-                                    if (!bot->HasSkill(skill))
+                                    SkillLineEntry const* pSkill = sSkillLineStore.LookupEntry(skill);
+                                    if (pSkill)
                                     {
 #ifdef MANGOSBOT_ZERO
                                         if (SpellName.find("Apprentice") != std::string::npos && pSkill->categoryId == SKILL_CATEGORY_PROFESSION || pSkill->categoryId == SKILL_CATEGORY_SECONDARY)
@@ -140,30 +169,27 @@ void AutoLearnSpellAction::LearnTrainerSpells(std::ostringstream* out)
                                             continue;
 #endif
                                     }
-                                    else
-                                        bot->learnSpell(spell->Id, false);
-
                                 }
                             }
-                        }
-                }
+                    }
 
-            }
-            
+                }
 #ifdef MANGOSBOT_ZERO // Vanilla
-            LearnSpellFromSpell(tSpell->spell, out);
+                learned = LearnSpellFromSpell(tSpell->spell, out) || learned;
 #elif defined(MANGOSBOT_ONE) || defined(MANGOSBOT_TWO)
-            if (IsTeachingSpellListedAsSpell(tSpell->spell))
-            {
-                LearnSpellFromSpell(tSpell->spell, out);
-            }
-            else
-            {
-                LearnSpell(tSpell->spell, out);
-            }
+                if (IsTeachingSpellListedAsSpell(tSpell->spell))
+                {
+                    learned = LearnSpellFromSpell(tSpell->spell, out) || learned;
+                }
+                else
+                {
+                    learned = LearnSpell(tSpell->spell, out) || learned;
+                }
 #endif
+            }
         }
     }
+    return learned;
 }
 
 void AutoLearnSpellAction::LearnQuestSpells(std::ostringstream* out)
@@ -319,7 +345,7 @@ bool AutoLearnSpellAction::LearnSpell(uint32 spellId, std::ostringstream* out)
             return false;
         if (!learned && !bot->HasSpell(spellId)) {
             bot->learnSpell(spellId, false);
-            *out << formatSpell(proto) << ", ";
+            if (out) *out << formatSpell(proto) << ", ";
 
             learned = bot->HasSpell(spellId);
         }
@@ -345,10 +371,15 @@ bool AutoLearnSpellAction::LearnSpellFromSpell(uint32 spellId, std::ostringstrea
             {
                 if (!bot->HasSpell(learnedSpell))
                 {
-                    bot->learnSpell(learnedSpell, false);
                     SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(learnedSpell);
-                    *out << formatSpell(spellInfo) << ", ";
-                    learned = true;
+                    if (!SpellMgr::IsSpellValid(spellInfo, bot, false))
+                        continue;
+                    bot->learnSpell(learnedSpell, false);
+                    if (bot->HasSpell(learnedSpell))
+                    {
+                        if (out) *out << formatSpell(spellInfo) << ", ";
+                        learned = true;
+                    }
                 }
             }
         }

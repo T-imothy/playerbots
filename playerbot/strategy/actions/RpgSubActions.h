@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 
 #include "playerbot/strategy/Action.h"
 #include "MovementActions.h"
@@ -296,6 +297,8 @@ namespace ai
         RpgAIChatAction(PlayerbotAI* ai, std::string name = "rpg ai chat") : RpgSubAction(ai, name) {}
 
         void ManualChat(GuidPosition target, const std::string& line);
+        void UpdateManualChat();
+        void CancelManualChat();
 
         virtual std::string GetRpgActionName() const override { return "ai talking with"; };
     private:
@@ -308,6 +311,10 @@ namespace ai
 
         std::queue<delayedPacket> packets;
         futurePackets futPackets;
+        bool manualPending = false;
+        GuidPosition manualTarget;
+        uint32 manualMap = 0, manualInstance = 0;
+        std::chrono::steady_clock::time_point manualNext{};
     };
 
     class RpgSpellAction : public RpgSubAction
@@ -336,6 +343,7 @@ namespace ai
     class RpgTradeUsefulAction : public RpgSubAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         RpgTradeUsefulAction(PlayerbotAI* ai, std::string name = "rpg trade useful") : RpgSubAction(ai, name) {}
 
         virtual std::string GetRpgActionName() const override { return "trading an item to"; };
@@ -426,6 +434,7 @@ namespace ai
     class RpgGuildBankDepositAction : public RpgSubAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         RpgGuildBankDepositAction(PlayerbotAI* ai, std::string name = "rpg guild bank deposit") : RpgSubAction(ai, name) {}
 
         virtual std::string GetRpgActionName() const override { return "depositing items in guild bank at"; };
@@ -436,6 +445,7 @@ namespace ai
     class RpgGuildBankWithdrawAction : public RpgSubAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         RpgGuildBankWithdrawAction(PlayerbotAI* ai, std::string name = "rpg guild bank withdraw") : RpgSubAction(ai, name) {}
 
         virtual std::string GetRpgActionName() const override { return "withdrawing items from guild bank at"; };

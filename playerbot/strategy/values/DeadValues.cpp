@@ -91,7 +91,7 @@ WorldSafeLocsEntry const* GraveyardValue::GetAnotherAppropriateClosestGraveyard(
         if (graveyardData.team != bot->GetTeam() && graveyardData.team != TEAM_BOTH_ALLOWED)
             continue;
 
-        WorldSafeLocsEntry const* graveyardCoreEntry = sWorldSafeLocsStore.LookupEntry<WorldSafeLocsEntry>(graveyardData.safeLocId);
+        WorldSafeLocsEntry const* graveyardCoreEntry = sWorldSafeLocsStore.LookupEntry(graveyardData.safeLocId);
         if (!graveyardCoreEntry)
             continue;
 

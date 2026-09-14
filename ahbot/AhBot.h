@@ -1,11 +1,12 @@
 #pragma once
 
 #include "Category.h"
+#include <memory>
 #include "ItemBag.h"
 #include "playerbot/PlayerbotAIBase.h"
 #include "AuctionHouse/AuctionHouseMgr.h"
-#include "Entities/ObjectGuid.h"
-#include "Server/WorldSession.h"
+#include "ObjectGuid.h"
+#include "WorldSession.h"
 
 
 #define MAX_AUCTIONS 3
@@ -93,6 +94,10 @@ namespace ahbot
         std::map<uint32, std::vector<uint32>> bidders;
         std::set<uint32> allBidders;
         bool updating;
+        int updateHouse = 0;
+        size_t updateCategory = 0;
+        int answeredCount = 0, addedCount = 0;
+        std::unique_ptr<InAuctionItemsBag> updateItems;
     };
 };
 

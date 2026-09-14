@@ -1,9 +1,9 @@
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -39,7 +39,7 @@ bool ai::IsMagtheridonCubeUser(PlayerbotAI* ai, Player* player, Unit* boss)
 {
 #ifndef MANGOSBOT_ZERO
     Player* bot = ai->GetBot();
-    PlayerbotAI* memberAI = player ? player->GetPlayerbotAI() : nullptr;
+    PlayerbotAI* memberAI = player ? GetBotAI(player) : nullptr;
     return player && memberAI && !memberAI->IsRealPlayer() && player->IsInWorld() && player->IsAlive() &&
         player->GetSession() && !player->GetSession()->isLogingOut() && !player->IsBeingTeleported() &&
         !player->HasCharmer() && bot->GetMapId() == 544 && bot->GetGroup() &&

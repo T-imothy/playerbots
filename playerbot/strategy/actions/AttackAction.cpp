@@ -4,10 +4,11 @@
 #include "playerbot/strategy/MeleeCombatPolicy.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "EncounterSpellPolicy.h"
-#include "MotionGenerators/MovementGenerator.h"
-#include "AI/BaseAI/CreatureAI.h"
+#include "Movement/MovementGenerator.h"
+#include "AI/CreatureAI.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/BotDiagnostics.h" // SC_LOG for attack-command diagnostic trace
 #include "playerbot/strategy/generic/CombatStrategy.h"
 
 using namespace ai;
@@ -28,21 +29,47 @@ bool AttackAction::Execute(Event& event)
 bool AttackMyTargetAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+    SC_LOG("attack-cmd entry bot=%s requester=%s eventOwner=%s",
+           bot ? bot->GetName() : "(null)",
+           requester ? requester->GetName() : "(null)",
+           event.getOwner() ? event.getOwner()->GetName() : "(null)");
+
     if(requester)
     {
         const ObjectGuid guid = requester->GetSelectionGuid();
+        SC_LOG("attack-cmd selection bot=%s requester=%s selGuid=0x%016llx",
+               bot ? bot->GetName() : "(null)",
+               requester->GetName(),
+               (unsigned long long)guid.GetRawValue());
+
         if (guid)
         {
-            if (Attack(requester, ai->GetUnit(guid)))
+            Unit* tgt = ai->GetUnit(guid);
+            SC_LOG("attack-cmd target bot=%s tgt=%s tgtMap=%d botMap=%u",
+                   bot ? bot->GetName() : "(null)",
+                   tgt ? tgt->GetName() : "(null-unit)",
+                   tgt ? (int)tgt->GetMapId() : -1,
+                   bot ? bot->GetMapId() : 0);
+
+            if (Attack(requester, tgt))
             {
                 SET_AI_VALUE(ObjectGuid, "attack target", guid);
+                SC_LOG("attack-cmd OK bot=%s tgt=%s",
+                       bot ? bot->GetName() : "(null)",
+                       tgt ? tgt->GetName() : "(null)");
                 return true;
             }
+            SC_LOG("attack-cmd FAIL bot=%s — Attack() returned false", bot ? bot->GetName() : "(null)");
         }
         else if (verbose)
         {
+            SC_LOG("attack-cmd FAIL bot=%s — requester has no selection", bot ? bot->GetName() : "(null)");
             ai->TellError(requester, "You have no target");
         }
+    }
+    else
+    {
+        SC_LOG("attack-cmd FAIL bot=%s — no requester (event has no owner, no master)", bot ? bot->GetName() : "(null)");
     }
 
     return false;
@@ -89,6 +116,7 @@ bool AttackAction::Attack(Player* requester, Unit* target)
     MotionMaster &mm = *bot->GetMotionMaster();
 	if (mm.GetCurrentMovementGeneratorType() == TAXI_MOTION_TYPE || (bot->IsFlying() && WorldPosition(bot).currentHeight() > 10.0f))
     {
+        SC_LOG("attack-cmd FAIL bot=%s — taxi/flying", bot ? bot->GetName() : "(null)");
         if (verbose)
         {
             ai->TellPlayerNoFacing(requester, "I cannot attack in flight");
@@ -99,6 +127,11 @@ bool AttackAction::Attack(Player* requester, Unit* target)
 
     if (IsTargetValid(requester, target))
     {
+        SC_LOG("attack-cmd valid-tgt bot=%s tgt=%s mounted=%d range=%.1f",
+               bot ? bot->GetName() : "(null)",
+               target ? target->GetName() : "(null)",
+               bot ? (int)bot->IsMounted() : -1,
+               target ? sServerFacade.GetDistance2d(bot, target) : -1.0f);
         if (bot->IsMounted() && (sServerFacade.GetDistance2d(bot, target) < 40.0f || bot->IsFlying()))
         {
             ai->Unmount();
@@ -121,54 +154,30 @@ bool AttackAction::Attack(Player* requester, Unit* target)
         SET_AI_VALUE(Unit*, "current target", target);
         AI_VALUE(LootObjectStack*, "available loot")->Add(guid);
 
-        WaitForAttackStrategy* strategy = WaitForAttackStrategy::Get(ai);
-        bool isWaitingForAttack = false;
+        const bool isWaitingForAttack = WaitForAttackStrategy::ShouldWait(ai);
         Pet* pet = bot->GetPet();
-        if (strategy)
+        if (pet)
         {
-            isWaitingForAttack = strategy->ShouldWait(ai);
-            if (pet)
+            UnitAI* creatureAI = ((Creature*)pet)->AI();
+            if (creatureAI)
             {
-                UnitAI* creatureAI = ((Creature*)pet)->AI();
-                if (creatureAI)
+                // Don't send the pet to attack if the bot is waiting for attack
+                if (!isWaitingForAttack && (!ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) || AI_VALUE2(float, "distance", "current target") < ai->GetRange("spell")))
                 {
-                    // Don't send the pet to attack if the bot is waiting for attack
-                    if (!isWaitingForAttack && (!ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) || AI_VALUE2(float, "distance", "current target") < ai->GetRange("spell")))
+                    // Reset the pet state if no master
+                    if (creatureAI->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
                     {
-                        // Reset the pet state if no master
-                        if (creatureAI->GetReactState() == REACT_PASSIVE && !ai->GetMaster())
-                            creatureAI->SetReactState(REACT_DEFENSIVE);
-                        else 
-                            PetAttack(requester, target);
+                        creatureAI->SetReactState(REACT_DEFENSIVE);
                     }
-                    else
+
+                    // Don't send the pet to attack if set to passive
+                    if (creatureAI->GetReactState() != REACT_PASSIVE)
                     {
-                        if (!isWaitingForAttack)
-                            PetAttack(requester, target);
-                        else
-                        {
-                            strategy->SetPetReactState(creatureAI->GetReactState() != REACT_PASSIVE ? creatureAI->GetReactState() : REACT_PASSIVE);
-                            creatureAI->SetReactState(REACT_PASSIVE);
-
-                            // Send pet action packet
-                            const ObjectGuid& petGuid = pet->GetObjectGuid();
-                            const uint8 flag = ACT_REACTION;
-                            const uint32 spellId = REACT_PASSIVE;
-                            const uint32 data = (flag << 24) | spellId;
-
-                            WorldPacket packet(CMSG_PET_ACTION);
-                            packet << petGuid;
-                            packet << data;
-                            packet << uint64(0);
-                            bot->GetSession()->HandlePetAction(packet);
-                            bot->PetSpellInitialize();
-                        }
+                        creatureAI->AttackStart(target);
                     }
                 }
             }
         }
-        else
-            PetAttack(requester, target);
 
         if (ai->CanMove() && !sServerFacade.IsInFront(bot, target, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
         {
@@ -180,34 +189,19 @@ bool AttackAction::Attack(Player* requester, Unit* target)
         // Don't attack target if it is waiting for attack or in stealth
         if (!ai->HasStrategy("stealthed", BotState::BOT_STATE_COMBAT) && !isWaitingForAttack)
         {
-            // Don't attack a target that has a high damage shield in melee
-            if (!ai->IsRanged(bot) || (sServerFacade.GetDistance2d(bot, target) < 5.0f))
-            {
-                std::set<Aura*> alreadyDone;
-                Unit::AuraList const& vDamageShields = target->GetAurasByType(SPELL_AURA_DAMAGE_SHIELD);
-                for (Unit::AuraList::const_iterator i = vDamageShields.begin(); i != vDamageShields.end();)
-                {
-                    if (alreadyDone.find(*i) == alreadyDone.end())
-                    {
-                        alreadyDone.insert(*i);
-                        uint32 damage = (*i)->GetModifier()->m_amount;
-
-                        // If the damage shield does at least 10% of our max hp on each hit we do, we shouldn't attack
-                        if (damage >= bot->GetMaxHealth() * 0.10f)
-                        {
-                            bot->AttackStop();
-                            return false;
-                        }
-
-                        i = vDamageShields.begin();
-                    }
-                    else
-                        ++i;
-                }
-            }
-
             ai->PlayAttackEmote(1);
             result = bot->Attack(target, !ai->IsRanged(bot) || (sServerFacade.GetDistance2d(bot, target) < 5.0f));
+            SC_LOG("attack-cmd bot->Attack bot=%s tgt=%s result=%d",
+                   bot ? bot->GetName() : "(null)",
+                   target ? target->GetName() : "(null)",
+                   (int)result);
+        }
+        else
+        {
+            SC_LOG("attack-cmd skip bot->Attack bot=%s — stealthed=%d isWaitingForAttack=%d",
+                   bot ? bot->GetName() : "(null)",
+                   (int)ai->HasStrategy("stealthed", BotState::BOT_STATE_COMBAT),
+                   (int)isWaitingForAttack);
         }
 
         if (result)
@@ -219,44 +213,8 @@ bool AttackAction::Attack(Player* requester, Unit* target)
         return result;
     }
 
+    SC_LOG("attack-cmd FAIL bot=%s — IsTargetValid rejected", bot ? bot->GetName() : "(null)");
     return false;
-}
-
-bool AttackAction::PetAttack(Player* requester, Unit* target)
-{
-    // If we're done waiting to attack and there's mobs to cc, we can't use defensive/aggressive
-    // because non passive pets will ignore our cc
-    // Therefore, we'll keep passive so we can only attack the current target specifically
-    // In other words, pet only attacks what owner can attack
-    Pet* pet = bot->GetPet();
-    Unit* ccTarget = AI_VALUE(Unit*, "rti cc target");
-    if (pet && (!ccTarget || (ccTarget && target->GetObjectGuid() != ccTarget->GetObjectGuid())))
-    {
-        constexpr uint32 PET_IMP = 416;
-        constexpr uint32 PHASE_SHIFT = 4511;
-        if (!(bot->getClass() == CLASS_WARLOCK &&
-            pet->AI() && pet->AI()->HasReactState(REACT_PASSIVE) &&
-            pet->GetEntry() == PET_IMP && pet->HasAura(PHASE_SHIFT)))
-        {
-            // Send pet action packet
-            const ObjectGuid& petGuid = pet->GetObjectGuid();
-            const ObjectGuid& targetGuid = target->GetObjectGuid();
-            const uint8 flag = ACT_COMMAND;
-            const uint32 spellId = COMMAND_ATTACK;
-            const uint32 command = (flag << 24) | spellId;
-
-            WorldPacket data(CMSG_PET_ACTION);
-            data << petGuid;
-            data << command;
-            data << targetGuid;
-            bot->GetSession()->HandlePetAction(data);
-        }
-
-        return true;
-    }
-
-    return false;
-    
 }
 
 bool AttackAction::IsTargetValid(Player* requester, Unit* target)

@@ -25,11 +25,11 @@ std::list<ObjectGuid> AoeCountValue::FindMaxDensity(Player* bot, float range)
     std::map<ObjectGuid, std::list<ObjectGuid> > groups;
     if (bot && bot->IsInWorld())
     {
-        std::list<ObjectGuid> units = *bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets");
+        std::list<ObjectGuid> units = *GetBotAI(bot)->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers");
         
         for (std::list<ObjectGuid>::iterator i = units.begin(); i != units.end(); ++i)
         {
-            Unit* unit = bot->GetPlayerbotAI()->GetUnit(*i);
+            Unit* unit = GetBotAI(bot)->GetUnit(*i);
             if (IsCurrentAoeTarget(bot, unit))
             {
                 float distanceToPlayer = sServerFacade.GetDistance2d(unit, bot);
@@ -37,7 +37,7 @@ std::list<ObjectGuid> AoeCountValue::FindMaxDensity(Player* bot, float range)
                 {
                     for (std::list<ObjectGuid>::iterator j = units.begin(); j != units.end(); ++j)
                     {
-                        Unit* other = bot->GetPlayerbotAI()->GetUnit(*j);
+                        Unit* other = GetBotAI(bot)->GetUnit(*j);
                         if (IsCurrentAoeTarget(bot, other))
                         {
                             float d = sServerFacade.GetDistance2d(unit, other);
@@ -78,7 +78,7 @@ WorldLocation AoePositionValue::Calculate()
     float x1 = 0.0f, y1 = 0.0f, x2 = 0.0f, y2 = 0.0f;
     for (std::list<ObjectGuid>::iterator i = group.begin(); i != group.end(); ++i)
     {
-        Unit* unit = bot->GetPlayerbotAI()->GetUnit(*i);
+        Unit* unit = GetBotAI(bot)->GetUnit(*i);
         if (!IsCurrentAoeTarget(bot, unit))
             continue;
 

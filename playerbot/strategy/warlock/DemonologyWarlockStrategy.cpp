@@ -589,9 +589,10 @@ void DemonologyWarlockBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
 void DemonologyWarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     WarlockBuffStrategy::InitNonCombatTriggers(triggers);
+
     triggers.push_back(new TriggerNode(
         "soul link",
-        NextAction::array(0, new NextAction("soul link", ACTION_NORMAL + 1), NULL)));
+        NextAction::array(0, new NextAction("soul link", ACTION_NORMAL), NULL)));
 }
 
 void DemonologyWarlockBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -604,9 +605,6 @@ void DemonologyWarlockBuffPveStrategy::InitNonCombatTriggers(std::list<TriggerNo
 {
     DemonologyWarlockBuffStrategy::InitNonCombatTriggers(triggers);
     WarlockBuffPveStrategy::InitNonCombatTriggers(triggers);
-    triggers.push_back(new TriggerNode(
-        "soul link",
-        NextAction::array(0, new NextAction("soul link", ACTION_NORMAL + 1), NULL)));
 }
 
 void DemonologyWarlockBuffPvpStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -992,6 +990,10 @@ void DemonologyWarlockBuffStrategy::InitCombatTriggers(std::list<TriggerNode*>& 
 void DemonologyWarlockBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     WarlockBuffStrategy::InitNonCombatTriggers(triggers);
+
+    triggers.push_back(new TriggerNode(
+        "soul link",
+        NextAction::array(0, new NextAction("soul link", ACTION_NORMAL), NULL)));
 }
 
 void DemonologyWarlockBuffPveStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -5,12 +5,12 @@ from pathlib import Path
 from behavior_regression import block
 
 root = Path(__file__).resolve().parents[1]
-source = (root / 'playerbot/strategy/actions/UseMeetingStoneAction.cpp').read_text()
+source = (root / 'playerbot/strategy/actions/UseMeetingStoneAction.cpp').read_text(encoding="utf-8")
 inn = block(source, 'bool SummonAction::SummonUsingNpcs(')
 for forbidden in ('SendSpellCooldown', 'IsSpellReady', 'HasItemCount', '8690', '6948'):
     assert forbidden not in inn, forbidden
-assert 'player->isRealPlayer()' in inn
-ai_source = (root / 'playerbot/PlayerbotAI.cpp').read_text()
+assert 'IsRealPlayer(player)' in inn
+ai_source = (root / 'playerbot/PlayerbotAI.cpp').read_text(encoding="utf-8")
 code = r'''
 #include <cassert>
 #include <cmath>
@@ -38,11 +38,13 @@ struct Player {
  void UpdateGroundPositionZ(float,float,float&){}float GetCollisionHeight(){return 2;}
  bool IsWithinLOS(float,float,float,bool){return los;}void ResurrectPlayer(float,bool){++resurrections;alive=true;}
  void SpawnCorpseBones(){++bones;}bool TaxiFlightInterrupt(){bool was=taxi;taxi=false;return was;}
- void OnTaxiFlightEject(){taxi=false;}void BreakCharmIncoming(){charmed=false;}void BreakCharmOutgoing(){}
+ void OnTaxiFlightEject(){taxi=false;}void RemoveCharmAuras(){charmed=false;}void RemoveSpellsCausingAura(int){}void Uncharm(){}void BreakCharmIncoming(){charmed=false;}void BreakCharmOutgoing(){}
  void InterruptNonMeleeSpells(bool){}Motion* GetMotionMaster(){return &motion;}
  bool TeleportTo(uint32,float,float,float,float){++teleports;teleporting=accepted;return accepted;}
  bool IsWithinDist3d(float a,float b,float c,float r){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c))<=r;}
 };
+constexpr int SPELL_AURA_MOD_POSSESS_PET=1;
+bool IsRealPlayer(Player*p){return p->real;}
 struct PositionEntry {PositionEntry(float,float,float,uint32){}};
 int positionWrites=0;
 #define SET_AI_VALUE2(type,name,key,value) (++positionWrites)

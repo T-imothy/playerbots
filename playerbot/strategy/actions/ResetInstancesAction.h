@@ -7,6 +7,7 @@ namespace ai
     class ResetInstancesAction : public Action 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         ResetInstancesAction(PlayerbotAI* ai) : Action(ai, "reset instances") {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override { return ai->GetGroupMaster() == bot; };
@@ -16,6 +17,7 @@ namespace ai
     class ResetRaidsAction : public Action
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         ResetRaidsAction(PlayerbotAI* ai) : Action(ai, "reset raids") {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override { return true; };

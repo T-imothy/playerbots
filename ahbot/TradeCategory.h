@@ -38,6 +38,7 @@ namespace ahbot
         bool IsCraftedBySpell(ItemPrototype const* proto, SpellEntry const *entry);
         uint32 skill;
         std::set<uint32> itemCache;
+        std::set<uint32> nonItemCache;
         bool reagent;
     };
 

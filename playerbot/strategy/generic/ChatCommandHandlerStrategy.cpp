@@ -39,10 +39,11 @@ ChatCommandHandlerStrategy::ChatCommandHandlerStrategy(PlayerbotAI* ai) : PassTr
     supported.push_back("share");
     supported.push_back("ll");
     supported.push_back("ss");
-    supported.push_back("avoid creature");
     supported.push_back("release");
+    supported.push_back("corpse run");
     supported.push_back("teleport");
     supported.push_back("taxi");
+    supported.push_back("avoid creature");
     supported.push_back("repair");
     supported.push_back("talents");
     supported.push_back("spells");
@@ -269,6 +270,10 @@ void ChatCommandHandlerStrategy::InitReactionTriggers(std::list<TriggerNode*> &t
     triggers.push_back(new TriggerNode(
         "self res",
         NextAction::array(0, new NextAction("self resurrect", relevance), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "corpse run",
+        NextAction::array(0, new NextAction("corpse run", relevance), NULL)));
 
     triggers.push_back(new TriggerNode(
         "flee",

@@ -46,21 +46,15 @@ WorldLocation ArrowFormation::GetLocationInternal()
     float y = followTarget->GetPositionY() - masterUnit->GetY() + botUnit->GetY();
     float z = followTarget->GetPositionZ();
 
-    float ox, oy, oz;
-    followTarget->GetPosition(ox, oy, oz);
 #ifdef MANGOSBOT_TWO
-    followTarget->GetMap()->GetHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, bot->GetPhaseMask(), -0.5f);
+    float ground = followTarget->GetMap()->GetHeight(followTarget->GetPhaseMask(), x, y, z + 0.5f);
 #else
-    followTarget->GetMap()->GetHitPosition(ox, oy, oz + bot->GetCollisionHeight(), x, y, z, -0.5f);
+    float ground = followTarget->GetMap()->GetHeight(x, y, z + 0.5f);
 #endif
+    if (ground <= INVALID_HEIGHT)
+        return Formation::NullLocation;
 
-    if (!bot->IsFlying() && !bot->IsFreeFlying() && !bot->IsSwimming())
-    {
-        z += CONTACT_DISTANCE;
-        bot->UpdateAllowedPositionZ(x, y, z);
-    }
-
-    return WorldLocation(followTarget->GetMapId(), x, y, z);
+    return WorldLocation(followTarget->GetMapId(), x, y, 0.05f + ground);
 }
 
 void ArrowFormation::Build()

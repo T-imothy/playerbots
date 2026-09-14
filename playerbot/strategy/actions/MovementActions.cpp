@@ -1,23 +1,24 @@
 
+#include "playerbot/TurtleTaxiRoutes.h"
 #include "playerbot/playerbot.h"
 #include "MovementActions.h"
 #include "MovementPathSafety.h"
-#include "MotionGenerators/MotionMaster.h"
-#include "MotionGenerators/MovementGenerator.h"
+#include "Movement/MotionMaster.h"
+#include "Movement/MovementGenerator.h"
 #include "playerbot/FleeManager.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/values/Stances.h"
-#include "MotionGenerators/TargetedMovementGenerator.h"
+#include "Movement/TargetedMovementGenerator.h"
 #include "playerbot/TravelMgr.h"
-#include "Entities/Transports.h"
+#include "Transports/Transport.h"
 #ifdef MANGOSBOT_TWO
 #include "Entities/Vehicle.h"
 #endif
 #include "playerbot/strategy/generic/CombatStrategy.h"
-#include "Util/Timer.h"
+#include "Timer.h"
 
 #include <cmath>
 
@@ -246,6 +247,37 @@ bool MovementAction::UseTaxi(PlayerbotAI* ai, uint32 entry, bool needNpc)
 {
     AiObjectContext* context = ai->GetAiObjectContext();
     Player* bot = ai->GetBot();
+
+    if (auto const* route = GetTurtleTaxiRoute(entry))
+    {
+        // A scripted flight is not a flight-master service. Always interact
+        // with the actual NPC, including when minimal movement requested it.
+        for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "nearest npcs"))
+        {
+            Creature* npc = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_GOSSIP);
+            if (!npc || npc->GetEntry() != route->creature)
+                continue;
+
+            ai->StopMoving();
+            WorldPacket hello(CMSG_GOSSIP_HELLO, 8);
+            hello << guid;
+            bot->GetSession()->HandleGossipHelloOpcode(hello);
+            GossipMenu& menu = bot->GetPlayerMenu()->GetGossipMenu();
+            for (uint32 i = 0; i < menu.MenuItemCount(); ++i)
+            {
+                auto const& option = menu.GetItem(i);
+                if (option.m_gCoded || option.m_gSender != 1 ||
+                    option.m_gOptionId != route->gossipAction)
+                    continue;
+                WorldPacket select(CMSG_GOSSIP_SELECT_OPTION, 12);
+                select << guid << i;
+                bot->GetSession()->HandleGossipSelectOptionOpcode(select);
+                return bot->IsTaxiFlying();
+            }
+            return false;
+        }
+        return false;
+    }
 
     TaxiPathEntry const* tEntry = sTaxiPathStore.LookupEntry(entry);
 
@@ -535,6 +567,8 @@ bool MovementAction::MinimalMove(PlayerbotAI* ai)
         }
 
         bool didTaxi = UseTaxi(ai, nextStep->entry, false);
+        if (!didTaxi)
+            return false; // Retain the pending route so failed boarding can retry.
 
         for (auto& step : path)
         {
@@ -1048,7 +1082,7 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     {
         auto points = WorldPosition().toPointsArray(path);
 #ifndef MANGOSBOT_TWO
-        mm.MovePath(points, moveMode, false, false);
+        mm.MovePath(points, moveMode, false, moveMode == FORCED_MOVEMENT_WALK);
 #else
         mm.MovePath(points, moveMode, false);
 #endif
@@ -1056,7 +1090,9 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     else
     {
 #ifdef MANGOSBOT_ZERO
-        mm.MovePoint(destination.getMapId(), destination.getX(), destination.getY(), destination.getZ(), moveMode, generatePath);
+        uint32 moveOptions = moveMode == FORCED_MOVEMENT_WALK ? MOVE_WALK_MODE : MOVE_RUN_MODE;
+        if (generatePath) moveOptions |= MOVE_PATHFINDING;
+        mm.MovePoint(destination.getMapId(), destination.getX(), destination.getY(), destination.getZ(), moveOptions);
 #else
         mm.MovePoint(destination.getMapId(), Position(destination.getX(), destination.getY(), destination.getZ(), 0.0f),
             moveMode, bot->IsFlying() ? mover->GetSpeed(MOVE_FLIGHT) : 0.0f, generatePath);
@@ -1205,7 +1241,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     if (movePath.empty())
     {
         lastMove.setPath(movePath);
-        return true; // Path collapsed — will rebuild next tick.
+        return true; // Path collapsed â€” will rebuild next tick.
     }
 
 
@@ -1597,7 +1633,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
         //Use standard pathfinder to find a route.
         pathfinder.calculate(movePosition.getX(), movePosition.getY(), movePosition.getZ(), false);
         PathType type = pathfinder.getPathType();
-        PointsArray& points = pathfinder.getPath();
+        PointsArray const& points = pathfinder.getPath();
 
         // DEBUG: After VMaps pathfinder - use TellDebug for debug move
         if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
@@ -1645,7 +1681,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
             PathNodeType pathType = nextPathPoint.type;
             uint32 entry = nextPathPoint.entry;
 
-            if (pathType == PathNodeType::NODE_STATIC_PORTAL && entry) // && !ai->isRealPlayer())
+            if (pathType == PathNodeType::NODE_STATIC_PORTAL && entry) // && !IsRealPlayer(ai))
             {
                 //Log bot movement
                 if (sPlayerbotAIConfig.hasLog("bot_movement.csv"))
@@ -1975,7 +2011,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
         PathFinder path(mover);
         path.calculate(movePosition.getX(), movePosition.getY(), movePosition.getZ(), false);
         PathType type = path.getPathType();
-        PointsArray& points = path.getPath();
+        PointsArray const& points = path.getPath();
         movePath.addPath(startPosition.fromPointsArray(points));
         TravelNodePathType pathType;
         uint32 entry;
@@ -1994,7 +2030,7 @@ bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, 
             PathFinder path(mover);
             path.calculate(movePosition.getX(), movePosition.getY(), movePosition.getZ(), false);
             PathType type = path.getPathType();
-            PointsArray& points = path.getPath();
+            PointsArray const& points = path.getPath();
             bool foundAggro = false;
 
             for (auto p : points)
@@ -2448,7 +2484,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
 
             if (ai->IsSafe(player))
             {
-                if (player->GetPlayerbotAI()) //Try to move to where the bot is going if it is closer and in the same direction.
+                if (GetBotAI(player)) //Try to move to where the bot is going if it is closer and in the same direction.
                 {
                     WorldPosition longMove = PAI_VALUE(WorldPosition, "last long move");
 
@@ -2461,12 +2497,12 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
 
             if (player->IsTaxiFlying()) //Move to where the player is flying to.
             {
-                const Taxi::Map tMap = player->GetTaxiPathSpline();
+                TaxiPathNodeList const& tMap = player->m_taxi.GetTaxiPath();
                 if (!tMap.empty())
                 {
                     auto tEnd = tMap.back();
 
-                    if (tEnd)
+                    if (tEnd.i_ptr)
                         return MoveTo(tEnd->mapid, tEnd->x, tEnd->y, tEnd->z);
                 }
             }
@@ -2489,7 +2525,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
             if (const TerrainInfo* terrain = moveToPos.getTerrain())
             {
                 float bottom = terrain->GetHeightStatic(moveToPos.getX(), moveToPos.getY(), moveToPos.getZ());
-                float waterLevel = terrain->GetWaterOrGroundLevel(moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(), bottom, true);
+                float waterLevel = terrain->GetWaterOrGroundLevel(moveToPos.getX(), moveToPos.getY(), moveToPos.getZ(), &bottom, true);
                 bool canSwimToTarget = selfOnSurface && botPos.IsInLineOfSight(tarPos);
                 moveToPos.setZ(waterLevel);
                 if (waterLevel > -200000.0f && waterLevel > bottom)
@@ -2498,7 +2534,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
                     //Use standard pathfinder to find a route.
                     WorldPosition prevPoint = botPos;
                     pathfinder.calculate(moveToPos.getVector3(), tarPos.getVector3());
-                    Movement::PointsArray& pathPoints = pathfinder.getPath();
+                    Movement::PointsArray const& pathPoints = pathfinder.getPath();
                     if (pathPoints.size() >= 2)
                     {
                         for (uint32 i = 1; i < pathPoints.size() - 1; i++)
@@ -2959,7 +2995,7 @@ bool MovementAction::Flee(Unit *target)
             if (distanceToGroupMember < minFleeDistance || distanceToGroupMember > maxFleeDistance)
                 continue;
 
-            if (PlayerbotAI* groupMemberBotAi = groupMember->GetPlayerbotAI())
+            if (PlayerbotAI* groupMemberBotAi = GetBotAI(groupMember))
             {
                 // Ignore if the group member is affected by an aoe spell
                 if (groupMemberBotAi->GetAiObjectContext()->GetValue<bool>("has area debuff", "self target")->Get())
@@ -3053,14 +3089,17 @@ bool MovementAction::Flee(Unit *target)
 
         if (mm->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
         {
-            ChaseMovementGenerator* chase = (ChaseMovementGenerator*)mm->GetCurrent();
+            ChaseMovementGenerator<Player>* chase = (ChaseMovementGenerator<Player>*)mm->GetCurrent();
 
-            if (chase->GetCurrentTarget() == target && sServerFacade.GetChaseOffset(bot) == distance)
+            if (chase->GetTarget() == target && sServerFacade.GetChaseOffset(bot) == distance)
                 return true;
         }
 
-        mm->MoveChase(target, distance, WorldPosition(bot).getAngleTo(target), true, false, true, false);
-        return true;
+        // Penqle's distancing generator supplies the path-checked backward move.
+        // Ordinary MoveChase only approaches; it cannot implement CMaNGOS's
+        // distance-increase flag when the target is already too close.
+        mm->MoveDistance(target, distance);
+        return mm->GetCurrentMovementGeneratorType() == DISTANCING_MOTION_TYPE;
     }
 
     // Generate a position to flee
@@ -3138,7 +3177,7 @@ bool MovementAction::IsValidPosition(const WorldPosition& position, const WorldP
 
 bool MovementAction::IsHazardNearPosition(const WorldPosition& position, HazardPosition* outHazard)
 {
-    AiObjectContext* context = bot->GetPlayerbotAI()->GetAiObjectContext();
+    AiObjectContext* context = GetBotAI(bot)->GetAiObjectContext();
     std::list<HazardPosition> hazards = AI_VALUE(std::list<HazardPosition>, "hazards");
     if (!hazards.empty())
     {
@@ -3453,7 +3492,7 @@ bool SetBehindTargetAction::isUseful()
         return false;
 
     Unit* target = AI_VALUE(Unit*, "current target");
-    if (target && !bot->IsFacingTargetsBack(target))
+    if (target && (target->isInFront(bot) || !bot->isInFront(target)))
     {
         // Don't move behind if the target is too far away
         const float distance = bot->GetDistance(target, false);

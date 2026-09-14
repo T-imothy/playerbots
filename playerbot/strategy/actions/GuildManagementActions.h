@@ -1,18 +1,19 @@
 #pragma once
 #include "GenericActions.h"
-#include "Guilds/GuildMgr.h"
+#include "Guild/GuildMgr.h"
 
 namespace ai
 {
     class GuidManageAction : public ChatCommandAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GuidManageAction(PlayerbotAI* ai, std::string name = "guild manage", uint16 opcode = CMSG_GUILD_INVITE) : ChatCommandAction(ai, name), opcode(opcode) {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override { return false; }
     
     protected:
-        virtual WorldPacket GetPacket(Player* player) { WorldPacket data(Opcodes(opcode), 8); data << player->GetName(); return data; }
+        virtual WorldPacket GetPacket(Player* player) { WorldPacket data(OpcodesList(opcode), 8); data << player->GetName(); return data; }
         virtual void SendPacket(WorldPacket data, Event event) {};
         virtual void SendPacket(WorldPacket data) { Event event = Event();  SendPacket(data, event); };
         virtual Player* GetPlayer(Event event);
@@ -26,6 +27,7 @@ namespace ai
     class GuildInviteAction : public GuidManageAction 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GuildInviteAction(PlayerbotAI* ai, std::string name = "guild invite", uint16 opcode = CMSG_GUILD_INVITE) : GuidManageAction(ai, name, opcode) {}
         virtual bool isUseful() override { return bot->GetGuildId() && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_INVITE) && !GuildIsFull(bot->GetGuildId()); }
     
@@ -37,11 +39,12 @@ namespace ai
     class GuildJoinAction : public GuidManageAction 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GuildJoinAction(PlayerbotAI* ai, std::string name = "guild join", uint16 opcode = CMSG_GUILD_INVITE) : GuidManageAction(ai, name, opcode) {}
         virtual bool isUseful() override { return !bot->GetGuildId(); }
     
     protected:
-        virtual WorldPacket GetPacket(Player* player) override { WorldPacket data(Opcodes(opcode), 8); data << bot->GetName(); return data; }
+        virtual WorldPacket GetPacket(Player* player) override { WorldPacket data(OpcodesList(opcode), 8); data << bot->GetName(); return data; }
         virtual void SendPacket(WorldPacket data, Event event) override { if(GetPlayer(event)) GetPlayer(event)->GetSession()->HandleGuildInviteOpcode(data); };
         virtual bool PlayerIsValid(Player* member) override { return !bot->GetGuildId() && member->GetGuildId() && sGuildMgr.GetGuildById(member->GetGuildId())->HasRankRight(member->GetRank(), GR_RIGHT_INVITE) && !GuildIsFull(member->GetGuildId()); };
     };
@@ -49,6 +52,7 @@ namespace ai
     class GuildPromoteAction : public GuidManageAction 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GuildPromoteAction(PlayerbotAI* ai, std::string name = "guild promote", uint16 opcode = CMSG_GUILD_PROMOTE) : GuidManageAction(ai, name, opcode) {}
         virtual bool isUseful() override { return bot->GetGuildId() && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_PROMOTE); }
     
@@ -60,6 +64,7 @@ namespace ai
     class GuildDemoteAction : public GuidManageAction 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GuildDemoteAction(PlayerbotAI* ai, std::string name = "guild demote", uint16 opcode = CMSG_GUILD_DEMOTE) : GuidManageAction(ai, name, opcode) {}
         virtual bool isUseful() override { return bot->GetGuildId() && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_DEMOTE); }
     
@@ -71,6 +76,7 @@ namespace ai
     class GuildLeaderAction : public GuidManageAction 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GuildLeaderAction(PlayerbotAI* ai, std::string name = "guild leader", uint16 opcode = CMSG_GUILD_LEADER) : GuidManageAction(ai, name, opcode) {}
         virtual bool isUseful() override { return bot->GetGuildId() && sGuildMgr.GetGuildById(bot->GetGuildId())->GetLeaderGuid() == bot->GetObjectGuid(); }
     
@@ -82,6 +88,7 @@ namespace ai
     class GuildRemoveAction : public GuidManageAction 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GuildRemoveAction(PlayerbotAI* ai, std::string name = "guild remove", uint16 opcode = CMSG_GUILD_REMOVE) : GuidManageAction(ai, name, opcode) {}
         virtual bool isUseful() override { return bot->GetGuildId() && sGuildMgr.GetGuildById(bot->GetGuildId())->HasRankRight(bot->GetRank(), GR_RIGHT_REMOVE); }
     
@@ -93,6 +100,7 @@ namespace ai
     class GuildManageNearbyAction : public ChatCommandAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GuildManageNearbyAction(PlayerbotAI* ai) : ChatCommandAction(ai, "guild manage nearby") {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
@@ -101,6 +109,7 @@ namespace ai
     class GuildLeaveAction : public ChatCommandAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GuildLeaveAction(PlayerbotAI* ai) : ChatCommandAction(ai, "guild leave") {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override { return bot->GetGuildId(); }

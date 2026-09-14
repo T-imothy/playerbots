@@ -1,19 +1,19 @@
 #pragma once
 
 #include "Spells/Spell.h"
-#include "Server/WorldPacket.h"
-#include "Loot/LootMgr.h"
-#include "Entities/GossipDef.h"
+#include "WorldPacket.h"
+#include "LootMgr.h"
+#include "GossipDef.h"
 #include "Chat/Chat.h"
 #include "Common.h"
-#include "World/World.h"
+#include "World.h"
 #include "Spells/SpellMgr.h"
-#include "Globals/ObjectMgr.h"
-#include "Entities/Unit.h"
-#include "Globals/SharedDefines.h"
-#include "MotionGenerators/MotionMaster.h"
+#include "ObjectMgr.h"
+#include "Objects/Unit.h"
+#include "SharedDefines.h"
+#include "Movement/MotionMaster.h"
 #include "Spells/SpellAuras.h"
-#include "Guilds/Guild.h"
+#include "Guild/Guild.h"
 
 #include "playerbotDefs.h"
 #include "playerbot/PlayerbotAIAware.h"
@@ -31,3 +31,10 @@ void split(std::vector<std::string>& dest, std::string const& str, char const* d
 #ifndef WIN32
 int strcmpi(std::string s1, std::string s2);
 #endif
+
+// Redirect all sLog calls in bot translation units to BotLog so the main
+// server log stays clean. BotLog routes to logs/bots.log when
+// AiPlayerbot.BotLogFile is set, and falls back to Log::Instance() otherwise.
+#include "BotLog.h"
+#undef sLog
+#define sLog BotLog::Instance()

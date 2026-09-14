@@ -1,7 +1,8 @@
 #pragma once
 #include "playerbot/strategy/Trigger.h"
-#include <MotionGenerators/MoveMap.h>
+#include <Maps/MoveMap.h>
 
+#include "playerbot/BotSlots.h"
 namespace ai
 {
     template< typename... Args >
@@ -27,7 +28,7 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && !ai->GetGroupMaster()->GetPlayerbotAI())
+            if (ai->GetGroupMaster() && !GetBotAI(ai->GetGroupMaster()))
                 return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
@@ -70,7 +71,7 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && !ai->GetGroupMaster()->GetPlayerbotAI())
+            if (ai->GetGroupMaster() && !GetBotAI(ai->GetGroupMaster()))
                 return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
@@ -82,7 +83,8 @@ namespace ai
 
             WorldPosition botPos(bot);
 
-            Cell const& cell = bot->GetCurrentCell();
+            // Penqle has no GetCurrentCell; use the bot's WorldPosition instead.
+            Cell cell{}; (void)cell;
 
             GridPair grid = botPos.getGridPair();
 
@@ -108,8 +110,7 @@ namespace ai
                 return true;
             }
 #else
-            if (cell.GridX() > 0 && cell.GridY() > 0 && !MMAP::MMapFactory::createOrGetMMapManager()->IsMMapIsLoaded(botPos.getMapId(), cell.GridX(), cell.GridY()) 
-                && !MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), botPos.getMapId(), cell.GridX(), cell.GridY()))
+            if (!botPos.loadMapAndVMap(bot->GetInstanceId()))
             {
                 ai->TellDebug(ai->GetMaster(), "Stuck: In unloaded grid" + std::to_string(grid.x_coord) + "," + std::to_string(grid.y_coord), "debug stuck");
 
@@ -157,7 +158,7 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && !ai->GetGroupMaster()->GetPlayerbotAI())
+            if (ai->GetGroupMaster() && !GetBotAI(ai->GetGroupMaster()))
                 return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
@@ -174,9 +175,9 @@ namespace ai
                 return true;
             }
 
-            if (bot->duel && bot->duel->startTime - time(0) > 15 * MINUTE)
+            if (bot->m_duel && bot->m_duel->startTime - time(0) > 15 * MINUTE)
             {
-                ai->TellDebug(ai->GetMaster(), "Stuck: In Duel for " + std::to_string(bot->duel->startTime - time(0)) + " seconds.", "debug stuck");
+                ai->TellDebug(ai->GetMaster(), "Stuck: In Duel for " + std::to_string(bot->m_duel->startTime - time(0)) + " seconds.", "debug stuck");
 
                 return true;
             }
@@ -198,7 +199,7 @@ namespace ai
             if (ai->HasActivePlayerMaster())
                 return false;
 
-            if (ai->GetGroupMaster() && !ai->GetGroupMaster()->GetPlayerbotAI())
+            if (ai->GetGroupMaster() && !GetBotAI(ai->GetGroupMaster()))
                 return false;
 
             if (!ai->AllowActivity(ALL_ACTIVITY))
@@ -215,9 +216,9 @@ namespace ai
                 return true;
             }
 
-            if (bot->duel && bot->duel->startTime - time(0) > 15 * MINUTE)
+            if (bot->m_duel && bot->m_duel->startTime - time(0) > 15 * MINUTE)
             {
-                ai->TellDebug(ai->GetMaster(), "Stuck: In Duel for " + std::to_string(bot->duel->startTime - time(0)) + " seconds.", "debug stuck");
+                ai->TellDebug(ai->GetMaster(), "Stuck: In Duel for " + std::to_string(bot->m_duel->startTime - time(0)) + " seconds.", "debug stuck");
 
                 return true;
             }

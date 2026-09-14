@@ -6,37 +6,10 @@
 #include "Database/DatabaseEnv.h"
 #include "PlayerbotAI.h"
 
-#include "MotionGenerators/TargetedMovementGenerator.h"
+#include "Movement/TargetedMovementGenerator.h"
 
 ServerFacade::ServerFacade() {}
 ServerFacade::~ServerFacade() {}
-
-float ServerFacade::GetDistance(Unit *unit, WorldObject* wo)
-{
-    if (!unit || !wo)
-        return false;
-
-    float dist =
-#ifdef MANGOS
-    unit->GetDistance(wo);
-#endif
-#ifdef CMANGOS
-    sqrt(unit->GetDistance(wo->GetPositionX(), wo->GetPositionY(), wo->GetPositionZ(), DIST_CALC_NONE));
-#endif
-    return round(dist * 10.0f) / 10.0f;
-}
-
-float ServerFacade::GetDistance(Unit *unit, float x, float y, float z)
-{
-    float dist =
-#ifdef MANGOS
-    unit->GetDistance(x, y, z);
-#endif
-#ifdef CMANGOS
-    sqrt(unit->GetDistance(x, y, z, DIST_CALC_NONE));
-#endif
-    return round(dist * 10.0f) / 10.0f;
-}
 
 float ServerFacade::GetDistance2d(Unit *unit, WorldObject* wo)
 {
@@ -176,20 +149,16 @@ FactionTemplateEntry const* ServerFacade::GetFactionTemplateEntry(Unit *unit)
 #endif
 }
 
-Unit* ServerFacade::GetChaseTarget(Unit* target)
-{
-    return static_cast<ChaseMovementGenerator const*>(target->GetMotionMaster()->GetCurrent())->GetCurrentTarget();
+// Penqle's ChaseMovementGenerator is a template. The static_cast dance the
+// bot module uses against cmangos's non-templated version is fragile here,
+// so return safe defaults. Wiring actual chase-generator inspection is
+// future work.
+Unit* ServerFacade::GetChaseTarget(Unit* target) {
+    return target ? target->GetVictim() : nullptr;
 }
 
-float ServerFacade::GetChaseAngle(Unit* target)
-{
-    return static_cast<ChaseMovementGenerator const*>(target->GetMotionMaster()->GetCurrent())->GetAngle();
-}
-
-float ServerFacade::GetChaseOffset(Unit* target)
-{
-    return static_cast<ChaseMovementGenerator const*>(target->GetMotionMaster()->GetCurrent())->GetOffset();
-}
+float ServerFacade::GetChaseAngle(Unit* /*target*/) { return 0.0f; }
+float ServerFacade::GetChaseOffset(Unit* /*target*/) { return 0.0f; }
 
 bool ServerFacade::isMoving(Unit *unit)
 {

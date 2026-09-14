@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "CheckMailAction.h"
-#include "Mails/Mail.h"
+#include "Mail/Mail.h"
+#include "MapNodes/MasterPlayer.h"
 #include "playerbot/PlayerbotAIConfig.h"
 
 using namespace ai;
@@ -16,7 +17,7 @@ bool CheckMailAction::Execute(Event& event)
         if (*it)
             ids.push_back((*it)->messageID);
     for (uint32 id : ids)
-        if (Mail* mail = bot->GetMail(id))
+        if (Mail* mail = bot->GetSession()->GetMasterPlayer()->GetMail(id))
             ProcessMail(mail);
     // A completed scan with nothing eligible is not a failed action.
     return true;

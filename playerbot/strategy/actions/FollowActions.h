@@ -7,7 +7,8 @@ namespace ai
 {
 	class FollowAction : public MovementAction {
 	public:
-		FollowAction(PlayerbotAI* ai, std::string name = "follow") : MovementAction(ai, name) {}
+		bool RequiresWorldOwner() const override;
+        FollowAction(PlayerbotAI* ai, std::string name = "follow") : MovementAction(ai, name) {}
 		virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
         virtual bool CanDeadFollow(Unit* target);
@@ -15,13 +16,15 @@ namespace ai
 
 	class StopFollowAction : public MovementAction {
 	public:
-		StopFollowAction(PlayerbotAI* ai, std::string name = "stop follow") : MovementAction(ai, name) {}
+		
+        StopFollowAction(PlayerbotAI* ai, std::string name = "stop follow") : MovementAction(ai, name) {}
 		virtual bool Execute(Event& event) override { ai->StopMoving(); return true; }
         virtual bool isUseful() override;
 	};
 
     class FleeToMasterAction : public FollowAction {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         FleeToMasterAction(PlayerbotAI* ai) : FollowAction(ai, "flee to master") {}
 
         virtual bool Execute(Event& event) override;

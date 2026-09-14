@@ -63,10 +63,6 @@ void FuryWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("bloodthirst", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "sunder armor",
-        NextAction::array(0, new NextAction("sunder armor", ACTION_HIGH + 2), NULL)));
-
-    triggers.push_back(new TriggerNode(
         "whirlwind",
         NextAction::array(0, new NextAction("whirlwind", ACTION_NORMAL + 2), NULL)));
 
@@ -428,10 +424,6 @@ void FuryWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "target critical health",
         NextAction::array(0, new NextAction("execute", ACTION_NORMAL + 4), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "sunder armor",
-        NextAction::array(0, new NextAction("sunder armor", ACTION_HIGH + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "bloodthirst",
@@ -807,10 +799,6 @@ void FuryWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "whirlwind",
         NextAction::array(0, new NextAction("whirlwind", ACTION_NORMAL + 3), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "sunder armor",
-        NextAction::array(0, new NextAction("sunder armor", ACTION_HIGH + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "heroic strike",

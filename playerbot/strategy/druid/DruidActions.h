@@ -370,7 +370,7 @@ namespace ai
 
 		virtual bool isUseful() override
 		{
-			return ai->HasAnyAuraOf(GetTarget(), "dire bear form", "bear form", "cat form", "travel form", "aquatic form", "flight form", "swift flight form", "moonkin form", "tree of life", NULL);
+			return ai->HasAnyAuraOf(GetTarget(), "dire bear form", "bear form", "cat form", "travel form", "aquatic form", "flight form", "swift flight form", "moonkin form", "tree of life", "tree of life form", NULL);
 		}
 
 		virtual bool isPossible() { return true; }
@@ -385,7 +385,7 @@ namespace ai
 
 		bool isUseful() override
 		{
-			return ai->HasAnyAuraOf(GetTarget(), "dire bear form", "bear form", "cat form", "travel form", "aquatic form", "flight form", "swift flight form", "tree of life", NULL);
+			return ai->HasAnyAuraOf(GetTarget(), "dire bear form", "bear form", "cat form", "travel form", "aquatic form", "flight form", "swift flight form", "tree of life", "tree of life form", NULL);
 		}
 	};
 

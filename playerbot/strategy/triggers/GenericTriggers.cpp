@@ -1095,9 +1095,9 @@ bool AtWarTrigger::IsActive()
     ReputationMgr& mgr = bot->GetReputationMgr();
 
 #ifndef MANGOSBOT_ONE
-    for (uint32 id = 0; id < sFactionStore.GetNumRows(); ++id)
+    for (auto const& [id, nativeTemplate] : sObjectMgr.GetFactionMap())
 #else
-    for (uint32 id = 0; id < sFactionStore.GetMaxEntry(); ++id)
+    for (auto const& [id, nativeTemplate] : sObjectMgr.GetFactionMap())
 #endif
     {
 #ifndef MANGOSBOT_ONE

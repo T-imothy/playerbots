@@ -56,7 +56,7 @@ bool ImbueWithStoneAction::Execute(Event& event)
             // Do not use Elemental Sharpening Stone outside instances
             if (stone && stone->GetProto())
             {
-                if (stone->GetProto()->DisplayInfoID == ELEMENTAL_SHARPENING_DISPLAYID && bot->GetInstanceId() == 0)
+                if (stone->GetProto()->DisplayInfoID == ELEMENTAL_SHARPENING_DISPLAYID && bot->GetMap()->IsContinent())
                     stone = nullptr;
             }
 
@@ -73,7 +73,7 @@ bool ImbueWithStoneAction::Execute(Event& event)
         // Do not use Elemental Sharpening Stone outside instances
         if (stone && stone->GetProto())
         {
-            if (stone->GetProto()->DisplayInfoID == ELEMENTAL_SHARPENING_DISPLAYID && bot->GetInstanceId() == 0)
+            if (stone->GetProto()->DisplayInfoID == ELEMENTAL_SHARPENING_DISPLAYID && bot->GetMap()->IsContinent())
                 stone = nullptr;
         }
 
@@ -121,7 +121,7 @@ bool ImbueWithStoneAction::isUseful()
         Item* stone = ai->FindStoneFor(secondaryWeapon);
         if (stone && stone->GetProto())
         {
-            if (stone->GetProto()->DisplayInfoID == ELEMENTAL_SHARPENING_DISPLAYID && bot->GetInstanceId() == 0)
+            if (stone->GetProto()->DisplayInfoID == ELEMENTAL_SHARPENING_DISPLAYID && bot->GetMap()->IsContinent())
                 stone = nullptr;
         }
 
@@ -138,7 +138,7 @@ bool ImbueWithStoneAction::isUseful()
             Item* stone = ai->FindStoneFor(mainWeapon);
             if (stone && stone->GetProto())
             {
-                if (stone->GetProto()->DisplayInfoID == ELEMENTAL_SHARPENING_DISPLAYID && bot->GetInstanceId() == 0)
+                if (stone->GetProto()->DisplayInfoID == ELEMENTAL_SHARPENING_DISPLAYID && bot->GetMap()->IsContinent())
                     stone = nullptr;
             }
 

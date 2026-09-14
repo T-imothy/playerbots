@@ -105,8 +105,7 @@ bool BankAction::Withdraw(Player* requester, const uint32 itemid)
     ResetBankActionItemCaches(ai, itemId, itemQualifier);
 
     ItemPosCountVec dest;
-    uint8 bagSlot;
-    InventoryResult msg = bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, pItem, bagSlot, false);
+    InventoryResult msg = bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, pItem, false);
 
     if (msg != EQUIP_ERR_OK)
     {
@@ -139,7 +138,7 @@ bool BankAction::Deposit(Player* requester, Item* pItem)
     ResetBankActionItemCaches(ai, itemId, itemQualifier);
 
     ItemPosCountVec dest;
-    uint8 bagSlot;
+    uint8 bagSlot = NULL_BAG;
     InventoryResult msg = bot->CanBankItem(NULL_BAG, NULL_SLOT, dest, pItem, false, bagSlot);
 
     if (msg != EQUIP_ERR_OK)
@@ -266,8 +265,8 @@ bool BankAction::AutoDeposit()
             continue;
 
         ItemPosCountVec dest;
-        uint8 bagSlot;
-        InventoryResult msg = bot->CanBankItem(NULL_BAG, NULL_SLOT, dest, item, false, bagSlot);
+        uint8 bagSlot = NULL_BAG;
+    InventoryResult msg = bot->CanBankItem(NULL_BAG, NULL_SLOT, dest, item, false, bagSlot);
 
         if (msg != EQUIP_ERR_OK)
             continue;
@@ -305,8 +304,7 @@ bool BankAction::AutoWithdraw()
             return false;        
 
         ItemPosCountVec dest;
-        uint8 bagSlot;
-        InventoryResult msg = bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, pItem, bagSlot, false);
+        InventoryResult msg = bot->CanStoreItem(NULL_BAG, NULL_SLOT, dest, pItem, false);
 
         if (msg != EQUIP_ERR_OK)
             return false;

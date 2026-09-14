@@ -5,7 +5,9 @@
 #include "Database/DatabaseEnv.h"
 #include "PlayerbotAI.h"
 
-PerformanceMonitor::PerformanceMonitor() 
+namespace bot_perf {
+
+PerformanceMonitor::PerformanceMonitor()
 {
 
 }
@@ -14,7 +16,7 @@ PerformanceMonitor::~PerformanceMonitor()
 {
 }
 
-std::unique_ptr<PerformanceMonitorOperation> PerformanceMonitor::start(PerformanceMetric metric, std::string name, PerformanceStack* stack, uint32 mapId, uint32 instanceId)
+std::unique_ptr<PerformanceMonitorOperation> PerformanceMonitor::start(PerformanceMetric metric, std::string_view name, PerformanceStack* stack, uint32 mapId, uint32 instanceId)
 {
     if (!sPlayerbotAIConfig.perfMonEnabled)
     {
@@ -31,17 +33,19 @@ std::unique_ptr<PerformanceMonitorOperation> PerformanceMonitor::start(Performan
     if (id == md->second.end())
         return nullptr;
 
+    // Only now is a real string worth building.
+    std::string const key(name);
     std::vector<std::string> localStack;
 
     // Build the key vector efficiently
     if (stack)
     {
-        stack->push_back(name);
+        stack->push_back(key);
         localStack = *stack;
     }
     else
     {
-        localStack = {name};
+        localStack = {key};
     }
 
     auto& pd = id->second[metric][localStack];
@@ -49,7 +53,7 @@ std::unique_ptr<PerformanceMonitorOperation> PerformanceMonitor::start(Performan
     return std::make_unique<PerformanceMonitorOperation>(pd, name, stack);
 }
 
-std::unique_ptr<PerformanceMonitorOperation> PerformanceMonitor::start(PerformanceMetric metric, std::string name, PlayerbotAI * ai)
+std::unique_ptr<PerformanceMonitorOperation> PerformanceMonitor::start(PerformanceMetric metric, std::string_view name, PlayerbotAI * ai)
 {
     if (!sPlayerbotAIConfig.perfMonEnabled) return NULL;
 
@@ -298,9 +302,11 @@ void PerformanceMonitor::Init(uint32 mapId, uint32 instanceId)
     {
         mapsData[mapId][instanceId];
     }
-}                       
+}
 
-PerformanceMonitorOperation::PerformanceMonitorOperation(PerformanceData& data, std::string name, PerformanceStack* stack) : data(data), name(name), stack(stack)
+} // namespace bot_perf — close before global PerformanceMonitorOperation impl
+
+PerformanceMonitorOperation::PerformanceMonitorOperation(PerformanceData& data, std::string_view name, PerformanceStack* stack) : data(data), name(name), stack(stack)
 {
     started = (std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now())).time_since_epoch();
 }

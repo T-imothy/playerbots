@@ -211,7 +211,7 @@ void HunterAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("explosive trap on target", ACTION_INTERRUPT), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "ranged high aoe",
+        "ranged medium aoe",
         NextAction::array(0, new NextAction("volley", ACTION_HIGH + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -479,6 +479,7 @@ void HunterStingRaidStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigge
 
 void HunterAspectStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("aspect of the wolf", NextAction::array(0, new NextAction("aspect of the wolf", ACTION_HIGH + 5), NULL)));
 #ifndef MANGOSBOT_ZERO
     triggers.push_back(new TriggerNode("hunter recover mana", NextAction::array(0, new NextAction("aspect of the viper", ACTION_HIGH + 6), NULL)));
 #endif
@@ -1080,10 +1081,6 @@ void HunterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("hunter's mark", ACTION_NORMAL + 6), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "kill command",
-        NextAction::array(0, new NextAction("kill command", ACTION_NORMAL + 6), NULL)));
-
-    triggers.push_back(new TriggerNode(
         "aimed shot",
         NextAction::array(0, new NextAction("aimed shot", ACTION_NORMAL + 5), NULL)));
 
@@ -1212,7 +1209,7 @@ void HunterAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("explosive trap on target", ACTION_INTERRUPT), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "ranged high aoe",
+        "ranged medium aoe",
         NextAction::array(0, new NextAction("volley", ACTION_HIGH + 3), NULL)));
 
     triggers.push_back(new TriggerNode(

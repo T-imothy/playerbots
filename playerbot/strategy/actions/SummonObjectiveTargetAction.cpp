@@ -1,3 +1,4 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "DungeonActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -99,7 +100,7 @@ Unit* DungeonAddTargetAction::GetSummonObjectiveTarget()
         if (!entryMatches || add->GetDistance(boss) > 100 ||
             !PossibleTargetsValue::IsValid(add, bot, false) ||
             !PossibleAttackTargetsValue::IsPossibleTarget(add, bot, sPlayerbotAIConfig.sightDistance, false)) continue;
-        Unit* source = ai->GetUnit(add->GetSpawnerGuid());
+        Unit* source = ai->GetUnit(ai::NativeSpawnerGuid(add));
         if (playerSummonSpell)
         {
             // Corrupt Soul expires before the player casts Draw Corrupted Soul.
@@ -110,7 +111,7 @@ Unit* DungeonAddTargetAction::GetSummonObjectiveTarget()
         {
             // Shaffar also starts with static beacons. Only ones already engaged
             // by this group qualify; a nearby idle beacon is never permission to pull.
-            if (!staticBeacon || !add->GetSpawnerGuid().IsEmpty() || !add->IsInCombat() ||
+            if (!staticBeacon || !ai::NativeSpawnerGuid(add).IsEmpty() || !add->IsInCombat() ||
                 !member(add->GetVictim()) || !member(boss->GetVictim())) continue;
         }
         if (addEntry == 30385 && add->HasAura(56102)) continue; // Unchosen volunteer.

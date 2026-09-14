@@ -4,6 +4,8 @@
 
 #include "PlayerbotLLMInterface.h"
 
+INSTANTIATE_SINGLETON_1(PlayerbotLLMInterface);
+
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -13,7 +15,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <thread>
-#include "Log/Log.h"
+#include "Log.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotTextMgr.h"
 #ifdef _WIN32

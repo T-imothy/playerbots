@@ -40,7 +40,7 @@ namespace ai
                     if (!HunterAmmoReady(ai)) return false;
                     const auto bounds = HunterShotRange(ai, target);
                     const float min = bounds.first + 1.0f;
-                    if (bot->GetDistance(target, true, DIST_CALC_NONE) >= min * min) return false;
+                    if (bot->GetDistance(target, DIST_CALC_NONE) >= min * min) return false;
                     // A fast pursuer requires melee fallback; an immobilized
                     // enemy or one held by somebody else allows spacing out.
                     return target->IsImmobilizedState() || target->GetVictim() != bot ||
@@ -49,23 +49,17 @@ namespace ai
 
                 if (ai->HasStrategy("follow", BotState::BOT_STATE_COMBAT) ||
                     ai->HasStrategy("guard", BotState::BOT_STATE_COMBAT) ||
-                    ai->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
                     ai->HasStrategy("wander", BotState::BOT_STATE_COMBAT))
                     if(bot->getClass() != CLASS_HUNTER || sServerFacade.GetDistance2d(bot, target) > 5.0f)
                         return false;                   
 
                 const bool canMove = !PossibleAttackTargetsValue::HasBreakableCC(target, bot) && !PossibleAttackTargetsValue::HasUnBreakableCC(target, bot);
 
-                // Don't move if the target is targeting you and you can't add distance between you and the target (how fast bot runs)
+                // Don't move if the target is targeting you and you can't add distance between you and the target
                 if (target->GetTarget() == bot && canMove && target->GetSpeedInMotion() > (bot->GetSpeedInMotion() * 0.65))
                 {
                     return false;
                 }
-
-                // Don't move if our flee range (how far bot runs) is too low to escape attack distance
-                // This is good if you don't want a bot to run away from an enemy that can't be cc or tanked
-                if (ai->GetRange("flee") <= ATTACK_DISTANCE)
-                    return false;
 
                 float const combatReach = bot->GetCombinedCombatReach(target, false);
                 float const minDistance = ai->GetRange("spell") + combatReach;
@@ -92,6 +86,12 @@ namespace ai
 
                 if (bot->GetMap()->IsRaid())
                     isRaid = true;
+
+                // Casters have no minimum range — only flee if the mob is actually targeting/attacking this bot.
+                // Hunters are excluded: their ranged weapons have a ~8 yd minimum range so they must
+                // maintain distance even when the mob is focused on someone else.
+                if (bot->getClass() != CLASS_HUNTER && !isVictim && target->GetTarget() != bot)
+                    return false;
 
                 //if (isBoss || isRaid)
                 //    return sServerFacade.IsDistanceLessThan(targetDistance, (ai->GetRange("spell") + combatReach) / 2);
@@ -469,8 +469,7 @@ namespace ai
 
         virtual bool IsActive() override
         {
-            // we can't let them run away from the targets we need to cc at the start
-            if (WaitForAttackStrategy::ShouldWait(ai) && !AI_VALUE(Unit*, "rti cc target"))
+            if (WaitForAttackStrategy::ShouldWait(ai))
             {
                 // Do not move if stay strategy is set
                 if (!ai->HasStrategy("stay", ai->GetState()))

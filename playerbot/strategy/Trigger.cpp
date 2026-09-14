@@ -2,7 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "Trigger.h"
 #include "Action.h"
-#include "Entities/Unit.h"
+#include "Objects/Unit.h"
 #include "Value.h"
 
 using namespace ai;

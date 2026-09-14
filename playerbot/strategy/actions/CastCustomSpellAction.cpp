@@ -186,7 +186,7 @@ bool CastCustomSpellAction::Execute(Event& event)
 
     std::ostringstream replyStr;
     std::map<std::string, std::string> replyArgs;
-    if (!pSpellInfo->EffectItemType[0] || (pSpellInfo->EffectItemType[0] && pSpellInfo->Effect[0] != SPELL_EFFECT_CREATE_ITEM))
+    if (!pSpellInfo->EffectItemType[0])
     {
         replyStr << BOT_TEXT("cast_spell_command_spell");
 
@@ -203,7 +203,7 @@ bool CastCustomSpellAction::Execute(Event& event)
         else
         {
 
-            ItemPrototype const* proto = ObjectMgr::GetItemPrototype(newItemId);
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(newItemId);
             replyArgs["%spell"] = ChatHelper::formatItem(proto);
         }
     }    
@@ -691,7 +691,7 @@ bool CraftRandomItemAction::Execute(Event& event)
             if (!newItemId)
                 continue;
 
-            ItemPrototype const* proto = ObjectMgr::GetItemPrototype(newItemId);
+            ItemPrototype const* proto = sObjectMgr.GetItemPrototype(newItemId);
 
             if (!proto)
                 continue;
@@ -738,7 +738,7 @@ bool DisenchantRandomItemAction::Execute(Event& event)
 
     for (auto& item: items)
     {
-        ItemPrototype const* proto = ObjectMgr::GetItemPrototype(item);
+        ItemPrototype const* proto = sObjectMgr.GetItemPrototype(item);
 
         if (!proto)
             continue;

@@ -1,3 +1,4 @@
+#include "playerbot/NativeCombatQueries.h"
 
 #include "playerbot/playerbot.h"
 #include "GenericActions.h"
@@ -332,7 +333,7 @@ bool CastSpellAction::isUseful()
 
         // At even odds or worse, do not cast a reflectable spell. Use the
         // native school-specific chance and reflectability, not a boss ID.
-        if (spellTarget->GetReflectChance(GetSpellSchoolMask(pSpellInfo)) >= 50.0f && IsReflectableSpell(pSpellInfo))
+        if (ai::NativeReflectChance(spellTarget, GetSpellSchoolMask(pSpellInfo)) >= 50.0f && IsReflectableSpell(pSpellInfo))
             return false;
     }
 

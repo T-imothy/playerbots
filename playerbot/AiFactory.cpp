@@ -13,10 +13,10 @@
 #include "strategy/hunter/HunterAiObjectContext.h"
 #include "strategy/rogue/RogueAiObjectContext.h"
 #include "strategy/deathknight/DKAiObjectContext.h"
-#include "Entities/Player.h"
+#include "Objects/Player.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomPlayerbotMgr.h"
-#include "BattleGround/BattleGroundMgr.h"
+#include "Battlegrounds/BattleGroundMgr.h"
 
 AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* ai)
 {
@@ -300,7 +300,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
 
     if (!player->InBattleGround())
     {
-        combatEngine->addStrategies("racials", "default", "duel", "pvp", NULL);
+        combatEngine->addStrategies("racials", "turtle classes", "default", "duel", "pvp", NULL);
     }
 
     switch (player->getClass())
@@ -644,7 +644,7 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
             combatEngine->addStrategy("arena");
         }
 #endif
-        combatEngine->addStrategies("boost", "racials", "default", "aoe", "dps assist", "pvp", NULL);
+        combatEngine->addStrategies("boost", "racials", "turtle classes", "default", "aoe", "dps assist", "pvp", NULL);
         combatEngine->removeStrategy("custom::say");
         combatEngine->removeStrategy("flee");
         combatEngine->removeStrategy("threat");
@@ -906,18 +906,18 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
 
     if (!player->InBattleGround())
     {
-        PlayerbotAI* ai = player->GetPlayerbotAI();
+        PlayerbotAI* ai = GetBotAI(player);
         Player* master = ai ? ai->GetMaster() : nullptr;
 
-        if (master && !master->GetPlayerbotAI())
+        if (master && !GetBotAI(master))
         {
             const char* wanderFollow = sPlayerbotAIConfig.useWanderAsDefaultFollowStrategy ? "wander" : "follow";
-            nonCombatEngine->addStrategies("racials", "nc", "food", wanderFollow, "default", "quest", "loot", "gather", "duel", "emote", "buff", "mount", NULL);
+            nonCombatEngine->addStrategies("racials", "turtle classes", "nc", "food", wanderFollow, "default", "quest", "loot", "gather", "duel", "emote", "buff", "mount", NULL);
         }
         else
         {
             const char* wanderFollow = sPlayerbotAIConfig.useWanderAsDefaultFollowStrategy ? "wander" : "follow";
-            nonCombatEngine->addStrategies("racials", "nc", "food", wanderFollow, "default", "quest", "loot", "gather", "duel", "emote", "buff", "mount", NULL);
+            nonCombatEngine->addStrategies("racials", "turtle classes", "nc", "food", wanderFollow, "default", "quest", "loot", "gather", "duel", "emote", "buff", "mount", NULL);
         }
     }
 
@@ -979,7 +979,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                 nonCombatEngine->addStrategy("bg");
             }
 
-            if(!master || master->GetPlayerbotAI())
+            if(!master || GetBotAI(master))
             {
                 nonCombatEngine->addStrategy("maintenance");
             }
@@ -993,7 +993,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
         {
             if (master)
             {
-                if (master->GetPlayerbotAI() || sRandomPlayerbotMgr.IsFreeBot(player))
+                if (GetBotAI(master) || sRandomPlayerbotMgr.IsFreeBot(player))
                 {
                     nonCombatEngine->addStrategy("collision");
                     nonCombatEngine->addStrategy("grind");
@@ -1007,7 +1007,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
                         nonCombatEngine->addStrategy("rpg");
                     }
 
-                    if (master->GetPlayerbotAI())
+                    if (GetBotAI(master))
                     {
                         nonCombatEngine->addStrategy("maintenance");
                     }
@@ -1031,7 +1031,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     // Battleground switch
     if (player->InBattleGround())
     {
-        nonCombatEngine->addStrategies("racials", "nc", "default", "buff", "food", "mount", "collision", "dps assist", "attack tagged", "emote", NULL);
+        nonCombatEngine->addStrategies("racials", "turtle classes", "nc", "default", "buff", "food", "mount", "collision", "dps assist", "attack tagged", "emote", NULL);
         nonCombatEngine->removeStrategy("custom::say");
         nonCombatEngine->removeStrategy("travel");
         nonCombatEngine->removeStrategy("tfish");

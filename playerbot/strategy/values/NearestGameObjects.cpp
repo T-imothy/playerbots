@@ -3,9 +3,9 @@
 #include "NearestGameObjects.h"
 
 #include "playerbot/ServerFacade.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 using namespace MaNGOS;
@@ -93,12 +93,10 @@ std::list<ObjectGuid> NearestDynamicObjects::Calculate()
 {
     std::list<DynamicObject*> targets;
 
-    // Remove this when updating wotlk core
-#ifndef MANGOSBOT_TWO
-    AnyDynamicObjectInObjectRangeCheck u_check(bot, range);
-    MaNGOS::DynamicObjectListSearcher<AnyDynamicObjectInObjectRangeCheck> searcher(targets, u_check);
-    Cell::VisitAllObjects((const WorldObject*)bot, searcher, range);
-#endif
+    // Penqle has no DynamicObjectListSearcher grid template — dynamic objects
+    // are not iterated via grid searchers in this codebase. Leave the list
+    // empty; the bot strategy degrades gracefully (returns empty list) until
+    // a host hook lands.
 
     std::list<ObjectGuid> result;
     for (std::list<DynamicObject*>::iterator tIter = targets.begin(); tIter != targets.end(); ++tIter)

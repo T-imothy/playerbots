@@ -3,7 +3,7 @@
 #include "TellTargetAction.h"
 
 #include "playerbot/ServerFacade.h"
-#include "Combat/ThreatManager.h"
+#include "Threat/ThreatManager.h"
 
 using namespace ai;
 

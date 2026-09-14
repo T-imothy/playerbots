@@ -1,16 +1,17 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "EncounterSpellPolicy.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 bool ai::HasEncounterDamagePause(Player* bot)
 {
     if (HasHakkarPoisonPreparation(bot)) return true;
 #ifdef MANGOSBOT_TWO
     if (!bot || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() ||
-        bot->HasCharmer() || bot->IsBeingTeleported() || !bot->GetPlayerbotAI() ||
-        bot->GetPlayerbotAI()->IsRealPlayer()) return false;
+        bot->HasCharmer() || bot->IsBeingTeleported() || !GetBotAI(bot) ||
+        GetBotAI(bot)->IsRealPlayer()) return false;
     uint32 entry = 0;
     if (bot->GetMapId() == 575) entry = 26861; // King Ymiron
     else if (bot->GetMapId() == 632) entry = 36502; // Devourer of Souls
@@ -41,7 +42,7 @@ bool ai::HasEncounterThreatPause(Player* bot)
 {
     if (!bot || bot->GetMapId() != 309 || !bot->IsInWorld() || !bot->IsAlive() ||
         !bot->IsInCombat() || bot->HasCharmer() || bot->IsBeingTeleported() ||
-        !bot->GetPlayerbotAI() || bot->GetPlayerbotAI()->IsRealPlayer()) return false;
+        !GetBotAI(bot) || GetBotAI(bot)->IsRealPlayer()) return false;
     const SpellAuraHolder* gaze = bot->GetSpellAuraHolder(24314);
     Unit* boss = gaze ? gaze->GetCaster() : nullptr;
     // Native Mandokir compares the watched player's threat when this aura ends.
@@ -55,7 +56,7 @@ bool ai::HasEncounterWeaponPause(Player* bot)
 {
 #ifdef MANGOSBOT_TWO
     if (!bot || bot->GetMapId() != 631 || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() ||
-        bot->HasCharmer() || bot->IsBeingTeleported() || !bot->GetPlayerbotAI() || bot->GetPlayerbotAI()->IsRealPlayer()) return false;
+        bot->HasCharmer() || bot->IsBeingTeleported() || !GetBotAI(bot) || GetBotAI(bot)->IsRealPlayer()) return false;
     const SpellAuraHolder* chilled = bot->GetSpellAuraHolder(70106);
     const SpellAuraHolder* chill = bot->GetSpellAuraHolder(70107);
     Unit* boss = chill ? chill->GetCaster() : nullptr;
@@ -75,7 +76,7 @@ bool ai::ShouldAvoidEncounterOffense(Player* bot, Unit* caster, const SpellEntry
     // ranged auto attacks, but not ordinary spells or ranged special shots.
     if (caster == bot && !positive && HasEncounterWeaponPause(bot) &&
         !spell->HasAttribute(SPELL_ATTR_EX3_SUPPRESS_CASTER_PROCS) &&
-        (spell->DmgClass == SPELL_DAMAGE_CLASS_MELEE || spell->HasAttribute(SPELL_ATTR_EX2_AUTO_REPEAT))) return true;
+        (spell->DmgClass == SPELL_DAMAGE_CLASS_MELEE || spell->HasAttribute(SPELL_ATTR_EX2_AUTOREPEAT_FLAG))) return true;
     if (caster == bot && HasEncounterSpellBomb(bot))
     {
         // A melee ability can still apply a bleed: later periodic ticks use a
@@ -90,7 +91,7 @@ bool ai::ShouldAvoidEncounterOffense(Player* bot, Unit* caster, const SpellEntry
         // attacks (including wands), and respects caster-proc suppression.
         if (!spell->HasAttribute(SPELL_ATTR_EX3_SUPPRESS_CASTER_PROCS) &&
             spell->DmgClass != SPELL_DAMAGE_CLASS_MELEE &&
-            !(spell->HasAttribute(SPELL_ATTR_EX2_AUTO_REPEAT) &&
+            !(spell->HasAttribute(SPELL_ATTR_EX2_AUTOREPEAT_FLAG) &&
                 (spell->DmgClass == SPELL_DAMAGE_CLASS_RANGED || !positive))) return true;
     }
     if (caster != bot || !HasEncounterThreatPause(bot)) return false;
@@ -106,7 +107,7 @@ bool ai::HasEncounterSpellBomb(Player* bot)
 #ifndef MANGOSBOT_ZERO
     if (!bot || bot->GetMapId() != 556 || !bot->IsInWorld() || !bot->IsAlive() ||
         !bot->IsInCombat() || bot->HasCharmer() || bot->IsBeingTeleported() ||
-        !bot->GetPlayerbotAI() || bot->GetPlayerbotAI()->IsRealPlayer()) return false;
+        !GetBotAI(bot) || GetBotAI(bot)->IsRealPlayer()) return false;
     const SpellAuraHolder* bomb = bot->GetSpellAuraHolder(40303);
     Unit* boss = bomb ? bomb->GetCaster() : nullptr;
     return boss && boss->GetEntry() == 23035 && boss->IsInWorld() && boss->IsAlive() &&
@@ -145,12 +146,12 @@ bool ai::StopUnsafeEncounterOffense(Player* bot, Unit* caster)
     {
         Spell* cast = caster->GetCurrentSpell(slot);
         // Do not attempt to recall missiles that have already launched.
-        if (!cast || cast->getState() == SPELL_STATE_FINISHED || cast->getState() == SPELL_STATE_TRAVELING ||
+        if (!cast || cast->getState() == SPELL_STATE_FINISHED || cast->getState() == SPELL_STATE_DELAYED ||
             !cast->m_spellInfo || !cast->CanBeInterrupted() ||
             !ShouldAvoidEncounterOffense(bot, caster, cast->m_spellInfo, cast->m_targets.getUnitTarget())) continue;
         const uint32 spellId = cast->m_spellInfo->Id;
         caster->InterruptSpell(slot);
-        if (caster == bot) bot->GetPlayerbotAI()->SpellInterrupted(spellId);
+        if (caster == bot) GetBotAI(bot)->SpellInterrupted(spellId);
         stopped = true;
     }
     return stopped;

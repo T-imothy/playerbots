@@ -38,8 +38,12 @@ bool ai::CanPlanWarriorSpell(PlayerbotAI* ai, const std::string& name, Unit* tar
         Player* bot = ai->GetBot();
         uint32 retained = 0;
         if (bot->GetShapeshiftForm() == FORM_DEFENSIVESTANCE)
-            if (Aura* aura = bot->GetOverrideScript(831))
-                retained += aura->GetModifier()->m_amount * 10;
+            for (Aura* aura : bot->GetAurasByType(SPELL_AURA_OVERRIDE_CLASS_SCRIPTS))
+                if (aura->GetModifier()->m_miscvalue == 831)
+                {
+                    retained += aura->GetModifier()->m_amount * 10;
+                    break;
+                }
 #ifdef MANGOSBOT_ZERO
         for (Aura* aura : bot->GetAurasByType(SPELL_AURA_OVERRIDE_CLASS_SCRIPTS))
         {

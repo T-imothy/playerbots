@@ -1,0 +1,10 @@
+{
+  "source": "existing Turtle feature/cmangos-ahbot implementation, September 6-8",
+  "scope": "auction service only; no retired bot AI",
+  "sha256": {
+    "AhBot.cpp": "26cd1f603ececc18e2a93f5c42ab7c3d34d40765977020c1b075de6541cb0236",
+    "AhBot.h": "2f96ac6a5ca3d94dd7ba8f3e16ed6b33b106abc015a31255db5e232f7986ab41",
+    "MarketPolicy.h": "d846eee66512c06529dafef79a67a2d0971f0b1349030eb395960f77634a46d3",
+    "ahbot.conf.dist.in": "d9b529910b276712395d6c0bb3436f4bfa14c72b6b4aca9558be377f6affd01d"
+  }
+}

@@ -7,6 +7,7 @@ namespace ai
     class SecurityCheckAction : public Action
     {
     public:
+        bool RequiresWorldOwner() const override;
         SecurityCheckAction(PlayerbotAI* ai) : Action(ai, "security check") {}
         virtual bool isUseful() override;
         virtual bool Execute(Event& event) override;

@@ -3,16 +3,17 @@
 #include "UseMeetingStoneAction.h"
 #include "playerbot/BotRecruitment.h"
 #include "RitualSummonAction.h"
+#include "UldamanAltarAction.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 
-#include "BattleGround/BattleGround.h"
-#include "BattleGround/BattleGroundMgr.h"
+#include "Battlegrounds/BattleGround.h"
+#include "Battlegrounds/BattleGroundMgr.h"
 #include "LFG/LFGQueue.h"
 
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 #include "playerbot/strategy/values/PositionValue.h"
 
@@ -28,6 +29,9 @@ bool UseMeetingStoneAction::Execute(Event& event)
     p.rpos(0);
     ObjectGuid guid;
     p >> guid;
+
+    if (requester->IsInWorld() && requester->GetMapId() == 70 &&
+        AssistUldamanAltarAction::Start(ai, requester, guid)) return true;
 
 	if (requester->GetSelectionGuid() && requester->GetSelectionGuid() != bot->GetObjectGuid())
 		return false;
@@ -84,7 +88,7 @@ private:
 bool SummonAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    if (requester && requester->isRealPlayer())
+    if (requester && IsRealPlayer(requester))
         return BotRecruitment::Queue(requester, bot, "summon");
     return ExecuteImmediate(event);
 }
@@ -95,8 +99,17 @@ bool SummonAction::ExecuteImmediate(Event& event)
     if (!requester || !requester->IsInWorld() || requester->IsBeingTeleported())
         return false;
 
+    // Say something either way. The meeting stone and innkeeper routes below
+    // both report what happened; this one used to return in silence, which is
+    // indistinguishable from the command not arriving at all.
     if (requester->GetSession()->GetSecurity() > SEC_PLAYER || sPlayerbotAIConfig.nonGmFreeSummon)
-        return Teleport(requester, requester, bot);
+    {
+        if (!Teleport(requester, requester, bot))
+            return false;
+
+        ai->TellPlayerNoFacing(requester, BOT_TEXT("hello"));
+        return true;
+    }
 
     if(bot->GetMapId() == requester->GetMapId() && !WorldPosition(bot).canPathTo(requester, bot) && bot->GetDistance(requester) < sPlayerbotAIConfig.sightDistance) //We can't walk to requester so fine to short-range teleport.
         return Teleport(requester, requester, bot);
@@ -133,11 +146,15 @@ bool SummonAction::SummonUsingNpcs(Player* requester, Player *summoner, Player *
 {
     if (!sPlayerbotAIConfig.summonAtInnkeepersEnabled)
         return false;
+    // ManTech summon direction: a bot command must not consume the human's
+    // hearthstone cooldown by falling back to a reverse summon.
+    if (!player || IsRealPlayer(player))
+        return false;
 
     // The bare summon command is only allowed to move the bot to its
     // requester.  Never consume a real player's hearthstone cooldown as an
     // implicit reverse-summon fallback.
-    if (player->isRealPlayer())
+    if (IsRealPlayer(player))
         return false;
 
     std::list<Unit*> targets;
@@ -164,9 +181,10 @@ void SummonAction::CancelAutonomousQueues(Player* bot)
     // Cancel only the bot's own queue entries, never the requester's group queue.
     ObjectGuid const guid = bot->GetObjectGuid();
 #ifdef MANGOSBOT_ZERO
-    sWorld.GetLFGQueue().GetMessager().AddMessage([guid](LFGQueue* queue)
+    EventOwner identity(bot);
+    sWorld.AddAsyncTask([guid, identity]()
     {
-        queue->RemovePlayerFromQueue(guid, PLAYER_CLIENT_LEAVE);
+        if (identity.Get()) sWorld.GetLFGQueue().RemovePlayerFromQueue(guid, PLAYER_CLIENT_LEAVE);
     });
 #elif defined(MANGOSBOT_ONE)
     sWorld.GetLFGQueue().GetMessager().AddMessage([guid](LFGQueue* queue)
@@ -205,7 +223,7 @@ void SummonAction::CancelAutonomousQueues(Player* bot)
 
 bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 {
-    if (!requester || !summoner || !player || player != bot || player->isRealPlayer() ||
+    if (!requester || !summoner || !player || player != bot || IsRealPlayer(player) ||
         !summoner->IsInWorld() || !player->IsInWorld() ||
         !summoner->GetSession() || !player->GetSession() ||
         summoner->GetSession()->isLogingOut() || player->GetSession()->isLogingOut())
@@ -232,13 +250,26 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
         float followAngle = GetFollowAngle();
         for (double angle = followAngle - M_PI; angle <= followAngle + M_PI; angle += M_PI / 4)
         {
+            // How far the ground beside the summoner may sit from the ground
+            // under the summoner before the spot is rejected. A slope gives a
+            // metre or two over the follow distance; a floor that was missed
+            // gives a lot more.
+            static float const MAX_GROUND_DROP = 5.0f;
+
             uint32 mapId = summoner->GetMapId();
             float x = summoner->GetPositionX() + cos(angle) * ai->GetRange("follow");
             float y = summoner->GetPositionY() + sin(angle) * ai->GetRange("follow");
             float z = summoner->GetPositionZ();
             summoner->UpdateGroundPositionZ(x, y, z);
 
-            if (!summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
+            // UpdateGroundPositionZ asks Map::GetHeight for the ground under
+            // that spot, which is not always the floor the summoner is standing
+            // on: in front of an instance portal, on a platform or a bridge it
+            // returns the terrain below. The bot then arrives underneath the
+            // world, cannot path anywhere and just stands there.
+            bool const badGround = std::fabs(z - summoner->GetPositionZ()) > MAX_GROUND_DROP;
+
+            if (badGround || !summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
             {
                 x = summoner->GetPositionX();
                 y = summoner->GetPositionY();
@@ -252,14 +283,16 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
                 // Only the explicitly summoned bot is interrupted. Native cleanup
                 // restores possession/mover and taxi state; TeleportTo detaches a
                 // transport passenger and handles combat, pets and BG departure.
-                player->BreakCharmIncoming();
-                player->BreakCharmOutgoing();
+                player->RemoveCharmAuras();
+                player->RemoveSpellsCausingAura(SPELL_AURA_MOD_POSSESS_PET);
+                player->Uncharm();
                 if (player->HasCharmer())
                 {
                     ai->TellPlayerNoFacing(requester, "The server could not release my controlling charm.");
                     return false;
                 }
-                if (!player->TaxiFlightInterrupt() && player->IsTaxiFlying())
+                player->TaxiFlightInterrupt();
+                if (player->IsTaxiFlying())
                     player->OnTaxiFlightEject();
                 player->InterruptNonMeleeSpells(false);
 

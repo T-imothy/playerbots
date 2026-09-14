@@ -1,4 +1,4 @@
-#include "Entities/ObjectGuid.h"
+#include "ObjectGuid.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotAI.h"
@@ -7,25 +7,25 @@
 //#include "playerbot/PlayerbotAIConfig.h"
 //#include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/RandomPlayerbotMgr.h"
-//#include "../../../../game/LFGMgr.h"
+//#include "LFG/LFGMgr.h"
 //#include "strategy/values/PositionValue.h"
 //#include "playerbot/ServerFacade.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
-#include "Entities/Object.h"
-#include "Globals/ObjectMgr.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
+#include "Objects/Object.h"
+#include "ObjectMgr.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
 #include "playerbot/strategy/actions/LogLevelAction.h"
 #include "playerbot/strategy/values/LastSpellCastValue.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "MovementActions.h"
-#include "MotionGenerators/MotionMaster.h"
-#include "MotionGenerators/MovementGenerator.h"
+#include "Movement/MotionMaster.h"
+#include "Movement/MovementGenerator.h"
 //#include "playerbot/strategy/values/PositionValue.h"
-#include "MotionGenerators/TargetedMovementGenerator.h"
-#include "BattleGround/BattleGround.h"
-#include "BattleGround/BattleGroundMgr.h"
+#include "Movement/TargetedMovementGenerator.h"
+#include "Battlegrounds/BattleGround.h"
+#include "Battlegrounds/BattleGroundMgr.h"
 #include "BattleGroundJoinAction.h"
 #ifndef MANGOSBOT_ZERO
 #ifdef CMANGOS
@@ -39,13 +39,93 @@
 using namespace ai;
 
 
+
+namespace
+{
+    // Shared by both join paths on purpose. BGJoinAction and FreeBGJoinAction carry
+    // near-identical copies of this decision, and the first attempt at this limit
+    // went into one of them only - the free bots, which are the entire population on
+    // an idle realm, went through the other and multiplied as before.
+    // Counting who is queuing is not the same as counting matches. The moment a
+    // match starts its players leave the queue, the count falls back to zero and
+    // the next wave queues up behind it - which is how three Warsong instances
+    // formed while a queue limit was supposedly in place. Count the matches.
+    uint32 CountRunningBattlegrounds(BattleGroundTypeId bgTypeId, BattleGroundBracketId bracketId)
+    {
+        uint32 running = 0;
+        for (auto it = sBattleGroundMgr.GetBattleGroundsBegin(bgTypeId);
+             it != sBattleGroundMgr.GetBattleGroundsEnd(bgTypeId); ++it)
+        {
+            BattleGround* bg = it->second;
+
+            // Templates live in their own container, but guard anyway - a
+            // template has no map and therefore no instance id.
+            if (!bg || !bg->GetInstanceID())
+                continue;
+
+            if (bg->GetBracketId() != bracketId)
+                continue;
+
+            // One that is already handing out its rewards is not competition.
+            if (bg->GetStatus() == STATUS_WAIT_LEAVE)
+                continue;
+
+            ++running;
+        }
+
+        return running;
+    }
+
+    bool BotBattlegroundLimitReached(uint32 bgTypeId, uint32 bracketId, bool isArena, bool hasPlayers,
+                                     uint32 bgCount, uint32 bracketSize, uint32 teamCount)
+    {
+        // Arenas are limited by instance count alone: their team slots are indexed by
+        // rating rather than faction, so a per-team number would not mean the same thing.
+        // A configured zero has to reach through even for an arena - that is the
+        // switch which takes a queue away from bots entirely, and Blood Ring needs
+        // it. Being the one uncapped queue, bots drained into it: its matches went
+        // from a 60 minute average to eight hours (longest 24h) while Warsong fell
+        // from 217 matches a day to 12 and Arathi from 168 to 5. Bots that go in do
+        // not come out - sampled five minutes apart they sit on identical
+        // coordinates with identical health, while open world bots move normally.
+        const int32 configured = sPlayerbotAIConfig.GetBgBotTeamCap(bgTypeId);
+        const int32 cap = (isArena && configured != 0) ? -1 : configured;
+
+        // Zero switches a battleground off for bots outright, whether or not anyone
+        // real is queuing. Sunnyglade Valley is disabled from client patch 1.18.1
+        // onwards while its template is still in the world database.
+        if (cap == 0)
+            return true;
+
+        if (hasPlayers)
+            return false;
+
+        // Nobody real is waiting for this bracket, so one match of it is enough.
+        if (CountRunningBattlegrounds((BattleGroundTypeId)bgTypeId, (BattleGroundBracketId)bracketId)
+                >= sPlayerbotAIConfig.bgMaxInstancesPerBracket)
+            return true;
+
+        // And do not let a second one fill up behind the first while it is still
+        // forming - at that point it has no instance yet and the counter above
+        // cannot see it.
+        if (bgCount >= bracketSize)
+            return true;
+
+        // Hold the bot side below the template maximum, so a player who queues while
+        // this is running finds a free slot in it instead of starting a second one.
+        return cap > 0 && (int32)teamCount >= cap;
+    }
+}
+
 bool BGJoinAction::Execute(Event& event)
 {
     uint32 queueType = AI_VALUE(uint32, "bg type");
     if (!queueType) // force join to fill bg
     {
         if (bgList.empty())
+        {
             return false;
+        }
 
         BattleGroundQueueTypeId queueTypeId = (BattleGroundQueueTypeId)bgList[urand(0, bgList.size() - 1)];
         BattleGroundTypeId bgTypeId = sServerFacade.BgTemplateId(queueTypeId);
@@ -137,7 +217,8 @@ bool BGJoinAction::Execute(Event& event)
         sPlayerbotAIConfig.logEvent(ai, "BGJoinAction", _bgType, std::to_string(queueTypeId));
     }
 
-   return JoinQueue(queueType);
+   bool joinResult = JoinQueue(queueType);
+   return joinResult;
 }
 
 #ifndef MANGOSBOT_ZERO
@@ -204,10 +285,10 @@ bool BGJoinAction::gatherArenaTeam(ArenaType type)
 
         if (member)
         {
-            if (!member->GetPlayerbotAI())
+            if (!GetBotAI(member))
                 continue;
 
-            if (member->GetGroup() && member->GetPlayerbotAI()->HasRealPlayerMaster())
+            if (member->GetGroup() && GetBotAI(member)->HasRealPlayerMaster())
                 continue;
 
             if (!sPlayerbotAIConfig.IsInRandomAccountList(member->GetSession()->GetAccountId()))
@@ -224,7 +305,7 @@ bool BGJoinAction::gatherArenaTeam(ArenaType type)
 
             member->TeleportTo(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), 0);
 
-            member->GetPlayerbotAI()->Reset();
+            GetBotAI(member)->Reset();
         }
 
         if (member)
@@ -283,7 +364,7 @@ bool BGJoinAction::gatherArenaTeam(ArenaType type)
         if (member->GetLevel() < DEFAULT_MAX_LEVEL)
             continue;
 
-        if (!member->GetPlayerbotAI())
+        if (!GetBotAI(member))
             continue;
 
         if (member->GetGroup() == leaderGroup)
@@ -292,7 +373,7 @@ bool BGJoinAction::gatherArenaTeam(ArenaType type)
         if (!leaderGroup->AddMember(ObjectGuid(HIGHGUID_PLAYER, *i), member->GetName()))
             continue;
 
-        member->GetPlayerbotAI()->Reset(true);
+        GetBotAI(member)->Reset(true);
 
         if (!member->IsWithinDistInMap(bot, sPlayerbotAIConfig.sightDistance, false))
             member->TeleportTo(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), 0);
@@ -424,11 +505,9 @@ bool BGJoinAction::shouldJoinBg(BattleGroundQueueTypeId queueTypeId, BattleGroun
 
     uint32 TeamId = bot->GetTeam() == ALLIANCE ? 0 : 1;
 
-    //if (!hasPlayers && !isArena)
-    //{
-    //    if (BgCount >= bg->GetMaxPlayers())
-    //        return false;
-    //}
+    if (BotBattlegroundLimitReached(bgTypeId, bracketId, isArena, hasPlayers, BgCount, BracketSize,
+                                    TeamId == 0 ? ACount : HCount))
+        return false;
 
 #ifndef MANGOSBOT_ZERO
     if (isArena)
@@ -562,7 +641,7 @@ bool BGJoinAction::isUseful()
 #endif
 
     // do not try if with player master or in combat/group
-    if (bot->GetPlayerbotAI()->HasActivePlayerMaster())
+    if (GetBotAI(bot)->HasActivePlayerMaster())
         return false;
 
     //if (bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->GetObjectGuid()))
@@ -665,11 +744,13 @@ bool BGJoinAction::JoinQueue(uint32 type)
     uint32 TeamId = GetTeamIndexByTeamId(bot->GetTeam());
 
     // check if already in queue
-    if (bot->InBattleGroundQueueForBattleGroundQueueType(queueTypeId))
+    bool alreadyQueued = bot->InBattleGroundQueueForBattleGroundQueueType(queueTypeId);
+    bool hasAccess = bot->GetBGAccessByLevel(bgTypeId);
+    if (alreadyQueued)
         return false;
 
     // check bg req level
-    if (!bot->GetBGAccessByLevel(bgTypeId))
+    if (!hasAccess)
         return false;
 
     // get BattleMaster unit
@@ -714,18 +795,29 @@ bool BGJoinAction::JoinQueue(uint32 type)
 
    // get battlemaster
    Unit* unit = ai->GetUnit(AI_VALUE2(CreatureDataPair const*, "bg master", bgTypeId));
-#ifndef MANGOSBOT_TWO
-   if (!unit)
-#else
+#ifdef MANGOSBOT_TWO
    if (!unit && isArena)
-#endif
    {
        sLog.outDetail("Bot %d could not find Battlemaster to join", bot->GetGUIDLow());
        return false;
    }
+#endif
+   // Battlemaster NPC may not be loaded/active (bots scattered across the world).
+   // The server itself accepts guid raw value 1337 as a queue-via-command bypass
+   // (see WorldSession::HandleBattlemasterJoinOpcode, queuedviaCommand check) -
+   // use that instead of requiring a physically loaded Battlemaster Unit.
+   ObjectGuid bmFallbackGuid = ObjectGuid(uint64(1337));
 // in wotlk only arena requires battlemaster guid
 #ifndef MANGOSBOT_TWO
-   ObjectGuid guid = unit->GetObjectGuid();
+   // Always the bypass, never the cached Battlemaster's own guid. A bot only
+   // needs one to be loaded nearby for "bg master" to hold a real guid, and
+   // sending that makes WorldSession::HandleBattlemasterJoinOpcode treat the
+   // request as a real click: it then runs GetNPCIfCanInteractWith, which a bot
+   // standing anywhere else fails. That path returns silently - no error, no
+   // log line - while shouldJoinBg has already counted the bot as queued.
+   // Measured with a player waiting in bracket 2: 28 bots accepted, 0 entries
+   // reached bg.log.
+   ObjectGuid guid = bmFallbackGuid;
 #else
    ObjectGuid guid = isArena ? unit->GetObjectGuid() : bot->GetObjectGuid();
 #endif
@@ -817,7 +909,7 @@ bool BGJoinAction::JoinQueue(uint32 type)
 
    WorldPacket packet(CMSG_BATTLEMASTER_JOIN, 20);
 #ifdef MANGOSBOT_ZERO
-   packet << unit->GetObjectGuid() << mapId << instanceId << joinAsGroup;
+   packet << guid << mapId << instanceId << joinAsGroup;
    sLog.outDetail("Bot #%d %s:%d <%s> queued %s", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), _bgType.c_str());
 #else
    sLog.outDetail("Bot #%d %s:%d <%s> queued %s %s", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), _bgType.c_str(), isRated ? "Rated Arena" : isArena ? "Arena" :
@@ -835,6 +927,8 @@ bool BGJoinAction::JoinQueue(uint32 type)
    }
 #endif
 
+   // The world-owner bot-session pump now drains this queue. Do not mutate
+   // the global battleground queues directly from a map-owned AI action.
    ai->QueuePacket(packet);
    return true;
 }
@@ -907,6 +1001,10 @@ bool FreeBGJoinAction::shouldJoinBg(BattleGroundQueueTypeId queueTypeId, BattleG
     uint32 RCount = 0;
 
     uint32 TeamId = bot->GetTeam() == ALLIANCE ? 0 : 1;
+
+    if (BotBattlegroundLimitReached(bgTypeId, bracketId, isArena, hasPlayers, BgCount, BracketSize,
+                                    TeamId == 0 ? ACount : HCount))
+        return false;
 
 #ifndef MANGOSBOT_ZERO
     if (isArena)
@@ -1058,7 +1156,7 @@ bool BGLeaveAction::Execute(Event& event)
         bot->GetSession()->HandleLeaveBattlefieldOpcode(packet);
     }
     else
-        bot->GetSession()->HandleBattlefieldPortOpcode(packet);
+        bot->GetSession()->HandleBattleFieldPortOpcode(packet);
 
     if (sRandomPlayerbotMgr.IsFreeBot(bot))
         ai->SetMaster(NULL);
@@ -1294,6 +1392,7 @@ bool BGStatusAction::Execute(Event& event)
         if (sRandomPlayerbotMgr.IsFreeBot(bot))
             ai->SetMaster(NULL);
 
+        ai->ChangeStrategy("-pvp", BotState::BOT_STATE_COMBAT);
         ai->ChangeStrategy("-warsong", BotState::BOT_STATE_COMBAT);
         ai->ChangeStrategy("-warsong", BotState::BOT_STATE_NON_COMBAT);
         ai->ChangeStrategy("-arathi", BotState::BOT_STATE_COMBAT);
@@ -1403,9 +1502,20 @@ bool BGStatusAction::Execute(Event& event)
             return false;
         }
 #endif
-        bot->GetSession()->HandleBattlefieldPortOpcode(packet);
+        bot->GetSession()->HandleBattleFieldPortOpcode(packet);
 
         ai->ResetStrategies(false);
+        // Bots otherwise only fight back when attacked (assist/dps strategies react to
+        // an existing target) but never seek out enemy players on their own inside a BG.
+        // +pvp wires up the "enemy player near" -> "attack enemy player" trigger. Applied
+        // to BOTH engines (2026-07-27, was combat-only): an idle bot never enters
+        // BOT_STATE_COMBAT on its own just because an enemy is nearby, so the
+        // combat-only version never actually fired between two idle bots - only a
+        // human player's attack (which flips native combat state) could ever trigger
+        // it. AttackEnemyPlayersStrategy::InitNonCombatTriggers now also registers
+        // this trigger so idle bots can proactively start a fight.
+        ai->ChangeStrategy("+pvp", BotState::BOT_STATE_COMBAT);
+        ai->ChangeStrategy("+pvp", BotState::BOT_STATE_NON_COMBAT);
         context->GetValue<uint32>("bg role")->Set(urand(0, 9));
         ai::PositionMap& posMap = context->GetValue<ai::PositionMap&>("position")->Get();
         ai::PositionEntry pos = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];

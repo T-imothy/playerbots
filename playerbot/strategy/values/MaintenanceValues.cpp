@@ -1,6 +1,6 @@
 
 #include "MaintenanceValues.h"
-#include "Mails/Mail.h"
+#include "Mail/Mail.h"
 #include "playerbot/strategy/values/GuildValues.h"
 
 using namespace ai;

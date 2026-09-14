@@ -71,7 +71,7 @@ bool RewardAction::Reward(Player* requester, uint32 itemId, Object* questGiver)
                 ItemPrototype const * const pRewardItem = sObjectMgr.GetItemPrototype(pQuest->RewChoiceItemId[rewardIdx]);
                 if (itemId == pRewardItem->ItemId)
                 {
-                    bot->RewardQuest(pQuest, rewardIdx, questGiver, false);
+                    bot->RewardQuest(pQuest, rewardIdx, questGiver ? ToWorldObject(questGiver) : nullptr, false);
 
                     std::map<std::string, std::string> args;
                     args["%item"] = chat->formatItem(pRewardItem);

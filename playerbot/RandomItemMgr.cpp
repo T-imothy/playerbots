@@ -11,7 +11,7 @@
 #include "playerbot/ServerFacade.h"
 #include "strategy/values/LootValues.h"
 
-#include "Entities/ItemEnchantmentMgr.h"
+#include "ItemEnchantmentMgr.h"
 
 #include "strategy/values/SharedValueContext.h"
 
@@ -162,28 +162,6 @@ RandomItemMgr::~RandomItemMgr()
     predicates.clear();
 }
 
-RandomItemCacheStats RandomItemMgr::GetCacheStats() const
-{
-    RandomItemCacheStats stats;
-    for (auto const& level : randomItemCache)
-        for (auto const& type : level.second)
-            stats.randomItems += type.second.size();
-    for (auto const& entry : equipCache)
-        stats.equipmentItems += entry.second.size();
-    stats.itemInfoEntries = itemInfoCache.size();
-    for (auto const& level : potionCache)
-        for (auto const& effect : level.second)
-            stats.consumableItems += effect.second.size();
-    for (auto const& level : foodCache)
-        for (auto const& category : level.second)
-            stats.consumableItems += category.second.size();
-    for (auto const& level : tradeCache)
-        stats.tradeItems += level.second.size();
-    for (auto const& entry : randomEnchantsCache)
-        stats.enchantItems += entry.second.size();
-    return stats;
-}
-
 bool RandomItemMgr::HandleConsoleCommand(ChatHandler* handler, char const* args)
 {
     if (!args || !*args)
@@ -241,7 +219,7 @@ void RandomItemMgr::BuildRandomItemCache()
     else
     {
         sLog.outString("Building random item cache from %u items", sItemStorage.GetMaxEntry());
-        for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+        for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
         {
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
             if (!proto)
@@ -291,7 +269,7 @@ void RandomItemMgr::BuildRandomItemCache()
                     if (!proto)
                         continue;
 
-                    sLog.outDetail("        [%d] %s", itemId, proto->Name1);
+                    sLog.outDetail("        [%d] %s", itemId, proto->Name1.c_str());
                 }
             }
         }
@@ -859,13 +837,6 @@ bool RandomItemMgr::CanEquipWeapon(uint8 clazz, ItemPrototype const* proto)
 
 void RandomItemMgr::BuildItemInfoCache()
 {
-    struct CachedConditionEntry
-    {
-        uint32 type;
-        uint32 value1;
-        uint32 value2;
-    };
-
     for (auto& [key, itemInfo] : itemInfoCache)
         if (itemInfo)
             delete itemInfo;
@@ -978,45 +949,29 @@ void RandomItemMgr::BuildItemInfoCache()
 
     int32 sEntry;
 
-    for (uint32 entry = 0; entry < sCreatureStorage.GetMaxEntry(); entry++)
+    for (auto const& [entry, nativeTemplate] : sObjectMgr.GetCreatureInfoMap())
     {
         sEntry = entry;
 
-        LootTemplateAccess const* lTemplateA = DropMapValue::GetLootTemplate(ObjectGuid(HIGHGUID_UNIT, entry, uint32(1)), LOOT_CORPSE);
+        LootTemplate const* lTemplateA = DropMapValue::GetLootTemplate(ObjectGuid(HIGHGUID_UNIT, entry, uint32(1)), LOOT_CORPSE);
 
         if (lTemplateA)
-            for (LootStoreItem const& lItem : lTemplateA->Entries)
+            for (LootStoreItem const& lItem : lTemplateA->GetEntries())
                 dropMap->insert(std::make_pair(lItem.itemid, sEntry));
     }
 
-    for (uint32 entry = 0; entry < sGOStorage.GetMaxEntry(); entry++)
+    for (auto const& [entry, nativeTemplate] : sObjectMgr.GetGameObjectInfoMap())
     {
         sEntry = entry;
 
-        LootTemplateAccess const* lTemplateA = DropMapValue::GetLootTemplate(ObjectGuid(HIGHGUID_GAMEOBJECT, entry, uint32(1)), LOOT_CORPSE);
+        LootTemplate const* lTemplateA = DropMapValue::GetLootTemplate(ObjectGuid(HIGHGUID_GAMEOBJECT, entry, uint32(1)), LOOT_CORPSE);
 
         if (lTemplateA)
-            for (LootStoreItem const& lItem : lTemplateA->Entries)
+            for (LootStoreItem const& lItem : lTemplateA->GetEntries())
                 dropMap->insert(std::make_pair(lItem.itemid, -sEntry));
     }
 
     sLog.outString("Loaded %d loot templates...", (uint32)dropMap->size());
-
-    std::map<uint32, std::vector<CachedConditionEntry> > conditionCache;
-    if (auto result = WorldDatabase.PQuery("SELECT condition_entry, type, value1, value2 FROM conditions"))
-    {
-        do
-        {
-            Field* fields = result->Fetch();
-
-            CachedConditionEntry condition;
-            condition.type = fields[1].GetUInt32();
-            condition.value1 = fields[2].GetUInt32();
-            condition.value2 = fields[3].GetUInt32();
-
-            conditionCache[fields[0].GetUInt32()].push_back(condition);
-        } while (result->NextRow());
-    }
 
     sLog.outString("Calculating stat weights for %d items...", sItemStorage.GetMaxEntry());
     BarGoLink bar(sItemStorage.GetMaxEntry());
@@ -1024,7 +979,7 @@ void RandomItemMgr::BuildItemInfoCache()
     CharacterDatabase.BeginTransaction();
 
     // generate stat weights for classes/specs
-    for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+    for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
     {
         bar.step();
 
@@ -1177,7 +1132,7 @@ void RandomItemMgr::BuildItemInfoCache()
                         cacheInfo->source = ITEM_SOURCE_QUEST;
                         cacheInfo->sourceIds.push_back(*i);
                         if (!cacheInfo->minLevel)
-                            cacheInfo->minLevel = quest->GetMinLevel();
+                            cacheInfo->minLevel = quest->GetQuestLevel();
 
                         // check quest team
                         if (!cacheInfo->team)
@@ -1268,24 +1223,28 @@ void RandomItemMgr::BuildItemInfoCache()
                         if (!crItem || !crItem->conditionId)
                             continue;
 
-                        auto conditionItr = conditionCache.find(crItem->conditionId);
-                        if (conditionItr != conditionCache.end())
+                        if (auto result = WorldDatabase.PQuery("SELECT type, value1, value2 FROM conditions WHERE condition_entry = '%u'", crItem->conditionId))
                         {
-                            for (CachedConditionEntry const& condition : conditionItr->second)
+                            do
                             {
-                                if (condition.type != CONDITION_REPUTATION_RANK_MIN)
+                                Field *fields = result->Fetch();
+                                uint32 m_type = fields[0].GetUInt32();
+                                if (m_type != CONDITION_REPUTATION_RANK_MIN)
                                     continue;
 
+                                uint32 m_value1 = fields[1].GetUInt32();
+                                uint32 m_value2 = fields[2].GetUInt32();
+
 #ifdef MANGOSBOT_ONE
-                                if (FactionEntry const* faction = sFactionStore.LookupEntry<FactionEntry>(condition.value1))
+                                if (FactionEntry const* faction = sFactionStore.LookupEntry<FactionEntry>(m_value1))
 #else
-                                if (FactionEntry const* faction = sFactionStore.LookupEntry(condition.value1))
+                                if (FactionEntry const* faction = sFactionStore.LookupEntry(m_value1))
 #endif
                                 {
-                                    cacheInfo->repFaction = condition.value1;
-                                    cacheInfo->repRank = condition.value2;
+                                    cacheInfo->repFaction = m_value1;
+                                    cacheInfo->repRank = m_value2;
                                 }
-                            }
+                            } while (result->NextRow());
                         }
                     }
                 }
@@ -1500,10 +1459,10 @@ void RandomItemMgr::BuildItemInfoCache()
 
         for (int i = 1; i <= MAX_STAT_SCALES; ++i)
         {
-            if (cacheInfo->weights[i])
-                stmt.addUInt32(cacheInfo->weights[i]);
-            else
-                stmt.addUInt32(0);
+            // Safety net: scale_* are signed MEDIUMINT (max 8388607). Clamp so a single
+            // pathological weight can never overflow the column and abort the build.
+            uint32 w = cacheInfo->weights[i] > 8388607u ? 8388607u : cacheInfo->weights[i];
+            stmt.addUInt32(w);
         }
 
         stmt.Execute();
@@ -2528,16 +2487,22 @@ uint32 RandomItemMgr::ItemStatWeight(Player* player, Item* item)
     return ItemStatWeight(player, itemQualifier);
 }
 
-uint32 RandomItemMgr::CalculateSingleStatWeight(uint8 playerclass, uint8 spec, std::string stat, uint32 value)
+uint32 RandomItemMgr::CalculateSingleStatWeight(uint8 playerclass, uint8 spec, std::string stat, int32 value)
 {
     uint32 statWeight = 0;
     for (std::vector<WeightScaleStat>::iterator i = m_weightScales[spec].stats.begin(); i != m_weightScales[spec].stats.end(); ++i)
     {
         if (stat == i->stat)
         {
-            statWeight = i->weight * value;
-            if (statWeight)
-                sLog.outDetail("stat: %s, val: %d, weight: %d, total: %d, class: %d, spec: %s", stat.c_str(), value, i->weight, statWeight, playerclass, m_weightScales[spec].info.name.c_str());
+            // Compute in 64-bit and ignore non-positive contributions. A negative stat
+            // value (item stat penalties, or negative aura EffectBasePoints) must not wrap
+            // to a huge uint32 here — that both inflates the item's score and overflows the
+            // signed MEDIUMINT scale_* cache columns, aborting the cache build on first boot.
+            int64 weighted = (int64)i->weight * (int64)value;
+            if (weighted <= 0)
+                return 0;
+            statWeight = (uint32)weighted;
+            sLog.outDetail("stat: %s, val: %d, weight: %d, total: %d, class: %d, spec: %s", stat.c_str(), value, i->weight, statWeight, playerclass, m_weightScales[spec].info.name.c_str());
             return statWeight;
         }
     }
@@ -2795,7 +2760,7 @@ uint32 RandomItemMgr::GetUpgrade(Player* player, std::string spec, uint8 slot, u
             continue;
 
         // skip too low level
-        if (info->minLevel < (player->GetLevel() - 10))
+        if (player->GetLevel() > 10 && info->minLevel < (player->GetLevel() - 10))
             continue;
 
         // skip wrong team
@@ -2912,7 +2877,7 @@ std::vector<uint32> RandomItemMgr::GetUpgradeList(Player* player, uint32 specId,
             continue;
 
         // skip too low level
-        if ((int32)info->minLevel < (int32)(player->GetLevel() - 20))
+        if (player->GetLevel() > 20 && (int32)info->minLevel < (int32)(player->GetLevel() - 20))
             continue;
 
         // skip wrong team
@@ -3036,7 +3001,7 @@ bool RandomItemMgr::CanBuyFromVendor(Player *player, uint32 itemId, uint32 creat
 
         if (crItem && crItem->item == itemId)
         {
-            ItemPrototype const* pProto = ObjectMgr::GetItemPrototype(itemId);
+            ItemPrototype const* pProto = sObjectMgr.GetItemPrototype(itemId);
             if (pProto)
             {
                 // when no faction required but rank > 0 will be used faction id from the vendor faction template to compare the rank
@@ -3373,6 +3338,9 @@ void RandomItemMgr::BuildEquipCache()
                 MAX_CLASSES, MAX_STAT_SCALES, maxLevel, EQUIPMENT_SLOT_END, ITEM_QUALITY_ARTIFACT, sItemStorage.GetMaxEntry(), total);
 
         BarGoLink bar(total);
+        // Tracks how many items were cached for each stat-weight spec, so we can
+        // emit a visible progress line per (class, spec) as the build advances.
+        std::map<uint32, uint64> specItemCounts;
         RandomItemList tabardsList;
         RandomItemList shirtsList;
         BotEquipKey tabardKey(60, 1, 1, EQUIPMENT_SLOT_TABARD, 1);
@@ -3410,7 +3378,7 @@ void RandomItemMgr::BuildEquipCache()
                             BotEquipKey key(level, clazz, spec, slot, quality);
 
                             RandomItemList items;
-                            for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+                            for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
                             {
                                 ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
                                 if (!proto)
@@ -3494,12 +3462,25 @@ void RandomItemMgr::BuildEquipCache()
                             }
 
                             equipCache[key] = items;
+                            specItemCounts[spec] += items.size();
                             bar.step();
                             sLog.outDetail("Equipment cache for class: %d, level %d, slot %d, quality %d: %zu items",
                                 clazz, level, slot, quality, items.size());
                         }
                     }
                 }
+            }
+
+            // The class loop is outermost, so once we leave a class body every spec
+            // belonging to that class is fully built. Emit one visible line per spec.
+            for (uint32 spec = 1; spec <= MAX_STAT_SCALES; ++spec)
+            {
+                if (!m_weightScales[spec].info.id || m_weightScales[spec].info.classId != clazz)
+                    continue;
+
+                sLog.outBasic("[GearCache] class %u spec %u (%s): cached %llu items",
+                    clazz, spec, m_weightScales[spec].info.name.c_str(),
+                    (unsigned long long)specItemCounts[spec]);
             }
         }
         equipCache[tabardKey] = tabardsList;
@@ -3527,7 +3508,7 @@ void RandomItemMgr::BuildAmmoCache()
         for (uint32 subClass = ITEM_SUBCLASS_ARROW; subClass <= ITEM_SUBCLASS_BULLET; subClass++)
         {
             auto results = WorldDatabase.PQuery(
-                    "select entry, RequiredLevel from item_template where class = '%u' and subclass = '%u' and RequiredLevel <= '%u' and quality = '%u' order by RequiredLevel desc",
+                    "select entry, required_level from item_template where class = '%u' and subclass = '%u' and required_level <= '%u' and quality = '%u' order by required_level desc",
                     ITEM_CLASS_PROJECTILE, subClass, level, ITEM_QUALITY_NORMAL);
             if (!results)
                 return;
@@ -3542,7 +3523,7 @@ void RandomItemMgr::BuildAmmoCache()
         }
 
         auto results = WorldDatabase.PQuery(
-            "select entry, RequiredLevel from item_template where class = '%u' and subclass = '%u' and RequiredLevel <= '%u' and quality = '%u' order by RequiredLevel desc",
+            "select entry, required_level from item_template where class = '%u' and subclass = '%u' and required_level <= '%u' and quality = '%u' order by required_level desc",
             ITEM_CLASS_WEAPON, ITEM_SUBCLASS_WEAPON_THROWN, level, ITEM_QUALITY_NORMAL);
         if (!results)
             return;
@@ -3579,7 +3560,7 @@ void RandomItemMgr::BuildPotionCache()
         {
             uint32 effect = effects[i];
 
-            for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+            for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
             {
                 ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
                 if (!proto)
@@ -3653,7 +3634,7 @@ void RandomItemMgr::BuildFoodCache()
         {
             uint32 category = categories[i];
 
-            for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+            for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
             {
                 ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
                 if (!proto)
@@ -3665,7 +3646,7 @@ void RandomItemMgr::BuildFoodCache()
                     proto->Bonding != NO_BIND)
                     continue;
 
-                if (proto->RequiredLevel && (proto->RequiredLevel > level || proto->RequiredLevel < level - 10))
+                if (proto->RequiredLevel && (proto->RequiredLevel > level || (level > 10 && proto->RequiredLevel < level - 10)))
                     continue;
 
                 if (proto->RequiredSkill)
@@ -3806,7 +3787,7 @@ void RandomItemMgr::BuildTradeCache()
 	int counter4 = 0;
     for (uint32 level = 1; level <= maxLevel+1; level+=10)
     {
-        for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+        for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
         {
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
             if (!proto)
@@ -3818,7 +3799,7 @@ void RandomItemMgr::BuildTradeCache()
             if (proto->ItemLevel < level)
                 continue;
 
-            if (proto->RequiredLevel && (proto->RequiredLevel > level || proto->RequiredLevel < level - 10))
+            if (proto->RequiredLevel && (proto->RequiredLevel > level || (level > 10 && proto->RequiredLevel < level - 10)))
                 continue;
 
             if (proto->RequiredSkill)
@@ -3851,7 +3832,7 @@ std::vector<uint32> RandomItemMgr::GetGemsList()
 #ifndef MANGOSBOT_ZERO
     if (_gems.empty())
     {
-        for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+        for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
         {
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
             if (!proto)
@@ -3893,7 +3874,7 @@ void RandomItemMgr::BuildRarityCache()
     {
         sLog.outBasic("Building item rarity cache from %u items", sItemStorage.GetMaxEntry());
         BarGoLink bar(sItemStorage.GetMaxEntry());
-        for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+        for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
         {
             bar.step();
             ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
@@ -3925,7 +3906,7 @@ void RandomItemMgr::BuildRarityCache()
                     "    end "
                     ") chance, 'creature' type "
                     "from creature_loot_template lt "
-                    "join creature_template ct on ct.LootId = lt.entry "
+                    "join creature_template ct on ct.loot_id = lt.entry "
                     "join creature c on c.id = ct.entry "
                     "where lt.item = '%u' "
                     "union all "
@@ -3986,7 +3967,7 @@ void RandomItemMgr::BuildRarityCache()
                     "    end "
                     ") chance, 'skinning' type "
                     "from skinning_loot_template lt "
-                    "join creature_template ct on ct.SkinningLootId = lt.entry "
+                    "join creature_template ct on ct.skinning_loot_id = lt.entry "
                     "join creature c on c.id = ct.entry "
                     "where lt.item = '%u' "
                     ") q; ",
@@ -4013,7 +3994,7 @@ void RandomItemMgr::BuildRarityCache()
 void RandomItemMgr::BuildGlyphCache()
 {
     sLog.outString("Building glyphCache", sItemStorage.GetMaxEntry());
-    for (uint32 itemId = 0; itemId < sItemStorage.GetMaxEntry(); ++itemId)
+    for (auto const& [itemId, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
     {
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itemId);
         if (!proto)

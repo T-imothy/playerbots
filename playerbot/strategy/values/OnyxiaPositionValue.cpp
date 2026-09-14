@@ -50,19 +50,19 @@ EncounterPosition OnyxiaPositionValue::Calculate()
         // These are the coordinates used by this core's spell target table,
         // not donor safe spots or the airborne creature's height.
         const SpellTargetPosition* position = sSpellMgr.GetSpellTargetPosition(breath);
-        if (position && position->target_mapId == 249)
+        if (position && position->mapid == 249)
         {
-            const encounter::Point origin{position->target_X, position->target_Y, position->target_Z};
+            const encounter::Point origin{position->x, position->y, position->z};
             const float clearance = 22.0f;
-            if (encounter::LineDistance(here, origin, position->target_Orientation) >= clearance)
+            if (encounter::LineDistance(here, origin, position->o) >= clearance)
             {
                 result.active = true;
                 result.destination = here; // Hold clear until the sweep ends.
                 result.active = ValidateEncounterDestination(ai, result);
                 return result;
             }
-            const auto left = encounter::OutsideLine(here, origin, position->target_Orientation, clearance + 1, 1);
-            const auto right = encounter::OutsideLine(here, origin, position->target_Orientation, clearance + 1, -1);
+            const auto left = encounter::OutsideLine(here, origin, position->o, clearance + 1, 1);
+            const auto right = encounter::OutsideLine(here, origin, position->o, clearance + 1, -1);
             return choose(left, right);
         }
         return result; // Missing native spell data must not invent a safe destination.

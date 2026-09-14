@@ -1,13 +1,13 @@
-﻿#include "playerbot/playerbot.h"
+#include "playerbot/playerbot.h"
 #include "WorldBuffTravelTriggers.h"
 #include "playerbot/ServerFacade.h"
-#include "Server/DBCStores.h"
+#include "Database/DBCStores.h"
 
 using namespace ai;
 
 static bool IsNpcNearby(Player* bot, uint32 npcEntry)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return false;
 
@@ -27,7 +27,7 @@ static bool IsNpcNearby(Player* bot, uint32 npcEntry)
 
 static bool IsNearDMNorthDoor(Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return false;
 
@@ -47,7 +47,7 @@ static bool IsNearDMNorthDoor(Player* bot)
 
 static bool IsPortalNearby(Player* bot, const char* destKeyword)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return false;
 
@@ -81,7 +81,7 @@ static bool IsPortalNearby(Player* bot, const char* destKeyword)
 
 static bool IsNearSongflower(Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return false;
 
@@ -100,7 +100,7 @@ static bool IsNearSongflower(Player* bot)
 
 static bool IsNearBonfire(Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return false;
 
@@ -120,7 +120,7 @@ static bool IsNearBonfire(Player* bot)
 
 static bool AreAllGroupMembersInPortalDestZone(Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     if (!ai)
         return false;
 

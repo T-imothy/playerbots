@@ -10,16 +10,6 @@
 
 using namespace ai;
 
-static std::string NormalizeChatToken(const std::string& text)
-{
-    std::string normalized = text;
-    boost::algorithm::to_lower(normalized);
-    boost::replace_all(normalized, "_", " ");
-    boost::replace_all(normalized, "-", " ");
-    boost::trim(normalized);
-    return normalized;
-}
-
 std::map<std::string, uint32> ChatHelper::consumableSubClasses;
 std::map<std::string, uint32> ChatHelper::tradeSubClasses;
 std::map<std::string, uint32> ChatHelper::itemQualities;
@@ -216,6 +206,8 @@ ChatHelper::ChatHelper(PlayerbotAI* ai) : PlayerbotAIAware(ai)
     races[RACE_TAUREN] = "Tauren";
     races[RACE_TROLL] = "Troll";
     races[RACE_UNDEAD] = "Undead";
+    races[RACE_GOBLIN] = "Goblin";
+    races[RACE_HIGH_ELF] = "High Elf";
 #ifndef MANGOSBOT_ZERO
     races[RACE_BLOODELF] = "Blood Elf";
     races[RACE_DRAENEI] = "Draenei";
@@ -298,7 +290,11 @@ std::set<uint32> ChatHelper::ExtractAllQuestIds(const std::string& text)
 {
     std::set<uint32> ids;
 
-    std::regex rgx("Hquest:[0-9]+");
+    // Ordinary chat has no links; avoid building/scanning a regex for each
+    // recipient of the same broadcast. The compiled expression is immutable.
+    if (text.find("Hquest:") == std::string::npos)
+        return ids;
+    static std::regex const rgx("Hquest:[0-9]+");
     auto begin = std::sregex_iterator(text.begin(), text.end(), rgx);
     auto end = std::sregex_iterator();
     for (std::sregex_iterator i = begin; i != end; ++i)
@@ -314,7 +310,11 @@ std::set<uint32> ChatHelper::ExtractAllItemIds(const std::string& text)
 {
     std::set<uint32> ids;
 
-    std::regex rgx("Hitem:[0-9]+");
+    // Ordinary chat has no links; avoid building/scanning a regex for each
+    // recipient of the same broadcast. The compiled expression is immutable.
+    if (text.find("Hitem:") == std::string::npos)
+        return ids;
+    static std::regex const rgx("Hitem:[0-9]+");
     auto begin = std::sregex_iterator(text.begin(), text.end(), rgx);
     auto end = std::sregex_iterator();
     for (std::sregex_iterator i = begin; i != end; ++i)
@@ -495,9 +495,9 @@ std::string ChatHelper::formatWorldEntry(int32 entry)
     GameObjectInfo const* gInfo = NULL;
 
     if (entry > 0)
-        cInfo = ObjectMgr::GetCreatureTemplate(entry);
+        cInfo = sObjectMgr.GetCreatureTemplate(entry);
     else
-        gInfo = ObjectMgr::GetGameObjectInfo(entry * -1);
+        gInfo = sObjectMgr.GetGameObjectInfo(entry * -1);
 
     std::ostringstream out;
     out << "|cFFFFFF00|Hentry:" << abs(entry) << ":" << "|h[";
@@ -507,7 +507,7 @@ std::string ChatHelper::formatWorldEntry(int32 entry)
     if (entry < 0 && gInfo)
         name = gInfo->name;
     else if (entry > 0 && cInfo)
-        name = cInfo->Name;
+        name = cInfo->name;
     
     if(name.empty())
         name = "unknown:" + std::to_string(entry);
@@ -1057,15 +1057,13 @@ std::string ChatHelper::formatTeam(Team team)
 
 uint32 ChatHelper::parseClass(const std::string& text)
 {
-    std::string normalized = NormalizeChatToken(text);
-
     for (auto& [classId, className] : classes)
-        if (NormalizeChatToken(className) == normalized)
+        if (boost::iequals(className, text))
             return classId;
 
-    if (Qualified::isValidNumberString(normalized))
+    if (Qualified::isValidNumberString(text))
     {
-        uint32 id = static_cast<uint32>(stoi(normalized));
+        uint32 id = static_cast<uint32>(stoi(text));
         if (classes.count(id))
             return id;
     }
@@ -1080,15 +1078,13 @@ std::string ChatHelper::formatClass(uint8 cls)
 
 uint32 ChatHelper::parseRace(const std::string& text)
 {
-    std::string normalized = NormalizeChatToken(text);
-
     for (auto& [raceId, raceName] : races)
-        if (NormalizeChatToken(raceName) == normalized)
+        if (boost::iequals(raceName, text))
             return raceId;
 
-    if (Qualified::isValidNumberString(normalized))
+    if (Qualified::isValidNumberString(text))
     {
-        uint32 id = static_cast<uint32>(stoi(normalized));
+        uint32 id = static_cast<uint32>(stoi(text));
         if (races.count(id))
             return id;
     }
@@ -1252,6 +1248,22 @@ void ChatHelper::PopulateSpellNameList()
 
         spellIds[tempSpell->SpellName[0]].push_back(tempSpell->Id);
         spellIds[lowerSpellName].push_back(tempSpell->Id);
+    }
+    // Retain ManTech command/strategy names for renamed native abilities.
+    // Both spell selection and aura checks consume this index. Resolve all
+    // ranks from Turtle's loaded spell data rather than stock rank ID tables.
+    for (auto const& alias : {std::make_pair("blessing of freedom", "hand of freedom"),
+        std::make_pair("blessing of protection", "hand of protection"),
+        std::make_pair("blessing of sacrifice", "hand of sacrifice"),
+        std::make_pair("nature's swiftness", "ancestral swiftness")})
+    {
+        auto native = spellIds.find(alias.second);
+        if (native == spellIds.end()) continue;
+        auto ranks = native->second;
+        auto& compatible = spellIds[alias.first];
+        compatible.insert(compatible.end(), ranks.begin(), ranks.end());
+        std::sort(compatible.begin(), compatible.end());
+        compatible.erase(std::unique(compatible.begin(), compatible.end()), compatible.end());
     }
 }
 

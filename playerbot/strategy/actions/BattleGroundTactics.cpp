@@ -1,9 +1,11 @@
 
 #include "playerbot/playerbot.h"
+#include "BoundedBotThrottle.h"
+#include "ArchitectureDiagnostics.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "MovementActions.h"
-#include "BattleGround/BattleGround.h"
-#include "BattleGround/BattleGroundMgr.h"
+#include "Battlegrounds/BattleGround.h"
+#include "Battlegrounds/BattleGroundMgr.h"
 #include "BattleGroundTactics.h"
 #include "playerbot/strategy/values/PvpValues.h"
 #include "float.h"
@@ -76,9 +78,10 @@ enum BattleBotWsgWaitSpot
     BB_WSG_WAIT_SPOT_RIGHT
 };
 
-std::vector<uint32> const vFlagsAB = { BG_AB_BANNER_ALLIANCE , BG_AB_BANNER_CONTESTED_A , BG_AB_BANNER_HORDE , BG_AB_BANNER_CONTESTED_H ,
-                                       BG_AB_BANNER_STABLE, BG_AB_BANNER_BLACKSMITH, BG_AB_BANNER_FARM, BG_AB_BANNER_LUMBER_MILL,
-                                       BG_AB_BANNER_MINE };
+// GO entries, not the compatibility shim's BG_AB_BANNER_* node/state indices.
+// Keep those indices unchanged for the tactical node-selection callers.
+std::vector<uint32> const vFlagsAB = { 180058, 180059, 180060, 180061,
+                                     180087, 180088, 180089, 180090, 180091 };
 
 std::vector<uint32> const vFlagsWS = { GO_WS_SILVERWING_FLAG, GO_WS_WARSONG_FLAG, GO_WS_SILVERWING_FLAG_DROP, GO_WS_WARSONG_FLAG_DROP };
 static std::map<uint32, GameObject*> botSelectedObjectives;
@@ -2616,117 +2619,38 @@ bool BGTactics::eotsJump()
     bool atAllyIsle = bot->GetPositionX() > 2496.f && bot->GetPositionZ() > 1250.0f;
     bool atHordeIsle = bot->GetPositionX() < 1834.0f && bot->GetPositionZ() > 1250.0f;
 
-    MotionMaster& mm = *bot->GetMotionMaster();
-
     if (bot->GetTeam() == ALLIANCE)
     {
         if (atAllyIsle) // move to island end
             return urand(0, 1) ? MoveTo(bg->GetMapId(), 2492.0f, 1597.0f + frand(-2, +2), 1255.0f) : MoveTo(bg->GetMapId(), 2495.0f, 1604.0f + frand(-2, +2), 1256.0f);
-
         if (bot->GetPositionX() < 2500.f && bot->GetPositionZ() > 1245.0f) // jump on first island
-        {
-            if (role < 7)
-            {
-                mm.MovePoint(
-                    bg->GetMapId(),
-                    Position(2484.0f, 1607.0f + frand(-2, +2), 1238.0f, 0.f),
-                    FORCED_MOVEMENT_RUN,
-                    0.0f,
-                    false);
-            }
-            else
-            {
-                mm.MovePoint(
-                    bg->GetMapId(),
-                    Position(2474.0f, 1602.0f + frand(-2, +2), 1240.0f, 0.f),
-                    FORCED_MOVEMENT_RUN,
-                    0.0f,
-                    false);
-            }
-
-            return true;
-        }
-
+            return role < 7 ? MoveTo(bg->GetMapId(), 2484.0f, 1607.0f + frand(-2, +2), 1238.0f, false, false, true) : MoveTo(bg->GetMapId(), 2474.0f, 1602.0f + frand(-2, +2), 1240.0f, false, false, true);
         if (bot->GetPositionX() > 2470.f && bot->GetPositionZ() > 1230.0f) // jump on ground
         {
             if (bot->GetPositionX() > 2480.f)
-            {
-                mm.MovePoint(
-                    bg->GetMapId(),
-                    Position(2486.0f, 1624.0f + frand(-2, +2), 1226.0f, 0.f),
-                    FORCED_MOVEMENT_RUN,
-                    0.0f,
-                    false);
-            }
+                return MoveTo(bg->GetMapId(), 2486.0f, 1624.0f + frand(-2, +2), 1226.0f, false, false, true);
             else
-            {
-                mm.MovePoint(
-                    bg->GetMapId(),
-                    Position(2458.0f, 1601.0f + frand(-2, +2), 1207.0f, 0.f),
-                    FORCED_MOVEMENT_RUN,
-                    0.0f,
-                    false);
-            }
-
-            return true;
+                return MoveTo(bg->GetMapId(), 2458.0f, 1601.0f + frand(-2, +2), 1207.0f, false, false, true);
         }
     }
     else
     {
         if (atHordeIsle) // move to island end
             return urand(0, 1) ? MoveTo(bg->GetMapId(), 1835.0f, 1544.0f + frand(-2, +2), 1255.0f) : MoveTo(bg->GetMapId(), 1835.0f, 1534.0f + frand(-2, +2), 1254.0f);
-
         if (bot->GetPositionX() > 1830.f && bot->GetPositionZ() > 1250.0f) // jump on first island
-        {
-            if (role < 7)
-            {
-                mm.MovePoint(
-                    bg->GetMapId(),
-                    Position(1853.0f, 1530.0f + frand(-2, +2), 1239.0f, 0.f),
-                    FORCED_MOVEMENT_RUN,
-                    0.0f,
-                    false);
-            }
-            else
-            {
-                mm.MovePoint(
-                    bg->GetMapId(),
-                    Position(1854.0f, 1542.0f + frand(-2, +2), 1241.0f, 0.f),
-                    FORCED_MOVEMENT_RUN,
-                    0.0f,
-                    false);
-            }
-
-            return true;
-        }
-
+            return role < 7 ? MoveTo(bg->GetMapId(), 1853.0f, 1530.0f + frand(-2, +2), 1239.0f, false, false, true) : MoveTo(bg->GetMapId(), 1854.0f, 1542.0f + frand(-2, +2), 1241.0f, false, false, true);
         if (bot->GetPositionX() < 1859.f && bot->GetPositionZ() > 1230.0f) // jump on ground
         {
             if (bot->GetPositionY() > 1535.f)
-            {
-                mm.MovePoint(
-                    bg->GetMapId(),
-                    Position(1867.0f, 1533.0f + frand(-2, +2), 1210.0f, 0.f),
-                    FORCED_MOVEMENT_RUN,
-                    0.0f,
-                    false);
-            }
+                return MoveTo(bg->GetMapId(), 1867.0f, 1533.0f + frand(-2, +2), 1210.0f, false, false, true);
             else
-            {
-                mm.MovePoint(
-                    bg->GetMapId(),
-                    Position(1848.0f, 1512.0f + frand(-2, +2), 1225.0f, 0.f),
-                    FORCED_MOVEMENT_RUN,
-                    0.0f,
-                    false);
-            }
-
-            return true;
+                return MoveTo(bg->GetMapId(), 1848.0f, 1512.0f + frand(-2, +2), 1225.0f, false, false, true);
         }
     }
 
     return false;
 }
+
 
 //
 // actual bg tactics below
@@ -2737,7 +2661,16 @@ bool BGTactics::Execute(Event& event)
     BattleGround *bg = bot->GetBattleGround();
     if (!bg)
     {
-        ai->ResetStrategies();
+        // Self-heal for "left the BG with BG strategies still installed" -
+        // but NEVER inside a dungeon. Live (gdb backtrace, 2026-08-24): a
+        // dungeon-clear tank carried the random-bot bg strategies, this
+        // reset fired EVERY SECOND (reset -> module gate re-installs its
+        // strategies -> bg trigger fires again -> reset), wiping the action
+        // queue each pass - the party crawled and the run's strategy set
+        // never stayed put for more than a tick.
+        Map* map = bot->FindMap();
+        if (!map || !map->IsDungeon())
+            ai->ResetStrategies();
         return false;
     }
 
@@ -2753,7 +2686,23 @@ bool BGTactics::Execute(Event& event)
 #endif
 
     // disable buffin during BG to save mana
-    if (bg->GetStatus() == STATUS_IN_PROGRESS)
+    //
+    // Only when "buff" is actually still there. ChangeStrategy routes to
+    // Engine::Init() on this very non-combat engine - the one whose action
+    // queue is being iterated right now, from inside this call - and Init()
+    // begins with Reset(), which drains and deletes every queued action.
+    // Unconditionally, that meant the first BGTactics action of each tick
+    // (usually "check flag" at relevance 70) wiped every remaining action out
+    // from under the loop before even testing whether the flag was in reach:
+    // queue.Size() went 8 -> 0 in one iteration. Nothing survived to fall back
+    // on, every tick, forever - which is why bots stood on their spawn for a
+    // whole match while the AI itself kept running. The wipe is a one-time
+    // cost now instead of a per-tick one.
+    //
+    // Note this only became fatal with d886c5c, which added the closing Init()
+    // to Engine::ChangeStrategy; before that the call here was harmless.
+    // Diagnosis and fix: Melhart9, Shyalya/tortoise-wow#1.
+    if (bg->GetStatus() == STATUS_IN_PROGRESS && ai->HasStrategy("buff", BotState::BOT_STATE_NON_COMBAT))
         ai->ChangeStrategy("-buff", BotState::BOT_STATE_NON_COMBAT);
 
     std::vector<BattleBotPath*> const* vPaths = nullptr;
@@ -3007,6 +2956,27 @@ bool BGTactics::moveToStart(bool force)
     return true;
 }
 
+// (2026-07-28) Whether a REAL player (not a bot) is on the given TEAM in
+// this battleground - deliberately scoped to one team, not "anyone in the
+// match", since a solo human always counts as present on their OWN team;
+// what actually matters is whether the OPPOSING (all-bot) team has nobody
+// driving it. Used to let bots on an all-bot team go fetch the enemy flag
+// on their own initiative again, since otherwise that team never even
+// tries to cap and a human playing solo against bots always wins trivially
+// (see selectObjective()'s WSG branch, "Stop WSG bots from proactively
+// fetching the enemy flag", 2026-07-27 - correct for real PvP matches with
+// humans on both sides, but makes solo/bots-only testing one-sided).
+static bool BgTeamHasRealPlayer(BattleGround* bg, Team team)
+{
+    for (auto const& itr : bg->GetPlayers())
+    {
+        if (Player* p = sObjectMgr.GetPlayer(itr.first))
+            if (!GetBotAI(p) && p->GetTeam() == team)
+                return true;
+    }
+    return false;
+}
+
 bool BGTactics::selectObjective(bool reset)
 {
     BattleGround *bg = bot->GetBattleGround();
@@ -3068,7 +3038,7 @@ bool BGTactics::selectObjective(bool reset)
 
         if (isDead && (botSelectedObjectives[botGUID] != nullptr))
         {
-            bot->Say("I'm dead, guess I'll reset my objective.", LANG_UNIVERSAL);
+            sLog.outDetail("Bot #%d %s:%d <%s>: died with an AB objective selected, resetting it", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->getLevel(), bot->GetName());
             botSelectedObjectives[botGUID] = nullptr; // Reset objective if we die... maybe more lucky elsewhere -- wait I don't think this is executed on dead bots so it's never triggered? Try something else
             botObjectiveSelectionTime[botGUID] = 0;
         }
@@ -4293,6 +4263,19 @@ bool BGTactics::startNewPathFree(std::vector<BattleBotPath*> const& vPaths)
     return moveToObjectiveWp(currentPath, currentPoint, reverse);
 }
 
+bool BGTactics::CanAttemptAbCapture()
+{
+    // The existing qualified value belongs to this bot's AI context. Do not
+    // introduce a shared GUID map across concurrently updated battlegrounds.
+    auto* lastCast = context->GetValue<time_t>("last spell cast time", "capture banner");
+    time_t const now = time(nullptr);
+    time_t const previous = lastCast->Get();
+    if (previous && now >= previous && now - previous < 4)
+        return false;
+    lastCast->Set(now);
+    return true;
+}
+
 bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<uint32> const& vFlagIds)
 {
     BattleGround *bg = bot->GetBattleGround();
@@ -4322,7 +4305,18 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
     case BATTLEGROUND_IC:
 #endif
     {
-        closeObjects = *context->GetValue<std::list<ObjectGuid> >("closest game objects static los");
+        // Ground-level static rays can hide banners on raised AB platforms.
+        // Keep native range, banner eligibility and capture-spell checks below.
+        {
+            std::list<ObjectGuid> const noLos =
+                *context->GetValue<std::list<ObjectGuid> >("nearest game objects no los");
+            for (ObjectGuid const& guid : noLos)
+            {
+                GameObject* go = ai->GetGameObject(guid);
+                if (go && bot->IsWithinDistInMap(go, INTERACTION_DISTANCE))
+                    closeObjects.push_back(guid);
+            }
+        }
         closePlayers = *context->GetValue<std::list<ObjectGuid> >("closest friendly players");
         flagRange = INTERACTION_DISTANCE;
         break;
@@ -4369,11 +4363,48 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         if (f == vFlagIds.end())
             continue;
 
-        if (!sServerFacade.isSpawned(go) || go->IsInUse() || go->GetGoState() != GO_STATE_READY)
+        // Arathi Basin banners only: say WHY a banner in reach is skipped, once per
+        // 10 s per bot. A tester saw both teams circling one node without ever
+        // capturing (2026-09-05); the skip reasons below were invisible.
+        auto abSay = [&](char const* why)
+        {
+            if (bgType != BATTLEGROUND_AB || !TurtleDiagnostics::enabled.load(std::memory_order_relaxed))
+                return;
+            static BoundedBotThrottle s_abSaidAt;
+            uint32 const nowAb = WorldTimer::getMSTime();
+            if (!s_abSaidAt.Allow(bot->GetGUIDLow(), nowAb, 10000))
+                return;
+            sLog.outInfo("[BG:AB] banner %u (%s) %.1fyd from %s: %s (spawned %u, inUse %u, state %u, inCombat %u)",
+                         go->GetEntry(), go->GetName(), bot->GetDistance(go), bot->GetName(), why,
+                         sServerFacade.isSpawned(go) ? 1u : 0u, go->IsInUse() ? 1u : 0u, uint32(go->GetGoState()),
+                         bot->IsInCombat() ? 1u : 0u);
+        };
+        // AB assault banners are BUTTONs and can be non-READY/in-use. Native
+        // capture completion validates the node, match status and ownership.
+        // Other battlegrounds retain their existing interaction-state gate.
+        bool const abBanner = (bgType == BATTLEGROUND_AB);
+        if (!sServerFacade.isSpawned(go))
+        {
+            abSay("skipped: not spawned");
             continue;
+        }
+        if (!abBanner && (go->IsInUse() || go->GetGoState() != GO_STATE_READY))
+        {
+            abSay("skipped: in use / not READY");
+            continue;
+        }
+        if (abBanner && (go->IsInUse() || go->GetGoState() != GO_STATE_READY))
+            abSay("assault banner in use / not READY -> attempting capture anyway");
 
-        if (!bot->CanInteract(go) && bgType != BATTLEGROUND_WS)
+        // Test the cheap side first: CanInteract logs a core error when the bot
+        // is out of range, so with the operands the other way round every
+        // Warsong bot produced one per tick regardless of distance - 15000+ a
+        // session - while only the continue was ever gated on bgType.
+        if (bgType != BATTLEGROUND_WS && !bot->CanInteract(go))
+        {
+            abSay("skipped: CanInteract false (out of interact distance / dead / lost control)");
             continue;
+        }
         
         if (flagRange)
             if (!bot->IsWithinDistInMap(go, flagRange))
@@ -4396,6 +4427,12 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
         case BATTLEGROUND_IC:
 #endif
         {
+            SpellEntry const *spellInfo = sServerFacade.LookupSpellInfo(SPELL_CAPTURE_BANNER);
+            if (!spellInfo)
+                return false;
+            if (bgType == BATTLEGROUND_AB && !CanAttemptAbCapture())
+                continue;
+
             if (bot->IsMounted())
                 bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
 
@@ -4406,16 +4443,34 @@ bool BGTactics::atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<ui
             //bot->Say(out.str(), LANG_UNIVERSAL);
             //SetDuration(10000);
 
+            // Cast throttle. With banners finally in the list (entry fix), a bot
+            // stands on a node and re-casts SPELL_CAPTURE_BANNER every tick -
+            // measured 2026-09-06 at ~18 casts/second per bot, 80k in 25 min. The
+            // core assault is near-instant and a re-cast on a banner the node has
+            // already flipped to your own team is rejected by EventPlayerClickedOnFlag
+            // anyway; the spam just glues the bot to the node instead of moving to the
+            // next (the "clustering and looping" the tester saw). Skip this banner for
+            // a few seconds after a cast so the objective/movement logic drives on.
+            {
+                static std::unordered_map<uint32, uint32> s_abCastAt;
+                uint32 const nowAbCast = WorldTimer::getMSTime();
+                uint32& lastAbCast = s_abCastAt[bot->GetGUIDLow()];
+                if (lastAbCast && WorldTimer::getMSTimeDiff(lastAbCast, nowAbCast) < 4000)
+                {
+                    abSay("recent cast -> throttled, moving on");
+                    continue;
+                }
+                lastAbCast = nowAbCast;
+            }
             // cast banner spell
             ai->StopMoving();
-
-            SpellEntry const *spellInfo = sServerFacade.LookupSpellInfo(SPELL_CAPTURE_BANNER);
-            if (!spellInfo)
-                return false;
 
             Spell *spell = new Spell(bot, spellInfo, false);
             spell->m_targets.setGOTarget(go);
             spell->SpellStart(&spell->m_targets);
+            if (bgType == BATTLEGROUND_AB && TurtleDiagnostics::enabled.load(std::memory_order_relaxed))
+                sLog.outInfo("[BG:AB] %s casts the banner spell on %u (%s) at %.1fyd, spell state %u",
+                             bot->GetName(), go->GetEntry(), go->GetName(), bot->GetDistance(go), uint32(spell->getState()));
             ai->WaitForSpellCast(spell);
 
             //WorldPacket data(CMSG_GAMEOBJ_USE);

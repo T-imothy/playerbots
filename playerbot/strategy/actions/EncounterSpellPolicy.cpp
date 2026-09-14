@@ -1,3 +1,4 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/ServerFacade.h"
 #include "EncounterSpellPolicy.h"
@@ -91,7 +92,7 @@ bool ai::HasUnsafeReflectedCast(Player* bot)
     Unit* target = cast->m_targets.getUnitTarget();
     return target && target != bot && target->IsInWorld() && target->IsAlive() &&
         bot->IsInMap(target) && !sServerFacade.IsFriendlyTo(bot, target) &&
-        target->GetReflectChance(GetSpellSchoolMask(cast->m_spellInfo)) >= 50.0f;
+        ai::NativeReflectChance(target, GetSpellSchoolMask(cast->m_spellInfo)) >= 50.0f;
 }
 
 bool ai::InterruptUnsafeReflectedCast(Player* bot)
@@ -103,6 +104,6 @@ bool ai::InterruptUnsafeReflectedCast(Player* bot)
     if (!cast->CanBeInterrupted()) return false;
     const uint32 spell = cast->m_spellInfo->Id;
     bot->InterruptSpell(CURRENT_GENERIC_SPELL);
-    if (PlayerbotAI* ai = bot->GetPlayerbotAI()) ai->SpellInterrupted(spell);
+    if (PlayerbotAI* ai = GetBotAI(bot)) ai->SpellInterrupted(spell);
     return true;
 }

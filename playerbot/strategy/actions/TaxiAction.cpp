@@ -1,7 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "TaxiAction.h"
-#include "Server/DBCStructure.h"
+#include "Database/DBCStructure.h"
 #include "playerbot/strategy/values/LastMovementValue.h"
 
 using namespace ai;

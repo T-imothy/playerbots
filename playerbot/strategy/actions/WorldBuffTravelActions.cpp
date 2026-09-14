@@ -1,4 +1,4 @@
-﻿#include "playerbot/playerbot.h"
+#include "playerbot/playerbot.h"
 #include "WorldBuffTravelActions.h"
 #include "ChooseTravelTargetAction.h"
 #include "playerbot/TravelMgr.h"
@@ -82,12 +82,12 @@ static const GameObjectData* FindClosestSongflowerSpawn(Player* bot)
             if (!IsSongflowerEntry(data.id))
                 return false;
 
-            if (data.mapid != mapId)
+            if (data.position.mapid != mapId)
                 return false;
 
-            float dx = data.posX - x;
-            float dy = data.posY - y;
-            float dz = data.posZ - z;
+            float dx = data.position.coord_x - x;
+            float dy = data.position.coord_y - y;
+            float dz = data.position.coord_z - z;
             float distSq = dx * dx + dy * dy + dz * dz;
 
             if (distSq < bestDistSq)
@@ -150,9 +150,9 @@ static bool SummonPlayerToSummoner(Player* summoner, Player* target, PlayerbotAI
     float x, y, z;
     summoner->GetPosition(x, y, z);
 
-    if (target->isRealPlayer())
+    if (IsRealPlayer(target))
     {
-        target->SetSummonPoint(summoner->GetMapId(), x, y, z, summoner->GetObjectGuid());
+        target->SetSummonPoint(summoner->GetMapId(), x, y, z);
 
         WorldPacket data(SMSG_SUMMON_REQUEST, 8 + 4 + 4);
         data << summoner->GetObjectGuid();
@@ -286,7 +286,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
             continue;
 
         bool needsSummonByStep = false;
-        PlayerbotAI* memberAI = member->GetPlayerbotAI();
+        PlayerbotAI* memberAI = GetBotAI(member);
         if (memberAI)
         {
             uint8 memberStep = memberAI->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Get();
@@ -308,7 +308,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
             continue;
         }
 
-        if (member->isRealPlayer())
+        if (IsRealPlayer(member))
             realPlayersToSummon.push_back(member);
         else
             botsToSummon.push_back(member);
@@ -331,7 +331,7 @@ bool WorldBuffTravelApplyAction::TrySummonFarAwayMembers(WorldBuffTravelStep ste
             ai->TellPlayer(GetMaster(), "Summoning " + std::string(toSummon->GetName()) + " to the group!");
 
             // Sync the summoned member's step to the warlock's step
-            PlayerbotAI* memberAI = toSummon->GetPlayerbotAI();
+            PlayerbotAI* memberAI = GetBotAI(toSummon);
             if (memberAI)
             {
                 memberAI->GetAiObjectContext()->GetValue<uint8>("world buff travel step")->Set(warlockStep);
@@ -534,7 +534,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
             }
 
             ai->TellPlayer(GetMaster(), "Regrouping at Dire Maul North for portal...");
-            return MoveTo(goData->mapid, goData->posX, goData->posY, goData->posZ);
+            return MoveTo(goData->position.mapid, goData->position.coord_x, goData->position.coord_y, goData->position.coord_z);
         }
 
         // PORTAL_HOME: regroup at the nearest Songflower
@@ -553,7 +553,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
 
             const char* portalName = GetHomePortalKeyword(bot);
             ai->TellPlayer(GetMaster(), std::string("Regrouping at Songflower waiting for Portal: ") + portalName + "...");
-            return MoveTo(goData->mapid, goData->posX, goData->posY, goData->posZ);
+            return MoveTo(goData->position.mapid, goData->position.coord_x, goData->position.coord_y, goData->position.coord_z);
         }
 
         return false;
@@ -576,7 +576,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
         }
 
         ai->TellPlayer(GetMaster(), "Traveling to Dire Maul North for world buffs");
-        return MoveTo(goData->mapid, goData->posX, goData->posY, goData->posZ);
+        return MoveTo(goData->position.mapid, goData->position.coord_x, goData->position.coord_y, goData->position.coord_z);
     }
 
     if (step == WorldBuffTravelStep::STEP_SONGFLOWER)
@@ -589,7 +589,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
         }
 
         ai->TellPlayer(GetMaster(), "Traveling to nearest Songflower for world buffs");
-        return MoveTo(goData->mapid, goData->posX, goData->posY, goData->posZ);
+        return MoveTo(goData->position.mapid, goData->position.coord_x, goData->position.coord_y, goData->position.coord_z);
     }
 
     if (step == WorldBuffTravelStep::STEP_FORGOTTEN_COAST && horde)
@@ -610,12 +610,12 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
                 if (data.id != GO_BONFIRE_FERALAS)
                     return false;
 
-                if (data.mapid != mapId)
+                if (data.position.mapid != mapId)
                     return false;
 
-                float dx = data.posX - x;
-                float dy = data.posY - y;
-                float dz = data.posZ - z;
+                float dx = data.position.coord_x - x;
+                float dy = data.position.coord_y - y;
+                float dz = data.position.coord_z - z;
                 float distSq = dx * dx + dy * dy + dz * dz;
 
                 if (distSq < bestDistSq)
@@ -638,7 +638,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
         }
 
         ai->TellPlayer(GetMaster(), "Traveling to the Dire Maul in Feralas");
-        return MoveTo(finder.best->mapid, finder.best->posX, finder.best->posY, finder.best->posZ);
+        return MoveTo(finder.best->position.mapid, finder.best->position.coord_x, finder.best->position.coord_y, finder.best->position.coord_z);
     }
 
     if (step == WorldBuffTravelStep::STEP_FELWOOD)
@@ -660,7 +660,7 @@ bool WorldBuffTravelSetTargetAction::Execute(Event& event)
 
             const char* portalName = horde ? "Orgrimmar" : "Darnassus";
             ai->TellPlayer(GetMaster(), std::string("Regrouping at Dire Maul North before portal to ") + portalName + "...");
-            return MoveTo(goData->mapid, goData->posX, goData->posY, goData->posZ);
+            return MoveTo(goData->position.mapid, goData->position.coord_x, goData->position.coord_y, goData->position.coord_z);
         }
     }
 

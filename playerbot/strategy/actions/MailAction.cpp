@@ -1,5 +1,5 @@
 
-#include "Mails/Mail.h"
+#include "Mail/Mail.h"
 #include "playerbot/playerbot.h"
 #include "MailAction.h"
 #include "playerbot/PlayerbotAIConfig.h"

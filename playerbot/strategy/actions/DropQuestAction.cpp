@@ -25,15 +25,12 @@ bool DropQuestAction::Execute(Event& event)
 
         if (logQuest == entry || link.find(quest->GetTitle()) != std::string::npos || link == "all")
         {
-            bot->SetQuestSlot(slot, 0);
-
-            // we ignore unequippable quest items in this case, its' still be equipped
-            bot->TakeQuestSourceItem(logQuest, false);
+            WorldPacket packet(CMSG_QUESTLOG_REMOVE_QUEST, 1);
+            packet << uint8(slot);
+            bot->GetSession()->HandleQuestLogRemoveQuest(packet);
+            if (bot->GetQuestSlotQuestId(slot))
+                continue;
             entry = logQuest;
-
-            bot->SetQuestStatus(entry, QUEST_STATUS_NONE);
-            bot->getQuestStatusMap()[entry].m_rewarded = false;
-
             dropped = true;
 
             if (link != "all")
@@ -140,7 +137,7 @@ void CleanQuestLogAction::DropQuestType(Player* requester, uint8 &numQuest, uint
             if (HasProgress(bot, quest) && !hasProgress && bot->GetQuestStatus(questId) != QUEST_STATUS_FAILED)
                 continue;
 
-            if (bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE && !isComplete)
+            if (bot->GetQuestStatus(questId) == QUEST_STATUS_COMPLETE)
                 continue;
 
             if (numQuest <= wantNum)
@@ -148,7 +145,7 @@ void CleanQuestLogAction::DropQuestType(Player* requester, uint8 &numQuest, uint
         }
 
         //Drop quest.
-        bot->GetPlayerbotAI()->DropQuest(questId);
+        GetBotAI(bot)->DropQuest(questId);
 
         numQuest--;
 

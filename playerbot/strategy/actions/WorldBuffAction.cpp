@@ -2,7 +2,7 @@
 #include "WorldBuffAction.h"
 #include "playerbot/AiFactory.h"
 #include "playerbot/PlayerbotAIConfig.h"
-#include "GameEvents/GameEventMgr.h"
+#include "GameEventMgr.h"
 
 using namespace ai;
 

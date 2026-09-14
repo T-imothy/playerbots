@@ -20,7 +20,7 @@ uint32 CreatureIdValue::Calculate()
     uint32 extractedCreatureId = handler.extractCreatureId(namepart);
     if (extractedCreatureId)
     {
-        const CreatureInfo* pCreatureInfo = sServerFacade.LookupCreatureInfo(extractedCreatureId);
+        const CreatureInfo* pCreatureInfo = sObjectMgr.GetCreatureTemplate(extractedCreatureId);
         if (pCreatureInfo)
             return extractedCreatureId;
     }

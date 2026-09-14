@@ -1,8 +1,8 @@
 
 #include "playerbot/playerbot.h"
 #include "BuyGuildBankTabAction.h"
-#include "Guilds/Guild.h"
-#include "Guilds/GuildMgr.h"
+#include "Guild/Guild.h"
+#include "Guild/GuildMgr.h"
 
 using namespace ai;
 

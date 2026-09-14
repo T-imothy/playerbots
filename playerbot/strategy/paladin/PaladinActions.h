@@ -105,7 +105,7 @@ namespace ai
             if (target && target->IsAlive())
             {
                 if (ai->HasAnyAuraOf(bot, "seal of vengeance", NULL))
-                    return target->GetAuraCount(31803) > 2; // pointless to judge with no stacks!
+                    return (target->GetSpellAuraHolder(31803) && target->GetSpellAuraHolder(31803)->GetStackAmount() > 2); // pointless to judge with no stacks!
                 else if (ai->HasAnyAuraOf(bot, "seal of wisdom", NULL))
                 {
                     return !target->HasAura(20186) && !target->HasAura(20354) &&

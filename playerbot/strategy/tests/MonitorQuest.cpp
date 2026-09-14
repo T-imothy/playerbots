@@ -1,6 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "MonitorQuest.h"
-#include "Quests/QuestDef.h"
+#include "QuestDef.h"
 
 using namespace ai;
 

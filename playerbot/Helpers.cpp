@@ -5,14 +5,22 @@
 #include <cctype>
 #include <locale>
 
+#if defined(_MSC_VER) || defined(_WIN32)
+#define strtok_r strtok_s
+#endif
+
 void split(std::vector<std::string>& dest, const std::string& str, const char* delim)
 {
+    // strtok_r for the same reason as ChatHandler::ExtractLiteralArg: strtok's
+    // position lives in one static pointer shared by the whole process, and
+    // every bot splits strings from its own thread.
     char* pTempStr = strdup( str.c_str() );
-    char* pWord = strtok(pTempStr, delim);
+    char* saveptr = nullptr;
+    char* pWord = strtok_r(pTempStr, delim, &saveptr);
     while(pWord != NULL)
     {
         dest.push_back(pWord);
-        pWord = strtok(NULL, delim);
+        pWord = strtok_r(NULL, delim, &saveptr);
     }
 
     free(pTempStr);
@@ -61,6 +69,13 @@ char *strstri(const char *haystack, const char *needle)
         }
     }
     return 0;
+}
+
+// PlayerbotAI.cpp forward-declares strstri(std::string, std::string).
+// Provide an implementation that forwards to the const char* version.
+char* strstri(std::string const& s1, std::string const& s2)
+{
+    return strstri(s1.c_str(), s2.c_str());
 }
 
 

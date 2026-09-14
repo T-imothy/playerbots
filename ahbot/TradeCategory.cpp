@@ -3,16 +3,16 @@
 #include "AhBotConfig.h"
 #include "PricingStrategy.h"
 #include "playerbot/ServerFacade.h"
-#include "Server/SQLStorages.h"
-#include "Server/DBCStructure.h"
-#include "Entities/ItemPrototype.h"
+#include "Database/SQLStorages.h"
+#include "Database/DBCStructure.h"
+#include "Objects/ItemPrototype.h"
 #ifdef CMANGOS
-#include "Globals/ObjectMgr.h"
+#include "ObjectMgr.h"
 #include "Spells/SpellEffectDefines.h"
 #endif
 #ifdef MANGOS
-#include "Object/ObjectMgr.h"
-#include "Globals/SharedDefines.h"
+#include "ObjectMgr.h"
+#include "SharedDefines.h"
 #endif
 
 
@@ -23,11 +23,15 @@ bool TradeSkill::Contains(ItemPrototype const* proto)
     if (itemCache.find(proto->ItemId) != itemCache.end())
         return true;
 
-    if (!Trade::Contains(proto))
+    // Category membership is static native item/spell/trainer data, just
+    // like the positive cache. Cache misses too: repeated auction scans were
+    // rescanning every trainer, recipe and skill line for every absent item.
+    if (nonItemCache.count(proto->ItemId) || !Trade::Contains(proto))
         return false;
 
     bool contains = ContainsInternal(proto);
     if (contains) itemCache.insert(proto->ItemId);
+    else nonItemCache.insert(proto->ItemId);
     return contains;
 }
 
@@ -125,7 +129,7 @@ bool TradeSkill::IsCraftedBySpell(ItemPrototype const* proto, SpellEntry const *
 
             if (proto->ItemId == entry->Reagent[x])
             {
-                sLog.outDetail("%s is a reagent for %s", proto->Name1, entry->SpellName[0]);
+                sLog.outDetail("%s is a reagent for %s", proto->Name1.c_str(), entry->SpellName[0].c_str());
                 return true;
             }
         }
@@ -138,7 +142,7 @@ bool TradeSkill::IsCraftedBySpell(ItemPrototype const* proto, SpellEntry const *
             {
                 if (entry->EffectItemType[i] == proto->ItemId)
                 {
-                    sLog.outDetail("%s is crafted by %s", proto->Name1, entry->SpellName[0]);
+                    sLog.outDetail("%s is crafted by %s", proto->Name1.c_str(), entry->SpellName[0].c_str());
                     return true;
                 }
             }

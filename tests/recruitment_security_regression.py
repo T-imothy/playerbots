@@ -17,7 +17,7 @@ struct Player;
 __HEADER__
 struct GroupReference{Player* getSource(){return nullptr;}GroupReference* next(){return nullptr;}};
 struct Group{bool bg=false;uint32 leader=0;GroupReference* GetFirstMember(){return nullptr;}
- bool IsFull(){return false;}bool IsBattleGroup(){return bg;}uint32 GetLeaderGuid(){return leader;}};
+ bool IsFull(){return false;}bool IsBattleGroup(){return bg;}bool isBGGroup(){return bg;}uint32 GetLeaderGuid(){return leader;}};
 struct Session{int security=0;uint32 account=2;struct{bool queued=false;}m_lfgInfo;
  int GetSecurity(){return security;}uint32 GetAccountId(){return account;}};
 struct AI{bool opposing=false,master=false;bool IsOpposing(Player*){return opposing;}
@@ -26,6 +26,7 @@ struct Player{Session session;AI ai;Group* group=nullptr;Group* original=nullptr
  Session* GetSession(){return &session;}AI* GetPlayerbotAI(){return &ai;}Group* GetGroup(){return group;}
  Group* GetOriginalGroup(){return original;}uint32 GetObjectGuid(){return 42;}uint32 GetGuildId(){return guild;}
  uint32 GetLevel(){return level;}bool InBattleGroundQueue(){return bgQueue;}};
+AI* GetBotAI(Player* p){return p->GetPlayerbotAI();}
 struct Config{int levelCheck=10;bool gearscorecheck=false;}sPlayerbotAIConfig;
 struct World{struct Queue{bool queued=false;bool IsPlayerInQueue(uint32){return queued;}}queue;
  Queue& GetLFGQueue(){return queue;}unsigned getConfig(int key){return key==CONFIG_UINT32_MAX_PLAYER_LEVEL?80:0;}}sWorld;

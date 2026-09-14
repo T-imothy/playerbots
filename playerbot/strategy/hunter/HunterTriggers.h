@@ -18,7 +18,14 @@ namespace ai
     {
     public:
         AspectOfTheHawkTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "aspect of the hawk") {}
-        bool IsActive() override { return BuffTrigger::IsActive() && !HunterWantsViper(ai); }
+        bool IsActive() override { return BuffTrigger::IsActive() && !HunterWantsViper(ai) && !HunterWantsWolf(ai); }
+    };
+
+    class AspectOfTheWolfTrigger : public BuffTrigger
+    {
+    public:
+        AspectOfTheWolfTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "aspect of the wolf") {}
+        bool IsActive() override { return HunterWantsWolf(ai) && BuffTrigger::IsActive(); }
     };
 
     class AspectOfTheWildTrigger : public BuffTrigger
@@ -248,7 +255,7 @@ namespace ai
             const auto bounds = HunterShotRange(ai, target);
             return target->GetVictim() == bot && !target->IsImmobilizedState() &&
                 target->GetSpeed(MOVE_RUN) > bot->GetSpeed(MOVE_RUN) * 0.5f &&
-                bot->GetDistance(target, true, DIST_CALC_NONE) < bounds.first * bounds.first;
+                bot->GetDistance(target, DIST_CALC_NONE) < bounds.first * bounds.first;
         }
     };
 

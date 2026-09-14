@@ -1,9 +1,10 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "VashjCoreValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -52,7 +53,7 @@ bool ai::CanReceiveVashjCore(PlayerbotAI* ai, Player* member)
     for (Unit* attacker : member->getAttackers())
         if (attacker && attacker->IsInWorld() && attacker->IsAlive() && member->IsInMap(attacker) &&
             attacker->GetVictim() == member && (attacker->GetEntry() == 22056 || attacker->GetEntry() == 22055)) return false;
-    PlayerbotAI* memberAI = member->GetPlayerbotAI();
+    PlayerbotAI* memberAI = GetBotAI(member);
     if (!memberAI || memberAI->IsRealPlayer() || !memberAI->CanMove() ||
         !memberAI->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT) ||
         memberAI->HasStrategy("stay", BotState::BOT_STATE_COMBAT) ||
@@ -72,7 +73,7 @@ bool ai::CanLootVashjCore(Player* player, Creature* corpse, Unit* boss)
 {
 #ifndef MANGOSBOT_ZERO
     if (!corpse || !boss || !corpse->IsInWorld() || corpse->IsAlive() || !player->IsInMap(corpse) ||
-        corpse->GetEntry() != 22009 || corpse->GetSpawnerGuid() != boss->GetObjectGuid() ||
+        corpse->GetEntry() != 22009 || ai::NativeSpawnerGuid(corpse) != boss->GetObjectGuid() ||
         !corpse->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE)) return false;
     Loot* loot = sLootMgr.GetLoot(player, corpse->GetObjectGuid());
     if (!loot || !loot->CanLoot(player)) return false;

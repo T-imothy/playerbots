@@ -1,3 +1,5 @@
+#include "Util/DevDiagnostics.h"
+#include "playerbot/WorldActions.h"
 
 #include "playerbot/playerbot.h"
 #include <stdarg.h>
@@ -27,7 +29,7 @@ namespace
             return false;
 
         Player* requester = event.getOwner();
-        return requester && requester->isRealPlayer();
+        return requester && IsRealPlayer(requester);
     }
 }
 
@@ -289,6 +291,9 @@ Engine::~Engine(void)
 
 void Engine::Reset()
 {
+    decisionPrepared = false;
+    worldContinuationEpoch = std::make_shared<int>(0);
+    pendingWorldDecision.reset();
     ClearActionFailures();
 
     ActionNode* action = NULL;
@@ -334,8 +339,37 @@ void Engine::Init()
 	}
 }
 
+bool Engine::ScheduleWorldContinuation(const Event& event, std::function<void(Engine&)> continuation)
+{
+    // Saturation must not cause zero-delay admission retries on every map tick.
+    ai->SetNextCheckDelay(std::max<uint32>(ai->GetAIInternalUpdateDelay(), 100));
+    if (WorldContinuationPending())
+        return true;
+    auto pending = std::make_shared<int>(0);
+    std::weak_ptr<int> epoch = worldContinuationEpoch;
+    bool accepted = WorldActions::Instance().Enqueue(
+        ai->GetBot(), queue.Peek() ? queue.Peek()->getAction()->getName() : "reaction continuation", event,
+        [this, epoch, pending, continuation = std::move(continuation)](PlayerbotAI& current)
+        {
+            // The queue validated the actor and native map generation first.
+            // Test the epoch before dereferencing the captured engine pointer.
+            if (epoch.expired())
+                return;
+            if (&current != ai)
+                return;
+            pendingWorldDecision.reset();
+            continuation(*this);
+        });
+    if (accepted)
+        pendingWorldDecision = pending;
+    return accepted;
+}
+
 bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 {
+    MANTECH_DIAG_SCOPE(BotDecision, 16, nullptr);
+
+    if (WorldContinuationPending()) return false;
     PruneActionFailures(WorldTimer::getMSTime());
     // Expire old plans before fresh triggers deduplicate against them.
     queue.RemoveExpired();
@@ -355,9 +389,14 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
     ActionBasket* basket = NULL;
 
     time_t currentTime = time(0);
-    aiObjectContext->Update();
-    ProcessTriggers(minimal);
-    PushDefaultActions();
+    if (!decisionPrepared)
+    {
+        aiObjectContext->Update();
+        ProcessTriggers(minimal);
+        PushDefaultActions();
+        decisionPrepared = true;
+    }
+    bool yieldedDecision = false;
 
     std::vector<Action*> modifiedActions;
 
@@ -374,6 +413,24 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
             if (minimal && (relevance < 100))
                 break;
             // NOTE: queue.Pop() deletes basket
+            Action* candidate = InitializeAction(basket->getAction());
+            if (WorldActions::IsContinuation() && candidate && !candidate->RequiresWorldOwner())
+            {
+                yieldedDecision = true;
+                break; // Resume local prerequisites/alternatives on its map.
+            }
+            if (WorldActions::IsMapExecution())
+            {
+                if (candidate && candidate->RequiresWorldOwner())
+                {
+                    ScheduleWorldContinuation(event, [depth, minimal](Engine& engine) {
+                        if (engine.ai->GetCurrentEngine() == &engine)
+                            engine.DoNextAction(engine.ai->GetBot(), depth, minimal, engine.ai->GetBot()->IsTaxiFlying());
+                    });
+                    yieldedDecision = true;
+                    break; // Retain basket, prerequisites, event and relevance.
+                }
+            }
             ActionNode* actionNode = queue.Pop();
             if (collectDiagnostics)
                 ++diagnosticSample.evaluations;
@@ -419,7 +476,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                 if (!isStunned || action->isUsefulWhenStunned())
                 {
                     auto pmo2 = sPerformanceMonitor.start(PERF_MON_ACTION, "isUseful", ai);
-                    isUseful = action->isUseful();
+                    isUseful = ([&] { MANTECH_DIAG_SCOPE(BotUseful, 32, action->getName().c_str()); return action->isUseful(); }());
                     pmo2.reset();
                 }
 
@@ -501,7 +558,7 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     }
 
                     auto pmo3 = sPerformanceMonitor.start(PERF_MON_ACTION, "isPossible", ai);
-                    bool isPossible = action->isPossible();
+                    bool isPossible = ([&] { MANTECH_DIAG_SCOPE(BotPossible, 32, action->getName().c_str()); return action->isPossible(); }());
                     pmo3.reset();
 
                     if (isPossible && relevance)
@@ -633,6 +690,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
             std::chrono::steady_clock::now() - diagnosticStart).count());
         sPlayerbotDiagnostics.RecordEngineSample(diagnosticSample);
     }
+    if (!yieldedDecision)
+        decisionPrepared = false;
     return actionExecuted;
 }
 
@@ -723,14 +782,20 @@ ActionResult Engine::ExecuteAction(const std::string& name, Event& event)
         Action* action = InitializeAction(actionNode);
         if (action)
         {
+            if (action->RequiresWorldOwner() && WorldActions::IsMapExecution())
+            {
+                bool accepted = WorldActions::Instance().Enqueue(ai->GetBot(), name, event);
+                delete actionNode;
+                return accepted ? ACTION_RESULT_DEFERRED : ACTION_RESULT_FAILED;
+            }
             auto pmo2 = sPerformanceMonitor.start(PERF_MON_ACTION, "isUseful", ai);
-            bool isUseful = action->isUseful();
+            bool isUseful = ([&] { MANTECH_DIAG_SCOPE(BotUseful, 32, action->getName().c_str()); return action->isUseful(); }());
             pmo2.reset();
             
             if (isUseful)
             {
                 auto pmo3 = sPerformanceMonitor.start(PERF_MON_ACTION, "isPossible", ai);
-                bool isPossible = action->isPossible();
+                bool isPossible = ([&] { MANTECH_DIAG_SCOPE(BotPossible, 32, action->getName().c_str()); return action->isPossible(); }());
                 pmo3.reset();
 
                 if (isPossible)
@@ -767,16 +832,18 @@ bool Engine::CanExecuteAction(const std::string& name, bool isUseful, bool isPos
     if (actionNode)
     {
         Action* action = InitializeAction(actionNode);
-        if (action)
+        if (action && action->RequiresWorldOwner() && WorldActions::IsMapExecution())
+            result = false;
+        else if (action)
         {
             if (isUseful)
             {
-                result &= action->isUseful();
+                result &= ([&] { MANTECH_DIAG_SCOPE(BotUseful, 32, action->getName().c_str()); return action->isUseful(); }());
             }
 
             if (isPossible)
             {
-                result &= action->isPossible();
+                result &= ([&] { MANTECH_DIAG_SCOPE(BotPossible, 32, action->getName().c_str()); return action->isPossible(); }());
             }
         }
 
@@ -877,6 +944,7 @@ Strategy* Engine::GetStrategy(const std::string& name) const
 
 void Engine::ProcessTriggers(bool minimal)
 {
+    MANTECH_DIAG_SCOPE(BotTrigger, 32, "engine_triggers");
     for (std::list<TriggerNode*>::iterator i = triggers.begin(); i != triggers.end(); i++)
     {
         TriggerNode* node = *i;
@@ -992,6 +1060,9 @@ Action* Engine::InitializeAction(ActionNode* actionNode)
 
 bool Engine::ListenAndExecute(Action* action, Event& event)
 {
+    MANTECH_DIAG_SCOPE(BotExecute, 16, action->getName().c_str());
+
+    if (action->RequiresWorldOwner() && WorldActions::IsMapExecution()) return false;
     if (!event.IsOwnerAvailable())
         return false;
 

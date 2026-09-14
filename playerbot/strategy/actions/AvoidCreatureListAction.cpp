@@ -32,7 +32,7 @@ bool AvoidCreatureListAction::Execute(Event& event)
             out << "Avoid creature list: ";
             for (std::set<uint32>::iterator i = avoidCreatures.begin(); i != avoidCreatures.end(); i++)
             {
-                const CreatureInfo* creatureEntry = sServerFacade.LookupCreatureInfo(*i);
+                const CreatureInfo* creatureEntry = sObjectMgr.GetCreatureTemplate(*i);
                 if (!creatureEntry)
                 {
                     continue;
@@ -73,7 +73,7 @@ bool AvoidCreatureListAction::Execute(Event& event)
                     continue;
                 }
 
-                const CreatureInfo* creatureEntry = sServerFacade.LookupCreatureInfo(creatureId);
+                const CreatureInfo* creatureEntry = sObjectMgr.GetCreatureTemplate(creatureId);
                 if (!creatureEntry)
                 {
                     ai->TellError(requester, "Unknown creature " + creature);

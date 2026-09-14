@@ -37,7 +37,7 @@ Unit* ai::SelectHealerSupportTarget(PlayerbotAI* ai, const std::string& spell, f
         // Mending after a jump, even if that member is currently out of range.
         if (ai->HasMyAura(spell, member)) return nullptr;
         // Never alternate Earth Shield and Water Shield on the healer itself.
-        if (member == bot || member->duel || sServerFacade.GetDistance2d(bot, member) > range ||
+        if (member == bot || member->m_duel || sServerFacade.GetDistance2d(bot, member) > range ||
             ai->HasAura(spell, member)) continue;
         const int priority = ai->IsTank(member) ? 0 : !member->getAttackers().empty() ? 1 :
             member == ai->GetMaster() ? 2 : 3;

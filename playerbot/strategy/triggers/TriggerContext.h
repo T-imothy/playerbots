@@ -9,6 +9,7 @@
 #include "PvpTriggers.h"
 #include "RpgTriggers.h"
 #include "RitualSummonTriggers.h"
+#include "UldamanAltarTrigger.h"
 #include "TravelTriggers.h"
 #include "RtiTriggers.h"
 #include "CureTriggers.h"
@@ -328,6 +329,7 @@ namespace ai
             creators["magtheridon cube"] = [](PlayerbotAI* ai) { return new MagtheridonCubeTrigger(ai); };
             creators["gruul shatter spread"] = [](PlayerbotAI* ai) { return new GruulSpreadTrigger(ai); };
             creators["assist summoning ritual"] = [](PlayerbotAI* ai) { return new AssistSummoningRitualTrigger(ai); };
+            creators["assist uldaman altar"] = [](PlayerbotAI* ai) { return new AssistUldamanAltarTrigger(ai); };
             creators["hold summoning ritual"] = [](PlayerbotAI* ai) { return new HoldSummoningRitualTrigger(ai); };
             creators["continue ritual summon"] = [](PlayerbotAI* ai) { return new ContinueRitualSummonTrigger(ai); };
             creators["tank threat transfer"] = [](PlayerbotAI* ai) { return new TankThreatTransferTrigger(ai); };

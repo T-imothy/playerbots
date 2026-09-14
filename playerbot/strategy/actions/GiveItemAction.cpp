@@ -17,7 +17,7 @@ bool GiveItemAction::Execute(Event& event)
     Player* receiver = dynamic_cast<Player*>(target);
     if (!receiver) return false;
 
-    PlayerbotAI *receiverAi = receiver->GetPlayerbotAI();
+    PlayerbotAI *receiverAi = GetBotAI(receiver);
     if (!receiverAi)
         return false;
 
@@ -34,9 +34,7 @@ bool GiveItemAction::Execute(Event& event)
             continue;
 
         ItemPosCountVec dest;
-        uint8 bagSlot;
-        InventoryResult msg = receiver->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, bagSlot, false);
-
+        InventoryResult msg = receiver->CanStoreItem(NULL_BAG, NULL_SLOT, dest, item, false);
         if (msg == EQUIP_ERR_OK)
         {
             bot->MoveItemFromInventory(item->GetBagSlot(), item->GetSlot(), true);

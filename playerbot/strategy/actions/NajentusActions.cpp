@@ -84,8 +84,8 @@ Unit* NajentusShieldAction::GetTarget()
         if (boss->GetDistance(member) <= radius && member->GetHealth() <= uint32(damage)) return nullptr;
         if (!member->HasItemCount(32408, 1) || !member->IsSpellReady(39948, item) ||
             member->HasAura(39837) || boss->GetDistance(member) > range || !member->IsWithinLOSInMap(boss) ||
-            !member->GetPlayerbotAI() || member->GetPlayerbotAI()->IsRealPlayer() ||
-            !member->GetPlayerbotAI()->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT)) continue;
+            !GetBotAI(member) || GetBotAI(member)->IsRealPlayer() ||
+            !GetBotAI(member)->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT)) continue;
         if (!selected || member->GetObjectGuid() < selected->GetObjectGuid()) selected = member;
     }
     return selected == bot ? boss : nullptr;

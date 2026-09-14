@@ -1,3 +1,4 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "DungeonActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -153,7 +154,7 @@ Unit* DungeonAddTargetAction::GetTarget()
         {
             // The trapped player summons these rescue objects, not the boss.
             // Native immobilization must not make them look like protected CC.
-            Unit* victim = ai->GetUnit(add->GetSpawnerGuid());
+            Unit* victim = ai->GetUnit(ai::NativeSpawnerGuid(add));
             if (!victim || !victim->IsPlayer() || !victim->IsInWorld() || !victim->IsAlive() ||
                 !bot->IsInMap(victim) || victim->HasCharmer() || !victim->HasAura(rescueAura)) continue;
             Player* member = static_cast<Player*>(victim);
@@ -180,14 +181,14 @@ Unit* DungeonAddTargetAction::GetTarget()
             }
         }
         else
-            boss = ai->GetUnit(add->GetSpawnerGuid());
+            boss = ai->GetUnit(ai::NativeSpawnerGuid(add));
         if (!auraSource && summonerEntry)
         {
             // Vorpil's passive helper summons the travelers. Resolve exactly
             // that live native chain; never guess ownership from proximity.
             if (!boss || !boss->IsInWorld() || !boss->IsAlive() || !bot->IsInMap(boss) ||
                 boss->HasCharmer() || boss->GetEntry() != summonerEntry) continue;
-            boss = ai->GetUnit(boss->GetSpawnerGuid());
+            boss = ai->GetUnit(ai::NativeSpawnerGuid(boss));
         }
         if (!validBoss(boss) || boss->GetEntry() != (auraSource ? sourceBossEntry : bossEntry) ||
             (!auraSource && phaseAura && !boss->HasAura(phaseAura))) continue;

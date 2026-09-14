@@ -1,7 +1,6 @@
 #pragma once
-
-#include <atomic>
 #include "PlayerbotMgr.h"
+#include <atomic>
 #include "PlayerbotAIBase.h"
 #include "strategy/AiObjectContext.h"
 #include "strategy/ReactionEngine.h"
@@ -10,12 +9,13 @@
 #include "PlayerbotSecurity.h"
 #include "PlayerbotTextMgr.h"
 #include "BotState.h"
+#include "AsyncBotChat.h"
 #include "PlayerTalentSpec.h"
 #include <stack>
-#include <unordered_map>
 #include "strategy/IterateItemsMask.h"
 #include "RandomPlayerbotMgr.h"
 
+#include "playerbot/BotSlots.h"
 class Player;
 class PlayerbotMgr;
 class ChatHandler;
@@ -30,46 +30,17 @@ public:
     explicit PlayerbotChatHandler(Player* pMasterPlayer) : ChatHandler(pMasterPlayer->GetSession()) {}
     void sysmessage(std::string str) { SendSysMessage(str.c_str()); }
     uint32 extractQuestId(std::string str);
+    uint32 extractCreatureId(std::string str)
+    {
+        char* source = &str[0];
+        uint32 id = 0;
+        return !str.empty() && ExtractUint32KeyFromLink(&source, "Hcreature_entry", id) ? id : 0;
+    }
     uint32 extractSpellId(std::string str)
     {
         char* source = (char*)str.c_str();
         return ExtractSpellIdFromLink(&source);
     }
-    uint32 extractCreatureId(std::string str)
-    {
-        char* source = (char*)str.c_str();
-        uint32 id;
-        if (ExtractUInt32(&source, id))
-            return id;
-            
-        return 0;
-    }
-};
-
-class ChannelAcces
-{
-public:    
-    struct PlayerInfo
-    {
-        ObjectGuid player;
-        uint8 flags;       
-    };
-
-    typedef std::map<ObjectGuid, PlayerInfo> PlayerList;
-
-    bool IsOn(ObjectGuid who) const { return m_players.find(who) != m_players.end(); }    
-    std::string                 m_name;
-    std::string                 m_password;
-    ObjectGuid                  m_ownerGuid;
-    PlayerList                  m_players;
-    GuidSet                     m_banned;
-    const ChatChannelsEntry* m_entry = nullptr;
-    bool                        m_announcements = false;
-    bool                        m_moderation = false;
-    uint8                       m_flags = 0x00;
-    // Custom features:
-    bool                        m_static = false;
-    bool                        m_realmzone = false;
 };
 
 namespace ai
@@ -334,9 +305,12 @@ public:
     void AddPacket(const WorldPacket& packet);
 
 private:
+    // Immutable after PlayerbotAI construction; read concurrently by producers.
     std::map<uint16, std::string> handlers;
     std::map<uint16, bool> delay;
-    std::stack<WorldPacket> queue;
+    // Penqle WorldPacket is move-only; stack of values fails copy-assign.
+    // Use unique_ptr to keep the stack copyable-by-value-of-element.
+    std::stack<std::unique_ptr<WorldPacket>> queue;
     std::mutex m_botPacketMutex;
 };
 
@@ -368,12 +342,15 @@ private:
 
 class PlayerbotAI : public PlayerbotAIBase
 {
+    friend class ai::ReactionEngine; // Resume through the existing reaction wrapper.
 public:
 	PlayerbotAI();
 	PlayerbotAI(Player* bot);
 	virtual ~PlayerbotAI();
 
-    virtual void UpdateAI(uint32 elapsed, bool minimal = false, bool delayAlreadyAdvanced = false);
+    virtual void UpdateAI(uint32 elapsed, bool minimal = false);
+    void CleanupExpiredValuesIfDue();
+    void RequestValueCacheCleanup() { valueCacheCleanupRequested.store(true, std::memory_order_release); }
 
     void HandleCommands();
 private:
@@ -391,11 +368,22 @@ public:
 	void HandleTeleportAck();
     void QueueSummonRevival(uint32 mapId, float x, float y, float z, uint32 instanceId = 0);
     void CompleteSummonRevival();
+    // Scheduler-only cooldown. Never participates in CanUpdateAIInternal:
+    // full turns and native spell/action deadlines use their own existing timer.
+    uint32 GetBackgroundMinimalDelay() const { return backgroundMinimalDelay; }
+    void AdvanceBackgroundMinimalDelay(uint32 elapsed)
+    { backgroundMinimalDelay = backgroundMinimalDelay > elapsed ? backgroundMinimalDelay - elapsed : 0; }
+    void DeferBackgroundMinimalUpdate(uint32 delay) { backgroundMinimalDelay = delay; }
     uint32 GetTransitionGeneration() const { return transitionGeneration.load(std::memory_order_acquire); }
     bool IsTransitionContextCurrent(uint32 generation, uint32 mapId, uint32 instanceId) const;
+    bool HasPendingTransition() const { return requestedTransition.load(std::memory_order_acquire) || transitionInProgress.load(std::memory_order_acquire); }
     static void RecordDiscardedTransitionWork();
     static uint64 ConsumeDiscardedTransitionWork();
     static uint64 ConsumeTransitionRequests();
+    void RequestUrgentTransition(uint32 triggerId);
+    void PrepareForUrgentTransition();
+    bool ProcessPendingTransition();
+    void ClearPendingTransition(uint32 expectedTriggerId = 0, bool stopMovement = false);
     void ChangeEngine(BotState type);
     void DoNextAction(bool minimal = false);
     bool CanDoSpecificAction(const std::string& name, bool isUseful = true, bool isPossible = true);
@@ -494,7 +482,7 @@ public:
     uint8 GetManaPercent(const Unit& target) const;
     uint8 GetManaPercent() const;
 
-    virtual bool IsInterruptableSpellCasting(Unit* player, std::string spell);
+    virtual bool IsInterruptableSpellCasting(Unit* player, std::string spell, uint8 effectMask = 0);
     virtual bool HasAuraToDispel(Unit* player, uint32 dispelType);
     bool canDispel(const SpellEntry* entry, uint32 dispelType);
     static bool IsHealSpell(const SpellEntry* entry);
@@ -504,7 +492,8 @@ public:
 
     bool HasSpell(std::string name) const;
     bool HasSpell(uint32 spellid) const;
-    size_t GetSpellCapabilityCacheSize() const { return spellCapabilityCache.size(); }
+    // Retain the diagnostic accessor/field for existing telemetry consumers.
+    size_t GetSpellCapabilityCacheSize() const { return 0; }
     bool HasAura(uint32 spellId, Unit* player, bool checkOwner = false);
     Aura* GetAura(uint32 spellId, Unit* player, bool checkOwner = false);
     Aura* GetAura(std::string spellName, Unit* player, bool checkOwner = false);
@@ -513,6 +502,7 @@ public:
     bool HasSpellItems(uint32 spellId, const Item* castItem) const;
     void DurabilityLoss(Item* item, double percent);
 
+    SpellCastResult CheckSpellTargetAlignment(SpellEntry const* spellInfo, Unit* target);
     // effectMask == 0 uses the native explicit-target/self-target effect masks.
     // It is not a checkHasSpell boolean (the numeric overload has that separately).
     virtual bool CanCastSpell(std::string name, Unit* target, uint8 effectMask, Item* itemTarget = nullptr, bool ignoreRange = false, bool ignoreInCombat = false, bool ignoreMount = false, SpellCastResult* checkResult = nullptr);
@@ -533,16 +523,24 @@ public:
     bool IsInVehicle(bool canControl = false, bool canCast = false, bool canAttack = false, bool canTurn = false, bool fixed = false, std::string vehicleName = "");
 
     uint32 GetEquipGearScore(Player* player, bool withBags, bool withBank);
+    // mod-playerbots short forms.
+    uint32 GetEquipGearScore(Player* player) { return GetEquipGearScore(player, false, false); }
+    std::vector<Player*> GetRealPlayersInGroup();
+    // mod-playerbots short forms: the error goes to the master, the cast
+    // check uses effect mask 0 (any effect).
+    bool TellError(std::string text) { return TellError(GetMaster(), text); }
+    bool CanCastSpell(std::string name, Unit* target) { return CanCastSpell(name, target, 0); }
     uint32 GetEquipStatsValue(Player* player);
     bool HasSkill(SkillType skill);
     bool IsAllowedCommand(std::string text);
     float GetRange(std::string type);
 
     static ReputationRank GetFactionReaction(FactionTemplateEntry const* thisTemplate, FactionTemplateEntry const* otherTemplate);
-    static bool friendToAlliance(FactionTemplateEntry const* templateEntry) { return GetFactionReaction(templateEntry, sFactionTemplateStore.LookupEntry(1)) >= REP_NEUTRAL; }
-    static bool friendToHorde(FactionTemplateEntry const* templateEntry) { return GetFactionReaction(templateEntry, sFactionTemplateStore.LookupEntry(2)) >= REP_NEUTRAL; }
+    // cmangos uses sFactionTemplateStore.LookupEntry(N); Penqle uses sObjectMgr.GetFactionTemplateEntry(N).
+    static bool friendToAlliance(FactionTemplateEntry const* templateEntry) { return GetFactionReaction(templateEntry, sObjectMgr.GetFactionTemplateEntry(1)) >= REP_NEUTRAL; }
+    static bool friendToHorde(FactionTemplateEntry const* templateEntry) { return GetFactionReaction(templateEntry, sObjectMgr.GetFactionTemplateEntry(2)) >= REP_NEUTRAL; }
     bool IsFriendlyTo(FactionTemplateEntry const* templateEntry) { return GetFactionReaction(bot->GetFactionTemplateEntry(), templateEntry) >= REP_NEUTRAL; }
-    bool IsFriendlyTo(uint32 faction) { return GetFactionReaction(bot->GetFactionTemplateEntry(), sFactionTemplateStore.LookupEntry(faction)) >= REP_NEUTRAL; }
+    bool IsFriendlyTo(uint32 faction) { return GetFactionReaction(bot->GetFactionTemplateEntry(), sObjectMgr.GetFactionTemplateEntry(faction)) >= REP_NEUTRAL; }
     static bool AddAura(Unit* unit, uint32 spellId);
     ReputationRank getReaction(FactionTemplateEntry const* factionTemplate) { return GetFactionReaction(bot->GetFactionTemplateEntry(), factionTemplate);}
 
@@ -561,6 +559,8 @@ public:
     std::list<Unit*> GetAllHostileUnitsAroundWO(WorldObject* wo, float distanceAround);
     std::list<Unit*> GetAllHostileNPCNonPetUnitsAroundWO(WorldObject* wo, float distanceAround);
 
+    std::weak_ptr<BotChatLifetime> GetChatLifetime() const { return chatLifetime; }
+    void SetManualRpgChatPending(bool pending) { manualRpgChatPending = pending; }
     static void SendDelayedPacket(WorldSession* session, std::future<std::vector<std::pair<WorldPacket, uint32>>> futurePacket);
     void ReceiveDelayedPacket(std::future<std::vector<std::pair<WorldPacket, uint32>>> futurePacket);
  public:
@@ -589,14 +589,67 @@ public:
 	Player* GetBot() { return bot; }
     Player* GetMaster() { return master; }
 
+    // accessor for the active engine so
+    // cpp can build heartbeat / debug payloads without being
+    // a friend class. Read-only.
+    Engine* GetCurrentEngine() { return currentEngine; }
+    // Read-only per-state access for module diagnostics (mod-dungeon-clear's
+    // strategy gate dumps what an engine actually carries when HasStrategy
+    // disagrees with observed behavior).
+    Engine* GetEngine(BotState type) { return engines[(uint8)type]; }
+
+    // Heartbeat-cadence accumulator used by ::TickHeartbeat.
+    // Public so the helper can advance it in-place every UpdateAI tick;
+    // there's no behavior risk since it's a pure accumulator (no class
+    // invariant tied to its value beyond "nonnegative").
+    uint32 scboteHeartbeatAcc = 0;
+
+    // One-shot "needs level/gear sync" flag. Set by OnBotSummoned
+    // when the bot logs in; cleared by TickHeartbeat after the sync runs.
+    // Reason for the deferral: at OnBotLogin time the bot's master link is
+    // not yet established (cmangos sets it later in the .bot create flow),
+    // so the sync code can't tell what level to match. We watch from the
+    // tick path and run once master becomes available.
+    bool scboteLevelSyncPending = false;
+
+    // One-shot "teleport bot to master on first available tick" flag. Set
+    // by OnBotSummoned; cleared by TickHeartbeat after the teleport runs.
+    // Same deferral rationale as scboteLevelSyncPending: master link is
+    // typically not set at OnBotLogin time. Without this, bots summoned
+    // via `.bot add` come online at their last logout position â€” often a
+    // different continent than the master, so they can't be invited to
+    // group or interacted with normally. .
+    bool scboteTeleportPending = false;
+
+    // Last raid-encounter creature ID we applied strategies for. Used by
+    // TickEncounter to detect target-change transitions
+    // and add/remove the per-boss strategy bundles. 0 means "no encounter
+    // strategies applied". A non-zero value that doesn't match the current
+    // target's creature_id triggers a strategy reset for the new target.
+    uint32 scboteLastEncounterCreatureId = 0;
+
+    // BotActionLog: track last combat state so we only log STATE snapshots
+    // on actual combat-state transitions (combat-enter / combat-exit).
+    // Without this we'd spam the log with "still in combat" lines every
+    // tick. -1 means "uninitialized" so the first observation always logs.
+    int scboteLastCombatLogged = -1;
+
     //Checks if the bot is really a player. Players always have themselves as master.
-    bool IsRealPlayer() { return bot->GetSession()->GetRemoteAddress() != "disconnected/bot"; }
-    bool IsRealPlayer(Unit* unit) { return unit->IsPlayer() && ((Player*)unit)->GetSession()->GetRemoteAddress() != "disconnected/bot"; }
+    //
+    bool IsRealPlayer()
+    {
+        return bot->GetSession()->GetTransport() == SessionTransport::Network;
+    }
+    bool IsRealPlayer(Unit* unit)
+    {
+        return unit && unit->IsPlayer() &&
+            static_cast<Player*>(unit)->GetSession()->GetTransport() == SessionTransport::Network;
+    }
     bool IsSelfMaster() { return master ? (master == bot) : false; }
     //Bot has a master that is a player.
-    bool HasRealPlayerMaster() { return master && (!master->GetPlayerbotAI() || master->GetPlayerbotAI()->IsRealPlayer()); } 
+    bool HasRealPlayerMaster() { return master && (!GetBotAI(master) || GetBotAI(master)->IsRealPlayer()); } 
     //Bot has a master that is actively playing.
-    bool HasActivePlayerMaster() const { return master && !master->GetPlayerbotAI(); }
+    bool HasActivePlayerMaster() const { return master && !GetBotAI(master); }
     //Checks if the bot is summoned as alt of a player
     bool IsAlt() { return HasRealPlayerMaster() && !sRandomPlayerbotMgr.IsRandomBot(bot); }
     //Get the group leader or the master of the bot.
@@ -626,12 +679,34 @@ public:
     std::pair<uint32,uint32> GetPriorityBracket(ActivePiorityType type);
     bool AllowActive(ActivityType activityType);
     bool AllowActivity(ActivityType activityType = ALL_ACTIVITY, bool checkNow = false);
+    bool CachedActivity(ActivityType type) const { return allowActive[type]; }
 
     bool HasCheat(BotCheatMask mask) const;
     BotCheatMask GetCheat() { return cheatMask; }
     void SetCheat(BotCheatMask mask) { cheatMask = mask; }
 
-    void SetMaster(Player* master) { this->master = master; }
+    // Cache master's GUID alongside the raw pointer so we can revalidate
+    // the pointer each tick against ObjectAccessor â€” if the master Player
+    // was destroyed (logout / disconnect) since SetMaster() was called,
+    // FindPlayer(masterGuid) returns nullptr (or a different live Player)
+    // and we null `master` BEFORE any deref. See RevalidateMasterPointer.
+    // 2026-05-05: bot crashed with
+    // EXECUTE at 0x0 in UpdateAI's logout-cancel block right after the
+    // master (the master) disconnected â€” `if (master && IsInCombat(master))`
+    // dereferenced a freed Player. The `master &&` guard catches null
+    // but not dangling.
+    void SetMaster(Player* m)
+    {
+        this->master = m;
+        this->masterGuid = m ? m->GetObjectGuid() : ObjectGuid();
+    }
+
+    // Null `master` if the Player it points at is gone. Was an inline block at
+    // the top of UpdateAI; it is a method now because the TICK is not the only
+    // path that dereferences the pointer - the LOGOUT path does too, and that is
+    // exactly where a master who just disconnected leaves a dangling pointer
+    // behind (see PlayerbotHolder::LogoutPlayerBot).
+    void RevalidateMasterPointer();
     AiObjectContext* GetAiObjectContext() { return aiObjectContext; }
     void SetAiObjectContext(AiObjectContext* aiObjectContext) { this->aiObjectContext = aiObjectContext; }
     ChatHelper* GetChatHelper() { return &chatHelper; }
@@ -680,6 +755,24 @@ public:
     bool GetShouldLogOut() { return shouldLogOut; }
 
     PlayerTalentSpec GetTalentSpec();
+
+        // Role handed out by the dungeon finder (LFT_ROLE_* bits: 1 tank,
+        // 2 heal, 4 damage; 0 = none). Overrides the talent-derived combat
+        // strategy in AiFactory, and survives ResetStrategies() - which is the
+        // whole point, since that runs whenever the master changes, i.e. right
+        // when the bot joins the player's group.
+        // Modules set this while a bot runs an activity that stands the
+        // party on top of TELEPORT areatriggers (a dungeon-clear run parks
+        // right at instance entrances/exits): the stock "area trigger" relay
+        // must not port such a bot out mid-run - live, the run's tank walked
+        // into the Deadmines exit trigger and vanished ("leader tank
+        // vanished"; caught by a gdb trap on Player::TeleportTo under
+        // AreaTriggerAction::Execute). See that action for the gate.
+        void SetSuppressAreaTriggerRelay(bool on) { m_suppressAreaTriggerRelay = on; }
+        bool IsAreaTriggerRelaySuppressed() const { return m_suppressAreaTriggerRelay; }
+
+        void SetForcedRole(uint8 role) { m_forcedRole = role; }
+        uint8 GetForcedRole() const { return m_forcedRole; }
     void UpdateTalentSpec(PlayerTalentSpec spec = PlayerTalentSpec::TALENT_SPEC_INVALID);
 
     bool CanEnterArea(const AreaTrigger* area);
@@ -705,14 +798,16 @@ public:
 private:
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
-    void RequestUrgentTransition(uint32 triggerId);
-    void PrepareForUrgentTransition();
-    bool ProcessPendingTransition();
-    void ClearPendingTransition(uint32 expectedTriggerId = 0, bool stopMovement = false);
 
 protected:
 	Player* bot;
 	Player* master;
+	uint8 m_forcedRole = 0;
+	bool m_suppressAreaTriggerRelay = false;
+	// GUID-shadow of `master` so we can verify the pointer is still
+	// alive each tick without dereferencing it. Set in SetMaster().
+	// Used by RevalidateMasterPointer() at the top of UpdateAI.
+	ObjectGuid masterGuid;
 	uint32 accountId;
     AiObjectContext* aiObjectContext;
     Engine* currentEngine;
@@ -723,13 +818,13 @@ protected:
     std::queue<ChatCommandHolder> chatCommands;
     std::queue<ChatQueuedReply> chatReplies;
     std::mutex chatRepliesMutex;
-    // A login/map transition can expose the same bot to two update paths for
-    // a short window. Never execute its mutable AI context concurrently.
     std::mutex updateExecutionMutex;
     // Map/instance transitions invalidate movement and AI work calculated in
     // the previous world context. These atomics are also read by Arch2 worker
     // queues without touching mutable AI state.
     std::atomic<uint32> transitionGeneration{1};
+    bool manualRpgChatPending = false;
+    std::shared_ptr<BotChatLifetime> chatLifetime = std::make_shared<BotChatLifetime>();
     std::atomic<bool> urgentTransitionPending{false};
     struct PendingSummonRevival
     {
@@ -740,6 +835,7 @@ protected:
         time_t expires = 0;
     };
     PendingSummonRevival pendingSummonRevival;
+    uint32 backgroundMinimalDelay = 0;
     struct PendingTransitionState
     {
         uint32 triggerId = 0;
@@ -753,6 +849,8 @@ protected:
     PendingTransitionState pendingTransition;
     static std::atomic<uint64> discardedTransitionWork;
     static std::atomic<uint64> transitionRequests;
+    std::atomic<bool> transitionInProgress{false};
+    std::atomic<uint32> requestedTransition{0};
     PacketHandlingHelper botOutgoingPacketHandlers;
     PacketHandlingHelper masterIncomingPacketHandlers;
     PacketHandlingHelper masterOutgoingPacketHandlers;
@@ -772,6 +870,7 @@ protected:
     bool fallAfterJump;
     uint32 faceTargetUpdateDelay;
     uint32 lastValueCacheCleanupMs = 0;
+    std::atomic<bool> valueCacheCleanupRequested{false};
     bool isPlayerFriend = false;
     bool isMovingToTransport = false;
     bool shouldLogOut = false;
@@ -779,17 +878,6 @@ protected:
     bool m_recordIncommingMessages = false;
     std::vector<std::string> m_recordedMessages;
     Event lastEvent;
-    struct SpellCapabilityEntry
-    {
-        uint32 signature = 0;
-        uint32 expiresAtMs = 0;
-        bool known = false;
-    };
-    // Static spellbook capability answers are hot and stable for long stretches.
-    // The short TTL plus level/spell-count signature keeps this cache correct
-    // across training, level, talent, pet and form changes without caching any
-    // dynamic cast state (cooldown/range/resource/target/LOS).
-    mutable std::unordered_map<uint32, SpellCapabilityEntry> spellCapabilityCache;
 
 public:
     void RecordMessages(bool record, bool incomming = false) { m_recordMessages = record; m_recordIncommingMessages = incomming; if (!record) m_recordedMessages.clear(); }

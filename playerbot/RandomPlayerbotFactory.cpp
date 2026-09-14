@@ -1,17 +1,18 @@
+#include "Util/AccountMembershipIndex.h"
 #include "Config/Config.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotFactory.h"
-#include "Accounts/AccountMgr.h"
-#include "Globals/ObjectMgr.h"
+#include "AccountMgr.h"
+#include "ObjectMgr.h"
 #include "Database/DatabaseEnv.h"
 #include "PlayerbotAI.h"
-#include "Entities/Player.h"
+#include "Objects/Player.h"
 #include "RandomPlayerbotFactory.h"
 #include "SystemConfig.h"
-#include "Social/SocialMgr.h"
-#include "Guilds/GuildMgr.h"
+#include "SocialMgr.h"
+#include "Guild/GuildMgr.h"
 
 #ifndef MANGOSBOT_ZERO
 #ifdef CMANGOS
@@ -33,109 +34,26 @@ bool RandomPlayerbotFactory::namesInitialized = false;
 
 RandomPlayerbotFactory::RandomPlayerbotFactory(uint32 accountId) : accountId(accountId)
 {
-    availableRaces[CLASS_WARRIOR].push_back(RACE_HUMAN);
-    availableRaces[CLASS_WARRIOR].push_back(RACE_NIGHTELF);
-    availableRaces[CLASS_WARRIOR].push_back(RACE_GNOME);
-    availableRaces[CLASS_WARRIOR].push_back(RACE_DWARF);
-    availableRaces[CLASS_WARRIOR].push_back(RACE_ORC);
-    availableRaces[CLASS_WARRIOR].push_back(RACE_UNDEAD);
-    availableRaces[CLASS_WARRIOR].push_back(RACE_TAUREN);
-    availableRaces[CLASS_WARRIOR].push_back(RACE_TROLL);
-#ifndef MANGOSBOT_ZERO
-    availableRaces[CLASS_WARRIOR].push_back(RACE_DRAENEI);
-#endif
-
-    availableRaces[CLASS_PALADIN].push_back(RACE_HUMAN);
-    availableRaces[CLASS_PALADIN].push_back(RACE_DWARF);
-#ifndef MANGOSBOT_ZERO
-    availableRaces[CLASS_PALADIN].push_back(RACE_DRAENEI);
-    availableRaces[CLASS_PALADIN].push_back(RACE_BLOODELF);
-#endif
-
-    availableRaces[CLASS_ROGUE].push_back(RACE_HUMAN);
-    availableRaces[CLASS_ROGUE].push_back(RACE_DWARF);
-    availableRaces[CLASS_ROGUE].push_back(RACE_NIGHTELF);
-    availableRaces[CLASS_ROGUE].push_back(RACE_GNOME);
-    availableRaces[CLASS_ROGUE].push_back(RACE_ORC);
-    availableRaces[CLASS_ROGUE].push_back(RACE_UNDEAD);
-    availableRaces[CLASS_ROGUE].push_back(RACE_TROLL);
-#ifndef MANGOSBOT_ZERO
-    availableRaces[CLASS_ROGUE].push_back(RACE_BLOODELF);
-#endif
-
-    availableRaces[CLASS_PRIEST].push_back(RACE_HUMAN);
-    availableRaces[CLASS_PRIEST].push_back(RACE_DWARF);
-    availableRaces[CLASS_PRIEST].push_back(RACE_NIGHTELF);
-    availableRaces[CLASS_PRIEST].push_back(RACE_TROLL);
-    availableRaces[CLASS_PRIEST].push_back(RACE_UNDEAD);
-#ifndef MANGOSBOT_ZERO
-    availableRaces[CLASS_PRIEST].push_back(RACE_DRAENEI);
-    availableRaces[CLASS_PRIEST].push_back(RACE_BLOODELF);
-#endif
-
-    availableRaces[CLASS_MAGE].push_back(RACE_HUMAN);
-    availableRaces[CLASS_MAGE].push_back(RACE_GNOME);
-    availableRaces[CLASS_MAGE].push_back(RACE_UNDEAD);
-    availableRaces[CLASS_MAGE].push_back(RACE_TROLL);
-#ifndef MANGOSBOT_ZERO
-    availableRaces[CLASS_MAGE].push_back(RACE_DRAENEI);
-    availableRaces[CLASS_MAGE].push_back(RACE_BLOODELF);
-#endif
-
-    availableRaces[CLASS_WARLOCK].push_back(RACE_HUMAN);
-    availableRaces[CLASS_WARLOCK].push_back(RACE_GNOME);
-    availableRaces[CLASS_WARLOCK].push_back(RACE_UNDEAD);
-    availableRaces[CLASS_WARLOCK].push_back(RACE_ORC);
-#ifndef MANGOSBOT_ZERO
-    availableRaces[CLASS_WARLOCK].push_back(RACE_BLOODELF);
-#endif
-
-    availableRaces[CLASS_SHAMAN].push_back(RACE_ORC);
-    availableRaces[CLASS_SHAMAN].push_back(RACE_TAUREN);
-    availableRaces[CLASS_SHAMAN].push_back(RACE_TROLL);
-#ifndef MANGOSBOT_ZERO
-    availableRaces[CLASS_SHAMAN].push_back(RACE_DRAENEI);
-#endif
-
-    availableRaces[CLASS_HUNTER].push_back(RACE_DWARF);
-    availableRaces[CLASS_HUNTER].push_back(RACE_NIGHTELF);
-    availableRaces[CLASS_HUNTER].push_back(RACE_ORC);
-    availableRaces[CLASS_HUNTER].push_back(RACE_TAUREN);
-    availableRaces[CLASS_HUNTER].push_back(RACE_TROLL);
-#ifndef MANGOSBOT_ZERO
-    availableRaces[CLASS_HUNTER].push_back(RACE_DRAENEI);
-    availableRaces[CLASS_HUNTER].push_back(RACE_BLOODELF);
-#endif
-
-    availableRaces[CLASS_DRUID].push_back(RACE_NIGHTELF);
-    availableRaces[CLASS_DRUID].push_back(RACE_TAUREN);
-
-#ifdef MANGOSBOT_TWO
-    availableRaces[CLASS_DEATH_KNIGHT].push_back(RACE_NIGHTELF);
-    availableRaces[CLASS_DEATH_KNIGHT].push_back(RACE_TAUREN);
-    availableRaces[CLASS_DEATH_KNIGHT].push_back(RACE_HUMAN);
-    availableRaces[CLASS_DEATH_KNIGHT].push_back(RACE_ORC);
-    availableRaces[CLASS_DEATH_KNIGHT].push_back(RACE_UNDEAD);
-    availableRaces[CLASS_DEATH_KNIGHT].push_back(RACE_TROLL);
-    availableRaces[CLASS_DEATH_KNIGHT].push_back(RACE_BLOODELF);
-    availableRaces[CLASS_DEATH_KNIGHT].push_back(RACE_DRAENEI);
-    availableRaces[CLASS_DEATH_KNIGHT].push_back(RACE_GNOME);
-    availableRaces[CLASS_DEATH_KNIGHT].push_back(RACE_DWARF);
-#endif
+    // The native Player::Create path uses this same validated PlayerInfo.
+    // It includes Turtle's new races AND its added classic-race classes.
+    // Construct once after world data is loaded; repeated factories must not
+    // append duplicate entries or mutate a shared table during bot creation.
+    static const bool initialized = []()
+    {
+        for (uint8 cls = 1; cls < MAX_CLASSES; ++cls)
+            for (uint8 race = 1; race < MAX_RACES; ++race)
+                if (sObjectMgr.GetPlayerInfo(race, cls))
+                    availableRaces[cls].push_back(race);
+        return true;
+    }();
+    (void)initialized;
 }
 
 bool RandomPlayerbotFactory::isAvailableRace(uint8 cls, uint8 race)
 {
-    if (race == RACE_GOBLIN)
-        return false;
-#ifdef MANGOSBOT_TWO
-    else if (cls == 10)
-#else
-    else if (cls == 10 || cls == 6)
-#endif
-        return false;
-
-    return std::find(availableRaces[cls].begin(), availableRaces[cls].end(), race) != availableRaces[cls].end();
+    const auto found = availableRaces.find(cls);
+    return found != availableRaces.end() &&
+        std::find(found->second.begin(), found->second.end(), race) != found->second.end();
 }
 
 bool RandomPlayerbotFactory::isAvailableRole(uint8 cls, BotRoles role)
@@ -330,28 +248,36 @@ bool RandomPlayerbotFactory::CreateRandomBot(uint8 cls, uint8 inputRace)
 #endif
     }
 
+    if (skinColors.empty() || faces.empty() || hairs.empty())
+    {
+        sLog.outError("No CharSections appearance data for race %u gender %u — bot creation skipped.", race, gender);
+        return false;
+    }
+
     uint8 skinColor = skinColors[urand(0, skinColors.size() - 1)];
     std::pair<uint8,uint8> face = faces[urand(0, faces.size() - 1)];
     std::pair<uint8,uint8> hair = hairs[urand(0, hairs.size() - 1)];
 
 	bool excludeCheck = (race == RACE_TAUREN) || (gender == GENDER_FEMALE && race != RACE_NIGHTELF && race != RACE_UNDEAD);
 #ifndef MANGOSBOT_TWO
-	uint8 facialHair = excludeCheck ? 0 : facialHairTypes[urand(0, facialHairTypes.size() - 1)];
+	uint8 facialHair = (excludeCheck || facialHairTypes.empty()) ? 0 : facialHairTypes[urand(0, facialHairTypes.size() - 1)];
 #else
 	uint8 facialHair = 0;
 #endif
 	//TODO vector crash on cmangos TWO when creating one of the first bot characters, need a fix
 
+	// remote_ip MUST be "disconnected/bot" — see comment in PlayerbotMgr::HandlePlayerBotLoginCallback.
+	// Empty string makes PlayerbotAI::IsRealPlayer() return TRUE, breaking HandleTeleportAck.
 	WorldSession* session = new WorldSession(accountId, NULL, SEC_PLAYER,
 
 #ifdef MANGOSBOT_TWO
-        2, 0, LOCALE_enUS, "", 0, 0, false);
+        2, 0, LOCALE_enUS, "disconnected/bot", 0, 0, false);
 #endif
 #ifdef MANGOSBOT_ONE
-		2, 0, LOCALE_enUS, "", 0, 0, false);
+		2, 0, LOCALE_enUS, "disconnected/bot", 0, 0, false);
 #endif
 #ifdef MANGOSBOT_ZERO
-        0, LOCALE_enUS, "", 0);
+        0, LOCALE_enUS, "disconnected/bot", 0);
 #endif
 
     session->SetNoAnticheat();
@@ -383,7 +309,32 @@ bool RandomPlayerbotFactory::CreateRandomBot(uint8 cls, uint8 inputRace)
     //player->SaveToDB();
     //player->SetSemaphoreTeleportFar(false);
 
+    // With DisableRandomLevels=1 nothing else in the automatic bot-population
+    // path ever touches level (RandomPlayerbotMgr::ProcessBot/Randomize, which
+    // would normally apply randombotStartingLevel, is itself gated off by that
+    // same config flag) - so a brand new bot would otherwise stay at whatever
+    // level core character creation gave it (1) forever. GiveLevel (not
+    // SetLevel) so stats/HP/mana/talent points are set up correctly.
+    if (sPlayerbotAIConfig.disableRandomLevels && sPlayerbotAIConfig.randombotStartingLevel > 1)
+        player->GiveLevel(sPlayerbotAIConfig.randombotStartingLevel);
+
     sObjectAccessor.AddObject(player);
+
+    if (race == RACE_GOBLIN)
+    {
+        player->SetLocationMapId(1);
+        player->Relocate(-618.518f, -4251.67f, 38.718f, 0.0f);
+        player->SetHomebindToLocation(WorldLocation(1, -618.518f, -4251.67f, 38.718f, 0.0f), 14);
+        player->SaveToDB();
+    }
+
+    if (race == RACE_HIGH_ELF)
+    {
+        player->SetLocationMapId(0);
+        player->Relocate(-8949.95f, -132.493f, 83.5312f, 0.0f);
+        player->SetHomebindToLocation(WorldLocation(0, -8949.95f, -132.493f, 83.5312f, 0.0f), 12);
+        player->SaveToDB();
+    }
 
     sLog.outDebug( "Random bot created for account %d - name: \"%s\"; race: %u; class: %u",
             accountId, name.c_str(), race, cls);
@@ -503,6 +454,7 @@ void RandomPlayerbotFactory::EnsureNamesInitialized()
 void RandomPlayerbotFactory::CreateRandomBots()
 {
     EnsureNamesInitialized();
+    LoadCharSectionsDbc(sWorld.GetDataPath());
 
     // check if scheduled for delete
     bool delAccs = false;
@@ -639,6 +591,24 @@ void RandomPlayerbotFactory::CreateRandomBots()
         sLog.outString("Random bot characters deleted");
     }
 
+    if (!sPlayerbotAIConfig.randomBotAutoCreate)
+    {
+        // Existing pools may have non-sequential account suffixes. Discovery
+        // matches the login manager's prefix query and does not create/delete
+        // accounts simply because they were generated by a different module.
+        std::string prefix = sPlayerbotAIConfig.randomBotAccountPrefix;
+        LoginDatabase.escape_string(prefix);
+        auto accounts = LoginDatabase.PQuery("SELECT id FROM account WHERE username LIKE '%s%%' ORDER BY id", prefix.c_str());
+        if (accounts)
+            do
+            {
+                ManTech::PlayerbotAccountMembership().Append(sPlayerbotAIConfig.randomBotAccounts, accounts->Fetch()[0].GetUInt32());
+            } while (accounts->NextRow());
+        sLog.outString("Using %u existing random bot accounts; automatic creation is disabled.",
+            uint32(sPlayerbotAIConfig.randomBotAccounts.size()));
+        return;
+    }
+
     //Delete temporary bots.
 
     auto temporarybots = CharacterDatabase.Query("SELECT characters.guid, characters.account FROM ai_playerbot_random_bots JOIN characters ON (characters.guid = ai_playerbot_random_bots.bot AND characters.name = ai_playerbot_random_bots.data) WHERE ai_playerbot_random_bots.event = 'temporary'");
@@ -684,33 +654,32 @@ void RandomPlayerbotFactory::CreateRandomBots()
         } while (temporaryAccounts->NextRow());
     }
 
-    if (!sPlayerbotAIConfig.randomBotAutoCreate)
+    // Migrated pools can use non-sequential suffixes. Count all existing
+    // prefix accounts, add only the deficit, then provision that same pool.
+    std::string poolPrefix = sPlayerbotAIConfig.randomBotAccountPrefix;
+    LoginDatabase.escape_string(poolPrefix);
+    uint32 existingAccounts = 0;
+    auto poolCount = LoginDatabase.PQuery("SELECT COUNT(*) FROM account WHERE username LIKE '%s%%'", poolPrefix.c_str());
+    if (!poolCount)
     {
-        for (uint32 accountNumber = 0; accountNumber < sPlayerbotAIConfig.randomBotAccountCount; ++accountNumber)
-        {
-            std::ostringstream out; out << sPlayerbotAIConfig.randomBotAccountPrefix << accountNumber;
-            std::string accountName = out.str();
-
-            auto results = LoginDatabase.PQuery("SELECT id FROM account where username = '%s'", accountName.c_str());
-            if (!results)
-                continue;
-
-            Field* fields = results->Fetch();
-            uint32 accountId = fields[0].GetUInt32();
-
-            sPlayerbotAIConfig.randomBotAccounts.push_back(accountId);
-        }
-
+        sLog.outError("Unable to discover random bot pool; aborting provisioning.");
         return;
     }
-
+    existingAccounts = poolCount->Fetch()[0].GetUInt32();
+    uint32 scheduledAccounts = 0;
     int totalAccCount = sPlayerbotAIConfig.randomBotAccountCount;
     sLog.outString("Creating random bot accounts...");
 
     std::vector<std::future<void>> account_creations;
+    // A target in the tens of thousands can require thousands of bot accounts.
+    // Launching one std::async thread per missing account exhausts Windows thread
+    // resources and makes a valid population change look like a hung server.
+    // Keep a small bounded creation window; this affects startup provisioning
+    // only and leaves all bot gameplay/AI scheduling unchanged.
+    constexpr size_t maxConcurrentAccountCreations = 8;
 
     BarGoLink bar(totalAccCount);
-    for (uint32 accountNumber = 0; accountNumber < sPlayerbotAIConfig.randomBotAccountCount; ++accountNumber)
+    for (uint32 accountNumber = 0; existingAccounts + scheduledAccounts < sPlayerbotAIConfig.randomBotAccountCount; ++accountNumber)
     {
         std::ostringstream out; out << sPlayerbotAIConfig.randomBotAccountPrefix << accountNumber;
         std::string accountName = out.str();
@@ -738,6 +707,15 @@ void RandomPlayerbotFactory::CreateRandomBots()
         account_creations.push_back(std::async([accountName, password] {sAccountMgr.CreateAccount(accountName, password); }));
 #endif
 
+        ++scheduledAccounts;
+
+        if (account_creations.size() >= maxConcurrentAccountCreations)
+        {
+            for (auto& creation : account_creations)
+                creation.get();
+            account_creations.clear();
+        }
+
         sLog.outDebug("Account %s created for random bots", accountName.c_str());
         bar.step();
     }
@@ -746,8 +724,9 @@ void RandomPlayerbotFactory::CreateRandomBots()
     for (uint32 i = 0; i < account_creations.size(); i++)
     {
         bar3.step();
-        account_creations[i].wait();
+        account_creations[i].get();
     }
+    account_creations.clear();
 
     //LoginDatabase.PExecute("UPDATE account SET expansion = '%u' where username like '%s%%'", 2, sPlayerbotAIConfig.randomBotAccountPrefix.c_str());
 
@@ -827,30 +806,21 @@ void RandomPlayerbotFactory::CreateRandomBots()
 
     sLog.outString("Creating random bot characters...");
     uint32 botsCreated = 0;
-    BarGoLink bar1(sPlayerbotAIConfig.randomBotAccountCount*
-#ifdef MANGOSBOT_TWO
-        10
-#else
-        9
-#endif
-    );
+    BarGoLink bar1(totalCharCount);
+
 
     // Shallow copy of the fixed config so we can modify it
     std::map<std::pair<uint8, uint8>, uint32> remaining = sPlayerbotAIConfig.fixedClassRaceCounts;
 
-    for (uint32 accountNumber = 0; accountNumber < sPlayerbotAIConfig.randomBotAccountCount; ++accountNumber)
+    std::vector<uint32> poolAccounts;
+    auto poolResult = LoginDatabase.PQuery("SELECT id FROM account WHERE username LIKE '%s%%' ORDER BY id", poolPrefix.c_str());
+    if (poolResult)
+        do { poolAccounts.push_back(poolResult->Fetch()[0].GetUInt32()); }
+        while (poolResult->NextRow());
+
+    for (uint32 accountId : poolAccounts)
     {
-        std::ostringstream out; out << sPlayerbotAIConfig.randomBotAccountPrefix << accountNumber;
-        std::string accountName = out.str();
-
-        auto results = LoginDatabase.PQuery("SELECT id FROM account where username = '%s'", accountName.c_str());
-        if (!results)
-            continue;
-
-        Field* fields = results->Fetch();
-        uint32 accountId = fields[0].GetUInt32();
-
-        sPlayerbotAIConfig.randomBotAccounts.push_back(accountId);
+        ManTech::PlayerbotAccountMembership().Append(sPlayerbotAIConfig.randomBotAccounts, accountId);
 
         int count = sAccountMgr.GetCharactersCount(accountId);
 #ifdef MANGOSBOT_TWO
@@ -892,7 +862,7 @@ void RandomPlayerbotFactory::CreateRandomBots()
 	            uint8 cls = key.first;
 	            uint8 race = key.second;
 
-	            if (!((1 << (cls - 1)) & CLASSMASK_ALL_PLAYABLE) || !sChrClassesStore.LookupEntry(cls))
+	            if (!((1 << (cls - 1)) & CLASSMASK_ALL_PLAYABLE))
 	                continue;
 
 #ifdef MANGOSBOT_TWO
@@ -919,7 +889,7 @@ void RandomPlayerbotFactory::CreateRandomBots()
             for (uint8 cls = CLASS_WARRIOR; cls < MAX_CLASSES - count; ++cls)
             {
                 // skip nonexistent classes
-                if (!((1 << (cls - 1)) & CLASSMASK_ALL_PLAYABLE) || !sChrClassesStore.LookupEntry(cls))
+                if (!((1 << (cls - 1)) & CLASSMASK_ALL_PLAYABLE))
                     continue;
 
 #ifdef MANGOSBOT_TWO
@@ -970,19 +940,33 @@ void RandomPlayerbotFactory::CreateRandomBots()
     }
 
     std::vector<std::future<void>> bot_creations;
+    // Character saves have their own futures: account get() has already
+    // consumed those states. Bound startup saves just like account creation,
+    // and join each batch before any player/session can be destroyed below.
+    constexpr size_t maxConcurrentBotSaves = 8;
 
     BarGoLink bar2(sObjectAccessor.GetPlayers().size());
     for (auto pl : sObjectAccessor.GetPlayers())
     {
         Player* player = pl.second;
-        account_creations.push_back(std::async([player] {player->SaveToDB(); }));
+        bot_creations.push_back(std::async([player] {player->SaveToDB(); }));
+        if (bot_creations.size() >= maxConcurrentBotSaves)
+        {
+            for (auto& creation : bot_creations)
+            {
+                creation.get();
+                bar2.step();
+            }
+            bot_creations.clear();
+        }
     }
 
-    for (uint32 i = 0; i < account_creations.size(); i++)
+    for (auto& creation : bot_creations)
     {
+        creation.get();
         bar2.step();
-        account_creations[i].wait();
     }
+    bot_creations.clear();
 
     std::vector<Player*> players;
 
@@ -991,13 +975,19 @@ void RandomPlayerbotFactory::CreateRandomBots()
 
     for (auto player : players)
     {
+        // Freshly-created bots bypass HandleCharCreateOpcode, so they were never added to the
+        // player cache (m_playerCacheData). Without this, GetPlayerAccountIdByGUID returns 0 for
+        // every bot created this run and AddPlayerBot fails with "no account for guid". Populate the
+        // cache while the session is still attached (UpdatePlayerCache reads GetSession()).
+        sObjectMgr.UpdatePlayerCache(player);
+
         WorldSession* session = player->GetSession();
         session->LogoutPlayer();
         sObjectAccessor.RemoveObject(player);
         delete player;
         delete session;
     }
-    sLog.outString("%zu random bot accounts with %d characters available", sPlayerbotAIConfig.randomBotAccounts.size(), totalRandomBotChars+botsCreated);
+    sLog.outString("%zu random bot accounts with %d characters available", sPlayerbotAIConfig.randomBotAccounts.size(), totalRandomBotChars);
 }
 
 

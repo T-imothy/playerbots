@@ -1,10 +1,10 @@
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
-#include "Server/SQLStorages.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Database/SQLStorages.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -50,15 +50,15 @@ namespace
         std::set<uint32> entries;
         const SpellEntry* spell = sSpellTemplate.LookupEntry<SpellEntry>(wave);
         if (!spell) return entries;
-        auto bounds = sSpellScriptTargetStorage.getBounds<SpellTargetEntry>(wave);
+        auto bounds = sSpellMgr.GetSpellScriptTargetBounds(wave);
         for (auto row = bounds.first; row != bounds.second; ++row)
         {
-            if (row->type != SPELL_TARGET_TYPE_GAMEOBJECT) continue;
+            if (row->second.type != SPELL_TARGET_TYPE_GAMEOBJECT) continue;
             for (unsigned effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
                 if (spell->Effect[effect] == SPELL_EFFECT_ACTIVATE_OBJECT &&
-                    (spell->EffectMiscValue[effect] == uint32(GameObjectActions::DISTURB) ||
-                        spell->EffectMiscValue[effect] == uint32(GameObjectActions::OPEN)) &&
-                    !row->CanNotHitWithSpellEffect(SpellEffectIndex(effect))) entries.insert(row->targetEntry);
+                    (spell->EffectMiscValue[effect] == uint32(GameObjectActions::Disturb) ||
+                        spell->EffectMiscValue[effect] == uint32(GameObjectActions::Open)) &&
+                    !row->second.CanNotHitWithSpellEffect(SpellEffectIndex(effect))) entries.insert(row->second.targetEntry);
         }
         return entries;
     }

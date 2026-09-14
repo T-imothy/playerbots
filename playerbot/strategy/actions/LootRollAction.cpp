@@ -267,7 +267,7 @@ RollVote RollAction::CalculateRollVote(ItemQualifier& itemQualifier)
             needVote = ROLL_GREED;
     }
 
-    bool canLoot = StoreLootAction::IsLootAllowed(itemQualifier, bot->GetPlayerbotAI());
+    bool canLoot = StoreLootAction::IsLootAllowed(itemQualifier, GetBotAI(bot));
 
     if (AI_VALUE2(bool, "manual bool", "roll feedback"))
     {
@@ -299,29 +299,18 @@ RollVote RollAction::CalculateAutomaticRollVote(ItemQualifier& itemQualifier)
 
 bool RollAction::RollOnItemInSlot(RollVote vote, ObjectGuid lootGuid, uint32 slot, bool automatic)
 {
-    Loot* loot = sLootMgr.GetLoot(bot, lootGuid);
-    if (!loot)
-        return false;
-
-    LootItem* item = loot->GetLootItemInSlot(slot);
-    if (!item) return false;
-    ItemPrototype const* proto = sItemStorage.LookupEntry<ItemPrototype>(item->itemId);
-    if (!proto)
-        return false;
-
-    GroupLootRoll* lootRoll = loot->GetRollForSlot(slot);
-    if (!lootRoll)
-        return false;
-
-    if (automatic && AI_VALUE(std::string, "roll policy") != "auto")
-    {
-        const uint32 mask = lootRoll->GetVoteMaskFor(bot);
-        if (!mask) return false;
-        if (vote == ROLL_NEED && !(mask & ROLL_VOTE_MASK_NEED)) vote = ROLL_GREED;
-        if (vote == ROLL_GREED && !(mask & ROLL_VOTE_MASK_GREED)) vote = ROLL_PASS;
-        if (vote == ROLL_PASS && !(mask & ROLL_VOTE_MASK_PASS)) return false;
-    }
-    bool didRoll = lootRoll->PlayerVote(bot, vote);
+    Group* group = bot->GetGroup();
+    if (!group) return false;
+    Roll const* roll = group->GetActiveRoll(lootGuid, slot);
+    if (!roll || !roll->isValid()) return false;
+    auto const voter = roll->playerVote.find(bot->GetObjectGuid());
+    if (voter == roll->playerVote.end() || voter->second != ROLL_NOT_EMITED_YET) return false;
+    ItemPrototype const* proto = sObjectMgr.GetItemPrototype(roll->itemid);
+    if (!proto) return false;
+    // Native need-before-greed excludes unusable items when enrolling players.
+    // Group loot permits all three votes; keep our economic policy above intact.
+    if (vote != ROLL_PASS && vote != ROLL_NEED && vote != ROLL_GREED) vote = ROLL_GREED;
+    bool didRoll = group->CountRollVote(bot, lootGuid, slot, vote);
 
     if (didRoll)
     {

@@ -1,10 +1,11 @@
 #include "playerbot/playerbot.h"
+#include "Maps/CellImpl.h"
 #include "CommandSetup.h"
 #include "playerbot/WorldPosition.h"
 #include "playerbot/TravelMgr.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 #include "TestAction.h"
 #include "TestRegistry.h"
 #include "playerbot/ServerFacade.h"
@@ -165,7 +166,7 @@ TestResult CommandSetupClearMobs::Execute(const std::string& params, Player* bot
     }
 
     // Force load the grid at bot's location to ensure creatures are visible
-    bot->GetMap()->ForceLoadGrid(bot->GetPositionX(), bot->GetPositionY());
+    bot->GetMap()->LoadGrid(Cell(MaNGOS::ComputeCellPair(bot->GetPositionX(), bot->GetPositionY())));
 
     std::list<Creature*> creatures;
     MaNGOS::AnyUnitInObjectRangeCheck checker(bot, radius);
@@ -279,7 +280,7 @@ TestResult CommandSetupPull::Execute(const std::string& params, Player* bot,
     }
 
     // Force load the grid at bot's location to ensure creatures are visible
-    bot->GetMap()->ForceLoadGrid(bot->GetPositionX(), bot->GetPositionY());
+    bot->GetMap()->LoadGrid(Cell(MaNGOS::ComputeCellPair(bot->GetPositionX(), bot->GetPositionY())));
 
     // First: search via Cell::VisitWorldObjects
     Creature* target = nullptr;
@@ -302,10 +303,10 @@ TestResult CommandSetupPull::Execute(const std::string& params, Player* bot,
     // Second: search via Map object store (finds creatures not in loaded grid cells)
     if (!target)
     {
-        auto& store = bot->GetMap()->GetObjectsStore();
-        for (auto itr = store.begin<Creature>(); itr != store.end<Creature>(); ++itr)
+        auto store = bot->GetMap()->GetCreatureSnapshot();
+        for (Creature* storedCreature : store)
         {
-            if (Creature* c = itr->second)
+            if (Creature* c = storedCreature)
             {
                 if (c->GetEntry() == entryId && c->IsAlive())
                 {
@@ -350,7 +351,7 @@ TestResult CommandSetupPull::Execute(const std::string& params, Player* bot,
     if (target->AI())
         target->AI()->AttackStart(bot);
     // Disable leashing so the boss doesn't evade
-    target->GetCombatManager().SetLeashingDisable(true);
+    target->SetLeashingDisabled(true);
     ctx.focusMobEntry = entryId;
     ctx.focusMobGuid = target->GetObjectGuid();
     sLog.outString("[TestAction] Bot %s pulling creature %s (entry %u) at distance %.1f",
@@ -361,7 +362,7 @@ TestResult CommandSetupPull::Execute(const std::string& params, Player* bot,
 TestResult CommandSetValue::Execute(const std::string& params, Player* bot, PlayerbotAI* ai, TestContext& ctx, std::string& message)
 {
     // Expected format: "set value <datatype> <valueName> <valueToSetTo>"
-    AiObjectContext* context = bot->GetPlayerbotAI()->GetAiObjectContext();
+    AiObjectContext* context = GetBotAI(bot)->GetAiObjectContext();
 
     std::string datatype;
     std::string valueStr;

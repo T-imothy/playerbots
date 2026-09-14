@@ -16,7 +16,7 @@ bool RtiAction::Execute(Event& event)
         type = "rti cc";
         text = text.substr(3);
     }
-    if (text.empty() || text == "?" || text == "cc ?")
+    else if (text.empty() || text == "?")
     {
         std::ostringstream outRti; outRti << "rti" << ": ";
         AppendRti(outRti, "rti");

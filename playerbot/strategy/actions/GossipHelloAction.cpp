@@ -35,23 +35,16 @@ bool GossipHelloAction::Execute(Event& event)
 		return false;
 	}
 
-	GossipMenuItemsMapBounds pMenuItemBounds = sObjectMgr.GetGossipMenuItemsMapBounds(pCreature->GetCreatureInfo()->GossipMenuId);
-	if (pMenuItemBounds.first == pMenuItemBounds.second)
-		return false;
-
     std::string text = event.getParam();
 	int menuToSelect = -1;
     if (event.getSource().find("rpg action") == 0)
     {
-        Creature* pCreature = bot->GetNPCIfCanInteractWith(guid, UNIT_NPC_FLAG_NONE);
-
-        if (pCreature)
-        {
-            if (!sScriptDevAIMgr.OnGossipHello(bot, pCreature))
-            {
-                bot->PrepareGossipMenu(pCreature, pCreature->GetDefaultGossipMenuId());
-            }
-        }
+        // Script-only Turtle menus may have no gossip_menu_option rows.
+        // Native hello owns script dispatch, current gossip identity, aura
+        // interruption and fallback menu preparation.
+        WorldPacket hello(CMSG_GOSSIP_HELLO);
+        hello << guid;
+        bot->GetSession()->HandleGossipHelloOpcode(hello);
 
         ProcessGossip(requester, guid, -1);
     }
@@ -129,7 +122,11 @@ void GossipHelloAction::TellGossipMenus(Player* requester)
 
 bool GossipHelloAction::ProcessGossip(Player* requester, ObjectGuid creatureGuid, int menuToSelect)
 {
+    if (!bot->GetPlayerMenu())
+        return false;
     GossipMenu& menu = bot->GetPlayerMenu()->GetGossipMenu();
+    if (!menu.MenuItemCount())
+        return false;
 
     bool noFeedback = (menuToSelect == -1);
 

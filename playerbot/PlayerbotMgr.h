@@ -3,9 +3,9 @@
 
 #include "Common.h"
 #include "PlayerbotAIBase.h"
-#include "Entities/ObjectGuid.h"
+#include "ObjectGuid.h"
 #include "Database/DatabaseEnv.h"
-#include "Globals/SharedDefines.h"
+#include "SharedDefines.h"
 
 
 class WorldPacket;
@@ -23,8 +23,19 @@ public:
     PlayerbotHolder();
     virtual ~PlayerbotHolder();
 
+    // Called from Player::~Player (through the Playerbot_OnPlayerDestroyed
+    // stub seam) for EVERY holder, so no map can outlive the Player it points
+    // at. This is the lifetime end of the stale-pointer problem; the reading
+    // end cannot be fixed by asking a second registry whether the pointer is
+    // still good - that was tried on 2026-09-01 and threw away bots that were
+    // merely mid-teleport, stopping the whole run system for three hours.
+    static void NotePlayerDestroyed(Player const* player);
+
     void AddPlayerBot(uint32 guid, uint32 masterAccountId);
-	void HandlePlayerBotLoginCallback(QueryResult * dummy, SqlQueryHolder * holder);
+    uint32 GetPendingBotLoginCount() const;
+    bool HasPendingBotLogin(uint32 guid) const;
+    void RegisterPendingBotLogin(SqlQueryHolder* holder, uint32 guid, uint32 masterAccountId);
+    void HandlePlayerBotLoginCallback(QueryResult * dummy, SqlQueryHolder * holder);
 
     void LogoutPlayerBot(uint32 guid, bool allowInstant = true, bool forDelete = false);
     void DisablePlayerBot(uint32 guid, bool logOutPlayer = true);
@@ -32,6 +43,11 @@ public:
 
     virtual void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
     void UpdateSessions(uint32 elapsed);
+    // Tick UpdateSessions() on EVERY registered holder (sRandomPlayerbotMgr plus
+    // every per-master PlayerbotMgr, including free-floating DC driver managers
+    // whose WorldSession is not in World::m_sessions).
+    static void UpdateAllHolderSessions(uint32 elapsed);
+    static void UpdateAllMasterAIs(uint32 elapsed);
 
     void ForEachPlayerbot(std::function<void(Player*)> fct) const;
 
@@ -114,6 +130,7 @@ private:
 
     std::string HandleBotAddLogin(Player* bot, Player* master, const std::string param);
     std::string HandleBotRemoveLogout(Player* bot, Player* master, const std::string param);
+    std::string HandleBotSummon(Player* bot, Player* master, const std::string param);
     std::string HandleBotCreate(Player* bot, Player* master, const std::string param);
     std::string HandleBotDelete(Player* bot, Player* master, const std::string param);
     std::string HandleBotGear(Player* bot, Player* master, const std::string param);
@@ -132,6 +149,7 @@ private:
     std::string HandleBotRandom(Player* bot, Player* master, const std::string param);
 
     PlayerBotMap playerBots;
+    uint32 sessionCursorGuid = 0;
     std::map<std::string, HolderCommandHandler> m_holderHandlers;
     std::map<std::string, BotCommandHandler> m_botCommandHandlers;
     ObjectGuid m_spoofGuid;
@@ -146,7 +164,7 @@ public:
     static bool HandlePlayerbotMgrCommand(ChatHandler* handler, char const* args);
     void HandleMasterIncomingPacket(const WorldPacket& packet);
     void HandleMasterOutgoingPacket(const WorldPacket& packet);
-    void HandleCommand(uint32 type, const std::string& text, uint32 lang = LANG_UNIVERSAL);
+    void HandleCommand(uint32 type, const std::string& text, uint32 lang = LANG_UNIVERSAL, const std::string& to = "");
     void OnPlayerLogin(Player* player);
     void CancelLogout();
 

@@ -6,6 +6,7 @@ namespace ai
     class PassLeadershipToMasterAction : public ChatCommandAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         PassLeadershipToMasterAction(PlayerbotAI* ai, std::string name = "leader", std::string message = "Passing leader to you!") : ChatCommandAction(ai, name), message(message) {}
 
         virtual Player* PassLeaderTo(Event& event) { return GetMaster(); };
@@ -48,6 +49,7 @@ namespace ai
     class GiveLeaderAction : public PassLeadershipToMasterAction 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GiveLeaderAction(PlayerbotAI* ai, std::string message = "Lead the way!") : PassLeadershipToMasterAction(ai, "give leader", message) {}
 
         virtual Player* PassLeaderTo(Event& event) { return event.getOwner(); };

@@ -1,54 +1,65 @@
+#include "Util/DevDiagnostics.h"
 #include "PlayerbotMgr.h"
+#include "cmangos-ahbot/AhBot.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/NativeCombatQueries.h"
+#include "playerbot/HumanPresence.h"
+#include "playerbot/AiContextAugment.h"
+#include "playerbot/PerformanceMonitor.h"
 #include <stdarg.h>
 #include <iomanip>
 
 #include "playerbot/AiFactory.h"
 
-#include "MotionGenerators/MovementGenerator.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Movement/MovementGenerator.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 #include "strategy/values/LastMovementValue.h"
 #include "strategy/actions/LogLevelAction.h"
+#include "strategy/actions/RpgSubActions.h"
 #include "strategy/actions/SayAction.h"
 #include "strategy/actions/EmoteAction.h"
 #include "strategy/values/LastSpellCastValue.h"
 #include "LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
+#include "playerbot/ChatPrefix.h"
+#include "playerbot/ChatBroadcastSender.h"
 #include "BotRecruitment.h"
+#include "BotDiagnostics.h"
 #include "CombatDiagnostics.h"
 #include "strategy/actions/EncounterSpellPolicy.h"
 #include "strategy/actions/DungeonActions.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "PlayerbotSecurity.h"
-#include "Groups/Group.h"
-#include "Entities/Pet.h"
-#include "AI/BaseAI/CreatureAI.h"
+#include "Group/Group.h"
+#include "Objects/Pet.h"
+#include "AI/CreatureAI.h"
 #include "Spells/SpellAuras.h"
 #include "Spells/SpellMgr.h"
 #include "PlayerbotDbStore.h"
 #include "strategy/values/PositionValue.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
-#include "Movement/MoveSplineInitArgs.h"
+#include "Movement/spline/MoveSplineInitArgs.h"
 #include "Maps/InstanceData.h"
 #include "ChatHelper.h"
 #include "strategy/values/BudgetValues.h"
-#include "Social/SocialMgr.h"
+#include "SocialMgr.h"
 #include "PlayerbotTextMgr.h"
 #include "RandomItemMgr.h"
 #include "strategy/ItemVisitors.h"
 #include "strategy/values/LootValues.h"
 #include "strategy/values/AttackersValue.h"
-#include "Entities/Transports.h"
-#include "Guilds/GuildMgr.h"
+#include "Transports/Transport.h"
+#include "Guild/GuildMgr.h"
 #include "Chat/ChannelMgr.h"
+#include "ChatAudience.h"
+#include <memory>
 #include "PlayerbotLLMInterface.h"
 
 #include <boost/algorithm/string.hpp>
-#include <cmath>
 
 #ifdef MANGOSBOT_TWO
 #include "Entities/Vehicle.h"
@@ -115,35 +126,53 @@ void PacketHandlingHelper::AddHandler(uint16 opcode, std::string handler, bool s
 
 void PacketHandlingHelper::Handle(ExternalEventHelper &helper)
 {
-    if (!m_botPacketMutex.try_lock()) //Packets do not have to be handled now. Handle them later.
-        return;
-
-    std::stack<WorldPacket> delayed;
-
-    while (!queue.empty())
+    std::stack<std::unique_ptr<WorldPacket>> current, delayed;
     {
-        if (!helper.HandlePacket(handlers, queue.top()))
-            if(delay[queue.top().GetOpcode()])
-                delayed.push(queue.top());
-        queue.pop();
+        std::unique_lock<std::mutex> lock(m_botPacketMutex, std::try_to_lock);
+        if (!lock.owns_lock()) return;
+        current.swap(queue);
     }
-
-    queue = delayed;
-
-    m_botPacketMutex.unlock();
+    auto restore = [&]
+    {
+        // Untouched packets keep their order above older retries. New arrivals
+        // remain above both; callbacks and exception unwinding hold no lock.
+        std::stack<std::unique_ptr<WorldPacket>> remaining, arrivals;
+        while (!current.empty()) { remaining.push(std::move(current.top())); current.pop(); }
+        while (!remaining.empty()) { delayed.push(std::move(remaining.top())); remaining.pop(); }
+        std::lock_guard<std::mutex> lock(m_botPacketMutex);
+        while (!queue.empty()) { arrivals.push(std::move(queue.top())); queue.pop(); }
+        queue.swap(delayed);
+        while (!arrivals.empty()) { queue.push(std::move(arrivals.top())); arrivals.pop(); }
+    };
+    try
+    {
+        // Native callbacks may emit packets back to this helper. New arrivals
+        // belong to the next pass, without locking across native callbacks.
+        while (!current.empty())
+        {
+            auto packet = std::move(current.top());
+            current.pop();
+            if (!helper.HandlePacket(handlers, *packet) && delay.at(packet->GetOpcode()))
+                delayed.push(std::move(packet));
+        }
+    }
+    catch (...)
+    {
+        // The failing packet is consumed, but unrelated work must survive.
+        restore();
+        throw;
+    }
+    restore();
 }
 
 void PacketHandlingHelper::AddPacket(const WorldPacket& packet)
 {
-    if (packet.empty() && packet.GetOpcode() != MSG_RAID_READY_CHECK)
-        return;
-
-    m_botPacketMutex.lock(); //We are going to add packets. Stop any new handling and add them.
-
-	if (handlers.find(packet.GetOpcode()) != handlers.end())
-        queue.push(WorldPacket(packet));
-
-    m_botPacketMutex.unlock();
+    if (packet.empty() && packet.GetOpcode() != MSG_RAID_READY_CHECK) return;
+    // Registration is constructor-only, before this AI is published. Packet
+    // dispatch treats the handler map as const; only the queue is mutable here.
+    if (handlers.find(packet.GetOpcode()) == handlers.end()) return;
+    std::lock_guard<std::mutex> lock(m_botPacketMutex);
+    queue.push(std::make_unique<WorldPacket>(packet));
 }
 
 PlayerbotAI::PlayerbotAI() : PlayerbotAIBase(), bot(NULL), aiObjectContext(NULL),
@@ -178,6 +207,8 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
 	accountId = sObjectMgr.GetPlayerAccountIdByGUID(bot->GetObjectGuid());
 
     aiObjectContext = AiFactory::createAiObjectContext(bot, this);
+    // Hand the fresh context to module augmenters - see AiContextAugment.h.
+    RunAiContextAugmenters(this, aiObjectContext);
 
     UpdateTalentSpec();
 
@@ -194,7 +225,7 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
 
     currentEngine = engines[(uint8)BotState::BOT_STATE_NON_COMBAT];
     currentState = BotState::BOT_STATE_NON_COMBAT;
-    
+
     masterIncomingPacketHandlers.AddHandler(CMSG_GAMEOBJ_USE, "use game object");
     masterIncomingPacketHandlers.AddHandler(CMSG_AREATRIGGER, "area trigger");
     masterIncomingPacketHandlers.AddHandler(CMSG_LOOT_ROLL, "loot roll", true);
@@ -277,6 +308,7 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
 
 PlayerbotAI::~PlayerbotAI()
 {
+    chatLifetime.reset(); // Cancel delayed replies before destroying action/packet state.
     for (uint8 i = 0 ; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
         if (engines[i])
@@ -287,63 +319,102 @@ PlayerbotAI::~PlayerbotAI()
         delete aiObjectContext;
 }
 
-void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanced)
+void PlayerbotAI::RevalidateMasterPointer()
 {
-    // Do not block a map worker behind another map worker that is already
-    // updating this bot. The current update owns the complete mutable AI
-    // context; a duplicate transition-frame update is safe to skip.
-    std::unique_lock<std::mutex> updateLock(updateExecutionMutex, std::try_to_lock);
-    if (!updateLock.owns_lock())
+    // The masterGuid shadow (set in SetMaster) is the safe lookup key - the
+    // cached `master` pointer is never dereferenced here. If the Player it named
+    // is gone, or a DIFFERENT live Player now holds that guid, drop both.
+    if (!master)
         return;
-
-    // A real map transfer outranks ordinary action duration. Without this,
-    // food, drink, crafting, fishing, or a channel can leave the master's
-    // area-trigger packet waiting behind a multi-second AI delay.
-    if (urgentTransitionPending.exchange(false, std::memory_order_acq_rel))
-        PrepareForUrgentTransition();
-
-    // A master's instance transition is a short-lived, exclusive operation.
-    // Keep ordinary AI actions from replacing the validated portal approach,
-    // and retry the normal CMaNGOS area-trigger path if an update was missed.
-    if (ProcessPendingTransition())
-        return;
-
-    AiObjectContext* context = aiObjectContext;
-    std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
-    auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAI " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
-    
-    if (!delayAlreadyAdvanced)
+    Player* live = masterGuid ? sObjectAccessor.FindPlayer(masterGuid) : nullptr;
+    if (live != master)
     {
-        if(aiInternalUpdateDelay > elapsed)
+        master = nullptr;
+        masterGuid = ObjectGuid();
+    }
+}
+
+void PlayerbotAI::CleanupExpiredValuesIfDue()
+{
+    if (!aiObjectContext || !bot)
+        return;
+
+    uint32 const now = WorldTimer::getMSTime();
+    uint32 const interval = sPlayerbotAIConfig.valueCacheCleanupInterval;
+    bool const requested = valueCacheCleanupRequested.exchange(false, std::memory_order_acq_rel);
+    if (!interval && !requested)
+        return;
+
+    if (interval && !lastValueCacheCleanupMs)
+        lastValueCacheCleanupMs = now - (bot->GetGUIDLow() % interval);
+
+    if (!requested && WorldTimer::getMSTimeDiff(lastValueCacheCleanupMs, now) < interval)
+        return;
+
+    aiObjectContext->ClearExpiredValues();
+    lastValueCacheCleanupMs = now;
+}
+
+void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
+{
+    std::unique_lock<std::mutex> updateLock(updateExecutionMutex, std::try_to_lock);
+    if (!updateLock.owns_lock()) return;
+    RevalidateMasterPointer();
+    // Existing opt-in, bounded trace: sample progress even while no action can
+    // execute (e.g. a taxi leg). Reads occur on this bot's current AI owner.
+    ai::botdiag::TraceBehavior(this, "journey", minimal ? "minimal" : "active");
+    ai::botdiag::TraceThornBehavior(this, minimal);
+    if (uint32 const trigger = requestedTransition.exchange(0, std::memory_order_acq_rel))
+    {
+        AreaTriggerEntry const* entry = sAreaTriggerStore.LookupEntry(trigger);
+        if (!IsAreaTriggerRelaySuppressed() && !IsRealPlayer() && bot->IsInWorld() &&
+            entry && sObjectMgr.GetAreaTrigger(trigger) && bot->GetMapId() == entry->mapid &&
+            bot->GetDistance(entry->x, entry->y, entry->z) <= sPlayerbotAIConfig.sightDistance)
+            RequestUrgentTransition(trigger);
+        else if (!sObjectMgr.GetAreaTrigger(trigger))
         {
-            aiInternalUpdateDelay -= elapsed;
-        }
-        else
-        {
-            aiInternalUpdateDelay = 0;
-            isWaiting = false;
+            WorldPacket original(CMSG_AREATRIGGER);
+            original << trigger;
+            masterIncomingPacketHandlers.AddPacket(original);
         }
     }
-    else if (!aiInternalUpdateDelay)
+    if (urgentTransitionPending.exchange(false, std::memory_order_acq_rel))
+        PrepareForUrgentTransition();
+    if (ProcessPendingTransition()) return;
+    AiObjectContext* context = aiObjectContext;
+    if (manualRpgChatPending)
     {
+        // On this bot's serialized map owner, before ordinary action delays.
+        auto* action = dynamic_cast<RpgAIChatAction*>(context->GetAction("rpg ai chat"));
+        if (action) action->UpdateManualChat();
+        else manualRpgChatPending = false;
+    }
+    std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
+    auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAI " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
+
+    SC_PHASE("UpdateAI.entry", bot ? bot->GetName() : "(null)");
+
+    // revalidate the
+    // cached master pointer against ObjectAccessor BEFORE any code
+    // path can deref it. If the master Player was destroyed since
+    // SetMaster() was called (typical when master logs out /
+    // disconnects), FindPlayer returns nullptr or a different live
+    // pointer. We null `master` defensively. The masterGuid shadow
+    // (set in SetMaster, see PlayerbotAI.h) is the safe lookup key â€”
+    // we never deref the cached `master` pointer in this check.
+    RevalidateMasterPointer();
+
+    if(aiInternalUpdateDelay > elapsed)
+    {
+        aiInternalUpdateDelay -= elapsed;
+    }
+    else
+    {
+        aiInternalUpdateDelay = 0;
         isWaiting = false;
     }
 
-    // Qualified AI values are caches. Expired entries used to survive until a
-    // much slower random-bot maintenance cycle, retaining memory for hours.
-    // Spread cleanup by GUID so 10k bots never sweep their caches together.
-    if (minimal && aiObjectContext && sPlayerbotAIConfig.valueCacheCleanupInterval)
-    {
-        uint32 const now = WorldTimer::getMSTime();
-        uint32 const interval = sPlayerbotAIConfig.valueCacheCleanupInterval;
-        if (!lastValueCacheCleanupMs)
-            lastValueCacheCleanupMs = now - (bot->GetGUIDLow() % interval);
-        if (WorldTimer::getMSTimeDiff(lastValueCacheCleanupMs, now) >= interval)
-        {
-            aiObjectContext->ClearExpiredValues();
-            lastValueCacheCleanupMs = now;
-        }
-    }
+    CleanupExpiredValuesIfDue();
 
     // cancel logout in combat
     if (bot->IsStunnedByLogout() || bot->GetSession()->isLogingOut())
@@ -380,26 +451,28 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
             else if (lootObject.GetWorldObject(bot->GetInstanceId()) && bot->GetDistance(lootObject.GetWorldObject(bot->GetInstanceId())) < INTERACTION_DISTANCE)
                 shouldRelease = false;
 
-            
+
             if (Loot* loot = sLootMgr.GetLoot(bot, bot->GetLootGuid()))
             {
                 if (lootObject.IsUnit())
                 {
                     Unit* unitTarget = (Unit*)loot->GetLootTarget();
-                    LootAccess const* lootAccess = reinterpret_cast<LootAccess const*>(unitTarget->m_loot);
-                    // If the bot is actually one of the players looting
-                    if (!lootAccess->m_playersLooting.contains(bot->GetObjectGuid()))
+                    // Unit doesn't have m_loot; only Creature does.
+                    Loot* utLoot = (unitTarget && unitTarget->GetTypeId() == TYPEID_UNIT) ? ((Creature*)unitTarget)->m_loot : nullptr;
+                    // LootAccess wraps Loot* now (no more reinterpret_cast layout-cheat).
+                    LootAccess lootAccess(utLoot);
+                    if (utLoot && lootAccess.playersLooting().count(bot->GetObjectGuid()) == 0)
                     {
                         // You shouldn't release if you aren't looting already
                         shouldRelease = false;
-                    }    
+                    }
                 }
                 else if (lootObject.IsGameObject())
                 {
                     GameObject* gameobjectTarget = (GameObject*)loot->GetLootTarget();
-                    LootAccess const* lootAccess = reinterpret_cast<LootAccess const*>(gameobjectTarget->m_loot);
-                    // If the bot is actually one of the players looting
-                    if (!lootAccess->m_playersLooting.contains(bot->GetObjectGuid()))
+                    // LootAccess wraps Loot* now.
+                    LootAccess lootAccess(gameobjectTarget ? gameobjectTarget->m_loot : nullptr);
+                    if (!lootAccess.playersLooting().count(bot->GetObjectGuid()))
                     {
                         // You shouldn't release if you aren't looting already
                         shouldRelease = false;
@@ -414,7 +487,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
                 // release loot if moving and far from object.
                 if (shouldRelease)
                 {
-                    loot->Release(bot);
+                    bot->GetSession()->DoLootRelease(lootObject);
                 }
             }
         }
@@ -441,6 +514,10 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
         if (!inCombat && !isCasting && !isWaiting)
         {
             ResetAIInternalUpdateDelay();
+            // REACT_ACTIVITY has its own cache slot (separate from ALL_ACTIVITY above) that
+            // can still be holding a stale "inactive" verdict from just before combat started -
+            // force a fresh check now instead of waiting up to 5s for it to expire on its own.
+            AllowActivity(REACT_ACTIVITY, true);
         }
         else if (!AllowActivity())
         {
@@ -462,7 +539,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
 #ifndef MANGOSBOT_TWO
     if (!bot->IsStopped() && !IsJumping() && !CanMove() && !bot->IsTaxiFlying() && !bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_FLEEING) && !bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_CONFUSED))
 #else
-    if (!bot->IsStopped() && !IsJumping() && !CanMove() && !bot->m_movementInfo.HasMovementFlag(MOVEFLAG_FALLING) && !bot->IsTaxiFlying() && !bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_FLEEING) && !bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_CONFUSED) && !bot->IsFreeFlying())
+    if (!bot->IsStopped() && !IsJumping() && !CanMove() && !bot->m_movementInfo.HasMovementFlag(MOVEFLAG_FALLING) && !bot->IsTaxiFlying() && !bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_FLEEING) && !bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_CONFUSED))
 #endif
     {
         StopMoving();
@@ -500,6 +577,17 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
             land << bot->m_movementInfo;
             QueuePacket(land);
             sLog.outDetail("%s: Jump: Landed, landTime: %u", bot->GetName(), curTime);
+
+            // Player::IsFalling() (m_fallStartZ != 0, set by SetFallInformation() above
+            // this block and in the knockback handler) is what actually gates CanMove().
+            // It's meant to clear via Player::UpdateFallInformationIfNeed() when the
+            // MSG_MOVE_FALL_LAND packet just queued above is processed by
+            // WorldSession::HandleMovementOpcodes - but that processing is unreliable for
+            // an AI-synthesized packet (dropped if the bot's movespline isn't finalized,
+            // rejected by anti-cheat, etc.), and when it's dropped m_fallStartZ is never
+            // reset, permanently blocking the bot from moving again. Clear it here
+            // directly so landing doesn't depend on that fragile round-trip.
+            bot->SetFallInformation(0, 0.0f);
 
             jumpTime = 0;
             fallAfterJump = false;
@@ -564,6 +652,31 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
             bot->SetPower(bot->GetPowerType(), bot->GetMaxPower(bot->GetPowerType()));
         if (HasCheat(BotCheatMask::cooldown))
             bot->RemoveAllCooldowns();
+        if (HasCheat(BotCheatMask::repair))
+        {
+            // The "repair" cheat is meant to mean gear never actually breaks, but nothing
+            // ever called PlayerbotAI::DurabilityLoss() (the only place that checked this
+            // cheat before applying durability loss) - normal combat/death durability loss
+            // goes through the core engine directly and bypasses it entirely. Left
+            // unrepaired, a broken (0-durability) weapon makes every spell that needs it
+            // fail CanCastSpell with SPELL_FAILED_EQUIPPED_ITEM_CLASS forever, regardless of
+            // range, since that failure has nothing to do with distance - this is what was
+            // permanently soft-locking hunters on their current target. Only pay for the
+            // repair scan when something is actually below full durability.
+            bool needsRepair = false;
+            for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
+            {
+                Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+                if (item && item->GetUInt32Value(ITEM_FIELD_MAXDURABILITY) &&
+                    item->GetUInt32Value(ITEM_FIELD_DURABILITY) < item->GetUInt32Value(ITEM_FIELD_MAXDURABILITY))
+                {
+                    needsRepair = true;
+                    break;
+                }
+            }
+            if (needsRepair)
+                bot->DurabilityRepairAll(false, 0.0f);
+        }
         if (HasCheat(BotCheatMask::movespeed))
         {
             bot->UpdateSpeed(MOVE_WALK, true, 10);
@@ -615,7 +728,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
         if (botLevel < masterLevel && botLevel < maxLevel)
         {
             bot->GiveLevel(botLevel + 1);
-         
+
             if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
             {
                 sPlayerbotAIConfig.logEvent(this, "AltLevelSync", ObjectGuid(),
@@ -653,6 +766,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
     }
 
     // Update facing
+    SC_PHASE("UpdateAI.UpdateFaceTarget", bot ? bot->GetName() : "(null)");
     UpdateFaceTarget(elapsed, minimal);
 
     bool doMinimalReaction = minimal || !AllowActivity(REACT_ACTIVITY);
@@ -664,6 +778,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
 #endif
 
     // Only update the internal ai when no reaction is running and the internal ai can be updated
+    SC_PHASE("UpdateAI.UpdateAIReaction", bot ? bot->GetName() : "(null)");
     if(!UpdateAIReaction(elapsed, doMinimalReaction, bot->IsTaxiFlying()) && CanUpdateAIInternal())
     {
         // Update the delay with the spell cast time
@@ -679,6 +794,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
             }
         }
 
+        SC_PHASE("UpdateAI.UpdateAIInternal", bot ? bot->GetName() : "(null)");
         UpdateAIInternal(elapsed, minimal);
 
         bool min = minimal;
@@ -689,8 +805,14 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
         if (bot && HasRealPlayerMaster())
             min = false;
 
-        YieldAIInternalThread(min);
+        SC_PHASE("UpdateAI.YieldAIInternalThread", bot ? bot->GetName() : "(null)");
+        // A scheduler-requested minimal pass has a separate throttle. Adding a
+        // synthetic decision delay here can phase-lock every full opportunity
+        // behind that throttle. Delays set by actual actions remain untouched.
+        if (!minimal)
+            YieldAIInternalThread(min);
     }
+    SC_PHASE("UpdateAI.exit", bot ? bot->GetName() : "(null)");
 }
 
 bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
@@ -698,7 +820,9 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
     bool reactionFound;
     std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
     auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAIReaction " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
+    MANTECH_DIAG_BEGIN(reactionDiagnostic, BotReaction, 32, "reaction_update");
     const bool reactionInProgress = reactionEngine->Update(elapsed, minimal, isStunned, reactionFound);
+    MANTECH_DIAG_END(reactionDiagnostic);
     pmo.reset();
 
     if(reactionFound)
@@ -824,7 +948,7 @@ bool PlayerbotAI::IsInPvp()
 {
     if (IsSafe(bot))
     {
-        const bool inDuel = bot->duel && bot->duel->opponent;
+        const bool inDuel = bot->m_duel && bot->m_duel->opponent;
         if (!inDuel)
         {
             const bool inBattleground = bot->InBattleGround();
@@ -854,7 +978,7 @@ bool PlayerbotAI::IsInRaid()
     bool inRaidFight = false;
     if (IsSafe(bot))
     {
-        const Map* map = bot->GetMap();
+        const Map* map = bot->FindMap();
         if (map && (map->IsDungeon() || map->IsRaid()))
         {
             inRaidFight = true;
@@ -997,18 +1121,17 @@ bool PlayerbotAI::CanEnterArea(const AreaTrigger* area)
 
 void PlayerbotAI::Unmount()
 {
-    bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
     if ((bot->IsMounted() || bot->GetMountID()) && !bot->IsTaxiFlying())
     {
+        bot->RemoveSpellsCausingAura(SPELL_AURA_MOUNTED);
         bot->Unmount();
+
         bot->UpdateSpeed(MOVE_RUN, true);
         bot->UpdateSpeed(MOVE_RUN, false);
 
         if (bot->IsFlying())
         {
             bot->GetMotionMaster()->MoveFall();
-            if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_LEVITATING))
-                bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_LEVITATING);
         }
     }
 }
@@ -1076,13 +1199,27 @@ void PlayerbotAI::OnDeath()
 {
     if (!IsStateActive(BotState::BOT_STATE_DEAD) && !sServerFacade.IsAlive(bot))
     {
+        // A bot that already has a corpse AND the ghost flag did not just die â€” it died
+        // earlier and is corpse-running. The engine transiently leaves DEAD state during
+        // the corpse run (e.g. on the graveyard teleport), so DeathTrigger
+        // (!inDeadState && !isAlive) re-fires and OnDeath would otherwise log/count the
+        // same death a second time â€” the "killer=none phantom death at the graveyard"
+        // that inflated every death metric ~2x. A genuine fresh death always has no corpse
+        // and no ghost flag yet (both spawn/set only after death, during release-spirit).
+        // Restore the DEAD engine state so the corpse run continues, then bail without
+        // re-logging or re-incrementing the death count.
+        if (bot->GetCorpse() && bot->HasFlag(PLAYER_FLAGS, PLAYER_FLAGS_GHOST))
+        {
+            ChangeEngine(BotState::BOT_STATE_DEAD);
+            return;
+        }
+
         StopMoving();
 
         Player* master = GetMaster();
         AiObjectContext* context = aiObjectContext;
         if (!HasActivePlayerMaster() && !bot->InBattleGround())
         {
-
             SET_AI_VALUE(uint32, "death count", AI_VALUE(uint32, "death count") + 1);
 
             if (sPlayerbotAIConfig.hasLog("deaths.csv"))
@@ -1140,6 +1277,12 @@ void PlayerbotAI::OnDeath()
                 }
 
                 out << "\"," << std::to_string(adds);
+
+                TravelTarget* travelTarget = AI_VALUE(TravelTarget*, "travel target");
+                std::string travelInfo = "none";
+                if (travelTarget && travelTarget->GetDestination())
+                    travelInfo = travelTarget->GetDestination()->GetTitle();
+                out << ",\"" << travelInfo << "\"";
 
                 sPlayerbotAIConfig.log("deaths.csv", out.str().c_str());
             }
@@ -1212,6 +1355,9 @@ void PlayerbotAI::HandleCommands()
 
 void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
+    MANTECH_DIAG_SCOPE(BotAI, 16, nullptr);
+
+    SC_PHASE("UpdateAIInternal.entry", bot ? bot->GetName() : "(null)");
     if (bot->IsBeingTeleported() || !bot->IsInWorld())
         return;
 
@@ -1220,29 +1366,26 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 
     ExternalEventHelper helper(aiObjectContext);
 
-    // chat replies
-    std::list<ChatQueuedReply> delayedResponses;
+    // Extract due replies under the queue lock; delivery may enqueue on another
+    // bot and must never hold this bot's mutex across reciprocal delivery.
+    std::list<ChatQueuedReply> dueResponses;
     {
         std::scoped_lock lock(chatRepliesMutex);
+        std::queue<ChatQueuedReply> futureResponses;
+        const time_t now = time(nullptr);
         while (!chatReplies.empty())
         {
-            ChatQueuedReply holder = chatReplies.front();
-            time_t checkTime = holder.m_time;
-            if (checkTime && time(0) < checkTime)
-            {
-                delayedResponses.push_back(holder);
-                chatReplies.pop();
-                continue;
-            }
-            ChatReplyAction::ChatReplyDo(bot, holder.m_type, holder.m_guid1, holder.m_guid2, holder.m_msg, holder.m_chanName, holder.m_name);
+            ChatQueuedReply holder = std::move(chatReplies.front());
             chatReplies.pop();
+            if (holder.m_time && now < holder.m_time)
+                futureResponses.push(std::move(holder));
+            else
+                dueResponses.push_back(std::move(holder));
         }
-
-        for (std::list<ChatQueuedReply>::iterator i = delayedResponses.begin(); i != delayedResponses.end(); ++i)
-        {
-            chatReplies.push(*i);
-        }
+        chatReplies.swap(futureResponses);
     }
+    for (ChatQueuedReply const& holder : dueResponses)
+        ChatReplyAction::ChatReplyDo(bot, holder.m_type, holder.m_guid1, holder.m_guid2, holder.m_msg, holder.m_chanName, holder.m_name);
     // logout if logout timer is ready or if instant logout is possible
     if (bot->IsStunnedByLogout() || bot->GetSession()->isLogingOut())
     {
@@ -1265,9 +1408,9 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 
         if (logout && !bot->GetSession()->ShouldLogOut(time(nullptr)))
         {
-            if (master && master->GetPlayerbotMgr())
+            if (master && GetBotMgr(master))
             {
-                master->GetPlayerbotMgr()->LogoutPlayerBot(bot->GetObjectGuid().GetRawValue());
+                GetBotMgr(master)->LogoutPlayerBot(bot->GetObjectGuid().GetRawValue());
             }
             else
             {
@@ -1280,11 +1423,16 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
         return;
     }
 
+    SC_PHASE("UpdateAIInternal.botOutgoingPackets", bot ? bot->GetName() : "(null)");
     botOutgoingPacketHandlers.Handle(helper);
+    SC_PHASE("UpdateAIInternal.masterIncomingPackets", bot ? bot->GetName() : "(null)");
     masterIncomingPacketHandlers.Handle(helper);
+    SC_PHASE("UpdateAIInternal.masterOutgoingPackets", bot ? bot->GetName() : "(null)");
     masterOutgoingPacketHandlers.Handle(helper);
 
+    SC_PHASE("UpdateAIInternal.DoNextAction", bot ? bot->GetName() : "(null)");
 	DoNextAction(minimal);
+    SC_PHASE("UpdateAIInternal.exit", bot ? bot->GetName() : "(null)");
 }
 
 void PlayerbotAI::QueueSummonRevival(uint32 mapId, float x, float y, float z, uint32 instanceId)
@@ -1323,14 +1471,10 @@ void PlayerbotAI::HandleTeleportAck()
     if (IsRealPlayer() && bot->IsBeingTeleportedFar())
         return;
 
-    bool const farTeleport = bot->IsBeingTeleportedFar();
-
-    // Invalidate every path or queued worker snapshot from the old world
-    // context before acknowledging either kind of teleport.
     transitionGeneration.fetch_add(1, std::memory_order_acq_rel);
     urgentTransitionPending.store(false, std::memory_order_release);
+    requestedTransition.store(0, std::memory_order_release);
     ClearPendingTransition();
-
     StopMoving();
 
 	if (bot->IsBeingTeleportedNear())
@@ -1348,14 +1492,14 @@ void PlayerbotAI::HandleTeleportAck()
 #else
         p << bot->GetObjectGuid();
 #endif
-		p << (uint32) 0; // supposed to be flags? not used currently
+		p << bot->GetLastCounterForMovementChangeType(TELEPORT); // movement counter the core is waiting to ACK
 		p << (uint32) time(0); // time - not currently used
         bot->GetSession()->HandleMoveTeleportAckOpcode(p);
 
         // add delay to simulate teleport delay
         SetAIInternalUpdateDelay(urand(1000, 2000));
 	}
-    else if (farTeleport)
+    else if (bot->IsBeingTeleportedFar())
     {
         // guard BG race - bot-only fix for MapManager::CreateInstance assert
         WorldLocation const& loc = bot->GetTeleportDest();
@@ -1378,23 +1522,6 @@ void PlayerbotAI::HandleTeleportAck()
 
         bot->GetSession()->HandleMoveWorldportAckOpcode();
 
-        // Stop the movement that brought the bot to the source-side area
-        // trigger. StopMoving() intentionally returns while a far teleport is
-        // pending, so the old generator must be cleared after the worldport
-        // acknowledgement has placed the bot on the destination map. Keeping
-        // it alive can make the bot pursue source-map coordinates inside the
-        // destination instance and walk through walls or below the terrain.
-        bot->InterruptMoving(true);
-        if (!bot->GetMotionMaster()->empty())
-            bot->GetMotionMaster()->Clear(false, true);
-        bot->GetMotionMaster()->MoveIdle();
-
-        if (!bot->GetTransport())
-            bot->m_movementInfo.SetMovementFlags(MOVEFLAG_NONE);
-
-        aiObjectContext->GetValue<LastMovement&>("last movement")->Get().clear();
-        aiObjectContext->GetValue<LastMovement&>("last area trigger")->Get().clear();
-
         // add delay to simulate teleport delay
         SetAIInternalUpdateDelay(urand(2000, 5000));
 	}
@@ -1409,6 +1536,13 @@ void PlayerbotAI::HandleTeleportAck()
 void PlayerbotAI::Reset(bool full)
 {
     AiObjectContext* context = aiObjectContext;
+    if (manualRpgChatPending)
+    {
+        auto* action = dynamic_cast<RpgAIChatAction*>(context->GetAction("rpg ai chat"));
+        if (action) action->CancelManualChat();
+        manualRpgChatPending = false;
+    }
+
 
     if (bot->IsTaxiFlying())
         return;
@@ -1421,6 +1555,7 @@ void PlayerbotAI::Reset(bool full)
     currentEngine = engines[(uint8)BotState::BOT_STATE_NON_COMBAT];
     currentState = BotState::BOT_STATE_NON_COMBAT;
     ResetAIInternalUpdateDelay();
+    backgroundMinimalDelay = 0;
     reactionEngine->Reset();
     whispers.clear();
 
@@ -1455,7 +1590,12 @@ void PlayerbotAI::Reset(bool full)
         target->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
         target->SetExpireIn(1000);
 
-        *AI_VALUE(FutureDestinations*, "future travel destinations") = FutureDestinations();
+        // Releasing an unfinished std::async future joins its worker. Invalidate
+        // the target above, but retain pending ownership until the search ends.
+        // Request actions must not replace it while pending either.
+        FutureDestinations* future = AI_VALUE(FutureDestinations*, "future travel destinations");
+        if (!IsTravelSearchPending(*future))
+            *future = FutureDestinations();
         RESET_AI_VALUE2(std::string, "manual string", "future travel purpose");
         RESET_AI_VALUE2(int, "manual int", "future travel relevance");
 
@@ -1602,7 +1742,7 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 
     // Respect command prefixes, role filters and authorization, then deliver
     // explicit summons without waiting for a stunned, dead or stalled AI tick.
-    if (fromPlayer.isRealPlayer() &&
+    if (::IsRealPlayer(&fromPlayer) &&
         ((filtered == "summon" && (type == CHAT_MSG_WHISPER || type == CHAT_MSG_PARTY || type == CHAT_MSG_RAID)) ||
          (filtered == "who" && type == CHAT_MSG_WHISPER)))
     {
@@ -1662,7 +1802,7 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
             if (type == CHAT_MSG_WHISPER)
                 TellPlayer(&fromPlayer, BOT_TEXT("logout_start"));
 
-            if (master && master->GetPlayerbotMgr())
+            if (master && GetBotMgr(master))
                 SetShouldLogOut(true);
         }
     }
@@ -1695,6 +1835,11 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
     }
     else
     {
+        SC_LOG("chat-cmd queued bot=%s from=%s type=%u text='%s'",
+               bot ? bot->GetName() : "(null)",
+               fromPlayer.GetName(),
+               (unsigned)type,
+               filtered.c_str());
         ChatCommandHolder cmd(filtered, &fromPlayer, type);
         chatCommands.push(cmd);
     }
@@ -1864,7 +2009,12 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
             }
 #endif
 
-            bool isAiChat = sPlayerbotAIConfig.llmEnabled > 0 && (HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT) || sPlayerbotAIConfig.llmEnabled == 3);
+            // Most bot-to-bot broadcasts fail the existing probability gate.
+            // Do not probe every recipient's strategy/cache before that gate.
+            auto usesAIChat = [this] {
+                return sPlayerbotAIConfig.llmEnabled > 0 &&
+                    (sPlayerbotAIConfig.llmEnabled == 3 || HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT));
+            };
 
             if (m_recordIncommingMessages)
             {
@@ -1915,43 +2065,37 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                 m_recordedMessages.push_back(recievedMessage);
             }
 
-            if (isAiChat && (lang == LANG_ADDON || message.find("d:") == 0))
-                return;
-
             if (guid1 != bot->GetObjectGuid()) // do not reply to self
             {
-                // try to always reply to real player
-                time_t lastChat = GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Get();
-                bool isPaused = time(0) < lastChat;
-                bool shouldReply = false;
+                // Human messages keep their existing LLM/mention semantics.
                 bool isFromFreeBot = false;
-                sObjectMgr.GetPlayerNameByGUID(guid1, name);
-                uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid1);
-                isFromFreeBot = sPlayerbotAIConfig.IsInRandomAccountList(accountId);
-                if (!isFromFreeBot)
+                if (!ai::chat::BroadcastSenderScope::TryGet(guid1.GetRawValue(), isFromFreeBot))
                 {
-
-                    isFromFreeBot = sPlayerbotAIConfig.IsFreeAltBot(guid1);
-
-                    if (isFromFreeBot)
+                    uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID(guid1);
+                    isFromFreeBot = sPlayerbotAIConfig.IsInRandomAccountList(accountId);
+                    if (!isFromFreeBot)
                     {
-                        Player* player = sObjectMgr.GetPlayer(guid1);
-                        if (player && player->isRealPlayer())
-                            isFromFreeBot = false;
+
+                        isFromFreeBot = sPlayerbotAIConfig.IsFreeAltBot(guid1);
+
+                        if (isFromFreeBot)
+                        {
+                            Player* player = sObjectMgr.GetPlayer(guid1);
+                            if (player && IsRealPlayer(player))
+                                isFromFreeBot = false;
+                        }
                     }
                 }
 
                 bool isMentioned = message.find(bot->GetName()) != std::string::npos;
-                
 
-                ChatChannelSource chatChannelSource = GetChatChannelSource(bot, msgtype, chanName);
+
+                bool isAiChat = !isFromFreeBot && usesAIChat();
+                if (isAiChat && (lang == LANG_ADDON || message.find("d:") == 0))
+                    return;
 
                 if (!isAiChat || isFromFreeBot)
                 {
-                    // random bot speaks, chat CD
-                    if ((isFromFreeBot || isAiChat) && isPaused)
-                        return;
-
                     // BG: react only if mentioned or if not channel and real player spoke
                     if (bot->InBattleGround() && !(isMentioned || (msgtype != CHAT_MSG_CHANNEL && !isFromFreeBot)))
                         return;
@@ -1962,16 +2106,18 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                     if (lang == LANG_ADDON)
                         return;
 
-                    if (boost::algorithm::istarts_with(message, sPlayerbotAIConfig.toxicLinksPrefix)
-                        && (GetChatHelper()->ExtractAllItemIds(message).size() > 0 || GetChatHelper()->ExtractAllQuestIds(message).size() > 0)
-                        && sPlayerbotAIConfig.toxicLinksRepliesChance)
+                    if (sPlayerbotAIConfig.toxicLinksRepliesChance &&
+                        (message.find("Hitem:") != std::string::npos || message.find("Hquest:") != std::string::npos) &&
+                        ai::chat::HasInsensitivePrefix(message, sPlayerbotAIConfig.toxicLinksPrefix)
+                        && (GetChatHelper()->ExtractAllItemIds(message).size() > 0 || GetChatHelper()->ExtractAllQuestIds(message).size() > 0))
                     {
                         if (urand(0, 50) > 0 || urand(1, 100) > sPlayerbotAIConfig.toxicLinksRepliesChance)
                         {
                             return;
                         }
                     }
-                    else if ((GetChatHelper()->ExtractAllItemIds(message).count(19019) && sPlayerbotAIConfig.thunderfuryRepliesChance))
+                    else if (sPlayerbotAIConfig.thunderfuryRepliesChance &&
+                        GetChatHelper()->ExtractAllItemIds(message).count(19019))
                     {
                         if (urand(0, 60) > 0 || urand(1, 100) > sPlayerbotAIConfig.thunderfuryRepliesChance)
                         {
@@ -1999,16 +2145,31 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                     }
                 }
 
-                MANGOS_ASSERT(!message.empty());     
+                // Preserve cooldown policy, but only touch the recipient's
+                // locked value cache after a reply actually passes selection.
+                if (isFromFreeBot)
+                {
+                    time_t const lastChat = GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Get();
+                    if (time(0) < lastChat)
+                        return;
+                }
+                if (isFromFreeBot)
+                    isAiChat = usesAIChat();
+                if (isAiChat && (lang == LANG_ADDON || message.find("d:") == 0))
+                    return;
+                sObjectMgr.GetPlayerNameByGUID(guid1, name);
+                MANGOS_ASSERT(!message.empty());
                 QueueChatResponse(msgtype, guid1, ObjectGuid(), message, chanName, name, isAiChat);
                 GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Set(time(0) + urand(5, 25));
 
                 return;
             }
 
-            if (isAiChat)
+            if (usesAIChat())
             {
-                ChatChannelSource chatChannelSource = bot->GetPlayerbotAI()->GetChatChannelSource(bot, msgtype, chanName);
+                if (lang == LANG_ADDON || message.find("d:") == 0)
+                    return;
+                ChatChannelSource chatChannelSource = GetBotAI(bot)->GetChatChannelSource(bot, msgtype, chanName);
 
                 std::string llmChannel;
 
@@ -2127,6 +2288,15 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
         return;
     }
 	default:
+		// log group invite arrivals so we
+		// can verify the auto-accept handler fires. If we see this line in
+		// the server log but no subsequent "AcceptInvitationAction" event,
+		// the strategy/trigger is registered but the action isn't being
+		// scheduled â€” points us at engine priority or trigger.Check() bugs.
+		if (packet.GetOpcode() == SMSG_GROUP_INVITE) {
+			SC_LOG("bot=%s received SMSG_GROUP_INVITE â€” queued for 'group invite' trigger",
+			       bot ? bot->GetName() : "(null)");
+		}
 		botOutgoingPacketHandlers.AddPacket(packet);
 	}
 }
@@ -2165,33 +2335,22 @@ int32 PlayerbotAI::CalculateGlobalCooldown(uint32 spellid)
         globalCooldown = spellEntry->StartRecoveryTime;
     }
 
-    return globalCooldown;
+    return globalCooldown > 0 ? globalCooldown : sPlayerbotAIConfig.reactDelay;
 }
 
 void PlayerbotAI::HandleMasterIncomingPacket(const WorldPacket& packet)
 {
-    if (packet.GetOpcode() == CMSG_AREATRIGGER)
+    // Packet delivery may originate on the master's map. Publish only an ID;
+    // validate position, interrupt spells and touch motion on the bot's owner.
+    if (packet.GetOpcode() == CMSG_AREATRIGGER && packet.size() >= sizeof(uint32))
     {
-        WorldPacket triggerPacket(packet);
-        triggerPacket.rpos(0);
-        uint32 triggerId = 0;
-        triggerPacket >> triggerId;
-
-        AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(triggerId);
-
-        // Only a reachable, real teleport trigger preempts this bot's current
-        // action. PlayerbotMgr forwards the master's packet to every owned bot,
-        // including remote bots that cannot follow this transition.
-        if (sObjectMgr.GetAreaTrigger(triggerId) && atEntry && bot &&
-            bot->GetMapId() == atEntry->mapid &&
-            bot->GetDistance(atEntry->x, atEntry->y, atEntry->z) <= sPlayerbotAIConfig.sightDistance)
-            RequestUrgentTransition(triggerId);
-        else
-            masterIncomingPacketHandlers.AddPacket(packet);
-
+        WorldPacket copy(packet);
+        copy.rpos(0);
+        uint32 trigger = 0;
+        copy >> trigger;
+        requestedTransition.store(trigger, std::memory_order_release);
         return;
     }
-
     masterIncomingPacketHandlers.AddPacket(packet);
 }
 
@@ -2200,10 +2359,15 @@ void PlayerbotAI::RequestUrgentTransition(uint32 triggerId)
     uint32 const now = WorldTimer::getMSTime();
     {
         std::lock_guard<std::mutex> lock(pendingTransitionMutex);
+        if (pendingTransition.triggerId == triggerId && pendingTransition.sourceMapId == bot->GetMapId() &&
+            pendingTransition.sourceInstanceId == bot->GetInstanceId() &&
+            WorldTimer::getMSTimeDiff(pendingTransition.startedAtMs, now) < 15000)
+            return; // duplicate master packet must not repeatedly cancel spells
         pendingTransition.triggerId = triggerId;
         pendingTransition.sourceMapId = bot->GetMapId();
         pendingTransition.sourceInstanceId = bot->GetInstanceId();
         pendingTransition.startedAtMs = now;
+        transitionInProgress.store(true, std::memory_order_release);
         pendingTransition.lastAttemptAtMs = 0;
         pendingTransition.attempts = 0;
     }
@@ -2261,6 +2425,7 @@ bool PlayerbotAI::ProcessPendingTransition()
 
     if (!state.triggerId)
         return false;
+    if (IsAreaTriggerRelaySuppressed()) { ClearPendingTransition(state.triggerId, true); return false; }
 
     uint32 const now = WorldTimer::getMSTime();
     if (WorldTimer::getMSTimeDiff(state.startedAtMs, now) >= TRANSITION_TIMEOUT_MS)
@@ -2344,6 +2509,7 @@ void PlayerbotAI::ClearPendingTransition(uint32 expectedTriggerId, bool stopMove
         if (!expectedTriggerId || pendingTransition.triggerId == expectedTriggerId)
         {
             pendingTransition = PendingTransitionState();
+            transitionInProgress.store(false, std::memory_order_release);
             cleared = true;
         }
     }
@@ -2416,6 +2582,7 @@ void PlayerbotAI::ChangeEngine(BotState type)
 
 void PlayerbotAI::DoNextAction(bool min)
 {
+    SC_PHASE("DoNextAction.entry", bot ? bot->GetName() : "(null)");
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || (GetMaster() && GetMaster()->IsBeingTeleported()))
     {
         SetAIInternalUpdateDelay(sPlayerbotAIConfig.globalCoolDown);
@@ -2423,6 +2590,7 @@ void PlayerbotAI::DoNextAction(bool min)
     }
 
     // if in combat but stuck with old data - clear targets
+    SC_PHASE("DoNextAction.staleTargetCheck", bot ? bot->GetName() : "(null)");
     if (currentEngine == engines[(uint8)BotState::BOT_STATE_NON_COMBAT] && sServerFacade.IsInCombat(bot))
     {
         if (aiObjectContext->GetValue<Unit*>("current target")->Get() != NULL ||
@@ -2435,7 +2603,9 @@ void PlayerbotAI::DoNextAction(bool min)
 
     bool minimal = !AllowActivity();
 
+    SC_PHASE("DoNextAction.engineDoNextAction", bot ? bot->GetName() : "(null)");
     currentEngine->DoNextAction(NULL, 0, (minimal || min), bot->IsTaxiFlying());
+    SC_PHASE("DoNextAction.afterEngine", bot ? bot->GetName() : "(null)");
 
     if (!bot->IsInWorld()) //Teleport out of bg
         return;
@@ -2470,7 +2640,7 @@ void PlayerbotAI::DoNextAction(bool min)
         Player* playerMaster = nullptr;
 
         //Are there any non-bot players in the group?
-        if (!newMaster || newMaster->GetPlayerbotAI())
+        if (!newMaster || GetBotAI(newMaster))
             for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
             {
                 Player* member = gref->getSource();
@@ -2487,18 +2657,18 @@ void PlayerbotAI::DoNextAction(bool min)
                 if (!member->IsInWorld())
                     continue;
 
-                if (!member->IsInGroup(bot, true))
+                if (!group->SameSubGroup(member, bot))
                     continue;
 
                 //Do not make bots your master if they are nog group leader.
-                if (member->GetPlayerbotAI() && !bot->InBattleGround())
+                if (GetBotAI(member) && !bot->InBattleGround())
                     continue;
 
                 if (bot->InBattleGround())
                     continue;
 
                 // same BG
-                if (bot->InBattleGround() && bot->GetBattleGround()->GetTypeId() == BATTLEGROUND_AV && !member->GetPlayerbotAI() && member->InBattleGround() && bot->GetMapId() == member->GetMapId())
+                if (bot->InBattleGround() && bot->GetBattleGround()->GetTypeId() == BATTLEGROUND_AV && !GetBotAI(member) && member->InBattleGround() && bot->GetMapId() == member->GetMapId())
                 {
                     // TODO disable move to objective if have master in bg
                     continue;
@@ -2560,6 +2730,19 @@ void PlayerbotAI::DoNextAction(bool min)
             {
                 std::string defaultMovementStrategy = GetDefaultMovementStrategy();
                 ChangeStrategy("+" + defaultMovementStrategy, BotState::BOT_STATE_NON_COMBAT);
+
+                // A bot that joins another bot's group must stop executing its
+                // old personal journey. Keeping that target while assigning the
+                // bounded "wander" strategy creates a permanent contradiction:
+                // the target remains active, but CanFreeMoveTo rejects every
+                // step outside the 50-yard wander radius. Clear it so the native
+                // group-target chooser can copy the leader's destination.
+                if (group && !group->IsLeader(bot->GetObjectGuid()))
+                {
+                    TravelTarget* travelTarget = GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
+                    if (travelTarget && !travelTarget->IsForced() && !travelTarget->IsGroupCopy())
+                        sTravelMgr.SetNullTravelTarget(travelTarget);
+                }
             }
 
             if (GetMaster() == GetGroupMaster())
@@ -2597,7 +2780,7 @@ void PlayerbotAI::DoNextAction(bool min)
 
         if (!group && sRandomPlayerbotMgr.IsFreeBot(bot) && !IsRealPlayer())
         {
-            bot->GetPlayerbotAI()->SetMaster(nullptr);
+            GetBotAI(bot)->SetMaster(nullptr);
         }
 	}
 	else if (bot->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE)) bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_WALK_MODE);
@@ -2743,6 +2926,7 @@ bool PlayerbotAI::DoSpecificAction(const std::string& name, Event event, bool si
             ActionResult res = engine->ExecuteAction(name, event);
             switch (res)
             {
+                case ACTION_RESULT_DEFERRED: return false; // Queued is not completed.
                 case ACTION_RESULT_OK:
                 {
                     if (!silent)
@@ -2885,6 +3069,18 @@ void PlayerbotAI::ResetStrategies(bool autoLoad)
     AiFactory::AddDefaultReactionStrategies(bot, this, reactionEngine);
     if (autoLoad && HasPlayerRelation()) sPlayerbotDbStore.Load(this);
 
+    // A role handed out by the dungeon finder wins over both the talent spec
+    // and the stored strategy set - hence applied last. addStrategy() drops the
+    // sibling spec strategy by itself and does nothing for classes that cannot
+    // fill the role, so a mage stays a mage.
+    if (m_forcedRole)
+    {
+        char const* roleStrategy = m_forcedRole == 1 ? "tank" : (m_forcedRole == 2 ? "heal" : "dps");
+        engines[(uint8)BotState::BOT_STATE_COMBAT]->addStrategy(roleStrategy);
+        engines[(uint8)BotState::BOT_STATE_NON_COMBAT]->addStrategy(roleStrategy);
+        sLog.outBasic("LFT: %s strategies rebuilt as %s", bot->GetName(), roleStrategy);
+    }
+
     for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
         engines[i]->initMode = false;
@@ -2894,7 +3090,7 @@ void PlayerbotAI::ResetStrategies(bool autoLoad)
 
 bool PlayerbotAI::IsRanged(Player* player, bool inGroup)
 {
-    PlayerbotAI* botAi = player->GetPlayerbotAI();
+    PlayerbotAI* botAi = GetBotAI(player);
     if (botAi)
     {
         bool isRanged = botAi->ContainsStrategy(STRATEGY_TYPE_RANGED);
@@ -2924,7 +3120,7 @@ bool PlayerbotAI::IsMelee(Player* player, bool inGroup)
 
 bool PlayerbotAI::IsTank(Player* player, bool inGroup)
 {
-    PlayerbotAI* botAi = player->GetPlayerbotAI();
+    PlayerbotAI* botAi = GetBotAI(player);
     if (botAi)
     {
         bool isTank = botAi->ContainsStrategy(STRATEGY_TYPE_TANK);
@@ -2939,7 +3135,7 @@ bool PlayerbotAI::IsTank(Player* player, bool inGroup)
 
 bool PlayerbotAI::IsHeal(Player* player, bool inGroup)
 {
-    PlayerbotAI* botAi = player->GetPlayerbotAI();
+    PlayerbotAI* botAi = GetBotAI(player);
     if (botAi)
     {
         bool isHeal = botAi->ContainsStrategy(STRATEGY_TYPE_HEAL);
@@ -2996,7 +3192,11 @@ Unit* PlayerbotAI::GetUnit(ObjectGuid guid)
     if (!guid)
         return NULL;
 
-    Map* map = bot->GetMap();
+    // FindMap, not GetMap: GetMap asserts on a bot without a map and this
+    // core's MANGOS_ASSERT throws, which killed the server from inside a
+    // loot check while a bot was mid-teleport. The null test right below
+    // has always been here - it just could never fire.
+    Map* map = bot->FindMap();
     if (!map)
         return NULL;
 
@@ -3008,14 +3208,12 @@ Unit* PlayerbotAI::GetUnit(CreatureDataPair const* creatureDataPair)
     if (!creatureDataPair)
         return NULL;
 
-    ObjectGuid guid(HIGHGUID_UNIT, creatureDataPair->second.id, creatureDataPair->first);
+    ObjectGuid guid(HIGHGUID_UNIT, creatureDataPair->second.creature_id[0], creatureDataPair->first);
 
     if (!guid)
         return NULL;
 
-    uint32 const instanceId = sMapMgr.GetContinentInstanceId(creatureDataPair->second.mapid,
-        creatureDataPair->second.posX, creatureDataPair->second.posY);
-    Map* map = sMapMgr.FindMap(creatureDataPair->second.mapid, instanceId);
+    Map* map = sMapMgr.FindMap(creatureDataPair->second.position.mapid);
 
     if (!map)
         return NULL;
@@ -3029,7 +3227,11 @@ Creature* PlayerbotAI::GetCreature(ObjectGuid guid) const
     if (!guid)
         return NULL;
 
-    Map* map = bot->GetMap();
+    // FindMap, not GetMap: GetMap asserts on a bot without a map and this
+    // core's MANGOS_ASSERT throws, which killed the server from inside a
+    // loot check while a bot was mid-teleport. The null test right below
+    // has always been here - it just could never fire.
+    Map* map = bot->FindMap();
     if (!map)
         return NULL;
 
@@ -3041,7 +3243,11 @@ Creature* PlayerbotAI::GetAnyTypeCreature(ObjectGuid guid) const
     if (!guid)
         return NULL;
 
-    Map* map = bot->GetMap();
+    // FindMap, not GetMap: GetMap asserts on a bot without a map and this
+    // core's MANGOS_ASSERT throws, which killed the server from inside a
+    // loot check while a bot was mid-teleport. The null test right below
+    // has always been here - it just could never fire.
+    Map* map = bot->FindMap();
     if (!map)
         return NULL;
 
@@ -3053,7 +3259,11 @@ GameObject* PlayerbotAI::GetGameObject(ObjectGuid guid)
     if (!guid)
         return NULL;
 
-    Map* map = bot->GetMap();
+    // FindMap, not GetMap: GetMap asserts on a bot without a map and this
+    // core's MANGOS_ASSERT throws, which killed the server from inside a
+    // loot check while a bot was mid-teleport. The null test right below
+    // has always been here - it just could never fire.
+    Map* map = bot->FindMap();
     if (!map)
         return NULL;
 
@@ -3070,9 +3280,7 @@ GameObject* PlayerbotAI::GetGameObject(GameObjectDataPair const* gameObjectDataP
     if (!guid)
         return NULL;
 
-    uint32 const instanceId = sMapMgr.GetContinentInstanceId(gameObjectDataPair->second.mapid,
-        gameObjectDataPair->second.posX, gameObjectDataPair->second.posY);
-    Map* map = sMapMgr.FindMap(gameObjectDataPair->second.mapid, instanceId);
+    Map* map = sMapMgr.FindMap(gameObjectDataPair->second.position.mapid);
 
     if (!map)
         return NULL;
@@ -3085,7 +3293,11 @@ WorldObject* PlayerbotAI::GetWorldObject(ObjectGuid guid)
     if (!guid)
         return NULL;
 
-    Map* map = bot->GetMap();
+    // FindMap, not GetMap: GetMap asserts on a bot without a map and this
+    // core's MANGOS_ASSERT throws, which killed the server from inside a
+    // loot check while a bot was mid-teleport. The null test right below
+    // has always been here - it just could never fire.
+    Map* map = bot->FindMap();
     if (!map)
         return NULL;
 
@@ -3105,7 +3317,7 @@ std::vector<Player*> PlayerbotAI::GetPlayersInGroup()
     {
         Player* member = ref->getSource();
 
-        if (member->GetPlayerbotAI() && !member->GetPlayerbotAI()->IsRealPlayer())
+        if (GetBotAI(member) && !GetBotAI(member)->IsRealPlayer())
             continue;
 
         members.push_back(ref->getSource());
@@ -3125,15 +3337,12 @@ void PlayerbotAI::DropQuest(uint32 questIdToDrop)
         QuestStatus status = bot->GetQuestStatus(questId);
         if (questId == questIdToDrop)
         {
-            bot->SetQuestSlot(slot, 0);
-
-            //We ignore unequippable quest items in this case, its' still be equipped
-            bot->TakeQuestSourceItem(questId, false);
-
-            bot->SetQuestStatus(questId, QUEST_STATUS_NONE);
-            bot->getQuestStatusMap()[questId].m_rewarded = false;
-
-            //TODO should probably also remove quest items?
+            WorldPacket packet(CMSG_QUESTLOG_REMOVE_QUEST, 1);
+            packet << uint8(slot);
+            bot->GetSession()->HandleQuestLogRemoveQuest(packet);
+            if (!bot->GetQuestSlotQuestId(slot))
+                if (Quest const* q = sObjectMgr.GetQuestTemplate(questIdToDrop))
+                    sPlayerbotAIConfig.logEvent(this, "QuestDropped", q->GetTitle(), std::to_string(questIdToDrop));
 
             return;
         }
@@ -3300,7 +3509,8 @@ const AreaTableEntry* PlayerbotAI::GetCurrentZone()
 */
 std::string PlayerbotAI::GetLocalizedAreaName(const AreaTableEntry* entry)
 {
-    return entry->area_name[BroadcastHelper::GetLocale()];
+    // Penqle's area_name is single char* (no locale array).
+    return entry && entry->area_name ? std::string(entry->area_name) : std::string();
 }
 
 bool PlayerbotAI::IsInCapitalCity()
@@ -3474,14 +3684,19 @@ bool PlayerbotAI::SayToWorld(std::string msg)
         return false;
     }
 
-    //no zone
-    if (Channel* worldChannel = cMgr->GetChannel("World", bot))
-    {
-        worldChannel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
-        return true;
-    }
+    Channel* worldChannel = cMgr->GetOrCreateChannel("World");
+    if (!worldChannel)
+        return false;
 
-    return false;
+    if (!worldChannel->IsOn(bot->GetObjectGuid()))
+        worldChannel->Join(bot->GetObjectGuid(), "");
+
+    ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+        sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+        (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !IsRealPlayer(bot)));
+
+    worldChannel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
+    return true;
 }
 
 bool PlayerbotAI::SayToGeneral(std::string msg)
@@ -3509,6 +3724,9 @@ bool PlayerbotAI::SayToGeneral(std::string msg)
         if (channel && channel->GetChannelId() == ChatChannelId::GENERAL
             && boost::algorithm::contains(channel->GetName(), GetLocalizedAreaName(current_zone)))
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !IsRealPlayer(bot)));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }
@@ -3549,6 +3767,9 @@ bool PlayerbotAI::SayToTrade(std::string msg)
         if (channel && channel->GetChannelId() == ChatChannelId::TRADE
             && boost::algorithm::contains(channel->GetName(), GetLocalizedAreaName(GetAreaEntryByAreaID(ImportantAreaId::CITY))))
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !IsRealPlayer(bot)));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }
@@ -3581,6 +3802,9 @@ bool PlayerbotAI::SayToLFG(std::string msg)
         //check for current zone
         if (channel && channel->GetChannelId() == ChatChannelId::LOOKING_FOR_GROUP)
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !IsRealPlayer(bot)));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }
@@ -3615,6 +3839,9 @@ bool PlayerbotAI::SayToLocalDefense(std::string msg)
         if (channel && channel->GetChannelId() == ChatChannelId::LOCAL_DEFENSE
             && boost::algorithm::contains(channel->GetName(), GetLocalizedAreaName(current_zone)))
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !IsRealPlayer(bot)));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }
@@ -3647,6 +3874,9 @@ bool PlayerbotAI::SayToWorldDefense(std::string msg)
     {
         if (channel && channel->GetChannelId() == ChatChannelId::WORLD_DEFENSE)
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !IsRealPlayer(bot)));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }
@@ -3689,6 +3919,9 @@ bool PlayerbotAI::SayToGuildRecruitment(std::string msg)
         if (channel && channel->GetChannelId() == ChatChannelId::GUILD_RECRUITMENT
             && boost::algorithm::contains(channel->GetName(), GetLocalizedAreaName(GetAreaEntryByAreaID(ImportantAreaId::CITY))))
         {
+            ai::chat::BroadcastSenderScope senderScope(bot->GetObjectGuid().GetRawValue(),
+                sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+                (sPlayerbotAIConfig.IsFreeAltBot(bot->GetObjectGuid()) && !IsRealPlayer(bot)));
             channel->Say(bot, msg.c_str(), LANG_UNIVERSAL);
             return true;
         }
@@ -3710,7 +3943,7 @@ bool PlayerbotAI::SayToParty(std::string msg, bool likePlayer)
     {
         for (auto reciever : GetPlayersInGroup())
         {
-            if (likePlayer || reciever->isRealPlayer())
+            if (likePlayer || IsRealPlayer(reciever))
             {
                 WorldPacket packet_template(CMSG_MESSAGECHAT);
 
@@ -3896,7 +4129,7 @@ bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, Playerbot
         if (type == CHAT_MSG_SYSTEM && (sPlayerbotAIConfig.randomBotSayWithoutMaster || HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT)))
             type = CHAT_MSG_SAY;
 
-        if (type == CHAT_MSG_SYSTEM && player->isRealPlayer())
+        if (type == CHAT_MSG_SYSTEM && IsRealPlayer(player))
             type = CHAT_MSG_WHISPER;
 
         if ((sPlayerbotAIConfig.hasLog("chat_log.csv") && HasStrategy("debug log", BotState::BOT_STATE_NON_COMBAT)) || HasStrategy("debug logname", BotState::BOT_STATE_NON_COMBAT))
@@ -3958,7 +4191,7 @@ bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, Playerbot
                 if (!IsTellAllowed(player, securityLevel))
                     return false;
 
-                if (!HasRealPlayerMaster() && !player->isRealPlayer())
+                if (!HasRealPlayerMaster() && !IsRealPlayer(player))
                     return false;
 
                 whispers[text] = time(0);
@@ -3991,13 +4224,13 @@ bool PlayerbotAI::TellPlayerNoFacing(Player* player, std::string text, Playerbot
 
 bool PlayerbotAI::TellError(Player* player, std::string text, PlayerbotSecurityLevel securityLevel, bool ignoreSilent)
 {
-    if (!IsTellAllowed(player, securityLevel) || !IsSafe(player) || player->GetPlayerbotAI())
+    if (!IsTellAllowed(player, securityLevel) || !IsSafe(player) || GetBotAI(player))
         return false;
 
     if (!ignoreSilent && HasStrategy("silent", BotState::BOT_STATE_NON_COMBAT))
         return false;
 
-    PlayerbotMgr* mgr = player->GetPlayerbotMgr();
+    PlayerbotMgr* mgr = GetBotMgr(player);
     if (mgr) mgr->TellError(bot->GetName(), text);
 
     return false;
@@ -4083,7 +4316,7 @@ bool PlayerbotAI::HasAura(std::string name, Unit* unit, bool maxStack, bool chec
         if (auras.empty())
             continue;
 
-        for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); ++i)
+        for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); i++)
         {
             Aura* aura = *i;
             if (!aura)
@@ -4202,7 +4435,7 @@ Aura* PlayerbotAI::GetAura(std::string name, Unit* unit, bool checkIsOwner)
             if (auras.empty())
                 continue;
 
-            for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); ++i)
+            for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); i++)
             {
                 Aura* aura = *i;
                 if (!aura)
@@ -4251,7 +4484,7 @@ std::vector<Aura*> PlayerbotAI::GetAuras(Unit* unit, bool allAuras, bool positiv
         if (auras.empty())
             continue;
 
-        for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); ++i)
+        for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); i++)
         {
             Aura* aura = *i;
             if (aura)
@@ -4399,28 +4632,36 @@ bool PlayerbotAI::HasSpell(uint32 spellid) const
 {
     if (!spellid || !sServerFacade.LookupSpellInfo(spellid))
         return false;
-
     Pet* pet = bot->GetPet();
     if (pet && pet->HasSpell(spellid))
         return true;
+    // Native HasSpell is already an unordered-map lookup and includes removed
+    // and disabled state. A second cache cannot safely infer its revision from
+    // spell count, level or talent points, and costs another lookup/allocation.
+    return bot->HasSpell(spellid);
+}
 
-    const uint32 now = WorldTimer::getMSTime();
-    const uint32 signature = (uint32(bot->GetLevel()) << 24) ^
-        (uint32(bot->GetSpellMap().size()) << 8) ^ uint32(bot->GetFreeTalentPoints());
-    auto cached = spellCapabilityCache.find(spellid);
-    if (cached != spellCapabilityCache.end() && cached->second.signature == signature &&
-        static_cast<int32>(cached->second.expiresAtMs - now) > 0)
-        return cached->second.known;
+SpellCastResult PlayerbotAI::CheckSpellTargetAlignment(SpellEntry const* spellInfo, Unit* target)
+{
+    // Consider neutral spells (spells that are neither positive or negative (e.g. feign death, hunter traps, ...)
+    const std::list<uint32> neutralSpells = { 1499, 5384, 13795, 13809, 13813, 14302, 14303, 14304, 14305, 14310, 14311, 14316, 14317, 27023, 27025, 34600, 49055, 49056, 49066, 49067 };
+    const bool neutralSpell = std::find(neutralSpells.begin(), neutralSpells.end(), spellInfo->Id) != neutralSpells.end();
+    if (neutralSpell)
+        return SPELL_CAST_OK;
 
-    const bool known = bot->HasSpell(spellid);
-    if (spellCapabilityCache.size() >= 256)
-        spellCapabilityCache.clear();
-    spellCapabilityCache[spellid] = {signature, now + 1000, known};
-    return known;
+    const bool positiveSpell = IsPositiveSpell(spellInfo);
+    if (positiveSpell && sServerFacade.IsHostileTo(bot, target))
+        return SPELL_FAILED_TARGET_ENEMY;
+
+    if (!positiveSpell && sServerFacade.IsFriendlyTo(bot, target))
+        return SPELL_FAILED_TARGET_FRIENDLY;
+
+    return SPELL_CAST_OK;
 }
 
 bool PlayerbotAI::CanCastSpell(std::string name, Unit* target, uint8 effectMask, Item* itemTarget, bool ignoreRange, bool ignoreInCombat, bool ignoreMount, SpellCastResult* checkResult)
 {
+    CombatSpellNameContext requestedSpell(name);
     return CanCastSpell(aiObjectContext->GetValue<uint32>("spell id", name)->Get(), target, effectMask, true, itemTarget, ignoreRange, ignoreInCombat, ignoreMount, checkResult);
 }
 
@@ -4430,7 +4671,10 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
     if (!spellid || !sServerFacade.LookupSpellInfo(spellid))
     {
         if (checkResult)
+        {
             *checkResult = SPELL_FAILED_NOT_KNOWN;
+        }
+
         return false;
     }
 
@@ -4532,7 +4776,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
                 {
                     *checkResult = SPELL_FAILED_TARGET_FRIENDLY;
                 }
-                
+
                 return false;
             }
         }
@@ -4564,7 +4808,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
             }
         }
 
-        bool immune = checkedEffectMask && target->IsImmuneToSpell(spellInfo, target == bot, checkedEffectMask, bot);
+        bool immune = checkedEffectMask && target->IsImmuneToSpell(spellInfo, target == bot);
         if (!damage)
         {
             if (!immune)
@@ -4587,31 +4831,58 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, b
                 immune = hasEffect && allEffectsImmune;
             }
 
+
             if (immune)
+
             {
+
                 if (checkResult)
+
                 {
+
                     *checkResult = SPELL_FAILED_IMMUNE;
+
                 }
 
+
+
                 return false;
+
             }
+
         }
+
         else
+
         {
+
             if (!immune)
+
                 immune = target->IsImmuneToDamage(GetSpellSchoolMask(spellInfo));
-                
+
+
+
             if (immune)
+
             {
+
                 if (checkResult)
+
                 {
+
                     *checkResult = SPELL_FAILED_IMMUNE;
+
                 }
 
+
+
                 return false;
+
             }
+
         }
+
+
 
         if (!ignoreRange && bot != target && sServerFacade.GetDistance2d(bot, target) > sPlayerbotAIConfig.sightDistance)
         {
@@ -4908,7 +5179,7 @@ uint8 PlayerbotAI::GetHealthPercent() const
 
 uint8 PlayerbotAI::GetManaPercent(const Unit& target) const
 {
-   return target.GetPowerPercent();
+   return (static_cast<float>(target.GetPower(POWER_MANA)) / target.GetMaxPower(POWER_MANA)) * 100;
 }
 
 uint8 PlayerbotAI::GetManaPercent() const
@@ -4929,7 +5200,7 @@ bool PlayerbotAI::CastSpell(std::string name, Unit* target, Item* itemTarget, bo
 
 bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool waitForSpell, uint32* outSpellDuration)
 {
-    const SpellEntry* pSpellInfo = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
+    SpellEntry const* pSpellInfo = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
     if (!pSpellInfo)
         return false;
 
@@ -4961,7 +5232,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
 
 	bool failWithDelay = false;
     // Respect native seated-casting permissions for eating and drinking.
-    if (!bot->IsStandState() && !pSpellInfo->HasAttribute(SPELL_ATTR_ALLOW_WHILE_SITTING))
+    if (!bot->IsStandState() && !pSpellInfo->HasAttribute(SPELL_ATTR_CASTABLE_WHILE_SITTING))
     {
         bot->SetStandState(UNIT_STAND_STATE_STAND);
         failWithDelay = true;
@@ -4974,7 +5245,15 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     if (!sServerFacade.IsInFront(bot, faceTo, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
     {
         sServerFacade.SetFacingTo(bot, faceTo);
-        if (!HasRealPlayerMaster()) failWithDelay = true;
+        // ServerFacade::SetFacingTo only turns instantly (Unit::SetOrientation) while the bot
+        // is stationary; while moving it's a spline-based turn that takes real time to finish,
+        // which is what this GCD-delay-and-retry was guarding against. For a stationary bot
+        // the facing was just corrected synchronously above, so proceed with this same cast
+        // attempt instead of deferring - deferring here against a moving target (wandering
+        // wildlife, etc.) meant the target had already drifted again by the retry, so the bot
+        // never actually caught up and stayed stuck failing to cast indefinitely.
+        if (!HasRealPlayerMaster() && !bot->IsStopped())
+            failWithDelay = true;
     }
 
     if (failWithDelay)
@@ -5104,7 +5383,8 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
 
         if (ObjectGuid guid = bot->m_ObjectSlotGuid[slot])
         {
-            if (GameObject* obj = bot ? bot->GetMap()->GetGameObject(guid) : nullptr)
+            Map* const goMap = bot ? bot->FindMap() : nullptr;
+            if (GameObject* obj = goMap ? goMap->GetGameObject(guid) : nullptr)
             {
                 //Object is not mine because I created an object with same guid on different map. 
                 //Make object mine, remove it from my list and give it back to the original owner.
@@ -5168,7 +5448,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
     if (HasStrategy("debug spell", BotState::BOT_STATE_NON_COMBAT))
     {
         std::ostringstream out;
-        out << "Casting " << ChatHelper::formatSpell(pSpellInfo) << " spellid " << pSpellInfo->Id;
+        out << "Casting " <<ChatHelper::formatSpell(pSpellInfo);
         TellPlayerNoFacing(GetMaster() ? GetMaster() : bot, out);
     }
 
@@ -5320,7 +5600,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarg
     if (HasStrategy("debug spell", BotState::BOT_STATE_NON_COMBAT))
     {
         std::ostringstream out;
-        out << "Casting " << ChatHelper::formatSpell(pSpellInfo) << " spellid " << pSpellInfo->Id;
+        out << "Casting " << ChatHelper::formatSpell(pSpellInfo);
         TellPlayerNoFacing(GetMaster() ? GetMaster() : bot, out);
     }
 
@@ -5329,8 +5609,9 @@ bool PlayerbotAI::CastSpell(uint32 spellId, GameObject* goTarget, Item* itemTarg
 
 bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* itemTarget, bool waitForSpell, uint32* outSpellDuration)
 {
-    const SpellEntry* pSpellInfo = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
-    if (!pSpellInfo || !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
+    SpellEntry const* pSpellInfo = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
+    if (!pSpellInfo ||
+        !std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z))
         return false;
 
     Pet* pet = bot->GetPet();
@@ -5479,7 +5760,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, float x, float y, float z, Item* ite
     if (HasStrategy("debug spell", BotState::BOT_STATE_NON_COMBAT))
     {
         std::ostringstream out;
-        out << "Casting " << ChatHelper::formatSpell(pSpellInfo) << " spellid " << pSpellInfo->Id;
+        out << "Casting " << ChatHelper::formatSpell(pSpellInfo);
         TellPlayerNoFacing(GetMaster() ? GetMaster() : bot, out);
     }
 
@@ -5490,64 +5771,38 @@ bool PlayerbotAI::CanCastPetSpell(uint32 spellId, Unit* target, SpellCastResult*
 {
     auto fail = [checkResult](SpellCastResult result)
     {
-        if (checkResult)
-            *checkResult = result;
+        if (checkResult) *checkResult = result;
         return false;
     };
-
-    const SpellEntry* spellInfo = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
+    SpellEntry const* info = spellId ? sServerFacade.LookupSpellInfo(spellId) : nullptr;
     Pet* pet = bot->GetPet();
-    if (!spellInfo || !pet || !pet->HasSpell(spellId) || IsPassiveSpell(spellInfo))
+    if (!info || !pet || !pet->HasSpell(spellId) || info->IsPassiveSpell())
         return fail(SPELL_FAILED_NOT_KNOWN);
-    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
-        !pet->IsInWorld() || !pet->IsAlive())
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || !pet->IsInWorld() || !pet->IsAlive())
         return fail(SPELL_FAILED_CASTER_DEAD);
-    if (!bot->IsInMap(pet) || pet->GetMasterGuid() != bot->GetObjectGuid() ||
-        !pet->GetCharmInfo() || pet->HasActionsDisabled() || !pet->AI() ||
-        pet->AI()->GetCombatScriptStatus())
+    if (!bot->IsInMap(pet) || pet->GetCharmerOrOwnerGuid() != bot->GetObjectGuid() || !pet->GetCharmInfo() || !pet->IsEnabled())
         return fail(SPELL_FAILED_NOT_IN_CONTROL);
-    if (!pet->IsSpellReady(spellId))
+    if (pet->GetGlobalCooldownMgr().HasGlobalCooldown(info))
         return fail(SPELL_FAILED_NOT_READY);
-    if (pet->IsNonMeleeSpellCasted(false) &&
-        !spellInfo->HasAttribute(SPELL_ATTR_EX4_ALLOW_CAST_WHILE_CASTING))
-        return fail(SPELL_FAILED_SPELL_IN_PROGRESS);
-    if (!sSpellRangeStore.LookupEntry(spellInfo->rangeIndex))
-        return fail(SPELL_FAILED_OUT_OF_RANGE);
 
-    // Match the native pet-action packet's admission and target semantics.
-    for (unsigned int implicitTarget : spellInfo->EffectImplicitTargetA)
-    {
-        if (implicitTarget == TARGET_ENUM_UNITS_ENEMY_AOE_AT_SRC_LOC ||
-            implicitTarget == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DEST_LOC ||
-            implicitTarget == TARGET_ENUM_UNITS_ENEMY_AOE_AT_DYNOBJ_LOC)
-            return fail(SPELL_FAILED_BAD_TARGETS);
-    }
-    if (IsSpellRequireTarget(spellInfo))
-    {
-        if (!target || !target->IsInWorld() || !pet->IsInMap(target))
-            return fail(SPELL_FAILED_BAD_TARGETS);
-        if (IsPositiveSpell(spellInfo, pet, target) ? !pet->CanAssistSpell(target, spellInfo) : !pet->CanAttack(target))
-            return fail(SPELL_FAILED_BAD_TARGETS);
-    }
-    else
+    // Match Penqle's pet packet target rules. The actual command still goes
+    // through that handler, including Turtle's special pet abilities.
+    bool const explicitTarget = Spells::IsExplicitlySelectedUnitTarget(info->EffectImplicitTargetA[0]);
+    bool const destination = (info->Targets & TARGET_FLAG_DEST_LOCATION) != 0;
+    if (!target && (explicitTarget || destination))
+        return fail(SPELL_FAILED_BAD_IMPLICIT_TARGETS);
+    if (target && (!target->IsInWorld() || !pet->IsInMap(target)))
+        return fail(SPELL_FAILED_BAD_TARGETS);
+    if (target == pet && ((explicitTarget && !info->IsPositiveSpell(pet, target)) || info->HasAttribute(SPELL_ATTR_EX_CANT_TARGET_SELF)))
+        return fail(SPELL_FAILED_BAD_TARGETS);
+    if (target && target != pet && !explicitTarget && !destination)
         target = nullptr;
-
-    uint32 flags = TRIGGERED_NORMAL_COMBAT_CAST;
-    if (!pet->hasUnitState(UNIT_STAT_POSSESSED))
-        flags |= TRIGGERED_PET_CAST;
-    // Check only: no SpellStart, power spending, packet, movement or AI mutation.
-    Spell spell(pet, spellInfo, flags);
-    spell.m_targets.setUnitTarget(target);
-    const SpellCastResult result = spell.CheckCast(true);
-    if (checkResult)
-        *checkResult = result;
-
-    if (result == SPELL_CAST_OK || result == SPELL_FAILED_UNIT_NOT_INFRONT || result == SPELL_FAILED_NOT_INFRONT)
-        return true;
-    // The native handler starts a path-checked spell opener for hostile targets.
-    // Preserve that behavior; admitting a command is not proof a spell landed.
-    return target && pet->CanAttackNow(target) &&
-        (result == SPELL_FAILED_OUT_OF_RANGE || result == SPELL_FAILED_LINE_OF_SIGHT);
+    Spell probe(pet, info, false);
+    SpellCastResult const result = probe.CheckPetCast(target);
+    if (checkResult) *checkResult = result;
+    // The packet handler fixes facing, but does not implement CMaNGOS's
+    // out-of-range opener. Never report that unimplemented movement as success.
+    return result == SPELL_CAST_OK || result == SPELL_FAILED_UNIT_NOT_INFRONT || result == SPELL_FAILED_NOT_INFRONT;
 }
 
 bool PlayerbotAI::CastPetSpell(uint32 spellId, Unit* target)
@@ -5836,7 +6091,7 @@ bool PlayerbotAI::CastVehicleSpell(uint32 spellId, Unit* target, float projectil
     if (HasStrategy("debug spell", BotState::BOT_STATE_NON_COMBAT))
     {
         std::ostringstream out;
-        out << "Casting " << ChatHelper::formatSpell(pSpellInfo) << " spellid " << pSpellInfo->Id;
+        out << "Casting Vehicle Spell" << ChatHelper::formatSpell(pSpellInfo);
         TellPlayerNoFacing(GetMaster() ? GetMaster() : bot, out);
     }
 
@@ -5943,14 +6198,14 @@ bool PlayerbotAI::RemoveAura(const std::string& name)
     return false;
 }
 
-bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string spell)
+bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string spell, uint8 effectMask)
 {
     if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported() || !target ||
         !target->IsInWorld() || !target->IsAlive() || !bot->IsInMap(target))
         return false;
 
     uint32 spellid = aiObjectContext->GetValue<uint32>("spell id", spell)->Get();
-    if (!spellid || !target->IsNonMeleeSpellCasted(true) || !target->IsInterruptible())
+    if (!spellid || !target->IsNonMeleeSpellCasted(true) || !ai::HasInterruptibleNativeCast(target))
         return false;
 
     SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(spellid);
@@ -5969,10 +6224,10 @@ bool PlayerbotAI::IsInterruptableSpellCasting(Unit* target, std::string spell)
         // A resisted secondary effect does not veto a different, usable native
         // interrupt effect. Ignore empty/damage-only slots and test each actual
         // candidate with the core's effect mask and immunity functions.
-        if (!target->IsImmuneToSpell(spellInfo, false, (1 << SpellEffectIndex(i)), bot) &&
+        if (!target->IsImmuneToSpell(spellInfo, target == bot) &&
             !target->IsImmuneToSpellEffect(spellInfo, SpellEffectIndex(i), false))
             return true;
-    }
+	}
 
     return false;
 }
@@ -5994,8 +6249,7 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
 			uint32 spellId = entry->Id;
 
 			bool isPositiveSpell = IsPositiveSpell(spellId);
-            bool isPositiveAuraEffect = IsPositiveAuraEffect(entry, aura->GetEffIndex());
-			if ((isPositiveSpell || isPositiveAuraEffect) && isFriend)
+			if (isPositiveSpell && isFriend)
 				continue;
 
 			if (!isPositiveSpell && !isFriend)
@@ -6030,14 +6284,14 @@ bool PlayerbotAI::canDispel(const SpellEntry* entry, uint32 dispelType)
     if (entry->Dispel != dispelType)
         return false;
 
-    return !entry->SpellName[0] ||
-        (strcmpi((const char*)entry->SpellName[0], "demon skin") &&
-        strcmpi((const char*)entry->SpellName[0], "mage armor") &&
-        strcmpi((const char*)entry->SpellName[0], "frost armor") &&
-        strcmpi((const char*)entry->SpellName[0], "wavering will") &&
-        strcmpi((const char*)entry->SpellName[0], "chilled") &&
-        strcmpi((const char*)entry->SpellName[0], "mana tap") &&
-        strcmpi((const char*)entry->SpellName[0], "ice armor"));
+    return entry->SpellName[0].empty() ||
+        (strcmpi(entry->SpellName[0].c_str(), "demon skin") &&
+        strcmpi(entry->SpellName[0].c_str(), "mage armor") &&
+        strcmpi(entry->SpellName[0].c_str(), "frost armor") &&
+        strcmpi(entry->SpellName[0].c_str(), "wavering will") &&
+        strcmpi(entry->SpellName[0].c_str(), "chilled") &&
+        strcmpi(entry->SpellName[0].c_str(), "mana tap") &&
+        strcmpi(entry->SpellName[0].c_str(), "ice armor"));
 }
 
 bool PlayerbotAI::IsHealSpell(const SpellEntry* spell)
@@ -6237,11 +6491,7 @@ void PlayerbotAI::DurabilityLoss(Item* item, double percent)
 
 bool IsAlliance(uint8 race)
 {
-    return race == RACE_HUMAN || race == RACE_DWARF || race == RACE_NIGHTELF ||
-#ifndef MANGOSBOT_ZERO
-           race == RACE_DRAENEI ||
-#endif
-           race == RACE_GNOME;
+    return Player::TeamForRace(race) == ALLIANCE;
 }
 
 uint32 PlayerbotAI::GetFixedBotNumber(BotTypeNumber typeNumber, uint32 maxNum, float cyclePerMin, bool ignoreGuid)
@@ -6250,7 +6500,7 @@ uint32 PlayerbotAI::GetFixedBotNumber(BotTypeNumber typeNumber, uint32 maxNum, f
     std::mt19937 rng(seedNumber);
     uint32 randseed = rng();                                       //Seed random number
     uint32 randnum = randseed;                                     //Semi-random.
-    
+
     if (!ignoreGuid)
         randnum += bot->GetGUIDLow();                              //but fixed number for each bot.
 
@@ -6345,36 +6595,24 @@ uint32 PlayerbotAI::GetMaxPreferedGuildSize()
     return (maxSize * (100 - memberMod)) / 100;
 }
 
+namespace
+{
+    struct ChatAudience
+    {
+        std::map<Team, std::set<std::wstring>> channels;
+        std::vector<ai::HumanPresence> humans;
+        std::set<ObjectGuid> friends;
+        std::set<uint32> realGuilds;
+    };
+    std::shared_ptr<ChatAudience const> chatAudience = std::make_shared<ChatAudience>();
+}
+
 bool PlayerbotAI::HasPlayerNearby(WorldPosition pos, float range)
 {
-    if (!range)
-        range = pos.getVisibilityDistance();
-
-    float sqRange = range * range;
-    bool nearPlayer = false;
-    for (auto& i : sRandomPlayerbotMgr.GetPlayers())
-    {
-        Player* player = i.second;
-        if (!player->IsGameMaster() || player->isGMVisible())
-        {
-            if (player->GetMapId() != bot->GetMapId())
-                continue;
-
-            if (pos.sqDistance(WorldPosition(player)) < sqRange)
-                nearPlayer = true;
-
-            // if player is far check farsight/cinematic camera
-            Camera& viewPoint = player->GetCamera();
-            WorldObject* viewObj = viewPoint.GetBody();
-            if (viewObj && viewObj != player)
-            {
-                if (pos.sqDistance(WorldPosition(viewObj)) < sqRange)
-                    nearPlayer = true;
-            }
-        }
-    }
-
-    return nearPlayer;
+    if (!range) range = pos.getVisibilityDistance();
+    auto snapshot = std::atomic_load(&chatAudience);
+    return CountHumansNear(snapshot->humans, pos.getMapId(), bot->GetInstanceId(),
+        pos.getX(), pos.getY(), pos.getZ(), range, true, true) != 0;
 }
 
 bool PlayerbotAI::HasPlayerNearby(float range)
@@ -6382,41 +6620,74 @@ bool PlayerbotAI::HasPlayerNearby(float range)
     return HasPlayerNearby(bot, range);
 }
 
-bool PlayerbotAI::HasManyPlayersNearby(uint32 trigerrValue, float range)
+bool PlayerbotAI::HasManyPlayersNearby(uint32 triggerValue, float range)
 {
-    float sqRange = range * range;
-    uint32 found = 0;
+    auto snapshot = std::atomic_load(&chatAudience);
+    unsigned const count = CountHumansNear(snapshot->humans, bot->GetMapId(), bot->GetInstanceId(),
+        bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), range, false, false);
+    return count && count >= triggerValue;
+}
 
-    for (auto& i : sRandomPlayerbotMgr.GetPlayers())
+void RefreshPlayerbotChatAudience(uint32 diff)
+{
+    // This is an audience hint, not permission to send: native channel sending
+    // retains current membership checks. One refresh/second avoids scanning
+    // channels and human sessions independently for thousands of bot readers.
+    static uint32 elapsed = 1000;
+    elapsed = std::min<uint32>(1000, elapsed + std::min<uint32>(diff, 1000));
+    if (elapsed < 1000) return;
+    elapsed = 0;
+    std::vector<ObjectGuid> humans;
+    auto next = std::make_shared<ChatAudience>();
+    for (auto const& entry : sRandomPlayerbotMgr.GetPlayers())
     {
-        Player* player = i.second;
-        if ((!player->IsGameMaster() || player->isGMVisible()) && sServerFacade.GetDistance2d(player, bot) < sqRange)
+        Player* player = entry.second;
+        WorldSession* session = player ? player->GetSession() : nullptr;
+        if (session && session->HasNetworkTransport() && player->IsInWorld())
         {
-            found++;
-
-            if (found >= trigerrValue)
-                return true;
+            humans.push_back(player->GetObjectGuid());
+            HumanPresence presence;
+            presence.visible = !player->IsGameMaster() || player->isGMVisible();
+            presence.positions.push_back({player->GetMapId(), player->GetInstanceId(),
+                player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), false});
+            WorldObject* camera = player->GetCamera().GetBody();
+            if (camera && camera != player && camera->IsInWorld())
+                presence.positions.push_back({camera->GetMapId(), camera->GetInstanceId(),
+                    camera->GetPositionX(), camera->GetPositionY(), camera->GetPositionZ(), true});
+            next->humans.push_back(std::move(presence));
+            if (auto* social = player->GetSocial())
+                for (ObjectGuid guid : social->GetFriendGuids()) next->friends.insert(guid);
         }
     }
-    return false;
+    for (auto const& leader : sGuildMgr.GetLeadershipSnapshot())
+    {
+        uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(leader.second);
+        if (account && !sPlayerbotAIConfig.IsInRandomAccountList(account))
+            next->realGuilds.insert(leader.first);
+    }
+    if (!humans.empty())
+        for (Team team : { ALLIANCE, HORDE })
+            if (ChannelMgr* manager = channelMgr(team))
+                for (auto const& entry : manager->GetChannels())
+                    if (entry.second)
+                        for (ObjectGuid guid : humans)
+                            if (entry.second->HasMember(guid))
+                            {
+                                next->channels[team].insert(entry.first);
+                                break;
+                            }
+    std::atomic_store(&chatAudience, std::shared_ptr<ChatAudience const>(std::move(next)));
 }
 
 bool PlayerbotAI::ChannelHasRealPlayer(std::string channelName)
 {
-    if (ChannelMgr* cMgr = channelMgr(bot->GetTeam()))
-    {
-
-        if (Channel* chn = cMgr->GetChannel(channelName, bot))
-        {
-            ChannelAcces* chna = reinterpret_cast<ChannelAcces*>(chn);
-
-            for (auto& player : sRandomPlayerbotMgr.GetPlayers())
-                if (chna->IsOn(player.second->GetObjectGuid()))
-                    return true;
-        }
-    }
-
-    return false;
+    if (!bot) return false;
+    std::wstring key;
+    if (!Utf8toWStr(channelName, key)) return false;
+    wstrToLower(key);
+    auto snapshot = std::atomic_load(&chatAudience);
+    auto team = snapshot->channels.find(bot->GetTeam());
+    return team != snapshot->channels.end() && team->second.count(key) != 0;
 }
 
 /*
@@ -6461,7 +6732,7 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
             if (member == bot)
                 continue;
 
-            if (!member->GetPlayerbotAI() || (member->GetPlayerbotAI() && member->GetPlayerbotAI()->HasRealPlayerMaster()))
+            if (!GetBotAI(member) || (GetBotAI(member) && GetBotAI(member)->HasRealPlayerMaster()))
                 return ActivePiorityType::IN_GROUP_WITH_REAL_PLAYER;
         }
     }
@@ -6538,27 +6809,17 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
             return ActivePiorityType::NO_PATH;
     }
 
-    //If has real players - slow down continents without player
-    //This means we first disable bots in a different continent/area.
-    if (sRandomPlayerbotMgr.GetPlayers().empty())
-        return ActivePiorityType::IN_EMPTY_SERVER;
-
-    // friends always active
-    for (auto& i : sRandomPlayerbotMgr.GetPlayers())
-    {
-        Player* player = i.second;
-        if (!player || !player->IsInWorld())
-            continue;
-
-        if (player->GetSocial()->HasFriend(bot->GetObjectGuid()))
-            return ActivePiorityType::PLAYER_FRIEND;
-    }
+    auto presence = std::atomic_load(&chatAudience);
+    if (presence->humans.empty()) return ActivePiorityType::IN_EMPTY_SERVER;
+    if (presence->friends.count(bot->GetObjectGuid())) return ActivePiorityType::PLAYER_FRIEND;
 
     // real guild always active if member+
     if (IsInRealGuild())
         return ActivePiorityType::PLAYER_GUILD;
 
-    if (bot->IsBeingTeleported() || !bot->IsInWorld() || !bot->GetMap()->HasRealPlayers())
+    Map* const realMap = bot->FindMap();
+    if (bot->IsBeingTeleported() || !bot->IsInWorld() || !realMap ||
+        !realMap->HasRealPlayers())
         return ActivePiorityType::IN_INACTIVE_MAP;
 
     if (!bot->GetMap()->HasActiveZone(bot->GetZoneId()))
@@ -6658,12 +6919,12 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
         case ActivePiorityType::IN_INSTANCE:
         case ActivePiorityType::IS_ALWAYS_ACTIVE:
         case ActivePiorityType::IS_RUNNING_TEST:
+        case ActivePiorityType::IN_COMBAT:
             return true;
         case ActivePiorityType::VISIBLE_FOR_PLAYER:
             if (sPlayerbotAIConfig.forceActiveWhenNearPlayer)
                 return true;
             break;
-        case ActivePiorityType::IN_COMBAT:
         case ActivePiorityType::NEARBY_PLAYER:
         case ActivePiorityType::IN_BG_QUEUE:
         case ActivePiorityType::IN_LFG:
@@ -6745,20 +7006,17 @@ bool PlayerbotAI::IsOpposing(uint8 race1, uint8 race2)
 
 void PlayerbotAI::RemoveShapeshift()
 {
-    if (!bot->HasCharm())
-    {
-        RemoveAura("bear form");
-        RemoveAura("dire bear form");
-        RemoveAura("moonkin form");
-        RemoveAura("travel form");
-        RemoveAura("cat form");
-        RemoveAura("flight form");
-        RemoveAura("swift flight form");
-        RemoveAura("aquatic form");
-        RemoveAura("ghost wolf");
-        RemoveAura("tree of life");
-    }
-
+    RemoveAura("bear form");
+    RemoveAura("dire bear form");
+    RemoveAura("moonkin form");
+    RemoveAura("travel form");
+    RemoveAura("cat form");
+    RemoveAura("flight form");
+    RemoveAura("swift flight form");
+    RemoveAura("aquatic form");
+    RemoveAura("ghost wolf");
+    RemoveAura("tree of life");
+    RemoveAura("tree of life form");
 }
 
 uint32 PlayerbotAI::GetEquipGearScore(Player* player, bool withBags, bool withBank)
@@ -6969,7 +7227,8 @@ std::string PlayerbotAI::BotStateToString(BotState state)
 std::string PlayerbotAI::GetDefaultMovementStrategy()
 {
     // Player master -> follow
-    if (HasActivePlayerMaster())
+    if (HasActivePlayerMaster() ||
+        (bot->GetGroup() && !bot->GetGroup()->IsLeader(bot->GetObjectGuid())))
         return "follow";
 
     // Bot/no master -> wander
@@ -7023,7 +7282,7 @@ std::string PlayerbotAI::HandleRemoteCommand(std::string command)
         if (const AreaTableEntry* areaEntry = GetAreaEntryByAreaID(area))
         {
             if (AreaTableEntry const* zoneEntry = areaEntry->zone ? GetAreaEntryByAreaID(areaEntry->zone) : areaEntry)
-                out << " |" << zoneEntry->area_name[0] << "|";
+                out << " |" << zoneEntry->area_name << "|";
         }
         return out.str();
     }
@@ -7166,7 +7425,7 @@ std::string PlayerbotAI::HandleRemoteCommand(std::string command)
                 out << " (" << round(target->GetPosition()->distance(bot)) << "y)";
             }
         }
-        
+
         if (target->GetStatus() != TravelStatus::TRAVEL_STATUS_NONE)
         {
             out << "\nStatus: ";
@@ -7278,10 +7537,9 @@ bool ChatHandler::HandleRandomPlayerbotCommand(char* args)
     return RandomPlayerbotMgr::HandlePlayerbotConsoleCommand(this, args);
 }
 
-//Dummy handler until Chat.h can be modified.
 bool ChatHandler::HandleAhBotCommand(char* args)
 {
-    return false;
+    return ahbot::AhBot::HandleAhBotCommand(this, args);
 }
 
 float PlayerbotAI::GetRange(std::string type)
@@ -7367,7 +7625,7 @@ bool PlayerbotAI::AddAura(Unit* unit, uint32 spellId)
         return false;
     }
 
-    SpellAuraHolder* holder = CreateSpellAuraHolder(spellInfo, unit, unit);
+    SpellAuraHolder* holder = CreateSpellAuraHolder(spellInfo, unit, unit, unit);
 
     for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
     {
@@ -7380,12 +7638,12 @@ bool PlayerbotAI::AddAura(Unit* unit, uint32 spellId)
         {
             int32 basePoints = spellInfo->CalculateSimpleValue(SpellEffectIndex(i));
             int32 damage = basePoints;
-            Aura* aur = CreateAura(spellInfo, SpellEffectIndex(i), &damage, &basePoints, holder, unit);
+            Aura* aur = CreateAura(spellInfo, SpellEffectIndex(i), &damage, holder, unit);
             holder->AddAura(aur, SpellEffectIndex(i));
         }
     }
     if (!unit->AddSpellAuraHolder(holder))
-        delete holder;
+        holder = nullptr;
 
     return true;
 }
@@ -7626,7 +7884,7 @@ bool PlayerbotAI::HasNotFullStacksInBagsForLootItems(LootItemList &lootItemList)
                 {
                     if (Item* pItem = pBag->GetItemByPos(j))
                     {
-                        if (pItem->GetProto()->ItemId == lootItem->itemId
+                        if (pItem->GetProto()->ItemId == lootItem.itemId
                             && pItem->GetCount() < pItem->GetMaxStackCount())
                         {
                             return true;
@@ -7640,7 +7898,7 @@ bool PlayerbotAI::HasNotFullStacksInBagsForLootItems(LootItemList &lootItemList)
         {
             if (Item* pItem = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, i))
             {
-                if (pItem->GetProto()->ItemId == lootItem->itemId
+                if (pItem->GetProto()->ItemId == lootItem.itemId
                     && pItem->GetCount() < pItem->GetMaxStackCount())
                 {
                     return true;
@@ -7659,8 +7917,13 @@ bool PlayerbotAI::HasQuestItemsInWOLootList(WorldObject* wo)
 
     LootItemList lootItemList = {};
 
-    if (wo->m_loot)
-        wo->m_loot->GetLootItemsListFor(bot, lootItemList);
+    // Penqle's loot is on Creature/GameObject; dispatch via cast.
+    Loot* woLoot = nullptr;
+    if (wo->IsCreature()) woLoot = ((Creature*)wo)->m_loot;
+    else if (wo->IsGameObject()) woLoot = ((GameObject*)wo)->m_loot;
+    if (woLoot)
+        for (LootItem const* item : LootAccess(woLoot).GetLootContentFor(bot))
+                    lootItemList.push_back(*item);
 
     if (HasQuestItemsInLootList(lootItemList))
     {
@@ -7674,7 +7937,7 @@ bool PlayerbotAI::HasQuestItemsInLootList(LootItemList &lootItemList)
 {
     for (auto lootItem : lootItemList)
     {
-        if (lootItem->lootItemType == LOOTITEM_TYPE_QUEST)
+        if (lootItem.needs_quest)
         {
             return true;
         }
@@ -7694,14 +7957,15 @@ bool PlayerbotAI::CanLootSomethingFromWO(WorldObject* wo)
         Creature* creature = GetCreature(guid);
         if (creature && sServerFacade.GetDeathState(creature) == CORPSE)
         {
-            if (creature->m_loot->GetGoldAmount() > 0)
+            if (creature->m_loot && creature->m_loot->GetGoldAmount() > 0)
             {
                 return true;
             }
             LootItemList lootItemList = {};
 
             if (creature->m_loot)
-                creature->m_loot->GetLootItemsListFor(bot, lootItemList);
+                for (LootItem const* item : LootAccess(creature->m_loot).GetLootContentFor(bot))
+                    lootItemList.push_back(*item);
 
             if (HasNotFullStacksInBagsForLootItems(lootItemList))
             {
@@ -7717,7 +7981,8 @@ bool PlayerbotAI::CanLootSomethingFromWO(WorldObject* wo)
             LootItemList lootItemList = {};
 
             if (go->m_loot)
-                go->m_loot->GetLootItemsListFor(bot, lootItemList);
+                for (LootItem const* item : LootAccess(go->m_loot).GetLootContentFor(bot))
+                    lootItemList.push_back(*item);
 
             if (HasNotFullStacksInBagsForLootItems(lootItemList))
             {
@@ -7861,11 +8126,6 @@ void PlayerbotAI::InventoryTellItems(Player* player, std::map<uint32, int> itemM
             case ITEM_CLASS_WEAPON:
                 TellPlayer(player, "--- weapon ---");
                 break;
-#ifndef MANGOSBOT_ZERO
-            case ITEM_CLASS_GEM:
-                TellPlayer(player, "--- gems ---");
-                break;
-#endif
             case ITEM_CLASS_ARMOR:
                 TellPlayer(player, "--- armor ---");
                 break;
@@ -8061,7 +8321,7 @@ std::list<Item*> PlayerbotAI::InventoryParseItems(std::string text, IterateItems
     else if (text.find("usage ") == 0)
     {
         FindItemUsageVisitor visitor(bot, ItemUsage(stoi(text.substr(6))));
-        VISIT_MASK(mask == IterateItemsMask::ITERATE_ITEMS_IN_BANK ? IterateItemsMask::ITERATE_ITEMS_IN_BANK : IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
+        VISIT_MASK(IterateItemsMask::ITERATE_ITEMS_IN_BAGS);
     }
     else if (text == "tradeskill")
     {
@@ -8226,9 +8486,10 @@ void PlayerbotAI::AccelerateRespawn(Creature* creature, float accelMod)
 
     if (!m_corpseAccelerationDecayDelay && creature->m_loot)
     {
-        LootAccess const* lootAccess = reinterpret_cast<LootAccess const*>(creature->m_loot);
+        // LootAccess wraps Loot* now.
+        LootAccess lootAccess(creature->m_loot);
 
-        if (lootAccess->IsLootedForAll()) //No loot left. Just despawn the corpse.
+        if (lootAccess.IsLootedForAll()) //No loot left. Just despawn the corpse.
         {
             creature->RemoveCorpse();
             return;
@@ -8283,11 +8544,19 @@ void PlayerbotAI::AccelerateRespawn(Creature* creature, float accelMod)
 std::list<Unit*> PlayerbotAI::GetAllHostileUnitsAroundWO(WorldObject* wo, float distanceAround)
 {
     std::list<Unit*> hostileUnits;
-    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(wo, distanceAround);
+    // Search around the world object `wo` (e.g. a lootable corpse) but judge hostility from
+    // the BOT's perspective. The 2-arg ctor used the object itself as the friendly-reference,
+    // so for a creature corpse it asked "is the dead mob friendly to u?" (flagging neutral
+    // critters and even friendly guards as hostile), and for a non-Unit object (GameObject)
+    // it set the reference to nullptr and crashed. Passing `bot` fixes both.
+    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(wo, bot, distanceAround);
     MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(hostileUnits, u_check);
     Cell::VisitAllObjects(wo, searcher, distanceAround);
 
-    //bugs out with players very rarely - returns friendly as hostile to bots
+    // AnyUnfriendlyUnitInObjectRangeCheck uses !IsFriendlyTo (reaction < REP_FRIENDLY), which
+    // includes neutral critters and wolves. Strip them out â€” only units the bot is truly hostile
+    // to (reaction <= REP_HOSTILE) are real threats that should block looting.
+    hostileUnits.remove_if([this](Unit* u) { return !bot->IsHostileTo(u); });
 
     return hostileUnits;
 }
@@ -8317,33 +8586,18 @@ std::list<Unit*> PlayerbotAI::GetAllHostileNPCNonPetUnitsAroundWO(WorldObject* w
 
 void PlayerbotAI::SendDelayedPacket(WorldSession* session, futurePackets futPackets)
 {
-    std::thread t([session, futPacket = std::move(futPackets)]() mutable {
-        for (auto& delayedPacket : futPacket.get())
-        {
-            if (delayedPacket.second)
-                std::this_thread::sleep_for(std::chrono::milliseconds(delayedPacket.second));
-
-            std::unique_ptr<WorldPacket> packetPtr(new WorldPacket(delayedPacket.first));
-            session->QueuePacket(std::move(packetPtr));
-        }
-    });
-
-    t.detach();
+    Player* player = session ? session->GetPlayer() : nullptr;
+    PlayerbotAI* ai = player ? GetBotAI(player) : nullptr;
+    if (!ai) return;
+    QueuePlayerbotChatPackets(player->GetObjectGuid(), session->GetAccountId(),
+        ai->GetChatLifetime(), std::move(futPackets), true);
 }
 
 void PlayerbotAI::ReceiveDelayedPacket(futurePackets futPackets)
 {
-    PacketHandlingHelper* handler = &botOutgoingPacketHandlers;
-    std::thread t([handler, futPackets = std::move(futPackets)]() mutable {
-        for (auto& delayedPacket : futPackets.get())
-        {            
-            handler->AddPacket(delayedPacket.first);
-            if(delayedPacket.second)
-                std::this_thread::sleep_for(std::chrono::milliseconds(delayedPacket.second));
-        }
-        });
-
-    t.detach();
+    if (!bot || !bot->GetSession()) return;
+    QueuePlayerbotChatPackets(bot->GetObjectGuid(), bot->GetSession()->GetAccountId(),
+        GetChatLifetime(), std::move(futPackets), false);
 }
 
 PlayerbotHolder* PlayerbotAI::GetHolder() const
@@ -8352,9 +8606,9 @@ PlayerbotHolder* PlayerbotAI::GetHolder() const
         return &sRandomPlayerbotMgr;
 
     if (bot->GetMaster())
-        return static_cast<Player*>(bot->GetMaster())->GetPlayerbotMgr();
+        return GetBotMgr(static_cast<Player*>(bot->GetMaster()));
 
-    return bot->GetPlayerbotMgr();
+    return GetBotMgr(bot);
 }
 
 std::string PlayerbotAI::InventoryParseOutfitName(std::string outfit)
@@ -8579,7 +8833,7 @@ static const uint32 uPriorizedWeightStoneIds[8] =
  * FindStoneFor()
  * return Item* Returns sharpening/weight stone item eligible to enchant a bot weapon
  *
- * params:weapon Item* the weapÃ¯Â¿Â½n the function should search and return a enchanting item for
+ * params:weapon Item* the weapÃƒÂ¯Ã‚Â¿Ã‚Â½n the function should search and return a enchanting item for
  * return nullptr if no relevant item is found in bot inventory, else return a sharpening or weight
  * stone based on the weapon subclass
  *
@@ -8794,17 +9048,14 @@ void PlayerbotAI::EnchantItemT(uint32 spellid, uint8 slot, Item* item)
       return;
    }
 
-   if (spellInfo->EquippedItemClass >= 0 &&
-       uint32(spellInfo->EquippedItemClass) != pItem->GetProto()->Class)
-      return;
+   if (!((1 << pItem->GetProto()->SubClass) & spellInfo->EquippedItemSubClassMask) &&
+      !((1 << pItem->GetProto()->InventoryType) & spellInfo->EquippedItemInventoryTypeMask))
+   {
 
-   if (spellInfo->EquippedItemSubClassMask &&
-       !((uint32(1) << pItem->GetProto()->SubClass) & uint32(spellInfo->EquippedItemSubClassMask)))
-      return;
+      sLog.outError("%s: items could not be enchanted, wrong item type equipped", bot->GetName());
 
-   if (spellInfo->EquippedItemInventoryTypeMask &&
-       !((uint32(1) << pItem->GetProto()->InventoryType) & uint32(spellInfo->EquippedItemInventoryTypeMask)))
       return;
+   }
 
 #ifdef MANGOSBOT_TWO
    EnchantmentSlot enchantSlot = spellInfo->Effect[0] == SPELL_EFFECT_ENCHANT_ITEM_PRISMATIC ? PRISMATIC_ENCHANTMENT_SLOT : PERM_ENCHANTMENT_SLOT;
@@ -8832,7 +9083,7 @@ uint32 PlayerbotAI::GetBuffedCount(Player* player, std::string spellname)
             if (!member || !member->IsInWorld() && member->GetMapId() != bot->GetMapId())
                 continue;
 
-            if (!member->IsInGroup(player, true))
+            if (!group->SameSubGroup(member, player))
                 continue;
 
             if (HasAura(spellname, member))
@@ -8920,7 +9171,7 @@ bool PlayerbotAI::CanMove()
 
     MotionMaster& mm = *bot->GetMotionMaster();
     MovementGeneratorType currentMotion = mm.GetCurrentMovementGeneratorType();
-    
+
 #ifdef CMANGOS
     if (currentMotion == TAXI_MOTION_TYPE)
     {
@@ -8954,15 +9205,8 @@ void PlayerbotAI::StopMoving()
     if (bot->GetTransport())
         bot->m_movementInfo.SetMovementFlags(MOVEFLAG_ONTRANSPORT);
     else
-    {
-#ifndef MANGOSBOT_ZERO
-        if (!bot->IsFlying())
-            bot->m_movementInfo.SetMovementFlags(MOVEFLAG_NONE);
-#else
         bot->m_movementInfo.SetMovementFlags(MOVEFLAG_NONE);
-#endif        
-    }
-    
+
     bot->InterruptMoving(true);
     MovementInfo mInfo = bot->m_movementInfo;
     float x, y, z;
@@ -8985,18 +9229,8 @@ void PlayerbotAI::StopMoving()
 
 bool PlayerbotAI::IsInRealGuild()
 {
-    if (!bot->GetGuildId())
-        return false;
-
-    Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
-    if (!guild)
-        return false;
-
-    uint32 leaderAccount = sObjectMgr.GetPlayerAccountIdByGUID(guild->GetLeaderGuid());
-    if (!leaderAccount)
-        return false;
-
-    return !sPlayerbotAIConfig.IsInRandomAccountList(leaderAccount);
+    auto snapshot = std::atomic_load(&chatAudience);
+    return bot->GetGuildId() && snapshot->realGuilds.count(bot->GetGuildId()) != 0;
 }
 
 bool PlayerbotAI::HasPlayerRelation()
@@ -9013,13 +9247,11 @@ bool PlayerbotAI::HasPlayerRelation()
     if (!sRandomPlayerbotMgr.IsRandomBot(bot))
         return true;
 
-    for (auto& p : sRandomPlayerbotMgr.GetPlayers())
+    auto snapshot = std::atomic_load(&chatAudience);
+    if (snapshot->friends.count(bot->GetObjectGuid()))
     {
-        if (p.second && p.second->GetSocial()->HasFriend(bot->GetObjectGuid()))
-        {
-            SetPlayerFriend(true);
-            return true;
-        }
+        SetPlayerFriend(true);
+        return true;
     }
 
     return false;
@@ -9050,8 +9282,8 @@ bool PlayerbotAI::PlayAttackEmote(float chanceMultiplier)
 
 void PlayerbotAI::QueuePacket(WorldPacket& pkt)
 {
-    std::unique_ptr<WorldPacket> packet(new WorldPacket(pkt.GetOpcode()));
-    *packet = pkt;
+    // Penqle WorldPacket has deleted copy-assign; copy-construct + move-assign.
+    std::unique_ptr<WorldPacket> packet(new WorldPacket(pkt));
     bot->GetSession()->QueuePacket(std::move(packet));
 }
 
@@ -9201,4 +9433,23 @@ bool PlayerbotAI::HandleSpellClick(ObjectGuid guid)
     }
 #endif
     return false;
+}
+
+
+// See the declaration: the group members that are actual people. Used by the
+// ported dungeon-clear status publisher to address its addon packets.
+std::vector<Player*> PlayerbotAI::GetRealPlayersInGroup()
+{
+    std::vector<Player*> out;
+    Group* group = bot ? bot->GetGroup() : nullptr;
+    if (!group)
+        return out;
+
+    for (GroupReference* gref = group->GetFirstMember(); gref; gref = gref->next())
+    {
+        Player* member = gref->getSource();
+        if (member && IsRealPlayer(member))
+            out.push_back(member);
+    }
+    return out;
 }

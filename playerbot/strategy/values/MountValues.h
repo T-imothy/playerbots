@@ -19,6 +19,8 @@ namespace ai
         static uint32 GetSpeed(uint32 spellId, bool canFly);
         static uint32 GetSpeed(uint32 spellId) { return std::max(GetSpeed(spellId, false), GetSpeed(spellId, true)); };
         static uint32 GetMountSpell(uint32 itemId);
+        static uint32 GetSpeedFor(uint32 spellId, Player const* player, bool canFly);
+        uint32 GetSpeedFor(Player const* player, bool canFly) { return GetSpeedFor(spellId, player, canFly); }
         bool IsValidLocation(Player* bot);
 
     private:

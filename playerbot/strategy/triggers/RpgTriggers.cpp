@@ -3,7 +3,7 @@
 #include "RpgTriggers.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/actions/GuildCreateActions.h"
-#include "Social/SocialMgr.h"
+#include "SocialMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/ItemUsageValue.h"
 #include "playerbot/TravelMgr.h"
@@ -491,7 +491,7 @@ bool RpgHomeBindTrigger::IsActive()
         return false;
 
     //Update if the new bind is closer to the group leaders bind than the old one.
-    if (bot->GetGroup() && !ai->IsGroupLeader() && ai->GetGroupMaster() && ai->GetGroupMaster()->GetPlayerbotAI())
+    if (bot->GetGroup() && !ai->IsGroupLeader() && ai->GetGroupMaster() && GetBotAI(ai->GetGroupMaster()))
     {
         Player* player = ai->GetGroupMaster();
 
@@ -635,7 +635,7 @@ bool RpgAIChatTrigger::IsActive()
     {
         Player* player = guidP.GetPlayer();
 
-        if (!player || player->isRealPlayer())
+        if (!player || IsRealPlayer(player))
             return false;
     }
 
@@ -697,7 +697,7 @@ bool RpgTradeUsefulTrigger::isFriend(Player* player)
     if (ai->IsAlt() && GetMaster() == player)
         return true;
 
-    if (player->GetPlayerbotAI() && player->GetPlayerbotAI()->GetMaster() == bot && player->GetPlayerbotAI()->IsAlt())
+    if (GetBotAI(player) && GetBotAI(player)->GetMaster() == bot && GetBotAI(player)->IsAlt())
         return true;
 
     if (player->GetGuildId() && player->GetGuildId() == bot->GetGuildId())
@@ -819,7 +819,7 @@ bool RpgDuelTrigger::IsActive()
         return false;
 
     // caster or target already have requested duel
-    if (bot->duel || player->duel || !player->GetSocial() || player->GetSocial()->HasIgnore(bot->GetObjectGuid()))
+    if (bot->m_duel || player->m_duel || !player->GetSocial() || player->GetSocial()->HasIgnore(bot->GetObjectGuid()))
         return false;
 
     AreaTableEntry const* targetAreaEntry = GetAreaEntryByAreaID(sServerFacade.GetAreaId(player));
@@ -913,10 +913,11 @@ bool RpgGossipTalkTrigger::IsActive()
     }
 #endif
 
-    if (!sScriptDevAIMgr.OnGossipHello(bot, creature))
-    {
-        bot->PrepareGossipMenu(creature, creature->GetDefaultGossipMenuId());
-    }
+    if (!bot->GetNPCIfCanInteractWith(creature->GetObjectGuid(), UNIT_NPC_FLAG_NONE))
+        return false;
+    WorldPacket hello(CMSG_GOSSIP_HELLO);
+    hello << creature->GetObjectGuid();
+    bot->GetSession()->HandleGossipHelloOpcode(hello);
 
     if (!bot->GetPlayerMenu())
         return false;

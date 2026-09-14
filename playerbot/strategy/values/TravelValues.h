@@ -101,6 +101,11 @@ namespace ai
     using PartitionedTravelList = std::map<uint32, TravelPointList>;
     using FutureDestinations = std::future<PartitionedTravelList>;
 
+    inline bool IsTravelSearchPending(FutureDestinations const& future)
+    {
+        return future.valid() && future.wait_for(std::chrono::seconds(0)) != std::future_status::ready;
+    }
+
     typedef std::set<uint32> focusQuestTravelList;
 
     class FocusTravelTargetValue : public ManualSetValue<focusQuestTravelList>

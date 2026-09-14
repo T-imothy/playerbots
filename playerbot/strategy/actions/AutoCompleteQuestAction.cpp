@@ -92,9 +92,9 @@ bool AutoCompleteQuestAction::Execute(Event& event)
             }
             else if (creature > 0)
             {
-                if (CreatureInfo const* cInfo = ObjectMgr::GetCreatureTemplate(creature))
+                if (CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(creature))
                     for (uint16 z = 0; z < creaturecount; ++z)
-                        bot->KilledMonster(cInfo, nullptr);
+                        bot->KilledMonster(cInfo, ObjectGuid());
             }
             else if (creature < 0)
             {

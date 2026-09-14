@@ -13,7 +13,8 @@ namespace ai
         GuidPosition(uint64 const& guid, WorldPosition const& pos) : ObjectGuid(guid), WorldPosition(pos) {};
         //template<class T>
         //GuidPosition(ObjectGuid guid, T) : ObjectGuid(guid) {WorldPosition::set(WorldPosition(T))};
-        GuidPosition(CreatureDataPair const* dataPair) : ObjectGuid(HIGHGUID_UNIT, dataPair->second.id, dataPair->first), WorldPosition(dataPair) {};
+        // cmangos has CreatureData::id; Penqle has CreatureData::creature_id (array, MAX_CREATURE_IDS_PER_SPAWN entries). Use first.
+        GuidPosition(CreatureDataPair const* dataPair) : ObjectGuid(HIGHGUID_UNIT, dataPair->second.creature_id[0], dataPair->first), WorldPosition(dataPair) {};
         GuidPosition(GameObjectDataPair const* dataPair) : ObjectGuid(HIGHGUID_GAMEOBJECT, dataPair->second.id, dataPair->first), WorldPosition(dataPair) {};
         GuidPosition(const WorldObject* wo) : WorldPosition(wo) { ObjectGuid::Set(wo->GetObjectGuid()); };
         GuidPosition(HighGuid hi, uint32 entry, uint32 counter = 1, WorldPosition pos = WorldPosition()) : ObjectGuid(hi, entry, counter), WorldPosition(pos) {};
@@ -33,7 +34,8 @@ namespace ai
 
         virtual std::string to_string() const override;
 
-        CreatureData* GetCreatureData() const { return IsCreature() ? sObjectMgr.GetCreatureData(GetCounter()) : nullptr; }
+        // Penqle's sObjectMgr.GetCreatureData returns const CreatureData*.
+        CreatureData const* GetCreatureData() const { return IsCreature() ? sObjectMgr.GetCreatureData(GetCounter()) : nullptr; }
         CreatureInfo const* GetCreatureTemplate() const { return IsCreature() ? sObjectMgr.GetCreatureTemplate(GetEntry()) : nullptr; };
 
         GameObjectData const* GetGameObjectData() const { return IsGameObject() ? sObjectMgr.GetGOData(GetCounter()) : nullptr; }
@@ -51,7 +53,8 @@ namespace ai
 
         void updatePosition(uint32 m_instanceId) { WorldObject* wo = GetWorldObject(m_instanceId); if (wo) WorldPosition::set(wo); }
 
-        bool HasNpcFlag(NPCFlags flag) { return IsCreature() && GetCreatureTemplate()->NpcFlags & flag; }
+        // Penqle's CreatureInfo has npc_flags (lowercase + underscore); cmangos has NpcFlags.
+        bool HasNpcFlag(NPCFlags flag) { return IsCreature() && GetCreatureTemplate()->npc_flags & flag; }
         bool isGoType(GameobjectTypes type) { return IsGameObject() && GetGameObjectInfo()->type == type; }
 
         const FactionTemplateEntry* GetFactionTemplateEntry() const;
@@ -71,8 +74,10 @@ namespace ai
 
         virtual std::string print();
 
-        operator bool() const { return getX() != 0 || getY() != 0 || getZ() != 0 || !IsEmpty(); }
-        bool operator!() const { return getX() == 0 && getY() == 0 && getZ() == 0 && IsEmpty(); }
+        // GuidPosition diamond-inherits ObjectGuid::IsEmpty AND WorldLocation::IsEmpty.
+        // Bot intent here is to check the ObjectGuid is empty (not the WorldLocation), so qualify explicitly.
+        operator bool() const { return getX() != 0 || getY() != 0 || getZ() != 0 || !ObjectGuid::IsEmpty(); }
+        bool operator!() const { return getX() == 0 && getY() == 0 && getZ() == 0 && ObjectGuid::IsEmpty(); }
         bool operator== (ObjectGuid const& guid) const { return GetRawValue() == guid.GetRawValue(); }
         bool operator!= (ObjectGuid const& guid) const { return GetRawValue() != guid.GetRawValue(); }
         bool operator< (ObjectGuid const& guid) const { return GetRawValue() < guid.GetRawValue(); }

@@ -10,6 +10,7 @@ namespace ai
     public:
         WorldPacketTriggerContext()
         {
+            creators["mail available"] = [](PlayerbotAI* ai) { return new MailAvailableTrigger(ai); };
             creators["gossip hello"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "gossip hello"); };
             creators["group invite"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "group invite"); };
             creators["group set leader"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "group set leader"); };

@@ -192,7 +192,7 @@ void WarlockAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("corruption on attacker", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "ranged high aoe",
+        "ranged medium aoe",
         NextAction::array(0, new NextAction("rain of fire", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode("hellfire", NextAction::array(0, new NextAction("hellfire", ACTION_HIGH), nullptr)));
@@ -368,11 +368,11 @@ void WarlockCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "banish",
-        NextAction::array(0, new NextAction("banish on cc", ACTION_EMERGENCY + 2), NULL)));
+        NextAction::array(0, new NextAction("banish on cc", ACTION_INTERRUPT + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "fear",
-        NextAction::array(0, new NextAction("fear on cc", ACTION_EMERGENCY + 1), NULL)));
+        NextAction::array(0, new NextAction("fear on cc", ACTION_INTERRUPT + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "enemy ten yards",
@@ -531,7 +531,7 @@ void WarlockStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("sacrifice", ACTION_EMERGENCY), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "medium mana",
+        "life tap",
         NextAction::array(0, new NextAction("life tap", ACTION_HIGH + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
@@ -685,7 +685,7 @@ void WarlockAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("corruption on attacker", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "ranged high aoe",
+        "ranged medium aoe",
         NextAction::array(0, new NextAction("rain of fire", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode("hellfire", NextAction::array(0, new NextAction("hellfire", ACTION_HIGH), nullptr)));
@@ -861,11 +861,11 @@ void WarlockCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "banish",
-        NextAction::array(0, new NextAction("banish on cc", ACTION_EMERGENCY + 2), NULL)));
+        NextAction::array(0, new NextAction("banish on cc", ACTION_INTERRUPT + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "fear",
-        NextAction::array(0, new NextAction("fear on cc", ACTION_EMERGENCY + 1), NULL)));
+        NextAction::array(0, new NextAction("fear on cc", ACTION_INTERRUPT + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "enemy ten yards",
@@ -1180,7 +1180,7 @@ void WarlockAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("corruption on attacker", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "ranged high aoe",
+        "ranged medium aoe",
         NextAction::array(0, new NextAction("rain of fire", ACTION_HIGH), NULL)));
 
     triggers.push_back(new TriggerNode("hellfire", NextAction::array(0, new NextAction("hellfire", ACTION_HIGH), nullptr)));
@@ -1353,11 +1353,11 @@ void WarlockCcStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "banish",
-        NextAction::array(0, new NextAction("banish on cc", ACTION_EMERGENCY + 2), NULL)));
+        NextAction::array(0, new NextAction("banish on cc", ACTION_INTERRUPT + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "fear",
-        NextAction::array(0, new NextAction("fear on cc", ACTION_EMERGENCY + 1), NULL)));
+        NextAction::array(0, new NextAction("fear on cc", ACTION_INTERRUPT + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "enemy ten yards",

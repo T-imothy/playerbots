@@ -7,6 +7,10 @@
 #include "ReviveFromCorpseAction.h"
 #include "playerbot/TravelMgr.h"
 
+#include "playerbot/BotSlots.h"
+// The base class. Came in through botpch.h inside the bot library; a module
+// including this header from outside has no botpch.
+#include "GenericActions.h"
 namespace ai
 {
     class ReleaseSpiritAction : public ChatCommandAction
@@ -119,7 +123,32 @@ namespace ai
         }
     };
 
-    class RepopAction : public SpiritHealerAction 
+    // "corpse run" chat command: set the "corpse run" flag so FindCorpseAction ignores the
+    // wait-for-master gate and the bot runs to its own corpse (e.g. when the master has no
+    // way to resurrect it). The flag is cleared automatically when the bot resurrects.
+    class CorpseRunAction : public ChatCommandAction
+    {
+    public:
+        CorpseRunAction(PlayerbotAI* ai, std::string name = "corpse run") : ChatCommandAction(ai, name) {}
+
+        virtual bool Execute(Event& event) override
+        {
+            Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
+
+            if (sServerFacade.IsAlive(bot) || !bot->GetCorpse())
+            {
+                ai->TellPlayerNoFacing(requester, "I am not dead", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+                return false;
+            }
+
+            SET_AI_VALUE(bool, "corpse run", true);
+            sLog.outString("[BOT CORPSE] %s: corpse run command received - overriding wait-for-master, running to corpse", bot->GetName());
+            ai->TellPlayerNoFacing(requester, "Running to my corpse", PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            return true;
+        }
+    };
+
+    class RepopAction : public SpiritHealerAction
     {
     public:
         RepopAction(PlayerbotAI* ai, std::string name = "repop") : SpiritHealerAction(ai, name) {}
@@ -164,13 +193,19 @@ namespace ai
             travelTarget->SetStatus(TravelStatus::TRAVEL_STATUS_EXPIRED);
             travelTarget->SetExpireIn(1000);
 
-            PlayerInfo const* defaultPlayerInfo = sObjectMgr.GetPlayerInfo(bot->getRace(), bot->getClass());
+            // Goblin/High Elf bots are spawned in Durotar/Elwynn instead of their real (custom,
+            // player-only, bot-excluded) starting zone - RandomPlayerbotFactory::CreateRandomBot
+            // overrides their homebind to reflect this. GetPlayerInfo() below would return the
+            // real racial spawn point instead, sending the bot right back to the excluded zone
+            // on every death, so route these two races through the homebind branch instead.
+            bool useHomebindOverride = bot->getRace() == RACE_GOBLIN || bot->getRace() == RACE_HIGH_ELF;
+            PlayerInfo const* defaultPlayerInfo = useHomebindOverride ? nullptr : sObjectMgr.GetPlayerInfo(bot->getRace(), bot->getClass());
             if (defaultPlayerInfo)
             {
                 sLog.outDetail("Repop: Teleporting bot #%d %s:%d <%s> to spawn", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
                 //teleport bot to spawn
                 bot->TeleportTo(defaultPlayerInfo->mapId, defaultPlayerInfo->positionX, defaultPlayerInfo->positionY, defaultPlayerInfo->positionZ, defaultPlayerInfo->orientation);
-                if (bot->isRealPlayer())
+                if (IsRealPlayer(bot))
                     bot->SendHeartBeat();
             }
             else

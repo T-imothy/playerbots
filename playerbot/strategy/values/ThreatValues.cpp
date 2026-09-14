@@ -3,7 +3,7 @@
 #include "ThreatValues.h"
 
 #include "playerbot/ServerFacade.h"
-#include "Combat/ThreatManager.h"
+#include "Threat/ThreatManager.h"
 
 #include <algorithm>
 #include <cmath>

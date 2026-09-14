@@ -34,6 +34,27 @@ std::list<ObjectGuid> EnemyPlayersValue::Calculate()
                 result = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
                 ApplyFilter(result, getOne);
             }
+
+            // "possible attack targets" is built exclusively from "attackers" -
+            // units already in an active combat/threat relationship with the
+            // bot (2026-07-27, confirmed live via debug logging: hasEnemy was
+            // 0 for every bot standing right next to an untouched enemy). That
+            // meant bots never proactively engaged anyone - only native combat
+            // (a human player actually landing a hit) ever created a real
+            // threat entry, so bots only fought back once directly attacked,
+            // and other nearby bots never "assisted" either since this whole
+            // value only ever looked at the bot's OWN attacker list. Falling
+            // back to "possible targets" - a genuine proximity scan
+            // (AnyUnfriendlyUnitInObjectRangeCheck via Cell::VisitAllObjects,
+            // see PossibleTargetsValue.cpp) with no threat-table dependency -
+            // gives bots a real "is anyone hostile nearby" signal. Scoped to
+            // InBattleGround() only so normal world PvE bot behavior against
+            // real players elsewhere doesn't change.
+            if (result.empty() && bot->InBattleGround())
+            {
+                result = AI_VALUE(std::list<ObjectGuid>, "possible targets");
+                ApplyFilter(result, getOne);
+            }
         }
     }
 
@@ -43,7 +64,7 @@ std::list<ObjectGuid> EnemyPlayersValue::Calculate()
 bool EnemyPlayersValue::IsValid(Unit* target, Player* player)
 {
     if (!PossibleTargetsValue::IsValid(target, player, true)) return false;
-    if (PlayerbotAI* ai = player->GetPlayerbotAI())
+    if (PlayerbotAI* ai = GetBotAI(player))
         if (MeleeCcCheck(ai).Protected(target)) return false;
     if (target)
     {
@@ -63,7 +84,7 @@ bool EnemyPlayersValue::IsValid(Unit* target, Player* player)
             /*
             // Check if too far away (Do we need this?)
             const float maxPvPDistance = GetMaxAttackDistance(player);
-            const bool inCannon = player->GetPlayerbotAI() && player->GetPlayerbotAI()->IsInVehicle(false, true);
+            const bool inCannon = GetBotAI(player) && GetBotAI(player)->IsInVehicle(false, true);
             uint32 const pvpDistance = (inCannon || player->GetHealth() > enemyPlayer->GetHealth()) ? maxPvPDistance : 20.0f;
             if (!player->IsWithinDist(enemyPlayer, pvpDistance, false))
             {
@@ -106,9 +127,11 @@ bool HasEnemyPlayersValue::Calculate()
 Unit* EnemyPlayerValue::Calculate()
 {
     // Prioritize the duel opponent
-    if(bot->duel && bot->duel->opponent && !sServerFacade.IsFriendlyTo(bot->duel->opponent, bot))
-    {
-        return bot->duel->opponent;
+    if (bot->m_duel && !bot->m_duel->opponent.IsEmpty()) {
+        if (Unit* opp = ObjectAccessor::GetUnit(*bot, bot->m_duel->opponent)) {
+            if (!sServerFacade.IsFriendlyTo(opp, bot))
+                return opp;
+        }
     }
 
     if (ActualBattlegroundType(bot) == BATTLEGROUND_WS && !ai->HasRealPlayerMaster())
@@ -184,7 +207,7 @@ float EnemyPlayerValue::GetMaxAttackDistance(Player* bot)
 
         if (bgType == BATTLEGROUND_IC)
         {
-            if (bot->GetPlayerbotAI()->IsInVehicle(false, true))
+            if (GetBotAI(bot)->IsInVehicle(false, true))
                 return 120.0f;
         }
 #endif

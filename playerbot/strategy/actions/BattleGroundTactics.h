@@ -1,10 +1,10 @@
 #pragma once
 
 #include "MovementActions.h"
-#include "BattleGround/BattleGround.h"
-#include "BattleGround/BattleGroundMgr.h"
-#include "BattleGround/BattleGroundWS.h"
-#include "BattleGround/BattleGroundAB.h"
+#include "Battlegrounds/BattleGround.h"
+#include "Battlegrounds/BattleGroundMgr.h"
+#include "Battlegrounds/BattleGroundWS.h"
+#include "Battlegrounds/BattleGroundAB.h"
 #ifndef MANGOSBOT_ZERO
 #include "BattleGround/BattleGroundEY.h"
 #endif
@@ -74,6 +74,7 @@ private:
     bool wsgRoofJump();
     bool eotsJump();
     bool atFlag(std::vector<BattleBotPath*> const& vPaths, std::vector<uint32> const& vFlagIds);
+    bool CanAttemptAbCapture();
     bool CheckFlagAv();
     bool flagTaken();
     bool teamFlagTaken();

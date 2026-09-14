@@ -35,7 +35,7 @@ private:
 
     ACTION_NODE_A(heroic_throw_taunt, "heroic throw", "taunt");
 
-    ACTION_NODE_A(taunt, "taunt", "mocking blow");
+    ACTION_NODE_A(taunt, "taunt", "battle shout taunt");
 
     ACTION_NODE_A(berserker_rage_fear, "berserker rage", "death wish");
 };
@@ -72,9 +72,9 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "has greater blessing of salvation",
         NextAction::array(0, new NextAction("remove greater blessing of salvation", ACTION_EMERGENCY), NULL)));
 
-    //triggers.push_back(new TriggerNode(
-        //"enemy out of melee",
-        //NextAction::array(0, new NextAction("heroic throw", ACTION_MOVE + 8), new NextAction("charge", ACTION_MOVE + 7), NULL)));
+    triggers.push_back(new TriggerNode(
+        "enemy out of melee",
+        NextAction::array(0, new NextAction("heroic throw", ACTION_MOVE + 8), new NextAction("charge", ACTION_MOVE + 7), NULL)));
 
     triggers.push_back(new TriggerNode(
         "intercept and rage",
@@ -86,11 +86,11 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 
     triggers.push_back(new TriggerNode(
         "lose aggro",
-        NextAction::array(0, new NextAction("taunt", ACTION_PASSTROUGH), NULL)));
+        NextAction::array(0, new NextAction("heroic throw taunt", ACTION_MOVE + 4), NULL)));
 
-    //triggers.push_back(new TriggerNode(
-        //"taunt on snare target",
-        //NextAction::array(0, new NextAction("heroic throw on snare target", ACTION_MOVE), NULL)));
+    triggers.push_back(new TriggerNode(
+        "taunt on snare target",
+        NextAction::array(0, new NextAction("heroic throw on snare target", ACTION_MOVE), NULL)));
 
     triggers.push_back(new TriggerNode(
         "demoralizing shout",
@@ -127,6 +127,51 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode(
         "disarm",
         NextAction::array(0, new NextAction("disarm", ACTION_NORMAL), NULL)));
+
+    // TurtleWoW build additions:
+    //
+    // Concussion Blow capstone (Prot 6/1, TalentID 92): 5-sec stun + 100%
+    // armor pen + rage gen on cast. Defining caster-interrupt + threat
+    // ability. Same priority tier as Shield Slam (HIGH+4).
+    triggers.push_back(new TriggerNode(
+        "concussion blow",
+        NextAction::array(0, new NextAction("concussion blow", ACTION_HIGH + 4), NULL)));
+
+    // Improved Overpower stance-dance (Arms 2/1, 2/2): when an enemy dodges
+    // our swing, swap to Battle Stance briefly, fire Overpower (near-100%
+    // crit thanks to Improved Overpower 2/2), then swap back. Tactical
+    // Mastery 5/5 keeps 25 rage across each switch so the trick is
+    // rage-neutral. Crit triggers Deep Wounds bleed + Impale +20% crit dmg.
+    //
+    // OverpowerAvailableTrigger fires only when the dodge window is open.
+    triggers.push_back(new TriggerNode(
+        "overpower",
+        NextAction::array(0, new NextAction("battle stance", ACTION_HIGH + 5),
+                             new NextAction("overpower", ACTION_HIGH + 4),
+                             new NextAction("defensive stance", ACTION_HIGH + 3), NULL)));
+
+    // Bloodrage opener: Improved Bloodrage 2/2 gives +50% rage generation.
+    // Cast on engage to jump-start the rotation (Shield Slam needs ~15 rage
+    // to fire, Bloodrage gives 30+).
+    triggers.push_back(new TriggerNode(
+        "bloodrage",
+        NextAction::array(0, new NextAction("bloodrage", ACTION_NORMAL + 5), NULL)));
+
+    // Defensive Tactics 3/3 auto-Berserker swap (Prot 5/2, TalentID 91):
+    // At max rank, DT keeps 180% of Defiance's +30% threat boost when in
+    // non-Defensive stances (verified vs spell_template). Berserker Stance
+    // also adds +10% damage. So when survival isn't at risk (HP > 70%, in
+    // combat), the bot maximizes both threat and DPS by being in Berserker.
+    //
+    // The trigger only fires when HP > 70% AND in combat AND not already in
+    // Berserker. When HP drops below 70%, this trigger stops firing and
+    // the existing "defensive stance" buff trigger (in BuffStrategy) takes
+    // over.
+    //
+    // Priority NORMAL+1: above default, below health/threat triggers.
+    triggers.push_back(new TriggerNode(
+        "defensive tactics berserker stance",
+        NextAction::array(0, new NextAction("berserker stance", ACTION_NORMAL + 1), NULL)));
 }
 
 void ProtectionWarriorStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -472,9 +517,9 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         "protect party member",
         NextAction::array(0, new NextAction("intervene", ACTION_EMERGENCY), NULL)));
 
-    //triggers.push_back(new TriggerNode(
-        //"enemy out of melee",
-        //NextAction::array(0, new NextAction("heroic throw", ACTION_MOVE + 8), new NextAction("charge", ACTION_MOVE + 7), NULL)));
+    triggers.push_back(new TriggerNode(
+        "enemy out of melee",
+        NextAction::array(0, new NextAction("heroic throw", ACTION_MOVE + 8), new NextAction("charge", ACTION_MOVE + 7), NULL)));
 
     triggers.push_back(new TriggerNode(
         "intercept and rage",
@@ -486,15 +531,15 @@ void ProtectionWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 
     triggers.push_back(new TriggerNode(
         "lose aggro",
-        NextAction::array(0, new NextAction("taunt", ACTION_PASSTROUGH), NULL)));
+        NextAction::array(0, new NextAction("heroic throw taunt", ACTION_MOVE + 4), NULL)));
 
     triggers.push_back(new TriggerNode(
         "spell reflection",
         NextAction::array(0, new NextAction("spell reflection", ACTION_MOVE + 1), NULL)));
 
-    //triggers.push_back(new TriggerNode(
-        //"taunt on snare target",
-        //NextAction::array(0, new NextAction("heroic throw on snare target", ACTION_MOVE), NULL)));
+    triggers.push_back(new TriggerNode(
+        "taunt on snare target",
+        NextAction::array(0, new NextAction("heroic throw on snare target", ACTION_MOVE), NULL)));
 
     triggers.push_back(new TriggerNode(
         "demoralizing shout",
@@ -629,18 +674,12 @@ void ProtectionWarriorAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     WarriorAoeStrategy::InitCombatTriggers(triggers);
 
     triggers.push_back(new TriggerNode(
-        "melee light aoe",
-        NextAction::array(0, new NextAction("thunder clap threat", ACTION_HIGH + 7), NULL)));
-
-    triggers.push_back(new TriggerNode(
         "melee medium aoe",
         NextAction::array(0, new NextAction("challenging shout", ACTION_HIGH + 1), NULL)));
 
-    /*
     triggers.push_back(new TriggerNode(
         "melee medium aoe",
         NextAction::array(0, new NextAction("battle shout taunt", ACTION_HIGH), NULL)));
-    */
 }
 
 void ProtectionWarriorAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -1025,14 +1064,10 @@ void ProtectionWarriorAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode(
         "melee medium aoe",
         NextAction::array(0, new NextAction("challenging shout", ACTION_HIGH + 1), NULL)));
-    
-    triggers.push_back(new TriggerNode(
-        "melee light aoe",
-        NextAction::array(0, new NextAction("thunder clap threat", ACTION_HIGH + 7), NULL)));
 
-    /*triggers.push_back(new TriggerNode(
+    triggers.push_back(new TriggerNode(
         "melee medium aoe",
-        NextAction::array(0, new NextAction("battle shout taunt", ACTION_HIGH), NULL)));*/
+        NextAction::array(0, new NextAction("battle shout taunt", ACTION_HIGH), NULL)));
 }
 
 void ProtectionWarriorAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

@@ -4,13 +4,13 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/ItemVisitors.h"
 #include "playerbot/RandomPlayerbotMgr.h"
-#include "BattleGround/BattleGround.h"
-#include "BattleGround/BattleGroundMgr.h"
-#include "BattleGround/BattleGroundWS.h"
+#include "Battlegrounds/BattleGround.h"
+#include "Battlegrounds/BattleGroundMgr.h"
+#include "Battlegrounds/BattleGroundWS.h"
 #include "ChooseTargetActions.h"
 #include "CheckMountStateAction.h"
 #include "G3D/Vector3.h"
-#include "Entities/GameObject.h"
+#include "Objects/GameObject.h"
 
 using namespace ai;
 
@@ -18,7 +18,8 @@ using namespace ai;
 class BGJoinAction : public Action
 {
 public:
-    BGJoinAction(PlayerbotAI* ai, std::string name = "bg join") : Action(ai, name) {}
+    bool RequiresWorldOwner() const override { return true; }
+        BGJoinAction(PlayerbotAI* ai, std::string name = "bg join") : Action(ai, name) {}
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "bg join"; }
@@ -47,7 +48,8 @@ protected:
 class FreeBGJoinAction : public BGJoinAction
 {
 public:
-    FreeBGJoinAction(PlayerbotAI* ai, std::string name = "free bg join") : BGJoinAction(ai, name) {}
+    bool RequiresWorldOwner() const override { return true; }
+        FreeBGJoinAction(PlayerbotAI* ai, std::string name = "free bg join") : BGJoinAction(ai, name) {}
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "free bg join"; }
@@ -65,7 +67,8 @@ public:
 class BGLeaveAction : public Action
 {
 public:
-    BGLeaveAction(PlayerbotAI* ai, std::string name = "bg leave") : Action(ai) {}
+    bool RequiresWorldOwner() const override { return true; }
+        BGLeaveAction(PlayerbotAI* ai, std::string name = "bg leave") : Action(ai) {}
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "bg leave"; }
@@ -83,7 +86,8 @@ public:
 class BGStatusAction : public Action
 {
 public:
-    BGStatusAction(PlayerbotAI* ai) : Action(ai, "bg status") {}
+    bool RequiresWorldOwner() const override { return true; }
+        BGStatusAction(PlayerbotAI* ai) : Action(ai, "bg status") {}
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "bg status"; }
@@ -102,7 +106,8 @@ public:
 class BGStatusCheckAction : public Action
 {
 public:
-    BGStatusCheckAction(PlayerbotAI* ai, std::string name = "bg status check") : Action(ai, name) {}
+    bool RequiresWorldOwner() const override { return true; }
+        BGStatusCheckAction(PlayerbotAI* ai, std::string name = "bg status check") : Action(ai, name) {}
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "bg status check"; }

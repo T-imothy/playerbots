@@ -4,12 +4,12 @@
 #include "playerbot/strategy/values/Formations.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/ServerFacade.h"
-#include "MotionGenerators/MovementGenerator.h"
+#include "Movement/MovementGenerator.h"
 #ifdef MANGOS
 #include "luaEngine.h"
 #endif
 
-#include <MotionGenerators/PathFinder.h>
+#include "Maps/PathFinder.h"
 #include "RtscAction.h"
 #include "playerbot/TravelMgr.h"
 
@@ -76,7 +76,9 @@ bool SeeSpellAction::Execute(Event& event)
     SpellCastTargets targets;
 
     p >> targets.ReadForCaster(requester);
-    WorldPosition spellPosition(requester->GetMapId(), targets.m_destPos);
+    // Penqle exposes getDestination() instead of m_destPos.
+    float dx, dy, dz; targets.getDestination(dx, dy, dz);
+    WorldPosition spellPosition(requester->GetMapId(), dx, dy, dz);
     SET_AI_VALUE(WorldPosition, "see spell location", spellPosition);
 
     if (ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))

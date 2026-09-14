@@ -1,9 +1,9 @@
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -50,9 +50,9 @@ Player* ai::OssirianCrystalUser(PlayerbotAI* ai, Unit* boss, GameObject* crystal
         if (!member || !member->IsInWorld() || !member->IsAlive() || !bot->IsInMap(member) ||
             member->GetGroup() != bot->GetGroup() || member->IsBeingTeleported() || member->HasCharmer() ||
             member == boss->GetVictim() || ai->IsTank(member) || ai->IsHeal(member) ||
-            member->GetDistance(crystal) > 60 || !member->GetPlayerbotAI() ||
-            member->GetPlayerbotAI()->IsRealPlayer() || !member->GetPlayerbotAI()->CanMove() ||
-            !member->GetPlayerbotAI()->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT)) continue;
+            member->GetDistance(crystal) > 60 || !GetBotAI(member) ||
+            GetBotAI(member)->IsRealPlayer() || !GetBotAI(member)->CanMove() ||
+            !GetBotAI(member)->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT)) continue;
         if (!selected || member->GetDistance(crystal) < selected->GetDistance(crystal) ||
             (member->GetDistance(crystal) == selected->GetDistance(crystal) && member->GetObjectGuid() < selected->GetObjectGuid()))
             selected = member;

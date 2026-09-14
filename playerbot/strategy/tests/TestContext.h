@@ -3,7 +3,7 @@
 #include <vector>
 #include <string>
 #include <cstdint>
-#include "Globals/ObjectMgr.h"
+#include "ObjectMgr.h"
 #include "playerbot/GuidPosition.h"
 #include "playerbot/WorldPosition.h"
 

@@ -3,109 +3,67 @@
 #include "TrainerValues.h"
 #include "SharedValueContext.h"
 #include "playerbot/PlayerbotHelpMgr.h"
+#include <memory>
+#include <tuple>
 
 using namespace ai;
 
 
 trainableSpellMap* TrainableSpellMapValue::Calculate()
 {
-    trainableSpellMap* spellMap = new trainableSpellMap;
+    auto spellMap = std::make_unique<trainableSpellMap>();
+    using OfferKey = std::tuple<uint32, uint32, uint32, uint32, uint32, uint32, uint32, bool, uint32>;
+    std::map<OfferKey, TrainerSpell const*> canonicalOffers;
 
-    //           template, trainer
-    std::unordered_map <uint32, std::vector<CreatureInfo const*>> trainerTemplateIds;
-
-    //Select all trainer lists and their trainers.
-    for (uint32 id = 0; id < sCreatureStorage.GetMaxEntry(); ++id)
+    for (auto const& [id, nativeTemplate] : sObjectMgr.GetCreatureInfoMap())
     {
-        CreatureInfo const* creatureInfo = sCreatureStorage.LookupEntry<CreatureInfo>(id);
-        if (!creatureInfo)
+        CreatureInfo const* trainer = sCreatureStorage.LookupEntry<CreatureInfo>(id);
+        if (!trainer || (!trainer->TrainerType && !trainer->TrainerClass))
             continue;
-
-        if (!creatureInfo->TrainerType && !creatureInfo->TrainerClass)
-            continue;
-
-        if(creatureInfo->TrainerTemplateId)
-            trainerTemplateIds[creatureInfo->TrainerTemplateId].push_back(creatureInfo);
-        else
-            trainerTemplateIds[id].push_back(creatureInfo);
-    }
-
-    for (auto& [templateOrEntryId, trainers] : trainerTemplateIds)
-    {
-        TrainerSpellData const* trainer_spells = sObjectMgr.GetNpcTrainerTemplateSpells(templateOrEntryId);
-        if (!trainer_spells)
-            trainer_spells = sObjectMgr.GetNpcTrainerSpells(templateOrEntryId);
-
-        if (!trainer_spells)
-            continue;
-
-        CreatureInfo const* firstTrainer = trainers.front();
-
-        TrainerType trainerType = (TrainerType)firstTrainer->TrainerType;
-
-        uint32 spellRequirement;
-        if (trainerType == TRAINER_TYPE_CLASS || trainerType == TRAINER_TYPE_PETS)
-            spellRequirement = firstTrainer->TrainerClass;
-        else if (trainerType == TRAINER_TYPE_MOUNTS)
-            spellRequirement = firstTrainer->TrainerRace;
-
-        for (auto& [id, trainerSpell] : trainer_spells->spellList)
+        TrainerType const type = static_cast<TrainerType>(trainer->TrainerType);
+        TrainerSpellData const* entrySpells = sObjectMgr.GetNpcTrainerSpells(id);
+        TrainerSpellData const* lists[] = {entrySpells,
+            trainer->TrainerTemplateId ? sObjectMgr.GetNpcTrainerTemplateSpells(trainer->TrainerTemplateId) : nullptr};
+        for (TrainerSpellData const* list : lists)
         {
-            const TrainerSpell* sameTrainerSpell = &trainerSpell;
-            for (auto& [otherTrainerSpell, trainers] : (*spellMap)[trainerType][spellRequirement])
+            if (!list) continue;
+            for (auto const& [spellId, offer] : list->spellList)
             {
-                if (otherTrainerSpell->spell != trainerSpell.spell)
+                // Native HandleTrainerBuySpellOpcode gives entry-specific rows
+                // precedence. Template IDs and creature IDs are distinct namespaces.
+                if (list != entrySpells && entrySpells && entrySpells->Find(spellId))
                     continue;
-
-                if (otherTrainerSpell->spellCost != trainerSpell.spellCost)
-                    continue;
-
-                if (otherTrainerSpell->reqSkill != trainerSpell.reqSkill)
-                    continue;
-
-                if (otherTrainerSpell->reqSkillValue != trainerSpell.reqSkillValue)
-                    continue;
-
-                if (otherTrainerSpell->reqLevel != trainerSpell.reqLevel)
-                    continue;
-
-#ifndef MANGOSBOT_TWO
-                if (otherTrainerSpell->learnedSpell != trainerSpell.learnedSpell)
-#else
-                if (otherTrainerSpell->learnedSpell[0] != trainerSpell.learnedSpell[0])
-#endif
-                    continue;
-
-                if (otherTrainerSpell->conditionId != trainerSpell.conditionId)
-                    continue;
-
-                sameTrainerSpell = otherTrainerSpell;
-                break;
-            }
-
-            if (trainerType == TRAINER_TYPE_TRADESKILLS)
-            {
-                if (trainerSpell.reqSkill)
-                    spellRequirement = trainerSpell.reqSkill;
-                else
+                uint32 requirement = 0;
+                if (type == TRAINER_TYPE_CLASS || type == TRAINER_TYPE_PETS)
+                    requirement = trainer->TrainerClass;
+                else if (type == TRAINER_TYPE_MOUNTS)
+                    requirement = trainer->TrainerRace;
+                else if (type == TRAINER_TYPE_TRADESKILLS)
                 {
-                    // exist, already checked at loading
-#ifdef MANGOSBOT_ZERO
-                    SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(trainerSpell.learnedSpell);
-#else
-                    SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(trainerSpell.learnedSpell[0]);
-#endif
-
-                    spellRequirement = spell->EffectMiscValue[1];
+                    requirement = offer.reqSkill;
+                    if (!requirement)
+                    {
+                        SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(offer.spell);
+                        if (spell)
+                            for (uint32 effect = 0; effect < 3; ++effect)
+                                if ((spell->Effect[effect] == SPELL_EFFECT_SKILL ||
+                                     spell->Effect[effect] == SPELL_EFFECT_SKILL_STEP) && spell->EffectMiscValue[effect] > 0)
+                                {
+                                    requirement = spell->EffectMiscValue[effect];
+                                    break;
+                                }
+                    }
                 }
+                OfferKey key{uint32(type), requirement, offer.spell, offer.spellCost,
+                    offer.reqSkill, offer.reqSkillValue, offer.reqLevel, offer.isProvidedReqLevel, offer.conditionId};
+                TrainerSpell const* canonical = canonicalOffers.emplace(key, &offer).first->second;
+                auto& trainers = (*spellMap)[type][requirement][canonical];
+                if (std::find(trainers.begin(), trainers.end(), trainer->Entry) == trainers.end())
+                    trainers.push_back(trainer->Entry);
             }
-
-            for (auto& trainer : trainers)
-                (*spellMap)[trainerType][spellRequirement][sameTrainerSpell].push_back(trainer->Entry);
         }
     }
-
-    return spellMap;
+    return spellMap.release();
 }
 
 std::vector<TrainerSpell const*> TrainableSpellsValue::Calculate()
@@ -118,7 +76,7 @@ std::vector<TrainerSpell const*> TrainableSpellsValue::Calculate()
 
     for (auto& [trainerType, spellReqList] : *spellMap)
     {
-        if (trainerType >= 0 && trainerType != qualifierType)
+        if (qualifierType >= 0 && trainerType != qualifierType)
             continue;
 
         for (auto& [requirement, trainerSpellList] : spellReqList)
@@ -177,7 +135,7 @@ std::vector<int32> AvailableTrainersValue::Calculate()
 
     for (auto& [trainerType, spellReqList] : *spellMap)
     {
-        if (trainerType >= 0 && trainerType != qualifierType)
+        if (qualifierType >= 0 && trainerType != qualifierType)
             continue;
 
         for (auto& [requirement, trainerSpellList] : spellReqList)

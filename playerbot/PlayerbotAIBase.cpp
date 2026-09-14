@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PerformanceMonitor.h"
 #include "playerbot/PlayerbotAIConfig.h"
 
 using namespace ai;
@@ -29,23 +30,12 @@ void PlayerbotAIBase::UpdateAI(uint32 elapsed)
     YieldAIInternalThread();
 }
 
-bool PlayerbotAIBase::AdvanceMinimalUpdateDelay(uint32 elapsed)
+void PlayerbotAIBase::AdvanceMinimalUpdateDelay(uint32 elapsed)
 {
     if (aiInternalUpdateDelay > elapsed)
-    {
         aiInternalUpdateDelay -= elapsed;
-        return false;
-    }
-
-    aiInternalUpdateDelay = 0;
-    return true;
-}
-
-void PlayerbotAIBase::ScheduleNextMinimalUpdate(uint32 salt, uint32 jitterMs)
-{
-    uint32 const baseDelay = std::max<uint32>(sPlayerbotAIConfig.passiveDelay, sPlayerbotAIConfig.reactDelay * 10);
-    uint32 const jitter = jitterMs ? ((salt * 2654435761u) % (jitterMs + 1)) : 0;
-    aiInternalUpdateDelay = std::max<uint32>(aiInternalUpdateDelay, baseDelay + jitter);
+    else
+        aiInternalUpdateDelay = 0;
 }
 
 void PlayerbotAIBase::SetAIInternalUpdateDelay(const uint32 delay)
@@ -70,10 +60,17 @@ void PlayerbotAIBase::IncreaseAIInternalUpdateDelay(uint32 delay)
 void PlayerbotAIBase::YieldAIInternalThread(bool minimal)
 {
     if (aiInternalUpdateDelay < sPlayerbotAIConfig.reactDelay)
-        aiInternalUpdateDelay = minimal ? std::max<uint32>(sPlayerbotAIConfig.passiveDelay, sPlayerbotAIConfig.reactDelay * 10) : sPlayerbotAIConfig.reactDelay;
+        aiInternalUpdateDelay = minimal ? sPlayerbotAIConfig.reactDelay * 10 : sPlayerbotAIConfig.reactDelay;
 }
 
 bool PlayerbotAIBase::IsActive() const
 {
     return (int)aiInternalUpdateDelay < (int)sPlayerbotAIConfig.maxWaitForMove;
+}
+
+// See the declaration: the mod-playerbots name, public where the original is
+// protected.
+void PlayerbotAIBase::SetNextCheckDelay(const uint32 delay)
+{
+    SetAIInternalUpdateDelay(delay);
 }

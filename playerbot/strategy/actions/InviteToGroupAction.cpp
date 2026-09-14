@@ -4,7 +4,7 @@
 #include "playerbot/BotRecruitment.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/Formations.h"
-#include "Guilds/GuildMgr.h"
+#include "Guild/GuildMgr.h"
 
 namespace ai
 {
@@ -15,15 +15,15 @@ namespace ai
 
         if (inviter == player)
             return false;
-        if (inviter && inviter->isRealPlayer())
+        if (inviter && IsRealPlayer(inviter))
             return BotRecruitment::Queue(inviter, player, "invite");
 
-        if (!player->GetPlayerbotAI() && !ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, true, player))
+        if (!GetBotAI(player) && !ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, true, player))
             return false;
 
         if (Group* group = inviter->GetGroup())
         {
-            if(player->GetPlayerbotAI() && !player->GetPlayerbotAI()->IsRealPlayer())
+            if(GetBotAI(player) && !GetBotAI(player)->IsRealPlayer())
                 if (!group->IsRaidGroup() && group->GetMembersCount() > 4)
                     group->ConvertToRaid();
         }
@@ -48,7 +48,7 @@ namespace ai
         Player* master = event.getOwner();
         if (!master)
             return false;
-        if (master->isRealPlayer())
+        if (IsRealPlayer(master))
             return BotRecruitment::Queue(master, bot, "invite");
 
         Group* group = master->GetGroup();
@@ -329,7 +329,7 @@ namespace ai
             if (player->GetGroup())
                 continue;
 
-            if (!sPlayerbotAIConfig.randomBotInvitePlayer && player->isRealPlayer())
+            if (!sPlayerbotAIConfig.randomBotInvitePlayer && IsRealPlayer(player))
                 continue;
 
             Group* group = bot->GetGroup();
@@ -340,7 +340,7 @@ namespace ai
             if (player->IsBeingTeleported())
                 continue;
 
-            PlayerbotAI* botAi = player->GetPlayerbotAI();
+            PlayerbotAI* botAi = GetBotAI(player);
 
             if (botAi)
             {
@@ -364,7 +364,7 @@ namespace ai
             Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
             if (sPlayerbotAIConfig.inviteChat && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
             {
-                if (guild && bot->IsInGuild(player))
+                if (guild && player && bot->IsInGuild(player->GetGuildId()))
                 {
                     BroadcastHelper::BroadcastGuildGroupOrRaidInvite(
                         ai,
@@ -461,7 +461,7 @@ namespace ai
             if (player->isDND())
                 continue;
 
-            if (!sPlayerbotAIConfig.randomBotInvitePlayer && player->isRealPlayer())
+            if (!sPlayerbotAIConfig.randomBotInvitePlayer && IsRealPlayer(player))
                 continue;
 
             if (player->IsBeingTeleported())
@@ -478,7 +478,7 @@ namespace ai
             if (WorldPosition(player).distance(bot) > 1000 && player->GetLevel() < 15)
                 continue;
 
-            PlayerbotAI* playerAi = player->GetPlayerbotAI();
+            PlayerbotAI* playerAi = GetBotAI(player);
 
             if (playerAi)
             {

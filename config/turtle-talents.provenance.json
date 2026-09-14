@@ -1,0 +1,33 @@
+{
+  "source_sha256": "ae89308e0634860320f9fa5a213aebd53d74f994ce8c47c35984c5f0ff603334",
+  "presets": 27,
+  "checkpoints": 297,
+  "underfilled_checkpoints": [
+    {
+      "class": 9,
+      "spec": 1,
+      "level": 25,
+      "points": 14
+    },
+    {
+      "class": 9,
+      "spec": 1,
+      "level": 30,
+      "points": 19
+    },
+    {
+      "class": 9,
+      "spec": 1,
+      "level": 35,
+      "points": 23
+    },
+    {
+      "class": 9,
+      "spec": 1,
+      "level": 40,
+      "points": 30
+    }
+  ],
+  "native_dbc_checks": "rank bounds, spell presence, per-level maximum point budget, tier gates, zero-based prerequisite ranks",
+  "status": "configuration adapted; runtime class/rotation review still pending"
+}

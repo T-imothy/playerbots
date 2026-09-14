@@ -4,6 +4,7 @@
 #include "EncounterPositionValue.h"
 #include "VashjCoreValue.h"
 #include "RitualSummonValue.h"
+#include "UldamanAltarValue.h"
 #include "RighteousDefenseTargetValue.h"
 #include "NearestGameObjects.h"
 #include "LogLevelValue.h"
@@ -144,6 +145,7 @@ namespace ai
             creators["righteous defense target"] = [](PlayerbotAI* ai) { return new RighteousDefenseTargetValue(ai); };
             creators["gruul spread position"] = [](PlayerbotAI* ai) { return new GruulPositionValue(ai); };
             creators["ritual summon request"] = [](PlayerbotAI* ai) { return new RitualSummonRequestValue(ai); };
+            creators["uldaman altar request"] = [](PlayerbotAI* ai) { return new UldamanAltarRequestValue(ai); };
             creators["active spell"] = [](PlayerbotAI* ai) { return new ActiveSpellValue(ai); };
             creators["craft"] = [](PlayerbotAI* ai) { return new CraftValue(ai); };
             creators["collision"] = [](PlayerbotAI* ai) { return new CollisionValue(ai); };
@@ -324,6 +326,7 @@ namespace ai
             creators["party member without food"] = [](PlayerbotAI* ai) { return new PartyMemberWithoutFoodValue(ai); };
             creators["party member without water"] = [](PlayerbotAI* ai) { return new PartyMemberWithoutWaterValue(ai); };
             creators["death count"] = [](PlayerbotAI* ai) { return new DeathCountValue(ai); };
+            creators["corpse run"] = [](PlayerbotAI* ai) { return new CorpseRunValue(ai); };
 
             creators["rpg target"] = [](PlayerbotAI* ai) { return new RpgTargetValue(ai); };
             creators["ignore rpg target"] = [](PlayerbotAI* ai) { return new IgnoreRpgTargetValue(ai); };

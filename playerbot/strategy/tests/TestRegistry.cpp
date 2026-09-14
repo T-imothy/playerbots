@@ -1,7 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "TestRegistry.h"
 #include "playerbot/ChatHelper.h"
-#include "Globals/ObjectMgr.h"
+#include "ObjectMgr.h"
 #include <regex>
 #include <sstream>
 #include "playerbot/TravelMgr.h"

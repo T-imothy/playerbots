@@ -102,7 +102,7 @@ void BloodDKStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
 
     triggers.push_back(new TriggerNode(
         "lose aggro",
-        NextAction::array(0, new NextAction("dark command", ACTION_PASSTROUGH), NULL)));
+        NextAction::array(0, new NextAction("dark command", ACTION_HIGH + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "low health",

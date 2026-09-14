@@ -65,7 +65,7 @@ uint32 GroupBoolCountValue::Calculate()
         if (!ai->IsSafe(player))
             continue;
 
-        if (!player->GetPlayerbotAI())
+        if (!GetBotAI(player))
             continue;
 
         if (PAI_VALUE2(bool, "and", getQualifier()))
@@ -87,7 +87,7 @@ bool GroupBoolANDValue::Calculate()
         if (!ai->IsSafe(player))
             continue;
 
-        if (!player->GetPlayerbotAI())
+        if (!GetBotAI(player))
             continue;
 
         if (!PAI_VALUE2(bool,"and", getQualifier()))
@@ -109,7 +109,7 @@ bool GroupBoolORValue::Calculate()
         if (!ai->IsSafe(player))
             continue;
 
-        if (!player->GetPlayerbotAI())
+        if (!GetBotAI(player))
             continue;
 
         if (PAI_VALUE2(bool, "and", getQualifier()))
@@ -132,7 +132,7 @@ bool GroupReadyValue::Calculate()
 
         if (inDungeon) // In dungeons all following members need to be alive before continuing.
         {
-            PlayerbotAI* memberAi = member->GetPlayerbotAI();
+            PlayerbotAI* memberAi = GetBotAI(member);
 
             bool isFollowing = memberAi
                 ? (memberAi->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||

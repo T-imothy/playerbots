@@ -34,10 +34,10 @@ uint8 AoeHealValue::Calculate()
             sServerFacade.GetDistance2d(bot, player) > (bot->getClass() == CLASS_SHAMAN ? 40.0f : 30.0f))
 			continue;
 
-        if (bot->getClass() == CLASS_PRIEST && !bot->IsInGroup(player, true))
+        if (bot->getClass() == CLASS_PRIEST && !group->SameSubGroup(bot, player))
             continue;
 
-	    float percent = player->GetHealthPercent();
+	    float percent = (static_cast<float> (player->GetHealth()) / player->GetMaxHealth()) * 100;
 	    if (percent <= range)
 	    	count++;
 	}

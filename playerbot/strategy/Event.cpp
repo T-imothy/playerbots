@@ -1,7 +1,7 @@
 
 #include "playerbot/playerbot.h"
-#include "Entities/Player.h"
-#include "Globals/ObjectAccessor.h"
+#include "Objects/Player.h"
+#include "ObjectAccessor.h"
 #include "Event.h"
 
 
@@ -14,7 +14,7 @@ Player* EventOwner::Get() const
     if (!original)
         return nullptr;
 
-    Player* player = ObjectAccessor::FindPlayer(guid, false);
+    Player* player = sObjectMgr.GetPlayer(guid, false);
     // Compare the old address only; never dereference a saved player pointer.
     if (player != original || !player->GetSession() || player->GetSession()->GetPlayer() != player)
         return nullptr;

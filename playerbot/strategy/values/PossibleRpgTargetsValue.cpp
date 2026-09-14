@@ -3,9 +3,9 @@
 #include "PossibleRpgTargetsValue.h"
 
 #include "playerbot/ServerFacade.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 #include "NearestUnitsValue.h"
 #include "playerbot/TravelMgr.h"
 
@@ -55,6 +55,11 @@ void PossibleRpgTargetsValue::FindUnits(std::list<Unit*> &targets)
 bool PossibleRpgTargetsValue::AcceptUnit(Unit* unit)
 {
     TravelTarget* travelTarget = context->GetValue<TravelTarget*>("travel target")->Get();
+
+    // Flight masters remain available to purposeful travel/discovery, but a
+    // taxi-cheat bot must not pick one as generic nearby roleplay work.
+    if (unit->HasFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_FLIGHTMASTER) && bot->isTaxiCheater())
+        return false;
 
     if (travelTarget->GetDestination() && travelTarget->GetDestination()->GetEntry() == unit->GetEntry())
         return true;

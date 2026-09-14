@@ -4,7 +4,7 @@
 #include "SharedValueContext.h"
 #include "BudgetValues.h"
 #include "GuildValues.h"
-#include "Guilds/GuildMgr.h"
+#include "Guild/GuildMgr.h"
 #include <chrono>
 
 using namespace ai;
@@ -74,15 +74,15 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
     allowedNpcFlags.push_back(UNIT_NPC_FLAG_REPAIR);
 
     std::unordered_map<NPCFlags, TravelDestinationPurpose> npcPurposeMap =
-        {
-            {UNIT_NPC_FLAG_REPAIR,     TravelDestinationPurpose::Repair },
-            {UNIT_NPC_FLAG_VENDOR,     TravelDestinationPurpose::Vendor },
-            {UNIT_NPC_FLAG_TRAINER,    TravelDestinationPurpose::Trainer},
-            {UNIT_NPC_FLAG_AUCTIONEER, TravelDestinationPurpose::AH     },
-            {UNIT_NPC_FLAG_BANKER,     TravelDestinationPurpose::Bank   }
+    {
+        { UNIT_NPC_FLAG_REPAIR, TravelDestinationPurpose::Repair },
+        { UNIT_NPC_FLAG_VENDOR, TravelDestinationPurpose::Vendor },
+        { UNIT_NPC_FLAG_TRAINER, TravelDestinationPurpose::Trainer },
+        { UNIT_NPC_FLAG_AUCTIONEER, TravelDestinationPurpose::AH },
+        { UNIT_NPC_FLAG_BANKER, TravelDestinationPurpose::Bank }
     };
 
-    for (uint32 entry = 0; entry < sCreatureStorage.GetMaxEntry(); ++entry)
+    for (auto const& [entry, nativeTemplate] : sObjectMgr.GetCreatureInfoMap())
     {
         CreatureInfo const* cInfo = sCreatureStorage.LookupEntry<CreatureInfo>(entry);
 
@@ -173,15 +173,16 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
             entryPurposeMap[entry] = purpose;
     }
 
-    for (uint32 entry = 0; entry < sGOStorage.GetMaxEntry(); ++entry)
+    for (auto const& [entry, nativeTemplate] : sObjectMgr.GetGameObjectInfoMap())
     {
-        GameObjectInfo const* gInfo = ObjectMgr::GetGameObjectInfo(entry);
+        GameObjectInfo const* gInfo = sObjectMgr.GetGameObjectInfo(entry);
 
         if (!gInfo)
             continue;
 
-        if (gInfo->ExtraFlags & CREATURE_EXTRA_FLAG_INVISIBLE)
-            continue;
+        // Penqle's GameObjectInfo has no ExtraFlags (cmangos uses it for invisible
+        // markers; the bot is checking a creature flag here — likely a bot-side
+        // bug). Skip the invisibility check; harmless until a host hook lands.
 
         uint32 purpose = 0;
 
@@ -234,7 +235,7 @@ uint32 EntryTravelPurposeMapValue::SkillIdToGatherEntry(int32 entry)
     }
     else
     {
-        GameObjectInfo const* gInfo = ObjectMgr::GetGameObjectInfo(entry * -1);
+        GameObjectInfo const* gInfo = sObjectMgr.GetGameObjectInfo(entry * -1);
 
         if (uint32 lockId = gInfo->GetLockId())
         {
@@ -454,6 +455,9 @@ bool ShouldTravelNamedValue::Calculate()
     }
     else if (name.find("trainer") == 0)
     {
+        if (ai->HasRealPlayerMaster())
+            return false;
+
         TrainerType trainerType = TRAINER_TYPE_CLASS;
         NeedMoneyFor budgetType = NeedMoneyFor::spells;
 
@@ -519,7 +523,16 @@ bool QuestStageActiveValue::Calculate()
             return false;
         break;
     case TravelDestinationPurpose::QuestTaker:
-        if (!bot->CanCompleteQuest(questId))
+        // CanCompleteQuest answers "could this quest still flip to complete", and
+        // the core returns false the moment it has - "not allow re-complete quest".
+        // Asking it here threw away exactly the quests that were ready to hand in,
+        // leaving only the brief window where the objectives are met but the status
+        // has not been updated yet. Bots that missed that window carried the quest
+        // forever: ten characters followed from level 1 accumulated 25 completed
+        // quests between them without a single QuestTravelToTaker event.
+        if (bot->GetQuestRewardStatus(questId))
+            return false;
+        if (bot->GetQuestStatus(questId) != QUEST_STATUS_COMPLETE && !bot->CanCompleteQuest(questId))
             return false;
         break;
     case TravelDestinationPurpose::QuestObjective1:

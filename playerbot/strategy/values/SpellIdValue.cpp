@@ -82,8 +82,9 @@ uint32 SpellIdValue::Calculate()
 
         if (ids.empty())
         {
-            char* spellName = pSpellInfo->SpellName[loc];
-            if (!useByItem && (tolower(spellName[0]) != firstSymbol || strlen(spellName) != spellLength || !Utf8FitTo(spellName, wnamepart)))
+            // Penqle's SpellName is std::string[8].
+            std::string const& spellName = pSpellInfo->SpellName[loc];
+            if (!useByItem && (tolower(spellName[0]) != firstSymbol || spellName.size() != spellLength || !Utf8FitTo(spellName.c_str(), wnamepart)))
                 continue;
         }
 
@@ -114,8 +115,9 @@ uint32 SpellIdValue::Calculate()
 
             if (ids.empty())
             {
-                char* spellName = pSpellInfo->SpellName[loc];
-                if (tolower(spellName[0]) != firstSymbol || strlen(spellName) != spellLength || !Utf8FitTo(spellName, wnamepart))
+                // Penqle's SpellName is std::string[8].
+                std::string const& spellName = pSpellInfo->SpellName[loc];
+                if (tolower(spellName[0]) != firstSymbol || spellName.size() != spellLength || !Utf8FitTo(spellName.c_str(), wnamepart))
                     continue;
             }
 
@@ -131,34 +133,6 @@ uint32 SpellIdValue::Calculate()
     int highestSpellId = 0;
     int lowestRank = 0;
     int lowestSpellId = 0;
-    // Bots shouldn't derank buff spells (Fortitude, Mark of the Wild, Totems, Blessings etc.)
-    // Quickest way is instant and not damage or healing
-    bool isBuff = false;
-
-    for (std::set<uint32>::reverse_iterator itr = spellIds.rbegin(); itr != spellIds.rend(); ++itr)
-    {
-        const SpellEntry* pSpellInfo = sServerFacade.LookupSpellInfo(*itr);
-        if (!pSpellInfo)
-            continue;
-        uint32 castingTime = pSpellInfo->CastingTimeIndex;
-        bool damageOrHeal = false;
-        for (int32 i = EFFECT_INDEX_0; i <= EFFECT_INDEX_2; i++)
-        {
-            if (pSpellInfo->Effect[i] == SPELL_EFFECT_HEAL || pSpellInfo->Effect[i] == SPELL_EFFECT_SCHOOL_DAMAGE ||
-                pSpellInfo->Effect[i] == SPELL_EFFECT_PERSISTENT_AREA_AURA || 
-               (pSpellInfo->Effect[i] == SPELL_EFFECT_APPLY_AURA && (pSpellInfo->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_DAMAGE ||
-                pSpellInfo->EffectApplyAuraName[i] == SPELL_AURA_PERIODIC_HEAL)))
-            {
-                damageOrHeal = true;
-                break;
-            }
-        }
-        if (!damageOrHeal && castingTime <= 1)
-        {
-            isBuff = true;
-            break;
-        }     
-    }
 
     if (saveMana <= 1)
     {
@@ -205,13 +179,13 @@ uint32 SpellIdValue::Calculate()
         {
             if (!highestSpellId) highestSpellId = *i;
             if (sSpellMgr.IsSpellHigherRankOfSpell(*i, highestSpellId)) highestSpellId = *i;
-            if (saveMana == rank && !isBuff) return *i;
+            if (saveMana == rank) return *i;
             lowestSpellId = *i;
             rank++;
         }
     }
 
-    return saveMana > 1 && !isBuff ? lowestSpellId : highestSpellId;
+    return saveMana > 1 ? lowestSpellId : highestSpellId;
 }
 
 uint32 VehicleSpellIdValue::Calculate()

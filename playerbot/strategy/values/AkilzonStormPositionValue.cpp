@@ -1,6 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
-#include "Entities/DynamicObject.h"
+#include "Objects/DynamicObject.h"
 #include "playerbot/strategy/AiObjectContext.h"
 
 using namespace ai;

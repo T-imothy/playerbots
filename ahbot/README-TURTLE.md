@@ -1,0 +1,1 @@
+This bundled category AHBot is retained as source reference only. The Turtle build selects ../cmangos-ahbot instead. NativeAuctionView.h remains used by ManTech random-bot pricing. Never enable both auction implementations.

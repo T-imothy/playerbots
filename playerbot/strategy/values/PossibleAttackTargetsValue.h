@@ -33,7 +33,6 @@ namespace ai
         static bool IsImmuneToDamage(Unit* target, Player* player);
         static bool HasIgnoreCCRti(Unit* target, Player* player);
         static bool IsTapped(Unit* target, Player* player);
-        static bool IsCcTarget(Unit* attacker, Player* player);
     };
 
     class PossibleAddsValue : public BoolCalculatedValue

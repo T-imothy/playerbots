@@ -14,20 +14,23 @@ EntryQuestRelationMap EntryQuestRelationMapValue::Calculate()
 {
 	EntryQuestRelationMap rMap;
 
-	//Quest givers takers
-	QuestObjectMgr* questObjectMgr = (QuestObjectMgr*)&sObjectMgr;
-
-	for (auto [entry, questId] : questObjectMgr->GetCreatureQuestRelationsMap())
-		rMap[entry][questId] |= (uint8)TravelDestinationPurpose::QuestGiver;
-
-	for (auto [entry, questId] : questObjectMgr->GetCreatureQuestInvolvedRelationsMap())
-		rMap[entry][questId] |= (uint8)TravelDestinationPurpose::QuestTaker;
-
-	for (auto [entry, questId] : questObjectMgr->GetGOQuestRelationsMap())
-		rMap[-(int32)entry][questId] |= (uint8)TravelDestinationPurpose::QuestGiver;
-
-	for (auto [entry, questId] : questObjectMgr->GetGOQuestInvolvedRelationsMap())
-		rMap[-(int32)entry][questId] |= (uint8)TravelDestinationPurpose::QuestTaker;
+    // Native public relation bounds preserve Turtle's giver/taker definitions.
+    // Never downcast the live ObjectMgr to an unrelated module subclass.
+    auto append = [&](int32 entry, QuestRelationsMapBounds bounds, TravelDestinationPurpose purpose)
+    {
+        for (auto it = bounds.first; it != bounds.second; ++it)
+            rMap[entry][it->second] |= uint8(purpose);
+    };
+    for (auto const& entry : sObjectMgr.GetCreatureInfoMap())
+    {
+        append(entry.first, sObjectMgr.GetCreatureQuestRelationsMapBounds(entry.first), TravelDestinationPurpose::QuestGiver);
+        append(entry.first, sObjectMgr.GetCreatureQuestInvolvedRelationsMapBounds(entry.first), TravelDestinationPurpose::QuestTaker);
+    }
+    for (auto const& entry : sObjectMgr.GetGameObjectInfoMap())
+    {
+        append(-int32(entry.first), sObjectMgr.GetGOQuestRelationsMapBounds(entry.first), TravelDestinationPurpose::QuestGiver);
+        append(-int32(entry.first), sObjectMgr.GetGOQuestInvolvedRelationsMapBounds(entry.first), TravelDestinationPurpose::QuestTaker);
+    }
 
 	//Quest objectives
 	ObjectMgr::QuestMap const& questMap = sObjectMgr.GetQuestTemplates();
@@ -136,7 +139,7 @@ void FindQuestObjectData::GetObjectiveEntries()
 //Data worker. Checks for a specific creature what quest they are needed for and puts them in the proper place in the quest map.
 bool FindQuestObjectData::operator()(CreatureDataPair const& dataPair)
 {
-	uint32 entry = dataPair.second.id;
+	uint32 entry = dataPair.second.creature_id[0];
 
 	for (auto& [questId, flag] : relationMap[entry])
 	{

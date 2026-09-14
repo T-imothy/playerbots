@@ -49,8 +49,15 @@ namespace ai
 
                 if (range > 0.0f)
                 {
-                    chaseDist = inLos ? range : (isFriend ? std::min(distanceToTarget * 0.9f, range) : range);
-                    chaseDist = (chaseDist - sPlayerbotAIConfig.contactDistance);
+                    // Move to 75% of max range so we land comfortably inside the
+                    // range envelope rather than at its edge. This prevents constant
+                    // fidgeting when the target drifts slightly out of max range, and
+                    // stops bots from walking all the way out to the range limit before
+                    // they cast. The 0.75 factor keeps a buffer for target movement
+                    // while still being well within casting distance.
+                    const float preferredDist = range * 0.75f;
+                    chaseDist = inLos ? preferredDist : (isFriend ? std::min(distanceToTarget * 0.9f, preferredDist) : preferredDist);
+                    chaseDist = std::max(chaseDist - sPlayerbotAIConfig.contactDistance, 0.0f);
                 }
 
                 if (CanWaitForEnemy() && !isFriend && MoveStyleValue::WaitForEnemy(ai) && !AI_VALUE(Unit*, "rti cc target") && target->m_movementInfo.HasMovementFlag(movementFlagsMask) &&
@@ -83,6 +90,11 @@ namespace ai
             return false;
         }
 
+        // True for reach actions whose target is always meant to be attacked
+        // (melee, pull) - false for "reach spell", which is also used to close
+        // distance on friendly targets (e.g. Blessing of Protection/Freedom).
+        virtual bool RequiresAttackableTarget() const { return false; }
+
         virtual bool isUseful() override
 		{
             // Do not move if stay strategy is set
@@ -91,6 +103,16 @@ namespace ai
                 Unit* target = GetTarget();
                 if (target)
                 {
+                    // A target that can never legally be attacked (friendly, wrong
+                    // phase, etc.) isn't worth closing distance to - this is what let
+                    // bots walk up to and cluster around friendly NPCs once a stale
+                    // "current target"/"pull target" pointed at one (same check used
+                    // in PossibleAttackTargetsValue::IsPossibleTarget).
+                    if (RequiresAttackableTarget() && !bot->IsValidAttackTarget(target))
+                    {
+                        return false;
+                    }
+
                     // Do not move while casting
                     if (!bot->IsNonMeleeSpellCasted(true, false, true))
                     {
@@ -166,6 +188,7 @@ namespace ai
 	{
     public:
         ReachMeleeAction(PlayerbotAI* ai) : ReachTargetAction(ai, "reach melee") {}
+        bool RequiresAttackableTarget() const override { return true; }
     };
 
     class ReachSpellAction : public ReachTargetAction
@@ -263,8 +286,8 @@ namespace ai
                 if (!bot->IsWithinDistInMap(member, 100.0f, false))
                     continue;
 
-                if (!bot->IsWithinDistInMap(member, range, false) || !AI_VALUE2(bool, "has totem", name))
-                    return member; 
+                if (!ai->HasAura(totemSpell, member, false, true))
+                    return member;
             }
 
             return nullptr;

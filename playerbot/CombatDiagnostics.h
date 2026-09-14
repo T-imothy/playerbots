@@ -16,6 +16,16 @@ namespace ai
         const std::string* previous;
         bool enabled;
     };
+    class CombatSpellNameContext
+    {
+    public:
+        explicit CombatSpellNameContext(const std::string& name);
+        ~CombatSpellNameContext();
+        static std::string Current();
+    private:
+        const std::string* previous;
+        bool enabled;
+    };
     // Observation only. No spell checks, target selection or game state changes.
     class CombatDiagnostics
     {
@@ -23,6 +33,7 @@ namespace ai
         static bool Select(PlayerbotAI* ai);
         static void Record(PlayerbotAI* ai, const std::string& action, const std::string& source,
             const char* stage, int32 result, uint32 spell = 0, Unit* target = nullptr);
+        static void RecordProgress(PlayerbotAI* ai); // World owner, after map jobs join.
         static void Flush();
     };
 }

@@ -3,11 +3,13 @@
 #include "playerbot/strategy/Action.h"
 #include "playerbot/BotRecruitment.h"
 
+#include "playerbot/BotSlots.h"
 namespace ai
 {
     class AcceptInvitationAction : public Action 
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         AcceptInvitationAction(PlayerbotAI* ai) : Action(ai, "accept invitation") {}
 
         virtual bool Execute(Event& event) override
@@ -22,7 +24,7 @@ namespace ai
 
             // Human invitations are owned by the world-thread coordinator.
             // Never let a delayed AI packet accept an expired invitation.
-            if (inviter->isRealPlayer() || BotRecruitment::HasPendingInvite(bot))
+            if (IsRealPlayer(inviter) || BotRecruitment::HasPendingInvite(bot))
                 return false;
 
 			if (!ai->GetSecurity()->CheckLevelFor(PlayerbotSecurityLevel::PLAYERBOT_SECURITY_INVITE, false, inviter))
@@ -62,7 +64,7 @@ namespace ai
 
             Player* master = inviter;
 
-            if (master->GetPlayerbotAI()) //Copy formation from bot master.
+            if (GetBotAI(master)) //Copy formation from bot master.
             {
                 if (sPlayerbotAIConfig.inviteChat && (sRandomPlayerbotMgr.IsFreeBot(bot) || !ai->HasActivePlayerMaster()))
                 {
@@ -76,7 +78,7 @@ namespace ai
 
                     Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
 
-                    if (guild && master->IsInGuild(bot))
+                    if (guild && master->IsInGuild(bot->GetGuildId()))
                         guild->BroadcastToGuild(bot->GetSession(), reply, LANG_UNIVERSAL);
                     else if (sServerFacade.GetDistance2d(bot, master) < sPlayerbotAIConfig.spellDistance * 1.5)
                         bot->Say(reply, (bot->GetTeam() == ALLIANCE ? LANG_COMMON : LANG_ORCISH));

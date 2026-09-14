@@ -2,8 +2,8 @@
 #include "Config/Config.h"
 #include "AhBotConfig.h"
 #include "PricingStrategy.h"
-#include "Entities/ItemPrototype.h"
-#include "Globals/SharedDefines.h"
+#include "Objects/ItemPrototype.h"
+#include "SharedDefines.h"
 
 namespace ahbot
 {

@@ -149,7 +149,9 @@ bool CastMultiShotAction::isUseful()
         float minCaster = 0.0f, maxTarget = 0.0f;
         if (spell->EffectChainTarget[i] > 1)
         {
-            GetChainJumpRange(spell, SpellEffectIndex(i), minCaster, maxTarget);
+            // Native Spell::SetTargetMap bounds each chain jump by this radius.
+            // Include every possible hop in the safety check around the primary.
+            maxTarget = CHAIN_SPELL_JUMP_RADIUS * (spell->EffectChainTarget[i] - 1);
             radius = std::max(radius, maxTarget);
         }
     }
@@ -255,7 +257,7 @@ bool HunterDisengageAction::isUseful()
         spell->CalculateSimpleValue(EFFECT_INDEX_0) / 10.0f, spell->EffectMiscValue[0] / 10.0f,
         time, distance, height, good, path);
     if (!landing || !good || path.empty() || distance < 3.0f ||
-        landing.distance(WorldPosition(enemy)) < std::sqrt(bot->GetDistance(enemy, true, DIST_CALC_NONE)) + 3.0f) return false;
+        landing.distance(WorldPosition(enemy)) < std::sqrt(bot->GetDistance(enemy, DIST_CALC_NONE)) + 3.0f) return false;
     for (const WorldPosition& point : path)
     {
         if (!HunterAreaSafe(ai, point.getX(), point.getY(), point.getZ(), 5.0f)) return false;

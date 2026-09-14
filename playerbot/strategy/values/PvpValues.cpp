@@ -1,7 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "PvpValues.h"
-#include "BattleGround/BattleGroundWS.h"
+#include "Battlegrounds/BattleGroundWS.h"
 #include "playerbot/ServerFacade.h"
 #ifndef MANGOSBOT_ZERO
 #include "BattleGround/BattleGroundEY.h"
@@ -70,7 +70,7 @@ CreatureDataPair const* BgMasterValue::NearestBm(bool allowDead)
         if (rbmPair && rDist <= dist)
             continue;
 
-        CreatureInfo const* bmTemplate = ObjectMgr::GetCreatureTemplate(bmPair->second.id);
+        CreatureInfo const* bmTemplate = sObjectMgr.GetCreatureTemplate(bmPair->second.creature_id[0]);
 
         if (!bmTemplate)
             continue;
@@ -330,12 +330,12 @@ WarsongObjective WarsongObjectiveValue::Calculate()
     {
         Player* member = bg->GetBgMap()->GetPlayer(entry.first);
         if (!member || !member->IsInWorld()) continue;
-        if (entry.second.playerTeam != ownTeam)
+        if (entry.second.PlayerTeam != ownTeam)
         {
             if (IsWarsongLocalThreat(ai, member, bot)) result.pressured = true;
             continue;
         }
-        PlayerbotAI* memberAI = member->GetPlayerbotAI();
+        PlayerbotAI* memberAI = GetBotAI(member);
         if (memberAI && !memberAI->IsRealPlayer() && !memberAI->HasRealPlayerMaster())
             roster.push_back(member);
     }

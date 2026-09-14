@@ -1,18 +1,19 @@
+#include "ahbot/NativeAuctionView.h"
 
 #include "Category.h"
 #include "ItemBag.h"
 #include "ConsumableCategory.h"
 #include "TradeCategory.h"
 #include "AhBotConfig.h"
-#include "Server/DBCStructure.h"
-#include "Log/Log.h"
+#include "Database/DBCStructure.h"
+#include "Log.h"
 #include "Database/QueryResult.h"
 #include "Database/DatabaseEnv.h"
 #include "Database/SQLStorage.h"
 #include "Database/DBCStore.h"
-#include "Server/SQLStorages.h"
+#include "Database/SQLStorages.h"
 #include "AuctionHouse/AuctionHouseMgr.h"
-#include "Globals/ObjectMgr.h"
+#include "ObjectMgr.h"
 
 using namespace ahbot;
 char * strstri (const char* str1, const char* str2);
@@ -160,7 +161,7 @@ bool ItemBag::Add(ItemPrototype const* proto)
     }
 
     if (!contains)
-        sLog.outDetail("Item %s does not included in any category", proto->Name1);
+        sLog.outDetail("Item %s does not included in any category", proto->Name1.c_str());
 
     return contains;
 }
@@ -197,7 +198,8 @@ void InAuctionItemsBag::Load()
         return;
 
     AuctionHouseObject* auctionHouse = sAuctionMgr.GetAuctionsMap(ahEntry);
-    AuctionHouseObject::AuctionEntryMap const& auctionEntryMap = auctionHouse->GetAuctions();
+    ahbot::NativeAuctionView auctionEntryMapView(auctionHouse);
+    AuctionHouseObject::AuctionEntryMap const& auctionEntryMap = auctionEntryMapView.Get();
     for (AuctionHouseObject::AuctionEntryMap::const_iterator itr = auctionEntryMap.begin(); itr != auctionEntryMap.end(); ++itr)
     {
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(itr->second->itemTemplate);

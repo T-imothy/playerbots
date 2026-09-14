@@ -65,6 +65,8 @@ namespace ai
 
     public:
         virtual bool Execute(Event& event) { return true; }
+        // Eligibility and execution touch native world-owned state.
+        virtual bool RequiresWorldOwner() const { return false; }
         virtual bool isPossible() { return true; }
         virtual bool isUseful() { return true; }
         // A missing capability may still have a valid configured fallback.

@@ -1,7 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "FactionAction.h"
-#include "Tools/Language.h"
+#include "Language.h"
 
 using namespace ai;
 
@@ -37,9 +37,9 @@ bool FactionAction::Execute(Event& event)
     bool factionFound = false;
     std::map<std::string, std::string> args;
 #ifndef MANGOSBOT_ONE
-    for (uint32 id = 0; id < sFactionStore.GetNumRows(); ++id)
+    for (auto const& [id, nativeTemplate] : sObjectMgr.GetFactionMap())
 #else
-    for (uint32 id = 0; id < sFactionStore.GetMaxEntry(); ++id)
+    for (auto const& [id, nativeTemplate] : sObjectMgr.GetFactionMap())
 #endif
     {
 #ifndef MANGOSBOT_ONE

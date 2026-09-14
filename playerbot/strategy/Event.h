@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Entities/ObjectGuid.h"
-#include "Server/WorldPacket.h"
+#include "ObjectGuid.h"
+#include "WorldPacket.h"
 
 class Player;
 
@@ -24,12 +24,24 @@ namespace ai
     class Event
 	{
 	public:
+        // Penqle's WorldPacket has a deleted copy operator= (it has a user-defined
+        // move ctor, which implicitly deletes copy=). Use the member init list for
+        // the copy ctor (WorldPacket's copy CTOR IS available) and an explicit
+        // operator= that copy-constructs + move-assigns.
         Event(Event const& other)
+            : source(other.source)
+            , param(other.param)
+            , packet(other.packet)
+            , owner(other.owner)
+        {}
+        Event& operator=(Event const& other)
         {
+            if (this == &other) return *this;
             source = other.source;
             param = other.param;
-            packet = other.packet;
+            packet = WorldPacket(other.packet);  // copy-construct + move-assign
             owner = other.owner;
+            return *this;
         }
         Event() {}
         Event(std::string source) : source(source) {}

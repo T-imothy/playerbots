@@ -7,29 +7,29 @@
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/strategy/actions/RpgSubActions.h"
 #include "playerbot/LootObjectStack.h"
-#include "GameEvents/GameEventMgr.h"
+#include "GameEventMgr.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/PlayerbotHelpMgr.h"
-#include "Entities/Transports.h"
-#include "MotionGenerators/PathFinder.h"
+#include "Transports/Transport.h"
+#include "Maps/PathFinder.h"
 #include "playerbot/PlayerbotLLMInterface.h"
 
 #ifdef MANGOSBOT_TWO
-#include "Vmap/VMapFactory.h"
+#include "vmap/VMapFactory.h"
 #else
 #include "vmap/VMapFactory.h"
 #endif
 
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 #include <iomanip>
 #include "SayAction.h"
 #ifdef GenerateBotTests
 #include "playerbot/strategy/tests/TestRegistry.h"
 #endif
-#include "MotionGenerators/MoveMap.h"
+#include "Maps/MoveMap.h"
 
 using namespace ai;
 using namespace MaNGOS;
@@ -1052,9 +1052,9 @@ void DebugAction::FakeSpell(uint32 spellId, Unit* truecaster, Unit* caster, Obje
         }
 
         if(caster)
-            caster->GetMap()->MessageBroadcast(caster, data);
+            caster->GetMap()->MessageBroadcast(caster, &data);
         else
-            truecaster->GetMap()->MessageBroadcast(truecaster, data);
+            truecaster->GetMap()->MessageBroadcast(truecaster, &data);
     }
     {
         uint32 castFlags = CAST_FLAG_UNKNOWN9;
@@ -1120,9 +1120,9 @@ void DebugAction::FakeSpell(uint32 spellId, Unit* truecaster, Unit* caster, Obje
         }
 
         if (caster)
-            caster->GetMap()->MessageBroadcast(caster, data);
+            caster->GetMap()->MessageBroadcast(caster, &data);
         else
-            truecaster->GetMap()->MessageBroadcast(truecaster, data);
+            truecaster->GetMap()->MessageBroadcast(truecaster, &data);
     }
 }
 
@@ -1138,7 +1138,7 @@ void DebugAction::addAura(uint32 spellId, Unit* target)
         return;
     }
 
-    SpellAuraHolder* holder = CreateSpellAuraHolder(spellInfo, target, target);
+    SpellAuraHolder* holder = CreateSpellAuraHolder(spellInfo, target, target, target);
 
     for (uint32 i = 0; i < MAX_EFFECT_INDEX; ++i)
     {
@@ -1151,12 +1151,12 @@ void DebugAction::addAura(uint32 spellId, Unit* target)
         {
             int32 basePoints = spellInfo->CalculateSimpleValue(SpellEffectIndex(i));
             int32 damage = 0; // no damage cos caster doesnt exist
-            Aura* aur = CreateAura(spellInfo, SpellEffectIndex(i), &damage, &basePoints, holder, target);
+            Aura* aur = CreateAura(spellInfo, SpellEffectIndex(i), &damage, holder, target);
             holder->AddAura(aur, SpellEffectIndex(i));
         }
     }
     if (!target->AddSpellAuraHolder(holder))
-        delete holder;
+        holder = nullptr;
 
     return;
 }
@@ -1232,18 +1232,25 @@ bool DebugAction::HandleArea(Event& event, Player* requester, const std::string&
 
 bool DebugAction::HandleLLM(Event& event, Player* requester, const std::string& text)
 {
-    Player* player = bot;
+    if (!requester || !requester->GetSession() || !requester->GetSession()->HasNetworkTransport() ||
+        !sPlayerbotAIConfig.llmEnabled || text.size() < 4) return false;
     std::map<std::string, std::string> jsonFill;
     jsonFill["<prompt>"] = text.substr(4);
     jsonFill["<context>"] = "";
     jsonFill["<pre prompt>"] = "";
     jsonFill["<post prompt>"] = "";
     std::string json = BOT_TEXT2(sPlayerbotAIConfig.llmApiJson, jsonFill);
-    std::vector<std::string> debugLines = { json };
-    std::string response = PlayerbotLLMInterface::Generate(json, sPlayerbotAIConfig.llmGenerationTimeout, sPlayerbotAIConfig.llmMaxSimultaniousGenerations, debugLines);
-    for(auto line : debugLines)
-        ai->TellPlayerNoFacing(requester, line, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
-    ai->TellPlayerNoFacing(requester, response, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+    WorldPacket packet = ChatReplyAction::GetPacketTemplate(SMSG_MESSAGECHAT, CHAT_MSG_WHISPER, bot, requester);
+    auto timeout = sPlayerbotAIConfig.llmGenerationTimeout;
+    auto limit = sPlayerbotAIConfig.llmMaxSimultaniousGenerations;
+    auto response = SubmitPlayerbotChatGeneration([json, packet, timeout, limit] {
+        std::vector<std::string> lines = {json};
+        std::string result = PlayerbotLLMInterface::Generate(json, timeout, limit, lines);
+        lines.push_back(std::move(result));
+        return ChatReplyAction::LinesToPackets(lines, packet);
+    });
+    QueuePlayerbotChatPackets(bot->GetObjectGuid(), bot->GetSession()->GetAccountId(),
+        ai->GetChatLifetime(), std::move(response), false, EventOwner(requester));
     return true;
 }
 
@@ -1284,7 +1291,8 @@ bool DebugAction::HandleGY(Event& event, Player* requester, const std::string& t
         if (!map)
             continue;
 
-        GraveyardManager* gy = &map->GetGraveyardManager();
+        // Penqle exposes GraveyardManagerStub on Map.
+        Map::GraveyardManagerStub* gy = &map->GetGraveyardManager();
 
         if (!gy)
             continue;
@@ -1573,7 +1581,7 @@ bool DebugAction::HandleMotion(Event& event, Player* requester, const std::strin
         else if (cmd == "follow")
             mm->MoveFollow(motionTarget, 5, 0);
         else if (cmd == "dist")
-            mm->DistanceYourself(10);
+            mm->MoveDistance(motionTarget, 10);
         else if (cmd == "update")
             mm->UpdateMotion(10);
         else if (cmd == "chase")
@@ -1582,8 +1590,8 @@ bool DebugAction::HandleMotion(Event& event, Player* requester, const std::strin
             mm->MoveFall();
         else if (cmd == "formation")
         {
-            FormationSlotDataSPtr form = std::make_shared<FormationSlotData>(0, bot->GetObjectGuid(), nullptr, SpawnGroupFormationSlotType::SPAWN_GROUP_FORMATION_SLOT_TYPE_STATIC);
-            mm->MoveInFormation(form);
+            mm->MoveFollow(motionTarget, 5.0f, 0.0f);
+            ai->TellPlayer(requester, "Native formation probe uses follow positioning.");
         }
 
         std::string sType = "TODO"; // GetMoveTypeStr(type);
@@ -2286,9 +2294,9 @@ bool DebugAction::HandleQuest(Event& event, Player* requester, const std::string
                 }
                 else if (creature > 0)
                 {
-                    if (CreatureInfo const* cInfo = ObjectMgr::GetCreatureTemplate(creature))
+                    if (CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(creature))
                         for (uint16 z = 0; z < creaturecount; ++z)
-                            bot->KilledMonster(cInfo, nullptr);
+                            bot->KilledMonster(cInfo, ObjectGuid());
                 }
                 else if (creature < 0)
                 {
@@ -2603,12 +2611,12 @@ bool DebugAction::HandlePosition(Event& event, Player* requester, const std::str
         out << "Zone: " << areaId;
         if (area)
         {
-            out << " (" << area->area_name[0] << ")";
+            out << " (" << area->area_name << ")";
             if (area->zone)
             {
                 const AreaTableEntry* zone = GetAreaEntryByAreaID(area->zone);
                 if (zone)
-                    out << " Zone: " << zone->area_name[0];
+                    out << " Zone: " << zone->area_name;
             }
         }
         ai->TellPlayer(requester, out.str());
@@ -2999,7 +3007,7 @@ bool DebugAction::HandlePosition(Event& event, Player* requester, const std::str
                 std::string areaName = "Unknown";
                 if (area)
                 {
-                    areaName = area->area_name[0];
+                    areaName = area->area_name;
                 }
                 
                 std::ostringstream nodeOut;
@@ -3167,7 +3175,7 @@ bool DebugAction::HandlePosition(Event& event, Player* requester, const std::str
         if (const AreaTableEntry* areaEntry = GetAreaEntryByAreaID(area))
         {
             if (AreaTableEntry const* zoneEntry = areaEntry->zone ? GetAreaEntryByAreaID(areaEntry->zone) : areaEntry)
-                out << " |" << zoneEntry->area_name[0] << "|";
+                out << " |" << zoneEntry->area_name << "|";
         }
         ai->TellPlayer(requester, out.str());
         return true;
@@ -3271,13 +3279,13 @@ bool DebugAction::HandleNPC(Event& event, Player* requester, const std::string& 
 
     guidP.printWKT(out);
 
-    out << "[a:" << guidP.GetArea()->area_name[0]; 
+    out << "[a:" << guidP.GetArea()->area_name; 
 
     if (guidP.GetArea() && guidP.getAreaLevel())
         out << " level: " << guidP.getAreaLevel();
     if (guidP.GetArea()->zone && GetAreaEntryByAreaID(guidP.GetArea()->zone))
     {
-        out << " z:" << GetAreaEntryByAreaID(guidP.GetArea()->zone)->area_name[0];
+        out << " z:" << GetAreaEntryByAreaID(guidP.GetArea()->zone)->area_name;
         if (sTravelMgr.GetAreaLevel(guidP.GetArea()->zone))
             out << " level: " << sTravelMgr.GetAreaLevel(guidP.GetArea()->zone);
     }
@@ -3881,7 +3889,7 @@ bool DebugAction::HandlePrintTravel(Event& event, Player* requester, const std::
                 else if (type != typeid(ExploreTravelDestination))
                 {
                     if (((EntryTravelDestination*)dest)->GetCreatureInfo())
-                        out << ((EntryTravelDestination*)dest)->GetCreatureInfo()->Name;
+                        out << ((EntryTravelDestination*)dest)->GetCreatureInfo()->name;
                     else if (((EntryTravelDestination*)dest)->GetGoInfo())
                         out << ((EntryTravelDestination*)dest)->GetGoInfo()->name;
                     else
@@ -4372,7 +4380,8 @@ bool DebugAction::HandleVSpell(Event& event, Player* requester, const std::strin
             WorldPacket data(SMSG_PLAY_SPELL_VISUAL, 8 + 4);        // visual effect on guid
             data << wpCreature->GetObjectGuid();
             data << uint32(spellEffect);                               // index from SpellVisualKit.dbc
-            wpCreature->SendMessageToSet(data, true);                
+            wpCreature->SendMessageToSet(&data, true);
+
         }
     }
     return true;
@@ -5460,21 +5469,22 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
                 if (hitPoints.empty())
                     continue;
 
+                // remote_ip MUST be "disconnected/bot" so PlayerbotAI::IsRealPlayer() returns false.
                 WorldSession* session = new WorldSession(0, NULL, SEC_PLAYER,
 #ifdef MANGOSBOT_TWO
                     2,
                     0,
                     LOCALE_enUS,
-                    "",
+                    "disconnected/bot",
                     0,
                     0,
                     false);
 #endif
 #ifdef MANGOSBOT_ONE
-                    2, 0, LOCALE_enUS, "", 0, 0, false);
+                    2, 0, LOCALE_enUS, "disconnected/bot", 0, 0, false);
 #endif
 #ifdef MANGOSBOT_ZERO
-                    0, LOCALE_enUS, "", 0);
+                    0, LOCALE_enUS, "disconnected/bot", 0);
 #endif
 
                     session->SetNoAnticheat();
@@ -5489,7 +5499,7 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
                         0,
                         0);
                     tempPlayer->AddToWorld();
-                    tempPlayer->SetMap(map.get());
+                    tempPlayer->SetMap(map);
                     tempPlayer->SetTransport(transport);
                     tempPlayer->SetPosition(transPos.getX(), transPos.getY(), transPos.getZ(), 0);
 
@@ -5663,7 +5673,7 @@ bool DebugAction::HandleTransanal(Event& event, Player* requester, const std::st
                     delete session;
             }
 
-            transport->Update(100);
+            transport->Update(100, 100);
 
             transport->UpdatePosition(5000, 5000, 0, 0);
         }
@@ -5779,7 +5789,7 @@ bool DebugAction::HandlePatharound(Event& event, Player* requester, const std::s
         if (bot->GetTransport())
             target.CalculatePassengerOffset(bot->GetTransport());
 
-        PathFinder pathfinder(bot, true);
+        PathFinder pathfinder(bot);
         pathfinder.calculate(botPos.getVector3(), target.getVector3(), false);
 
         if (!(pathfinder.getPathType() & PATHFIND_NORMAL))

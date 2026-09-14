@@ -1,7 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "CommandQuest.h"
-#include "Quests/QuestDef.h"
-#include "Globals/ObjectMgr.h"
+#include "QuestDef.h"
+#include "ObjectMgr.h"
 
 using namespace ai;
 
@@ -43,7 +43,6 @@ TestResult CommandSetupAcceptQuest::Execute(const std::string& params, Player* b
     }
 
     bot->AddQuest(quest, nullptr);
-    bot->GiveQuestSourceItemIfNeed(quest);
 
     if (uint32 sourceItemId = quest->GetSrcItemId())
     {
@@ -130,11 +129,11 @@ TestResult CommandSetupForceCompleteQuest::Execute(const std::string& params, Pl
         }
         else if (creature > 0)
         {
-            CreatureInfo const* cInfo = ObjectMgr::GetCreatureTemplate(creature);
+            CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(creature);
             if (cInfo)
             {
                 for (uint32 z = 0; z < creatureCount; ++z)
-                    bot->KilledMonster(cInfo, nullptr);
+                    bot->KilledMonster(cInfo, ObjectGuid());
             }
         }
         else if (creature < 0)
@@ -225,10 +224,10 @@ TestResult CommandSetupRewardQuest::Execute(const std::string& params, Player* b
         }
         else if (creature > 0)
         {
-            CreatureInfo const* cInfo = ObjectMgr::GetCreatureTemplate(creature);
+            CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(creature);
             if (cInfo)
                 for (uint32 z = 0; z < creatureCount; ++z)
-                    bot->KilledMonster(cInfo, nullptr);
+                    bot->KilledMonster(cInfo, ObjectGuid());
         }
         else if (creature < 0)
         {

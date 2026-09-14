@@ -24,7 +24,7 @@ private:
 
     ACTION_NODE_A(death_wish, "death wish", "bloodrage");
 
-    ACTION_NODE_A(piercing_howl, "piercing howl", "hamstring");
+    ACTION_NODE_A(piercing_howl, "piercing howl", "mocking blow");
 
     ACTION_NODE_A(mocking_blow, "mocking blow", "hamstring");
 
@@ -68,10 +68,6 @@ void ArmsWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "overpower",
         NextAction::array(0, new NextAction("overpower", ACTION_HIGH), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "sunder armor",
-        NextAction::array(0, new NextAction("sunder armor", ACTION_HIGH + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "mortal strike",
@@ -420,10 +416,6 @@ void ArmsWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("execute", ACTION_HIGH + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "sunder armor",
-        NextAction::array(0, new NextAction("sunder armor", ACTION_HIGH + 2), NULL)));
-
-    triggers.push_back(new TriggerNode(
         "overpower",
         NextAction::array(0, new NextAction("overpower", ACTION_HIGH), NULL)));
 
@@ -762,10 +754,6 @@ void ArmsWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "sudden death",
         NextAction::array(0, new NextAction("execute", ACTION_HIGH + 1), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "sunder armor",
-        NextAction::array(0, new NextAction("sunder armor", ACTION_HIGH + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "overpower",

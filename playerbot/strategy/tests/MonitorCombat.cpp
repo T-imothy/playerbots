@@ -1,8 +1,8 @@
 #include "playerbot/playerbot.h"
 #include "MonitorCombat.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -63,10 +63,10 @@ bool MonitorCombatMob::IsConditionMet(const std::string& monitorStr, Player* bot
     // Also check map store if not found nearby
     if (!found)
     {
-        auto& objectStore = bot->GetMap()->GetObjectsStore();
-        for (auto itr = objectStore.begin<Creature>(); itr != objectStore.end<Creature>(); ++itr)
+        auto objectStore = bot->GetMap()->GetCreatureSnapshot();
+        for (Creature* storedCreature : objectStore)
         {
-            if (Creature* c = itr->second)
+            if (Creature* c = storedCreature)
             {
                 if (c->GetEntry() == entryId)
                 {

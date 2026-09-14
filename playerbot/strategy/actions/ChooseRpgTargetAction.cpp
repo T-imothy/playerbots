@@ -32,7 +32,7 @@ bool ChooseRpgTargetAction::HasSameTarget(ObjectGuid guid, uint32 max, std::list
         if (!ai->IsSafe(player))
             continue;
 
-        PlayerbotAI* ai = player->GetPlayerbotAI();
+        PlayerbotAI* ai = GetBotAI(player);
 
         if (!ai)
             continue;
@@ -57,7 +57,7 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
     focusQuestTravelList focusList = AI_VALUE(focusQuestTravelList, "focus travel target");
 
     GuidPosition masterRpgTarget;
-    if (requester && ai->IsSafe(requester) && requester->GetPlayerbotAI())
+    if (requester && ai->IsSafe(requester) && GetBotAI(requester))
     {
         Player* player = requester;
         masterRpgTarget = PAI_VALUE(GuidPosition, "rpg target");
@@ -81,7 +81,7 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
             Player* other = sObjectMgr.GetPlayer(playerGuid);
             if (!other || other == bot || !ai->IsSafe(other))
                 continue;
-            PlayerbotAI* otherAI = other->GetPlayerbotAI();
+            PlayerbotAI* otherAI = GetBotAI(other);
             if (!otherAI)
                 continue;
             GuidPosition occupied = otherAI->GetAiObjectContext()->GetValue<GuidPosition>("rpg target")->Get();
@@ -203,7 +203,7 @@ std::unordered_map<ObjectGuid, float> ChooseRpgTargetAction::GetTargets(Player* 
             if (!ai->IsSafe(player))
                 SkipRpgTarget("Player is not safe.");
 
-            if (player->GetPlayerbotAI())
+            if (GetBotAI(player))
             {
                 GuidPosition guidPP = PAI_VALUE(GuidPosition, "rpg target");
 
@@ -384,7 +384,7 @@ bool ChooseRpgTargetAction::Execute(Event& event)
         return false;
 
     GuidPosition masterRpgTarget;
-    if (requester && ai->IsSafe(requester) && requester->GetPlayerbotAI())
+    if (requester && ai->IsSafe(requester) && GetBotAI(requester))
     {
         Player* player = requester;
         masterRpgTarget = PAI_VALUE(GuidPosition, "rpg target");

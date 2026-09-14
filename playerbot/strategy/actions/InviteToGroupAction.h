@@ -6,6 +6,7 @@ namespace ai
     class InviteToGroupAction : public ChatCommandAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         InviteToGroupAction(PlayerbotAI* ai, std::string name = "invite") : ChatCommandAction(ai, name) {}
 
         virtual bool Execute(Event& event) override
@@ -34,6 +35,7 @@ namespace ai
     class JoinGroupAction : public InviteToGroupAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         JoinGroupAction(PlayerbotAI* ai, std::string name = "join") : InviteToGroupAction(ai, name) {}
         virtual bool Execute(Event& event) override;
         virtual bool isUsefulWhenStunned() override { return true; }
@@ -42,6 +44,7 @@ namespace ai
     class LfgAction : public InviteToGroupAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         LfgAction(PlayerbotAI* ai, std::string name = "lfg") : InviteToGroupAction(ai, name) {}
 
         static std::unordered_map<uint8, std::unordered_map<BotRoles, uint32>> AllowedClassRoleNr(uint8 groupSize = 5);
@@ -54,6 +57,7 @@ namespace ai
     class InviteNearbyToGroupAction : public InviteToGroupAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         InviteNearbyToGroupAction(PlayerbotAI* ai, std::string name = "invite nearby") : InviteToGroupAction(ai, name) {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
@@ -75,6 +79,7 @@ namespace ai
     class InviteGuildToGroupAction : public InviteNearbyToGroupAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         InviteGuildToGroupAction(PlayerbotAI* ai, std::string name = "invite guild") : InviteNearbyToGroupAction(ai, name) {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override { return bot->GetGuildId() && InviteNearbyToGroupAction::isUseful(); };

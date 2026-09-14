@@ -1,3 +1,4 @@
+#include "playerbot/WorldActions.h"
 
 #include "playerbot/playerbot.h"
 
@@ -60,8 +61,19 @@ bool ReactionEngine::FindReaction(bool isStunned)
             {
                 const bool skipReactionPrerequisites = reactionItem->isSkipPrerequisites();
                 float reactionRelevance = reactionItem->getRelevance();
-                const Event& reactionEvent = reactionItem->getEvent();
+                Event reactionEvent = reactionItem->getEvent();
 
+                if (WorldActions::IsMapExecution())
+                {
+                    Action* candidate = InitializeAction(reactionItem->getAction());
+                    if (candidate && candidate->RequiresWorldOwner())
+                    {
+                        ScheduleWorldContinuation(reactionEvent, [](Engine& engine) {
+                            static_cast<ReactionEngine&>(engine).ai->UpdateAIReaction(0, false, static_cast<ReactionEngine&>(engine).ai->GetBot()->IsTaxiFlying());
+                        });
+                        break;
+                    }
+                }
                 // Extract the reaction from the queue (removed)
                 ActionNode* reactionNode = queue.Pop(reactionItem);
                 if (reactionNode)
@@ -178,6 +190,15 @@ void ReactionEngine::StopReaction()
 
 bool ReactionEngine::Update(uint32 elapsed, bool minimal, bool isStunned, bool& reactionFound)
 {
+    reactionFound = false;
+    if (WorldContinuationPending()) return true;
+    if (HasIncomingReaction() && incomingReaction.GetAction()->RequiresWorldOwner() && WorldActions::IsMapExecution())
+    {
+        ScheduleWorldContinuation(incomingReaction.GetEvent(), [minimal](Engine& engine) {
+            static_cast<ReactionEngine&>(engine).ai->UpdateAIReaction(0, minimal, static_cast<ReactionEngine&>(engine).ai->GetBot()->IsTaxiFlying());
+        });
+        return true;
+    }
     aiReactionUpdateDelay = aiReactionUpdateDelay > elapsed ? aiReactionUpdateDelay - elapsed : 0U;
 
     reactionFound = false;
@@ -215,7 +236,7 @@ bool ReactionEngine::Update(uint32 elapsed, bool minimal, bool isStunned, bool& 
         }
 
         // Only add a reaction update delay if no reaction is pending or currently running
-        if (!HasIncomingReaction() && !IsReacting())
+        if (!HasIncomingReaction() && !IsReacting() && !WorldContinuationPending())
         {
             if (aiReactionUpdateDelay < sPlayerbotAIConfig.reactDelay)
                 aiReactionUpdateDelay = minimal ? sPlayerbotAIConfig.reactDelay * 10 : sPlayerbotAIConfig.reactDelay;
@@ -228,6 +249,7 @@ bool ReactionEngine::Update(uint32 elapsed, bool minimal, bool isStunned, bool& 
 
 bool ReactionEngine::ListenAndExecute(Action* action, Event& event)
 {
+    if (action->RequiresWorldOwner() && WorldActions::IsMapExecution()) return false;
     if (!event.IsOwnerAvailable())
         return false;
 
@@ -306,6 +328,11 @@ void ReactionEngine::SetReactionDuration(const Action* action)
 
 void ReactionEngine::Reset()
 {
+    // Cancel the selected world continuation as well as the visible reaction.
+    // Do not destroy the strategy trigger list when merely interrupting a reaction.
+    worldContinuationEpoch = std::make_shared<int>(0);
+    pendingWorldDecision.reset();
+    decisionPrepared = false;
     ongoingReaction.Reset();
     incomingReaction.Reset();
     aiReactionUpdateDelay = 0U;

@@ -115,7 +115,7 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
         std::set<Unit*> units;
 
         // If the player is a bot
-        PlayerbotAI* playerBot = player->GetPlayerbotAI();
+        PlayerbotAI* playerBot = GetBotAI(player);
         if (playerBot)
         {
             // Get all the units around the player
@@ -123,7 +123,7 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
             const std::string ignoreValidate = std::to_string(true);
             const std::string range = std::to_string((int32)GetRange());
             const std::vector<std::string> qualifiers = { range, ignoreValidate };
-            const std::list<ObjectGuid> possibleTargets = PAI_VALUE2(std::list<ObjectGuid>, "possible targets no los", Qualified::MultiQualify(qualifiers, ":"));
+            const std::list<ObjectGuid> possibleTargets = PAI_VALUE2(std::list<ObjectGuid>, "possible targets", Qualified::MultiQualify(qualifiers, ":"));
             for (const ObjectGuid& guid : possibleTargets)
             {
                 if (Unit* unit = ai->GetUnit(guid))
@@ -170,9 +170,11 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
         }
 
         // Add the duel opponent (Only consider the owner bot)
-        if (bot == player && bot->duel && bot->duel->opponent)
+        if (bot == player && bot->m_duel && bot->m_duel->opponent)
         {
-            units.insert(bot->duel->opponent);
+            // Penqle's DuelInfo::opponent is an ObjectGuid; resolve to Unit*.
+            if (Unit* opp = ObjectAccessor::GetUnit(*bot, bot->m_duel->opponent))
+                units.insert(opp);
         }
 
         // Add the pet attackers (if nearby)
@@ -237,7 +239,7 @@ bool AttackersValue::InCombat(Unit* target, Player* player, bool checkPullTarget
         }
     }
 
-    if(!inCombat && checkPullTargets && player->GetPlayerbotAI())
+    if(!inCombat && checkPullTargets && GetBotAI(player))
     {
         inCombat = (PAI_VALUE(ObjectGuid, "attack target") == target->GetObjectGuid()) ||
                    (PAI_VALUE(Unit*, "pull target") == target);
@@ -264,7 +266,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
     if (enemyPlayer)
     {
         // Don't consider enemy players if pvp strategy is not set
-        if (playerToCheckAgainst->GetPlayerbotAI() && !playerToCheckAgainst->GetPlayerbotAI()->HasStrategy("pvp", BotState::BOT_STATE_COMBAT))
+        if (GetBotAI(playerToCheckAgainst) && !GetBotAI(playerToCheckAgainst)->HasStrategy("pvp", BotState::BOT_STATE_COMBAT))
         {
             return false;
         }
@@ -275,8 +277,10 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
             return false;
         }
 
+        const bool isDuelOpponent = player->m_duel && player->m_duel->opponent == target->GetObjectGuid();
+
         // Don't check distance on duel opponents
-        if (!player->duel || (player->duel && (player->duel->opponent != target)))
+        if (!isDuelOpponent)
         {
             // If the enemy player is not within sight distance
             if (!enemyPlayer->IsWithinDist(playerToCheckAgainst, EnemyPlayerValue::GetMaxAttackDistance(playerToCheckAgainst), false))
@@ -284,15 +288,45 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
                 return false;
             }
         }
+
+        // Unlike the NPC branch below, this had no actual-combat check at all: a stale
+        // "current target"/"old target" reference to a player who stopped fighting long ago
+        // (or was never fighting to begin with) stayed "valid" forever just by being nearby
+        // and PvP-flagged, keeping "has attackers" true and the bot latched into combat
+        // state with nothing to do (see AttackersValue::AddTargetsOf and InCombat()).
+        if (checkInCombat && !isDuelOpponent && !InCombat(target, player, (player == owner)))
+        {
+            bool isRtiTarget = false;
+            if (GetBotAI(player) && !GetBotAI(player)->HasActivePlayerMaster())
+            {
+                Unit* rtiTarget = PAI_VALUE(Unit*, "rti target");
+                if (target == rtiTarget)
+                    isRtiTarget = true;
+            }
+
+            if (!isRtiTarget)
+                return false;
+        }
     }
     // If the target is a NPC
     else
     {
+        // Some callers (GrindTargetValue::FindTargetForGrinding, PullRequestAction)
+        // pass validatePossibleTarget=false to reuse this function purely for its
+        // combat/evade checks, which skips the friendliness gate above entirely.
+        // Re-check here so a friendly NPC referenced by a stale "current target"/
+        // "attack target"/"pull target" (the same staleness this function already
+        // guards against for players, above) is never treated as a valid attacker.
+        if (sServerFacade.IsFriendlyTo(playerToCheckAgainst, target))
+        {
+            return false;
+        }
+
         // If the target is not fighting the player (and if the owner bot is not pulling the target)
         if (checkInCombat && !InCombat(target, player, (player == owner)))
         {
             bool isRtiTarget = false;
-            if (player->GetPlayerbotAI() && !player->GetPlayerbotAI()->HasActivePlayerMaster())
+            if (GetBotAI(player) && !GetBotAI(player)->HasActivePlayerMaster())
             {
                 Unit* rtiTarget = PAI_VALUE(Unit*, "rti target");
                 if (target == rtiTarget)
@@ -328,10 +362,10 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
 
 bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
 {
-    if (!playerToCheckAgainst->GetPlayerbotAI())
+    if (!GetBotAI(playerToCheckAgainst))
         return false; 
 
-    PlayerbotAI* ai = playerToCheckAgainst->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(playerToCheckAgainst);
     AiObjectContext* context = ai->GetAiObjectContext();
 
     //Ignore Hard hostiles while not already fighting.
@@ -377,9 +411,15 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
 #define TRAINING_DUMMY_NPC_ENTRY3 190015
 #define THERAMORE_COMBAT_DUMMY 4952
 #define NAXXRAMAS_COMBAT_DUMMY 16211
-#ifdef MANGOSBOT_TWO  
+#ifdef MANGOSBOT_TWO
 #define INITATES_TRAINING_DUMMY 32541
 #endif
+// This server's custom capital-city training dummies (custom_npc_training_dummy,
+// sql/base/tw_world_creature_template.sql) - previously unrecognized here, which let
+// bots latch onto them permanently since their 1,000,000 HP never dies.
+#define HEROIC_TRAINING_DUMMY 50514
+#define APPRENTICE_TRAINING_DUMMY 50515
+#define EXPERT_TRAINING_DUMMY 50516
 
         switch (entry)
         {
@@ -388,9 +428,12 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
         case TRAINING_DUMMY_NPC_ENTRY3:
         case THERAMORE_COMBAT_DUMMY:
         case NAXXRAMAS_COMBAT_DUMMY:
-#ifdef MANGOSBOT_TWO     
+#ifdef MANGOSBOT_TWO
         case INITATES_TRAINING_DUMMY:
 #endif
+        case HEROIC_TRAINING_DUMMY:
+        case APPRENTICE_TRAINING_DUMMY:
+        case EXPERT_TRAINING_DUMMY:
             isDummy = true;
         }
 

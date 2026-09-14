@@ -2,9 +2,9 @@
 #include "playerbot/playerbot.h"
 #include "NearestNonBotPlayersValue.h"
 
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 using namespace MaNGOS;
@@ -20,9 +20,9 @@ bool NearestNonBotPlayersValue::AcceptUnit(Unit* unit)
 {
     ObjectGuid guid = unit->GetObjectGuid();
 #ifdef MANGOS
-    return guid.IsPlayer() && !((Player*)unit)->GetPlayerbotAI() && (!((Player*)unit)->isGameMaster() || ((Player*)unit)->isGMVisible());
+    return guid.IsPlayer() && !GetBotAI(((Player*)unit)) && (!((Player*)unit)->isGameMaster() || ((Player*)unit)->isGMVisible());
 #endif
 #ifdef CMANGOS
-    return guid.IsPlayer() && !((Player*)unit)->GetPlayerbotAI() && (!((Player*)unit)->IsGameMaster() || ((Player*)unit)->isGMVisible());
+    return guid.IsPlayer() && !GetBotAI(((Player*)unit)) && (!((Player*)unit)->IsGameMaster() || ((Player*)unit)->isGMVisible());
 #endif
 }

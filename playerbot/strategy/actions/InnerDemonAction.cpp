@@ -1,3 +1,4 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "DungeonActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -30,7 +31,7 @@ Unit* InnerDemonAction::GetDemon(PlayerbotAI* ai)
     {
         Unit* demon = ai->GetUnit(guid);
         if (!demon || demon->GetEntry() != 21857 || !demon->IsInWorld() || !demon->IsAlive() ||
-            !bot->IsInMap(demon) || demon->HasCharmer() || demon->GetSpawnerGuid() != bot->GetObjectGuid() ||
+            !bot->IsInMap(demon) || demon->HasCharmer() || ai::NativeSpawnerGuid(demon) != bot->GetObjectGuid() ||
             demon->GetUInt32Value(UNIT_CREATED_BY_SPELL) != 37735 || demon->GetVictim() != bot ||
             !PossibleTargetsValue::IsValid(demon, bot, false) ||
             !PossibleAttackTargetsValue::IsPossibleTarget(demon, bot, sPlayerbotAIConfig.sightDistance, false) ||

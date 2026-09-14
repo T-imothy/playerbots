@@ -1,3 +1,4 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -12,7 +13,7 @@ Player* ai::NajentusSpineVictim(PlayerbotAI* ai, GameObject* spine)
         !spine->IsInWorld() || !bot->IsInMap(spine) || !spine->IsSpawned() || spine->GetEntry() != 185584 ||
         spine->GetSpellId() != 39929 || spine->GetLootState() != GO_READY ||
         spine->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT | GO_FLAG_IN_USE)) return nullptr;
-    Unit* source = ai->GetUnit(spine->GetSpawnerGuid());
+    Unit* source = ai->GetUnit(ai::NativeSpawnerGuid(spine));
     if (!source || !source->IsPlayer() || !source->IsInWorld() || !source->IsAlive() ||
         !bot->IsInMap(source) || source->HasCharmer()) return nullptr;
     Player* victim = static_cast<Player*>(source);
@@ -40,9 +41,9 @@ Player* ai::NajentusSpineUser(PlayerbotAI* ai, GameObject* spine)
         if (!member || !member->IsInWorld() || !member->IsAlive() || !bot->IsInMap(member) ||
             member->GetGroup() != bot->GetGroup() || member->IsBeingTeleported() || member->HasCharmer() ||
             member == boss->GetVictim() || ai->IsTank(member) || member->HasAura(39837) ||
-            member->GetDistance(spine) > 50 || !member->GetPlayerbotAI() ||
-            member->GetPlayerbotAI()->IsRealPlayer() || !member->GetPlayerbotAI()->CanMove() ||
-            !member->GetPlayerbotAI()->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT)) continue;
+            member->GetDistance(spine) > 50 || !GetBotAI(member) ||
+            GetBotAI(member)->IsRealPlayer() || !GetBotAI(member)->CanMove() ||
+            !GetBotAI(member)->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT)) continue;
         ItemPosCountVec destination;
         if (member->CanStoreNewItem(NULL_BAG, NULL_SLOT, destination, 32408, 1) != EQUIP_ERR_OK) continue;
         // Prefer a DPS so the rescue does not occupy the raid's healers.

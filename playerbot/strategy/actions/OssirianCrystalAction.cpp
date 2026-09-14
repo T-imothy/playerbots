@@ -49,7 +49,7 @@ bool OssirianCrystalAction::Execute(Event& event)
     Unit* trigger = FindOssirianCrystalTrigger(bot, crystal);
     const bool inRange = crystal &&
 #ifdef MANGOSBOT_ZERO
-        crystal->IsWithinDistInMap(bot, crystal->GetInteractionDistance());
+        crystal->IsAtInteractDistance(bot);
 #else
         crystal->IsAtInteractDistance(bot);
 #endif

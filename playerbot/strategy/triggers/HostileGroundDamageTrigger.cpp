@@ -3,10 +3,10 @@
 #include "DungeonTriggers.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/values/HazardsValue.h"
-#include "Entities/DynamicObject.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Objects/DynamicObject.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -15,6 +15,20 @@ namespace
     struct HostileDamageAreaCheck
     {
         Player* bot;
+        bool Eligible(DynamicObject* area, SpellEntry const* spell) const
+        {
+            WorldObject* caster = area->GetCaster();
+            if (!caster || !bot->CanSeeInWorld(caster) || !caster->IsValidAttackTarget(bot) ||
+                bot->IsTaxiFlying() || bot->IsGameMaster() || bot->GetVisibility() == VISIBILITY_OFF ||
+                bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SPAWNING | UNIT_FLAG_NOT_SELECTABLE)) return false;
+            if (area->GetCasterGuid().IsPlayer() &&
+                (bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PLAYER) || !area->IsWithinLOSInMap(bot))) return false;
+            if (Unit* unit = caster->ToUnit())
+                if (Player* attacker = unit->GetCharmerOrOwnerPlayerOrPlayerItself())
+                    if (!attacker->IsPvP() && !(attacker->IsFFAPvP() && bot->IsFFAPvP()) && !attacker->IsInDuelWith(bot)) return false;
+            return !bot->IsImmuneToSpell(spell, false) && !bot->IsImmuneToSpellEffect(spell, area->GetEffIndex(), false);
+        }
+
         WorldObject const& GetFocusObject() const { return *bot; }
         bool operator()(WorldObject* object) const
         {
@@ -64,8 +78,19 @@ namespace
             }
 #endif
             return (triggeredDamage || delayedDamage || aura == SPELL_AURA_PERIODIC_DAMAGE || aura == SPELL_AURA_PERIODIC_DAMAGE_PERCENT ||
-                aura == SPELL_AURA_PERIODIC_LEECH) && area->CanAttackSpell(bot, spell, true);
+                aura == SPELL_AURA_PERIODIC_LEECH) && Eligible(area, spell);
         }
+    };
+    struct DamageAreaSearcher
+    {
+        std::list<DynamicObject*>& areas;
+        HostileDamageAreaCheck& check;
+        void Visit(DynamicObjectMapType& objects)
+        {
+            for (auto& reference : objects)
+                if (check(reference.getSource())) areas.push_back(reference.getSource());
+        }
+        template<class T> void Visit(GridRefManager<T>&) {}
     };
 }
 
@@ -73,9 +98,9 @@ bool HostileGroundDamageTrigger::IsActive()
 {
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || !bot->IsInCombat() ||
         !bot->GetMap()->IsDungeon()) return false;
-    WorldObjectList areas;
+    std::list<DynamicObject*> areas;
     HostileDamageAreaCheck check{bot};
-    MaNGOS::WorldObjectListSearcher<HostileDamageAreaCheck> searcher(areas, check);
+    DamageAreaSearcher searcher{areas, check};
     Cell::VisitAllObjects(bot, searcher, 30.0f);
     bool inside = false;
     for (WorldObject* object : areas)

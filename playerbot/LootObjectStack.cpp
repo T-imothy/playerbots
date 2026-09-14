@@ -58,16 +58,40 @@ void LootObject::Refresh(Player* bot, ObjectGuid guid, bool debug)
     reqItem = 0;
     this->guid = ObjectGuid();
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     Creature* creature = ai->GetCreature(guid);
     if (creature && sServerFacade.GetDeathState(creature) == CORPSE)
     {
         if (creature->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
         {
-            if (debug)
-                ai->TellDebug(ai->GetMaster(), "Creature flag lootable.", "debug loot");
+            // The lootable flag is set group-wide on a tapped corpse, so it alone does not mean
+            // this bot may loot it. Require tap rights, otherwise the bot walks to and kneels on
+            // corpses whose loot belongs to someone else (e.g. the master's round-robin kill).
+            if (creature->IsTappedBy(bot))
+            {
+                if (debug)
+                    ai->TellDebug(ai->GetMaster(), "Creature flag lootable.", "debug loot");
 
-            this->guid = guid;
+                this->guid = guid;
+            }
+            else if (debug)
+            {
+                ai->TellDebug(ai->GetMaster(), "Creature lootable but not tapped by bot.", "debug loot");
+            }
+        }
+
+        // Loot the normal loot first, skin afterwards. A corpse that is both
+        // lootable and skinnable used to have skillId overwritten to SKINNING
+        // below, so IsLootPossible rejected the whole corpse for "not enough
+        // skill" and the bot never took the normal loot it was tapped for
+        // (Prairie Wolf etc.). If we are tapped for normal loot, take it now
+        // with skillId left at SKILL_NONE; the corpse keeps its SKINNABLE flag
+        // and, once the loot is gone (LOOTABLE clears), a later Refresh falls
+        // through to the skinning branch below - so a skinner loots, then skins.
+        if (!this->guid.IsEmpty())
+        {
+            skillId = SKILL_NONE;
+            return;
         }
 
         if (creature->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SKINNABLE))
@@ -198,7 +222,7 @@ WorldObject* LootObject::GetWorldObject(Player* bot)
 {
     Refresh(bot, guid);
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
 
     Creature *creature = ai->GetCreature(guid);
     if (creature && sServerFacade.GetDeathState(creature) == CORPSE)
@@ -224,7 +248,7 @@ bool LootObject::IsLootPossible(Player* bot)
     if (IsEmpty() || !GetWorldObject(bot))
         return false;
 
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
 
     if (reqItem && !bot->HasItemCount(reqItem, 1))
         return false;
@@ -355,7 +379,11 @@ LootObject LootObjectStack::GetLoot(float maxDistance)
 
 std::vector<LootObject> LootObjectStack::OrderByDistance(float maxDistance)
 {
+    size_t beforeShrink = availableLoot.size();
     availableLoot.shrink(time(0) - 30);
+    if (availableLoot.size() < beforeShrink)
+        sLog.outDebug("[BOT LOOT] %s: loot stack expired %zu corpse(s) (>30s old, dropped before looting)",
+            bot->GetName(), beforeShrink - availableLoot.size());
 
     std::map<float, LootObject> sortedMap;
     LootTargetList safeCopy(availableLoot);

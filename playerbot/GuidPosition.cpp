@@ -3,8 +3,8 @@
 #include <iomanip>
 #include <regex>
 
-#include "GameEvents/GameEventMgr.h"
-#include "Globals/ObjectAccessor.h"
+#include "GameEventMgr.h"
+#include "ObjectAccessor.h"
 #include "PlayerbotAI.h"
 
 using namespace ai;

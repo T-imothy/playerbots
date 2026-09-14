@@ -1,9 +1,10 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 #include "HazardsValue.h"
 #include "playerbot/ServerFacade.h"
 #include "Spells/SpellMgr.h"
@@ -94,7 +95,7 @@ EncounterPosition NetherspitePositionValue::Calculate()
         Cell::VisitAllObjects(bot, searcher, 100.0f);
         for (Unit* portal : nearby)
             if (portal && portal->IsInWorld() && bot->IsInMap(portal) && portal->IsAlive() &&
-                portal->GetSpawnerGuid() == boss->GetObjectGuid())
+                ai::NativeSpawnerGuid(portal) == boss->GetObjectGuid())
             {
                 portals[color] = portal;
                 portalPoints[color] = {portal->GetPositionX(), portal->GetPositionY(), portal->GetPositionZ()};
@@ -113,7 +114,7 @@ EncounterPosition NetherspitePositionValue::Calculate()
             player->GetDistance(boss) > 100 || player->HasCharmer()) continue;
         encounter::BeamMember member;
         member.guid = player->GetObjectGuid().GetRawValue();
-        member.human = !player->GetPlayerbotAI() || player->GetPlayerbotAI()->IsRealPlayer();
+        member.human = !GetBotAI(player) || GetBotAI(player)->IsRealPlayer();
         member.tank = ai->IsTank(player);
         member.healer = ai->IsHeal(player);
         member.caster = ai->IsRanged(player) && !member.healer && player->getClass() != CLASS_HUNTER;

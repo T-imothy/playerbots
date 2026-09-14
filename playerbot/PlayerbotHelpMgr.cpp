@@ -806,16 +806,17 @@ void PlayerbotHelpMgr::GenerateHelp()
 {
     coverageMap.clear();
 
+    // remote_ip MUST be "disconnected/bot" so PlayerbotAI::IsRealPlayer() returns false.
     WorldSession* session = new WorldSession(0, NULL, SEC_PLAYER,
 
 #ifdef MANGOSBOT_TWO
-        2, 0, LOCALE_enUS, "", 0, 0, false);
+        2, 0, LOCALE_enUS, "disconnected/bot", 0, 0, false);
 #endif
 #ifdef MANGOSBOT_ONE
-    2, 0, LOCALE_enUS, "", 0, 0, false);
+    2, 0, LOCALE_enUS, "disconnected/bot", 0, 0, false);
 #endif
 #ifdef MANGOSBOT_ZERO
-    0, LOCALE_enUS, "", 0);
+    0, LOCALE_enUS, "disconnected/bot", 0);
 #endif
 
     session->SetNoAnticheat();

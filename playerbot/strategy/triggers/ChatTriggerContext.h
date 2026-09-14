@@ -10,6 +10,7 @@ namespace ai
         ChatTriggerContext()
         {
             creators["quests"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "quests"); };
+            creators["avoid creature"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "avoid creature"); };
             creators["quest reward"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "quest reward"); };
             creators["stats"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "stats"); };
             creators["status"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "status"); };
@@ -24,10 +25,10 @@ namespace ai
             creators["q"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "q"); };
             creators["ll"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "ll"); };
             creators["ss"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "ss"); };
-            creators["avoid creature"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "avoid creature"); };
             creators["loot"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "add all loot"); };
             creators["add all loot"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "add all loot"); };
             creators["release"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "release"); };
+            creators["corpse run"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "corpse run"); };
             creators["teleport"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "teleport"); };
             creators["taxi"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "taxi"); };
             creators["repair"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "repair"); };

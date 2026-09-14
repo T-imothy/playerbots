@@ -3,6 +3,7 @@
 #include "CustomStrategy.h"
 #include "generic/NonCombatStrategy.h"
 #include "generic/RacialsStrategy.h"
+#include "generic/TurtleClassStrategy.h"
 #include "generic/ChatCommandHandlerStrategy.h"
 #include "generic/WorldPacketHandlerStrategy.h"
 #include "generic/DeadStrategy.h"
@@ -56,7 +57,6 @@
 #include "generic/BlackwingLairDungeonStrategies.h"
 #include "generic/KarazhanDungeonStrategies.h"
 #include "generic/NaxxramasDungeonStrategies.h"
-#include "generic/MechanarDungeonStrategies.h"
 
 namespace ai
 {
@@ -65,6 +65,7 @@ namespace ai
     public:
         StrategyContext()
         {
+            creators["turtle classes"] = [](PlayerbotAI* ai) { return new TurtleClassStrategy(ai); };
             creators["racials"] = [](PlayerbotAI* ai) { return new RacialsStrategy(ai); };
             creators["loot"] = [](PlayerbotAI* ai) { return new LootNonCombatStrategy(ai); };
             creators["gather"] = [](PlayerbotAI* ai) { return new GatherStrategy(ai); };
@@ -100,7 +101,6 @@ namespace ai
             creators["rpg explore"] = [](PlayerbotAI* ai) { return new RpgExploreStrategy(ai); };
             creators["rpg maintenance"] = [](PlayerbotAI* ai) { return new RpgMaintenanceStrategy(ai); };
             creators["rpg guild"] = [](PlayerbotAI* ai) { return new RpgGuildStrategy(ai); };
-            creators["rpg bank"] = [](PlayerbotAI* ai) { return new RpgBankStrategy(ai); };
             creators["rpg bg"] = [](PlayerbotAI* ai) { return new RpgBgStrategy(ai); };
             creators["rpg player"] = [](PlayerbotAI* ai) { return new RpgPlayerStrategy(ai); };
             creators["rpg craft"] = [](PlayerbotAI* ai) { return new RpgCraftStrategy(ai); };
@@ -120,6 +120,9 @@ namespace ai
             creators["behind"] = [](PlayerbotAI* ai) { return new SetBehindCombatStrategy(ai); };
             creators["bg"] = [](PlayerbotAI* ai) { return new BGStrategy(ai); };
             creators["battleground"] = [](PlayerbotAI* ai) { return new BattlegroundStrategy(ai); };
+#ifdef MANGOSBOT_ZERO
+            creators["thorn gorge"] = [](PlayerbotAI* ai) { return new ThornGorgeStrategy(ai); };
+#endif
             creators["warsong"] = [](PlayerbotAI* ai) { return new WarsongStrategy(ai); };
             creators["alterac"] = [](PlayerbotAI* ai) { return new AlteracStrategy(ai); };
             creators["arathi"] = [](PlayerbotAI* ai) { return new ArathiStrategy(ai); };
@@ -151,7 +154,6 @@ namespace ai
             creators["guild"] = [](PlayerbotAI* ai) { return new GuildStrategy(ai); };
             creators["grind"] = [](PlayerbotAI* ai) { return new GrindingStrategy(ai); };
             creators["avoid aoe"] = [](PlayerbotAI* ai) { return new AvoidAoeStrategy(ai); };
-            creators["avoid specific creatures"] = [](PlayerbotAI* ai) { return new AvoidSpecificCreaturesStrategy(ai); };
             creators["wait for attack"] = [](PlayerbotAI* ai) { return new WaitForAttackStrategy(ai); };
             creators["pull back"] = [](PlayerbotAI* ai) { return new PullBackStrategy(ai); };
             creators["focus heal targets"] = [](PlayerbotAI* ai) { return new FocusHealTargetsStrategy(ai); };
@@ -167,12 +169,12 @@ namespace ai
 
             // Dungeon Strategies
             creators["dungeon"] = [](PlayerbotAI* ai) { return new DungeonStrategy(ai); };
+            creators["avoid specific creatures"] = [](PlayerbotAI* ai) { return new AvoidSpecificCreaturesStrategy(ai); };
             creators["onyxia's lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairDungeonStrategy(ai); };
             creators["molten core"] = [](PlayerbotAI* ai) { return new MoltenCoreDungeonStrategy(ai); };
             creators["blackwing lair"] = [](PlayerbotAI* ai) { return new BlackwingLairDungeonStrategy(ai); };
             creators["karazhan"] = [](PlayerbotAI* ai) { return new KarazhanDungeonStrategy(ai); };
             creators["naxxramas"] = [](PlayerbotAI* ai) { return new NaxxramasDungeonStrategy(ai); };
-            creators["mechanar"] = [](PlayerbotAI* ai) { return new MechanarDungeonStrategy(ai); };
 
             // Dungeon Boss Strategies
             creators["onyxia"] = [](PlayerbotAI* ai) { return new OnyxiaFightStrategy(ai); };
@@ -181,7 +183,6 @@ namespace ai
             creators["netherspite"] = [](PlayerbotAI* ai) { return new NetherspiteFightStrategy(ai); };
             creators["prince malchezaar"] = [](PlayerbotAI* ai) { return new PrinceMalchezaarFightStrategy(ai); };
             creators["four horseman"] = [](PlayerbotAI* ai) { return new FourHorsemanFightStrategy(ai); };
-            creators["nethermancer sepethrea"] = [](PlayerbotAI* ai) { return new NethermancerSepethreaFightStrategy(ai); };
 
 #ifdef GenerateBotTests
             creators["test"] = [](PlayerbotAI* ai) { return new TestStrategy(ai); };

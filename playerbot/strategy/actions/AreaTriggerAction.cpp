@@ -10,7 +10,7 @@ bool ReachAreaTriggerAction::Execute(Event& event)
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     uint32 triggerId;
 
-    if (ai->IsRealPlayer()) //Do not trigger own area trigger.
+    if (ai->IsRealPlayer() || ai->IsAreaTriggerRelaySuppressed()) // Respect Turtle dungeon exit control.
         return false;
 
     WorldPacket p(event.getPacket());
@@ -70,7 +70,7 @@ bool ReachAreaTriggerAction::Execute(Event& event)
     PointsArray portalPath = path.getPath();
     Vector3 const pathEnd = path.getActualEndPosition();
     bool const safePath = !(pathType & (PATHFIND_NOPATH | PATHFIND_SHORTCUT |
-        PATHFIND_NOT_USING_PATH | PATHFIND_SHORT)) && portalPath.size() >= 2 &&
+        PATHFIND_NOT_USING_PATH)) && portalPath.size() >= 2 &&
         ::IsPointInAreaTriggerZone(atEntry, mapId, pathEnd.x, pathEnd.y, pathEnd.z, 0.5f) &&
         ai->IsTransitionContextCurrent(generation, mapId, instanceId);
 
@@ -87,11 +87,7 @@ bool ReachAreaTriggerAction::Execute(Event& event)
         distance += (portalPath[i] - portalPath[i - 1]).magnitude();
 
     MotionMaster& mm = *bot->GetMotionMaster();
-#ifdef MANGOSBOT_TWO
-    mm.MovePath(portalPath, 0.0f, FORCED_MOVEMENT_RUN, false);
-#else
-    mm.MovePath(portalPath, 0.0f, FORCED_MOVEMENT_RUN, false, false);
-#endif
+    mm.MovePath(portalPath, 0, false, false);
     const float duration = 1000.0f * distance / bot->GetSpeed(MOVE_RUN) + sPlayerbotAIConfig.reactDelay;
     ai->TellError(requester, "Wait for me");
     SetDuration(duration);
@@ -108,6 +104,14 @@ bool AreaTriggerAction::Execute(Event& event)
 
     uint32 triggerId = movement.lastAreaTrigger;
     movement.lastAreaTrigger = 0;
+
+    // Module gate: while an exit-sensitive run owns this bot, a teleport
+    // trigger underfoot must NOT be relayed (the consume above still clears
+    // it so the trigger cannot fire later either). Non-teleport triggers are
+    // not this action's business anyway - it returns before the relay for
+    // those below.
+    if (ai->IsAreaTriggerRelaySuppressed())
+        return false;
 
     AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(triggerId);
     if(!atEntry)

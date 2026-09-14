@@ -3,22 +3,12 @@
 #include "PlayerbotMgr.h"
 #include "PlayerbotAIConfig.h"
 #include "RandomPlayerbotMgr.h"
+#include "PlayerLoginQueryHolder.h"
 
 using namespace ai;
 
-class LoginQueryHolder : public SqlQueryHolder
-{
-private:
-    uint32 m_accountId;
-    ObjectGuid m_guid;
-public:
-    LoginQueryHolder(uint32 accountId, ObjectGuid guid)
-        : m_accountId(accountId), m_guid(guid) {
-    }
-    ObjectGuid GetGuid() const { return m_guid; }
-    uint32 GetAccountId() const { return m_accountId; }
-    bool Initialize();
-};
+// Penqle's Singleton<> requires an explicit instantiation in a .cpp file.
+INSTANTIATE_SINGLETON_1(ai::PlayerBotLoginMgr);
 
 class PlayerbotLoginQueryHolder : public LoginQueryHolder
 {
@@ -28,7 +18,7 @@ private:
 
 public:
     PlayerbotLoginQueryHolder(PlayerbotHolder* playerbotHolder, uint32 masterAccount, uint32 accountId, uint32 guid)
-        : LoginQueryHolder(accountId, ObjectGuid(HIGHGUID_PLAYER, guid)), masterAccountId(masterAccount), playerbotHolder(playerbotHolder) {
+        : LoginQueryHolder(accountId, ObjectGuid(HIGHGUID_PLAYER, guid), SessionTransport::Headless), masterAccountId(masterAccount), playerbotHolder(playerbotHolder) {
     }
 
 public:
@@ -174,10 +164,21 @@ bool PlayerLoginInfo::SendHolder()
     if (!lqh->Initialize())
     {
         delete holder;                                      // delete all unprocessed queries
+        holder = nullptr;
+        holderState = HolderState::HOLDER_EMPTY;
         return false;
     }
 
-    CharacterDatabase.DelayQueryHolder(this, &PlayerLoginInfo::HandlePlayerBotLoginCallback, holder);
+    // The async login manager owns admission/backpressure, but the common
+    // PlayerbotHolder callback owns materializing the Player and attaching AI.
+    // Register this prepared holder so that callback can resolve it later.
+    // Without this handoff every async login was silently discarded as
+    // "not one of ours", which is why AsyncBotLogin produced zero bots.
+    sRandomPlayerbotMgr.RegisterPendingBotLogin(holder, guid, 0);
+
+    // This callback only marks the holder ready. Keep it on the world thread:
+    // the former callback-pool write raced LoginBot() reading holderState.
+    CharacterDatabase.DelayQueryHolderUnsafe(this, &PlayerLoginInfo::HandlePlayerBotLoginCallback, holder);
 
     return true;
 }
@@ -234,6 +235,8 @@ void PlayerLoginInfo::SetQueue(bool isWanted, LoginSpace& space)
     {
         if (loginState == LoginState::BOT_OFFLINE)
         {
+            if (nextLoginAttempt && time(nullptr) < nextLoginAttempt)
+                return;
             loginState = LoginState::BOT_ON_LOGINQUEUE;
             FillLoginSpace(space, FillStep::NEXT_STEP);
         }
@@ -299,6 +302,8 @@ bool PlayerLoginInfo::LoginBot()
     if (sObjectMgr.GetPlayer(ObjectGuid(HIGHGUID_PLAYER, guid), false))
     {
         loginState = LoginState::BOT_ONLINE;
+        loginFailureCount = 0;
+        nextLoginAttempt = 0;
         return false;
     }
 
@@ -314,10 +319,18 @@ bool PlayerLoginInfo::LoginBot()
     if (!player)
     {
         loginState = LoginState::BOT_OFFLINE;
+        ++loginFailureCount;
+        uint32 const backoff = std::min<uint32>(60, 1u << std::min<uint8>(loginFailureCount, 6));
+        nextLoginAttempt = time(nullptr) + backoff;
+        if (loginFailureCount == 1 || (loginFailureCount & (loginFailureCount - 1)) == 0)
+            sLog.outBasic("[PlayerBots] Login failed for bot %u; retry %u in %u seconds",
+                guid, loginFailureCount, backoff);
         return false;
     }
 
     loginState = LoginState::BOT_ONLINE;
+    loginFailureCount = 0;
+    nextLoginAttempt = 0;
 
     Update(player);
 
@@ -382,7 +395,15 @@ void PlayerBotLoginMgr::Update(RealPlayers& realPlayers)
         return;
     }
 
-    BotInfos queue = GetFuture(FillLoginLogoutQueue, futureQueue, true, &botPool, realPlayers);
+    // FillLoginLogoutQueue mutates login state inside botPool and also reads
+    // live Player objects through realPlayers.  Running it on a detached
+    // std::async worker races the world thread, which updates the same objects
+    // immediately above and consumes the resulting pointers below.  Under a
+    // large startup wave this manifested as intermittent SIGABRT crashes while
+    // hundreds of character query holders were completing.  Queue selection
+    // is intentionally kept on the world thread; character DB holders remain
+    // asynchronous and retain the expensive I/O off-thread.
+    BotInfos queue = FillLoginLogoutQueue(&botPool, realPlayers);
 
     if (!queue.empty())
     {
@@ -417,7 +438,7 @@ BotPool PlayerBotLoginMgr::LoadBotsFromDb()
         return botPool;
     }
 
-    LoginSpace space;
+    LoginSpace space{};
 
     do
     {
@@ -586,7 +607,8 @@ void PlayerBotLoginMgr::FillLoginSpace(BotPool* pool, LoginSpace& space, FillSte
     space.currentSpace = GetMaxOnlineBotCount();
     space.totalSpace = GetMaxOnlineBotCount();
 
-    for (uint32 level = 1; level < DEFAULT_MAX_LEVEL + 1; ++level)
+    space.levelBucket[0] = 0;
+    for (uint32 level = 1; level <= PLAYER_STRONG_MAX_LEVEL; ++level)
     {
         space.levelBucket[level] = GetLevelBucketSize(level);
     }
@@ -629,7 +651,7 @@ bool PlayerBotLoginMgr::CriteriaStillValid(const LoginCriterionFailType oldFailT
 
 BotInfos PlayerBotLoginMgr::FillLoginLogoutQueue(BotPool* pool, const RealPlayers& realPlayers)
 {
-    LoginSpace loginSpace;
+    LoginSpace loginSpace{};
     loginSpace.realPlayerInfos = GetPlayerInfos(realPlayers);
     FillLoginSpace(pool, loginSpace, FillStep::NEXT_STEP);
 
@@ -779,16 +801,26 @@ uint32 PlayerBotLoginMgr::GetClassRaceBucketSize(uint8 cls, uint8 race)
 
 uint32 PlayerBotLoginMgr::GetLevelBucketSize(uint32 level) 
 {
+    if (level > PLAYER_STRONG_MAX_LEVEL)
+        return 0;
+
     uint32 prob = sPlayerbotAIConfig.levelProbability[level];
 
     if (prob == 0 || level > GetMaxLevel())
         return 0;
 
     uint32 levelProbabilityTotal = 0;
-    for (uint32 level = 1; level < GetMaxLevel(); ++level)
+    for (uint32 sumLevel = 1; sumLevel < GetMaxLevel(); ++sumLevel)
     {
-        levelProbabilityTotal += sPlayerbotAIConfig.levelProbability[level];
+        levelProbabilityTotal += sPlayerbotAIConfig.levelProbability[sumLevel];
     }
+
+    // The loop above runs zero times when GetMaxLevel() is 1, and the core does
+    // allow MaxPlayerLevel = 1. Every probability being zero has the same
+    // result. Dividing by that is an integer division by zero, which takes the
+    // server down with SIGFPE the moment random levels are switched on.
+    if (!levelProbabilityTotal)
+        return 0;
 
     return GetMaxOnlineBotCount() * sPlayerbotAIConfig.levelProbability[level] / levelProbabilityTotal;
 }

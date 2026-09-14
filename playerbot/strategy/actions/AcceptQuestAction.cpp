@@ -6,6 +6,31 @@ using namespace ai;
 
 bool AcceptAllQuestsAction::ProcessQuest(Player* requester, Quest const* quest, WorldObject* questGiver)
 {
+    // Breadcrumb quests that lead bots out of the starting zone into dangerous territory.
+    // Block until level 5 when the bot is actually ready to move on.
+    static const std::unordered_set<uint32> startingZoneBreadcrumbs = {
+        2158, // Rest and Relaxation    (Human      -> Goldshire inn)
+        1656, // A Task Unfinished      (Tauren     -> Mulgore)
+        2159, // Dolanaar Delivery      (NElf       -> Dolanaar inn)
+        8,    // A Rogue's Deal         (Undead     -> Deathknell)
+        2160, // Supplies to Tannok     (Dwarf/Gnome -> Dun Morogh)
+        2161, // A Peon's Burden        (Orc        -> Durotar)
+    };
+    if (startingZoneBreadcrumbs.count(quest->GetQuestId()) && bot->GetLevel() < 5)
+        return false;
+
+    // CLUCK! — a novelty quest bots can't meaningfully complete; block entirely.
+    if (quest->GetQuestId() == 3861)
+        return false;
+
+    // Tortoise-wow rogue-only quests with excessive walking and poor reward.
+    static const std::unordered_set<uint32> turtleOnlyBlacklist = {
+        50000, // Professor Malkovich
+        50003, // Professor Papucho
+    };
+    if (turtleOnlyBlacklist.count(quest->GetQuestId()))
+        return false;
+
     if (AcceptQuest(requester, quest, questGiver->GetObjectGuid()))
     {
         if (sPlayerbotAIConfig.globalSoundEffects)
@@ -157,9 +182,6 @@ bool ConfirmQuestAction::Execute(Event& event)
     uint32 quest;
     p >> quest;
     Quest const* qInfo = sObjectMgr.GetQuestTemplate(quest);
-    
-    if (!qInfo)
-        return false;
 
     quest = qInfo->GetQuestId();
     if( !bot->CanTakeQuest( qInfo, false ) )
@@ -171,10 +193,7 @@ bool ConfirmQuestAction::Execute(Event& event)
 
     if( bot->CanAddQuest( qInfo, false ) )
     {
-        if (qInfo->HasQuestFlag(QUEST_FLAGS_PARTY_ACCEPT))
-            bot->AddQuest(qInfo, nullptr); //prevent double dbscript call if player is doing it
-        else
-            bot->AddQuest( qInfo, requester );
+        bot->AddQuest( qInfo, requester );
 
         if( bot->CanCompleteQuest( quest ) )
             bot->CompleteQuest( quest );

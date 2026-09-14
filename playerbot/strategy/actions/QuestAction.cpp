@@ -94,10 +94,10 @@ bool QuestAction::CompleteQuest(Player* player, uint32 entry)
         }
         else if (creature > 0)
         {
-            if (CreatureInfo const* cInfo = ObjectMgr::GetCreatureTemplate(creature))
+            if (CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(creature))
                 for (uint16 z = 0; z < creaturecount; ++z)
                 {
-                    player->KilledMonster(cInfo, nullptr);
+                    player->KilledMonster(cInfo, ObjectGuid());
                 }
         }
         else if (creature < 0)
@@ -157,6 +157,12 @@ bool QuestAction::ProcessQuests(ObjectGuid questGiver)
 
 bool QuestAction::ProcessQuests(WorldObject* questGiver)
 {
+    // These NPCs offer challenge quests (hardcore mode, etc.) that must never be taken by bots.
+    static const uint32 challengeQuestNpcs[] = { 81030, 62609 }; // Mysterious Stranger variants
+    for (uint32 blocked : challengeQuestNpcs)
+        if (questGiver->GetEntry() == blocked)
+            return false;
+
     ObjectGuid guid = questGiver->GetObjectGuid();
 
     if (sServerFacade.GetDistance2d(bot, questGiver) > INTERACTION_DISTANCE && !sPlayerbotAIConfig.syncQuestWithPlayer)
@@ -234,13 +240,10 @@ bool QuestAction::AcceptQuest(Player* requester, Quest const* quest, uint64 ques
         p.rpos(0);
         bot->GetSession()->HandleQuestgiverAcceptQuestOpcode(p);
 
-        if (bot->CanAddQuest(quest, false) && bot->GetQuestStatus(questId) == QUEST_STATUS_NONE && sPlayerbotAIConfig.syncQuestWithPlayer)
+        if (bot->GetQuestStatus(questId) == QUEST_STATUS_NONE && sPlayerbotAIConfig.syncQuestWithPlayer)
         {
             Object* pObject = bot->GetObjectByTypeMask((ObjectGuid)questGiver, TYPEMASK_CREATURE_GAMEOBJECT_PLAYER_OR_ITEM);
-            if (quest->HasQuestFlag(QUEST_FLAGS_PARTY_ACCEPT))
-                bot->AddQuest(quest, nullptr); //prevent double dbscript call if player is doing it
-            else
-                bot->AddQuest(quest, pObject );
+            bot->AddQuest(quest, pObject);
         }
 
         if (bot->GetQuestStatus(questId) != QUEST_STATUS_NONE && bot->GetQuestStatus(questId) != QUEST_STATUS_AVAILABLE)
@@ -291,9 +294,9 @@ bool QuestUpdateAddKillAction::Execute(Event& event)
         CreatureInfo const* info = sObjectMgr.GetCreatureTemplate(entry);
         if (info)
         {
-            ai->TellPlayer(requester, chat->formatQuestObjective(info->Name, available, required), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
+            ai->TellPlayer(requester, chat->formatQuestObjective(info->name, available, required), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 
-            BroadcastHelper::BroadcastQuestUpdateAddKill(ai, bot, qInfo, available, required, info->Name);
+            BroadcastHelper::BroadcastQuestUpdateAddKill(ai, bot, qInfo, available, required, info->name);
         }
     }
     else
@@ -403,7 +406,7 @@ bool QuestUpdateFailedTimerAction::Execute(Event& event)
     }
 
     //drop quest
-    bot->GetPlayerbotAI()->DropQuest(questId);
+    GetBotAI(bot)->DropQuest(questId);
 
     sPlayerbotAIConfig.logEvent(ai, "QuestUpdateFailedTimerAction", std::to_string(questId), "FailedTimer");
     return false;

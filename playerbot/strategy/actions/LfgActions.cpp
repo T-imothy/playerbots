@@ -96,7 +96,21 @@ bool LfgJoinAction::JoinLFG()
     //IterateItems(&visitor, ITERATE_ITEMS_IN_EQUIP);
     //bool raid = (urand(0, 100) < 50 && visitor.count[ITEM_QUALITY_EPIC] >= 5 && (bot->GetLevel() == 60 || bot->GetLevel() == 70 || bot->GetLevel() == 80));
 
-    MeetingStoneSet stones = sWorld.GetLFGQueue().GetDungeonsForPlayer(bot);
+    MeetingStoneSet stones;
+    for (auto const& row : sObjectMgr.GetGameObjectInfoMap())
+    {
+        GameObjectInfo const& go = row.second;
+        if (go.type != GAMEOBJECT_TYPE_MEETINGSTONE) continue;
+        if ((go.meetingstone.minLevel && bot->GetLevel() < go.meetingstone.minLevel) ||
+            (go.meetingstone.maxLevel && bot->GetLevel() > go.meetingstone.maxLevel)) continue;
+        MeetingStoneInfo info;
+        info.dungeonId = row.first;
+        info.minLevel = go.meetingstone.minLevel;
+        info.maxLevel = go.meetingstone.maxLevel;
+        info.area = go.meetingstone.areaID;
+        info.name = go.name;
+        stones.push_back(info);
+    }
     if (!stones.size())
         return false;
 
@@ -115,7 +129,7 @@ bool LfgJoinAction::JoinLFG()
         if (zoneId)
         {
             WorldSafeLocsEntry const* ClosestGrave = nullptr;
-            ClosestGrave = sWorldSafeLocsStore.LookupEntry<WorldSafeLocsEntry>(zoneId);
+            ClosestGrave = sWorldSafeLocsStore.LookupEntry(zoneId);
 
             bool inCity = false;
             AreaTableEntry const* areaEntry = GetAreaEntryByAreaID(bot->GetAreaId());
@@ -233,7 +247,7 @@ bool LfgJoinAction::JoinLFG()
     }
 
     bool groupQ = false;
-    TravelTarget* target = bot->GetPlayerbotAI()->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
+    TravelTarget* target = GetBotAI(bot)->GetAiObjectContext()->GetValue<TravelTarget*>("travel target")->Get();
     if (target)
     {
         state = target->GetTravelState();
@@ -263,7 +277,7 @@ bool LfgJoinAction::JoinLFG()
     if (areaEntry && !areaEntry->zone)
     {
         zoneLFG = areaEntry->ID;
-        zoneName = areaEntry->area_name[0];
+        zoneName = areaEntry->area_name;
     }*/
 
     // only use lfg zone if current quest leads there
@@ -274,7 +288,7 @@ bool LfgJoinAction::JoinLFG()
         if (areaEntry && !areaEntry->zone)
         {
             zoneLFG = areaEntry->ID;
-            zoneName = areaEntry->area_name[0];
+            zoneName = areaEntry->area_name;
         }
     }
     else if (!bot->IsTaxiFlying())
@@ -284,7 +298,7 @@ bool LfgJoinAction::JoinLFG()
         if (areaEntry && !areaEntry->zone)
         {
             zoneLFG = areaEntry->ID;
-            zoneName = areaEntry->area_name[0];
+            zoneName = areaEntry->area_name;
         }
     }
 
@@ -418,7 +432,7 @@ bool LfgJoinAction::JoinLFG()
                                         continue;
 
                                     // check by zone name, doesn't work for some dungeons
-                                    if (dungeon->name[0] == areaEntry->area_name[0])
+                                    if (dungeon->name[0] == areaEntry->area_name)
                                     {
                                         lfgType = LFG_TYPE_DUNGEON;
                                         lfgName = dungeon->name[0];
@@ -447,7 +461,7 @@ bool LfgJoinAction::JoinLFG()
                                                 if (zoneId)
                                                 {
                                                     WorldSafeLocsEntry const* ClosestGrave = nullptr;
-                                                    ClosestGrave = sWorldSafeLocsStore.LookupEntry<WorldSafeLocsEntry>(zoneId);
+                                                    ClosestGrave = sWorldSafeLocsStore.LookupEntry(zoneId);
 
                                                     bool inCity = false;
                                                     AreaTableEntry const* areaEntry = GetAreaEntryByAreaID(bot->GetAreaId());
@@ -508,7 +522,7 @@ bool LfgJoinAction::JoinLFG()
                 if (zoneId)
                 {
                     WorldSafeLocsEntry const* ClosestGrave = nullptr;
-                    ClosestGrave = sWorldSafeLocsStore.LookupEntry<WorldSafeLocsEntry>(zoneId);
+                    ClosestGrave = sWorldSafeLocsStore.LookupEntry(zoneId);
 
                     bool inCity = false;
                     AreaTableEntry const* areaEntry = GetAreaEntryByAreaID(bot->GetAreaId());
@@ -630,7 +644,7 @@ bool LfgJoinAction::JoinLFG()
                 if (zoneId)
                 {
                     WorldSafeLocsEntry const* ClosestGrave = nullptr;
-                    ClosestGrave = sWorldSafeLocsStore.LookupEntry<WorldSafeLocsEntry>(zoneId);
+                    ClosestGrave = sWorldSafeLocsStore.LookupEntry(zoneId);
 
                     bool inCity = false;
                     AreaTableEntry const* areaEntry = GetAreaEntryByAreaID(bot->GetAreaId());
@@ -799,7 +813,7 @@ bool LfgJoinAction::JoinLFG()
     }
     if (lfgType == LFG_TYPE_DUNGEON)
     {
-        std::string _gs = std::to_string(bot->GetPlayerbotAI()->GetEquipGearScore(bot, false, false));
+        std::string _gs = std::to_string(GetBotAI(bot)->GetEquipGearScore(bot, false, false));
         lfgComment += ", GS " + _gs;
     }
 
@@ -1067,7 +1081,7 @@ bool LfgLeaveAction::Execute(Event& event)
     AreaTableEntry const* area = GetAreaEntryByAreaID(qInfo.areaId);
     if (area)
     {
-        sLog.outDetail("Bot #%d %s:%d <%s>: leaves LFG queue to %s after %u minutes", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), area->area_name[0], (qInfo.timeInLFG / 60000));
+        sLog.outDetail("Bot #%d %s:%d <%s>: leaves LFG queue to %s after %u minutes", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName(), area->area_name, (qInfo.timeInLFG / 60000));
         sWorld.GetLFGQueue().RemovePlayerFromQueue(bot->GetObjectGuid(), PLAYER_CLIENT_LEAVE);
     }
 #endif
@@ -1127,7 +1141,7 @@ bool LfgLeaveAction::isUseful()
             return false;
     }
 
-    if ((ai->GetMaster() && !ai->GetMaster()->GetPlayerbotAI()))
+    if ((ai->GetMaster() && !GetBotAI(ai->GetMaster())))
     {
         return false;
     }
@@ -1155,6 +1169,8 @@ bool LfgTeleportAction::Execute(Event& event)
 
 bool LfgJoinAction::isUseful()
 {
+    if (!bot->IsInWorld() || bot->IsInCombat())
+        return false;
     if (!sPlayerbotAIConfig.randomBotJoinLfg)
     {
         //ai->ChangeStrategy("-lfg", BotState::BOT_STATE_NON_COMBAT);
@@ -1192,9 +1208,6 @@ bool LfgJoinAction::isUseful()
     if (bot->IsDead())
         return false;
 
-    if (!bot->IsInWorld() || bot->IsInCombat())
-        return false;
-
     if (!sRandomPlayerbotMgr.IsFreeBot(bot))
         return false;
 
@@ -1209,9 +1222,9 @@ bool LfgJoinAction::isUseful()
     if (sWorld.GetLFGQueue().IsPlayerInQueue(bot->GetObjectGuid()))
         return false;
 
-    LfgRoles botRoles = sLFGMgr.CalculateTalentRoles(bot);
+    LfgRoles botRoles = (ai->IsTank(bot) ? LFG_ROLE_TANK : ai->IsHeal(bot) ? LFG_ROLE_HEALER : LFG_ROLE_DPS);
 
-    LfgRolePriority prio = sLFGMgr.GetPriority((Classes)bot->getClass(), (LfgRoles)botRoles);
+    LfgRolePriority prio = sLFGMgr.getPriority((Classes)bot->getClass(), (LfgRoles)botRoles);
     if (prio < LFG_PRIORITY_NORMAL)
         return false;
 

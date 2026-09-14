@@ -16,7 +16,7 @@ bool ChangeTalentsAction::Execute(Event& event)
     std::string param = event.getParam();
 
     bool const query = param.empty() || param == "list" || param.find("list ") == 0;
-    if (requester && requester->isRealPlayer() && !query)
+    if (requester && IsRealPlayer(requester) && !query)
     {
         std::string reason = BotRecruitment::PreparationReason(requester, bot);
         if (!reason.empty())
@@ -30,7 +30,7 @@ bool ChangeTalentsAction::Execute(Event& event)
     {
         if (param.find("auto") != std::string::npos)
         {
-            AutoSelectTalents(bot, &out);
+            AutoSelectTalents(bot, &out, ai ? (BotRoles)ai->GetForcedRole() : BotRoles::BOT_ROLE_NONE);
         }
         else  if (param.find("list ") != std::string::npos)
         {
@@ -242,27 +242,47 @@ void ChangeTalentsAction::listPremadePaths(uint8 cls, std::vector<TalentPath*> p
 
 TalentPath* ChangeTalentsAction::PickPremadePath(std::vector<TalentPath*> paths, bool useProbability)
 {
-    int totProbability = 0;
-    int curProbability = 0;
-
-    if(paths.size() == 1)
+    if (paths.size() == 1)
         return paths[0];
 
+    int totProbability = 0;
     for (auto path : paths)
-    {
         totProbability += useProbability ? path->probability : 1;
-    }
 
-    totProbability = irand(0, totProbability);
+    if (totProbability <= 0)
+        return paths[0];
 
+    // irand is inclusive at both ends. Rolling [0, total] and then comparing
+    // with >= handed the first path one slot more than the others - with three
+    // equal weights that is 33.9% against 33.0%. Rolling [0, total - 1] and
+    // comparing with a strict > gives each path exactly its share.
+    int const roll = irand(0, totProbability - 1);
+
+    TalentPath* chosen = paths[0];
+    int curProbability = 0;
     for (auto path : paths)
     {
         curProbability += (useProbability ? path->probability : 1);
-        if (curProbability >= totProbability)
-            return path;
+        if (curProbability > roll)
+        {
+            chosen = path;
+            break;
+        }
     }
 
-    return paths[0];
+    // Temporary. The stored specNo comes out around 78:22 for warriors where
+    // the weights say 50:50, and neither roll site accounts for that. This
+    // records what actually enters the draw, so the cause can be read off the
+    // log instead of guessed at. Remove once the distribution is understood.
+    std::ostringstream candidates;
+    for (auto path : paths)
+        candidates << path->name << "(" << (useProbability ? path->probability : 1) << ") ";
+
+    sLog.outDetail("SPECROLL: %sroll %d of %d among %s-> %s",
+        useProbability ? "" : "unweighted ", roll, totProbability,
+        candidates.str().c_str(), chosen->name.c_str());
+
+    return chosen;
 }
 
 bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out, BotRoles role)
@@ -285,8 +305,8 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
         TalentSpec newSpec = *GetBestPremadeSpec(bot, specId);
         newSpec.CropTalents(bot);
         newSpec.ApplyTalents(bot, out);
-        if (bot->GetPlayerbotAI())
-            bot->GetPlayerbotAI()->UpdateTalentSpec();
+        if (GetBotAI(bot))
+            GetBotAI(bot)->UpdateTalentSpec();
         if (newSpec.GetTalentPoints() > 0)
         {
             *out << "Upgrading spec " << "|h|cffffffff" << getPremadePath(bot->getClass(), specId)->name << " (" << newSpec.formatSpec(cls) << ")";
@@ -297,8 +317,8 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
         TalentSpec newSpec(bot, specLink);
         newSpec.CropTalents(bot);
         newSpec.ApplyTalents(bot, out);
-        if (bot->GetPlayerbotAI())
-            bot->GetPlayerbotAI()->UpdateTalentSpec();
+        if (GetBotAI(bot))
+            GetBotAI(bot)->UpdateTalentSpec();
         if (newSpec.GetTalentPoints() > 0)
         {
             *out << "Upgrading saved spec " << "|h|cffffffff" << ChatHelper::formatClass(bot, newSpec.highestTree()) << " (" << newSpec.formatSpec(cls) << ")";
@@ -306,7 +326,7 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
     }
 
     //Spec was not found or not sufficient
-    if (bot->CalculateTalentsPoints() > 0 || (!specNo && specLink.empty()))
+    if (bot->GetFreeTalentPoints() > 0 || (!specNo && specLink.empty()))
     {
         TalentSpec oldSpec(bot);
         int currentTree = oldSpec.highestTree();
@@ -374,8 +394,8 @@ bool ChangeTalentsAction::AutoSelectTalents(Player* bot, std::ostringstream* out
             specLink = newSpec.GetTalentLink();
             newSpec.CropTalents(bot);
             newSpec.ApplyTalents(bot, out);
-            if (bot->GetPlayerbotAI())
-                bot->GetPlayerbotAI()->UpdateTalentSpec();
+            if (GetBotAI(bot))
+                GetBotAI(bot)->UpdateTalentSpec();
 
             if (paths.size() > 1)
                 *out << "Found " << paths.size() << " possible specs to choose from. ";
@@ -413,7 +433,7 @@ TalentSpec* ChangeTalentsAction::GetBestPremadeSpec(Player* bot, int specId)
 bool AutoSetTalentsAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    sPlayerbotAIConfig.logEvent(ai, "AutoSetTalentsAction", std::to_string(bot->m_Played_time[PLAYED_TIME_LEVEL]), std::to_string(bot->m_Played_time[PLAYED_TIME_TOTAL]));
+    sPlayerbotAIConfig.logEvent(ai, "AutoSetTalentsAction", std::to_string(bot->GetLevelPlayedTime()), std::to_string(bot->GetTotalPlayedTime()));
 
     std::ostringstream out;
 
@@ -422,12 +442,12 @@ bool AutoSetTalentsAction::Execute(Event& event)
         return false;
     }
 
-    if (bot->CalculateTalentsPoints() <= 0)
+    if (bot->GetFreeTalentPoints() == 0)
     {
         return false;
     }
 
-    AutoSelectTalents(bot, &out);
+    AutoSelectTalents(bot, &out, ai ? (BotRoles)ai->GetForcedRole() : BotRoles::BOT_ROLE_NONE);
 
     ai->TellPlayer(requester, out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
 

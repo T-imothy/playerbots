@@ -16,6 +16,7 @@ namespace ai
     class DebugAction : public ChatCommandAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         DebugAction(PlayerbotAI* ai) : ChatCommandAction(ai, "debug") {}
         virtual bool Execute(Event& event) override;
 

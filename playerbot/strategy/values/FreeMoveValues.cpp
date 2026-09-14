@@ -35,7 +35,7 @@ GuidPosition FreeMoveCenterValue::Calculate()
             return followTarget;
 
         //Move the location to a location around follow targets destination.
-        if (player && player->GetPlayerbotAI() && ai->IsSafe(player) && PAI_VALUE(WorldPosition, "last long move"))
+        if (player && GetBotAI(player) && ai->IsSafe(player) && PAI_VALUE(WorldPosition, "last long move"))
             loc += (PAI_VALUE(WorldPosition, "last long move") - player);
 
         return loc;
@@ -57,6 +57,8 @@ float FreeMoveRangeValue::Calculate()
     if (ai->HasStrategy("stay", ai->GetState()))
         return INTERACTION_DISTANCE;
 
+    // CMaNGOS: permit the designated crowd-control target's spell range
+    // instead of pinning the caster to its ordinary follow radius.
     if (AI_VALUE(Unit*, "rti cc target"))
         return ai->GetRange("spell");
 

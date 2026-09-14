@@ -127,8 +127,8 @@ bool ai::ShouldSwapEncounterTank(PlayerbotAI* ai, Unit* enemy)
         Player* member = ref->getSource();
         if (!member || member == tank || !member->IsInWorld() || !member->IsAlive() ||
             !bot->IsInMap(member) || member->GetGroup() != bot->GetGroup() ||
-            member->IsBeingTeleported() || member->HasCharmer() || !member->GetPlayerbotAI() ||
-            member->GetPlayerbotAI()->IsRealPlayer() || !ai->IsTank(member) ||
+            member->IsBeingTeleported() || member->HasCharmer() || !GetBotAI(member) ||
+            GetBotAI(member)->IsRealPlayer() || !ai->IsTank(member) ||
             !CleanTank(member, rule) || !HasReadyTaunt(member) || !member->CanReachWithMeleeAttack(enemy)) continue;
         if (!selected || member->GetObjectGuid() < selected->GetObjectGuid()) selected = member;
     }

@@ -137,6 +137,7 @@ namespace ai
             {
                 creators["aspect"] = [](PlayerbotAI* ai) { return new HunterAspectPlaceholderStrategy(ai); };
                 creators["aspect hawk"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect hawk", "aspect of the hawk", "aspect of the hawk"); };
+                creators["aspect wolf"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect wolf", "aspect of the wolf", "aspect of the wolf"); };
                 creators["aspect monkey"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect monkey", "aspect of the monkey", "aspect of the monkey"); };
                 creators["aspect cheetah"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect cheetah", "aspect of the cheetah", "aspect of the cheetah"); };
                 creators["aspect pack"] = [](PlayerbotAI* ai) { return new HunterManualAspectStrategy(ai, "aspect pack", "aspect of the pack", "aspect of the pack"); };
@@ -222,6 +223,7 @@ namespace ai
                 creators["rapid fire"] = [](PlayerbotAI* ai) { return new RapidFireTrigger(ai); };
                 creators["kill command"] = [](PlayerbotAI* ai) { return new KillCommandBoostTrigger(ai); };
                 creators["aspect of the hawk"] = [](PlayerbotAI* ai) { return new AspectOfTheHawkTrigger(ai); };
+                creators["aspect of the wolf"] = [](PlayerbotAI* ai) { return new AspectOfTheWolfTrigger(ai); };
                 creators["aspect of the wild"] = [](PlayerbotAI* ai) { return new AspectOfTheWildTrigger(ai); };
                 creators["aspect of the viper"] = [](PlayerbotAI* ai) { return new AspectOfTheViperTrigger(ai); };
                 creators["aspect of the monkey"] = [](PlayerbotAI* ai) { return new AspectOfTheMonkeyTrigger(ai); };
@@ -311,6 +313,7 @@ namespace ai
                 creators["readiness"] = [](PlayerbotAI* ai) { return new CastReadinessAction(ai); };
                 creators["aspect of the monkey"] = [](PlayerbotAI* ai) { return new CastAspectOfTheMonkeyAction(ai); };
                 creators["aspect of the hawk"] = [](PlayerbotAI* ai) { return new CastAspectOfTheHawkAction(ai); };
+                creators["aspect of the wolf"] = [](PlayerbotAI* ai) { return new CastAspectOfTheWolfAction(ai); };
                 creators["aspect of the wild"] = [](PlayerbotAI* ai) { return new CastAspectOfTheWildAction(ai); };
                 creators["aspect of the viper"] = [](PlayerbotAI* ai) { return new CastAspectOfTheViperAction(ai); };
                 creators["aspect of the pack"] = [](PlayerbotAI* ai) { return new CastAspectOfThePackAction(ai); };

@@ -239,15 +239,15 @@ namespace ai
     class DemonicSacrificeTrigger : public Trigger
     {
     public:
-        DemonicSacrificeTrigger(PlayerbotAI* ai) : Trigger(ai, "demonic sacrifice") {}
+        DemonicSacrificeTrigger(PlayerbotAI* ai) : Trigger(ai, "demonic sacrifice", 5) {}
         bool IsActive() override;
     };
 
-    class SoulLinkTrigger : public BuffTrigger
+    class SoulLinkTrigger : public Trigger
     {
     public:
-        SoulLinkTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "soul link", 5) {}
-        virtual bool IsActive() override;
+        SoulLinkTrigger(PlayerbotAI* ai) : Trigger(ai, "soul link", 5) {}
+        bool IsActive() override;
     };
 
     class NoSpecificPetTrigger : public Trigger

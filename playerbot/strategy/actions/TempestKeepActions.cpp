@@ -1,3 +1,4 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "TempestKeepActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -80,9 +81,9 @@ Unit* SolarianPriorityTargetAction::GetTarget()
         // The split boss is invisible and may not be in the attackers cache.
         // Wild summons record the physical caster, not the original-caster
         // callback recipient: add -> spotlight -> Solarian in these cores.
-        Unit* owner = ai->GetUnit(add->GetSpawnerGuid());
+        Unit* owner = ai->GetUnit(ai::NativeSpawnerGuid(add));
         if (owner && owner->IsInWorld() && owner->IsAlive() && bot->IsInMap(owner) && !owner->HasCharmer() &&
-            owner->GetEntry() == 18928) owner = ai->GetUnit(owner->GetSpawnerGuid());
+            owner->GetEntry() == 18928) owner = ai->GetUnit(ai::NativeSpawnerGuid(owner));
         if (!owner || !owner->IsInWorld() || !bot->IsInMap(owner) || !owner->IsAlive() || !owner->IsInCombat() ||
             owner->HasCharmer() || owner->GetEntry() != 18805 || owner->GetVictim() == bot) continue;
         if (boss && boss != owner) return nullptr;

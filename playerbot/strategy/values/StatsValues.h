@@ -211,6 +211,14 @@ namespace ai
         virtual bool Calculate() override { return bot->GetGroup(); }
     };
 
+    // Explicit corpse-run requests persist until native resurrection succeeds.
+    class CorpseRunValue : public ManualSetValue<bool>
+    {
+    public:
+        CorpseRunValue(PlayerbotAI* ai, std::string name = "corpse run") : ManualSetValue<bool>(ai, false, name) {}
+        std::string Format() override { return this->value ? "true" : "false"; }
+    };
+
     class DeathCountValue : public ManualSetValue<uint32>
     {
     public:

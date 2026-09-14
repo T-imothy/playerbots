@@ -2,9 +2,9 @@
 #include "playerbot/playerbot.h"
 #include "NearestFriendlyPlayersValue.h"
 
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 using namespace MaNGOS;

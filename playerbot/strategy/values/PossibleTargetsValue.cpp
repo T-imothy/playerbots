@@ -5,9 +5,9 @@
 #include "FreeMoveValues.h"
 
 #include "playerbot/ServerFacade.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 using namespace MaNGOS;
@@ -50,8 +50,8 @@ bool PossibleTargetsValue::AcceptUnit(Unit* unit)
 
 void PossibleTargetsValue::FindPossibleTargets(Player* player, std::list<Unit*>& targets, float range)
 {
-    MaNGOS::AnyUnitInObjectRangeCheck u_check(player, range);
-    MaNGOS::UnitListSearcher<MaNGOS::AnyUnitInObjectRangeCheck> searcher(targets, u_check);
+    MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck u_check(player, range);
+    MaNGOS::UnitListSearcher<MaNGOS::AnyUnfriendlyUnitInObjectRangeCheck> searcher(targets, u_check);
     Cell::VisitAllObjects(player, searcher, range);
 }
 
@@ -81,12 +81,11 @@ bool PossibleTargetsValue::IsFriendly(Unit* target, Player* player)
 
 bool PossibleTargetsValue::IsAttackable(Unit* target, Player* player)
 {
-    const bool inVehicle = player->GetPlayerbotAI() && player->GetPlayerbotAI()->IsInVehicle();
+    const bool inVehicle = GetBotAI(player) && GetBotAI(player)->IsInVehicle();
     return !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_ATTACKABLE_1) &&
            !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNTARGETABLE) &&
            (inVehicle || !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNINTERACTIBLE)) &&
-           !target->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION) &&
-           player->CanAttack(target);
+           !target->HasAuraType(SPELL_AURA_SPIRIT_OF_REDEMPTION);
 }
 
 bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
@@ -116,9 +115,12 @@ bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
             return false;
         }
 
+        // Being in combat with *this* target is a reason to know where it is
+        // without seeing it. Being in combat at all is not: player->IsInCombat()
+        // used to be part of this, which meant a bot fighting anyone could pick
+        // out every stealthed player within range.
         bool isInCombatWithTarget = target->GetVictim() == player || 
-                                     target->getThreatManager().getThreat(player) > 0.0f ||
-                                     player->IsInCombat();
+                                     target->getThreatManager().getThreat(player) > 0.0f;
 
         if (!ignoreLos && !isInCombatWithTarget)
         {
@@ -127,7 +129,7 @@ bool PossibleTargetsValue::IsValid(Unit* target, Player* player, bool ignoreLos)
                 return false;
             }
         }
-        if (!CanFreeMoveValue::CanFreeAttack(player->GetPlayerbotAI(), target))
+        if (!CanFreeMoveValue::CanFreeAttack(GetBotAI(player), target))
             return false;
 
         return true;

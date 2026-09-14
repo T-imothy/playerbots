@@ -13,9 +13,9 @@
 #include "LFG/LFGMgr.h"
 #include "LFG/LFG.h"
 #endif
-#include "BattleGround/BattleGround.h"
-#include "BattleGround/BattleGroundMgr.h"
-#include "BattleGround/BattleGroundWS.h"
+#include "Battlegrounds/BattleGround.h"
+#include "Battlegrounds/BattleGroundMgr.h"
+#include "Battlegrounds/BattleGroundWS.h"
 #include "ChooseTargetActions.h"
 #include "CheckMountStateAction.h"
 #include "G3D/Vector3.h"
@@ -25,6 +25,7 @@ namespace ai
     class LfgJoinAction : public Action
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         LfgJoinAction(PlayerbotAI* ai, std::string name = "lfg join") : Action(ai, name) {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
@@ -40,6 +41,7 @@ namespace ai
     class LfgAcceptAction : public LfgJoinAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         LfgAcceptAction(PlayerbotAI* ai) : LfgJoinAction(ai, "lfg accept") {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override { return true; }
@@ -48,6 +50,7 @@ namespace ai
     class LfgRoleCheckAction : public LfgJoinAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         LfgRoleCheckAction(PlayerbotAI* ai) : LfgJoinAction(ai, "lfg role check") {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override { return true; }
@@ -56,6 +59,7 @@ namespace ai
     class LfgLeaveAction : public Action
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         LfgLeaveAction(PlayerbotAI* ai) : Action(ai, "lfg leave") {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
@@ -64,6 +68,7 @@ namespace ai
     class LfgTeleportAction : public Action
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         LfgTeleportAction(PlayerbotAI* ai) : Action(ai, "lfg teleport") {}
         virtual bool Execute(Event& event) override;
     };

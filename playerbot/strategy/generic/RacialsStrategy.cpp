@@ -4,12 +4,14 @@
 
 using namespace ai;
 
-void RacialsStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
+void RacialsStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     Player* bot = ai ? ai->GetBot() : nullptr;
     if (!bot)
         return;
     const uint8 race = bot->getRace();
+    if (race == RACE_HIGH_ELF)
+        triggers.push_back(new TriggerNode("timer", NextAction::array(0, new NextAction("quel'dorei meditation", 71.0f), NULL)));
 
 #ifndef MANGOSBOT_ZERO
     if (race == RACE_DRAENEI)
@@ -51,4 +53,6 @@ void RacialsStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)
 void RacialsStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     InitNonCombatTriggers(triggers);
+    if (ai && ai->GetBot() && ai->GetBot()->getRace() == RACE_GOBLIN)
+        triggers.push_back(new TriggerNode("panic", NextAction::array(0, new NextAction("exit strategy", ACTION_EMERGENCY + 10), NULL)));
 }

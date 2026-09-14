@@ -1,10 +1,11 @@
+#include "MountManager.hpp"
 
 #include "playerbot/playerbot.h"
 #include "CheckMountStateAction.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/MountValues.h"
-#include "BattleGround/BattleGroundWS.h"
+#include "Battlegrounds/BattleGroundWS.h"
 #include "playerbot/TravelMgr.h"
 
 using namespace ai;
@@ -41,7 +42,10 @@ bool CheckMountStateAction::Execute(Event& event)
     if (hasEnemy)
     {
         float distToTarget = AI_VALUE(Unit*, "current target") ? AI_VALUE2(float, "distance", "current target") : 0;
-        canAttackTarget = sServerFacade.IsDistanceLessThan(distToTarget, GetAttackDistance());
+        // A discovered enemy is not necessarily the current attack target.
+        // Its absence must not be treated as a target at distance zero.
+        canAttackTarget = AI_VALUE(Unit*, "current target") &&
+            sServerFacade.IsDistanceLessThan(distToTarget, GetAttackDistance());
         shouldChaseTarget = sServerFacade.IsDistanceGreaterThan(distToTarget, 45.0f) && AI_VALUE2(bool, "moving", "current target");
         farFromTarget = sServerFacade.IsDistanceGreaterThan(distToTarget, 40.0f);
     }
@@ -70,8 +74,8 @@ bool CheckMountStateAction::Execute(Event& event)
         }
     }
 
-    //Unmounted when able to attack target and not fleeing
-    if (canAttackTarget && !ai->HasStrategy("passive", BotState::BOT_STATE_COMBAT))
+    //Unmounted when able to attack target
+    if (canAttackTarget)
     {
         if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT) && IsMounted)
             ai->TellPlayerNoFacing(requester, "Unmount. Able to attack target.");
@@ -277,14 +281,14 @@ bool CheckMountStateAction::isUseful()
         return false;
 #endif
 
-    if (!bot->GetPlayerbotAI()->HasStrategy("mount", BotState::BOT_STATE_NON_COMBAT) && !bot->IsMounted())
+    if (!GetBotAI(bot)->HasStrategy("mount", BotState::BOT_STATE_NON_COMBAT) && !bot->IsMounted())
         return false;
 
     if (!bot->IsMounted() && bot->IsInWater())
         return false;
 
     // Do not use with BG Flags, except forms like "Travel Form" and "Ghost Wolf"
-    if (bot->HasAura(23333) || bot->HasAura(23335) || bot->HasAura(34976))
+    if (bot->HasAura(23333) || bot->HasAura(23335) || bot->HasAura(34976) || bot->HasAura(59005))
 {
     if (!bot->HasSpell(783) && !bot->HasSpell(2645))
         return false;
@@ -332,7 +336,7 @@ bool CheckMountStateAction::CanFly() const
 #endif
 
     for (auto& mount : AI_VALUE(std::vector<MountValue>, "mount list"))
-        if (mount.GetSpeed(true))
+        if (mount.GetSpeedFor(bot, true))
             return true;
 
     return false;
@@ -345,7 +349,7 @@ bool CheckMountStateAction::CanMountInBg() const
     {
         BattleGroundWS* bg = (BattleGroundWS*)ai->GetBot()->GetBattleGround();
 
-        if (bot->HasAura(23333) || bot->HasAura(23335))
+        if (bot->HasAura(23333) || bot->HasAura(23335) || bot->HasAura(59005))
         {
             return false;
         }
@@ -393,17 +397,7 @@ float CheckMountStateAction::GetAttackDistance() const
 
 bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
 {
-#ifdef MANGOSBOT_ZERO
-    bool canFly = CanFly();
-#else
-    Player* groupMaster = ai->GetGroupMaster();
-
-    // only use a flying mount if master has a flying mount, to avoid laggards on ground (TBC flying is 60% ground speed)
-    bool canFly = groupMaster && groupMaster != bot ? CanFly() && (groupMaster->HasAuraType(SPELL_AURA_FLY) || 
-        groupMaster->HasAuraType(SPELL_AURA_MOD_FLIGHT_SPEED_MOUNTED)) : CanFly();
-    if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT))
-        ai->TellPlayerNoFacing(requester, canFly ? "I should fly" : "I shouldn't fly");
-#endif
+    bool canFly = CanFly();   
 
     uint32 currentSpeed = AI_VALUE2(uint32, "current mount speed", "self target");
 
@@ -420,14 +414,14 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
             if (!ai->IsSafe(member))
                 continue;
 
-            if (!member->GetPlayerbotAI())
+            if (!GetBotAI(member))
                 continue;
 
             if (!member->IsAlive())
                 continue;
 
-            if (!(member->GetPlayerbotAI()->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
-                member->GetPlayerbotAI()->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
+            if (!(GetBotAI(member)->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
+                GetBotAI(member)->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
                 continue;
 
             if (WorldPosition(bot).distance(member) > sPlayerbotAIConfig.reactDistance * 5)
@@ -442,11 +436,35 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
     std::vector<MountValue> mountList = AI_VALUE(std::vector<MountValue>, "mount list");
 
     std::shuffle(mountList.begin(), mountList.end(), *GetRandomGenerator());
-    std::sort(mountList.begin(), mountList.end(), [canFly](MountValue i, MountValue j) {return i.GetSpeed(canFly) > j.GetSpeed(canFly); });
+    // Prefer native racial mounts among equally fast known mounts. Existing
+    // characters can still know the old port's horse/wolf fallback; retain those
+    // spells without letting them displace a goblin car or high-elf unicorn.
+    auto preferred = [this](MountValue mount)
+    {
+        const uint32 spell = mount.GetSpellId();
+        if (bot->getRace() == RACE_GOBLIN)
+        {
+            for (uint32 item : {80460u, 80461u, 80462u})
+                if (auto mapped = sMountMgr.GetMountSpellId(item); mapped && *mapped == spell)
+                    return true;
+        }
+        else if (bot->getRace() == RACE_HIGH_ELF)
+        {
+            for (uint32 item : {80457u, 80458u, 80459u})
+                if (auto mapped = sMountMgr.GetMountSpellId(item); mapped && *mapped == spell)
+                    return true;
+        }
+        return false;
+    };
+    std::stable_sort(mountList.begin(), mountList.end(), [this, canFly, &preferred](MountValue i, MountValue j)
+    {
+        const uint32 a = i.GetSpeedFor(bot, canFly), b = j.GetSpeedFor(bot, canFly);
+        return a != b ? a > b : preferred(i) > preferred(j);
+    });
 
     for (auto& mount : mountList)
     {
-        if (mount.GetSpeed(canFly) > maxSpeed)
+        if (mount.GetSpeedFor(bot, canFly) > maxSpeed)
             continue;
 
         if (currentSpeed > maxSpeed)
@@ -459,7 +477,7 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
         if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT))
             ai->TellPlayerNoFacing(requester, "Try to mount with " + chat->formatSpell(mount.GetSpellId()));
 
-        if (currentSpeed >= mount.GetSpeed(canFly))
+        if (currentSpeed >= mount.GetSpeedFor(bot, canFly))
         {
             if (ai->HasStrategy("debug mount", BotState::BOT_STATE_NON_COMBAT))
                 ai->TellPlayerNoFacing(requester, "Speed not faster than current.");
@@ -523,7 +541,7 @@ bool CheckMountStateAction::Mount(Player* requester, bool limitSpeedToGroup)
             uint32 castDuration;
             if (ai->CastSpell(mount.GetSpellId(), bot, nullptr, true, &castDuration))
             {
-                sPlayerbotAIConfig.logEvent(ai, "CheckMountStateAction", sServerFacade.LookupSpellInfo(mount.GetSpellId())->SpellName[0], std::to_string(mount.GetSpeed(canFly)));
+                sPlayerbotAIConfig.logEvent(ai, "CheckMountStateAction", sServerFacade.LookupSpellInfo(mount.GetSpellId())->SpellName[0], std::to_string(mount.GetSpeedFor(bot, canFly)));
                 SetDuration(castDuration);
                 didMount = true;
             }

@@ -1,3 +1,4 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "DungeonActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -30,7 +31,7 @@ Unit* DungeonAddTargetAction::GetRaidTotemTarget()
             !PossibleAttackTargetsValue::IsPossibleTarget(totem, bot, sPlayerbotAIConfig.sightDistance, false)) continue;
         // Native Totem::GetSpawnerGuid resolves its owner. Karathress inherits
         // Spitfire after Tidalvess dies, so either real owner can identify it.
-        Unit* owner = ai->GetUnit(totem->GetSpawnerGuid());
+        Unit* owner = ai->GetUnit(ai::NativeSpawnerGuid(totem));
         if (!live(owner) || !owner->IsInCombat() || owner->GetDistance(totem) > 100 ||
             (entry == 8179 && owner->GetEntry() != 5650) ||
             (entry == 22091 && owner->GetEntry() != 21965 && owner->GetEntry() != 21214) ||

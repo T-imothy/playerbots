@@ -56,7 +56,8 @@ bool ai::UseNativeEncounterItem(Player* bot, Item* item, Unit* unit, GameObject*
         // The client chooses one on-use slot. Dispatch through the same native
         // path, retaining item charges, lock checks and native cast rejection.
 #ifdef MANGOSBOT_ZERO
-        bot->CastItemUseSpell(item, targets, slot);
+        // Turtle dispatches its native on-use payloads and item-script callback.
+        bot->CastItemUseSpell(item, targets);
 #elif defined(MANGOSBOT_ONE)
         bot->CastItemUseSpell(item, targets, 0, slot);
 #else

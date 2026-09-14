@@ -4,7 +4,7 @@
 #include <map>
 #include <unordered_map>
 #include <vector>
-#include "Tools/Language.h"
+#include "Language.h"
 
 typedef std::set<uint32> ItemIds;
 typedef std::set<uint32> SpellIds;
@@ -58,7 +58,8 @@ namespace ai
         static uint32 parseSlot(const std::string& text);
 
         static std::string formatSpell(SpellEntry const *sInfo);
-        static std::string formatSpell(uint32 spellId) {const SpellEntry* const spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId); if (!spellInfo) return ""; return formatSpell(spellInfo);};
+        // Penqle uses sSpellMgr.GetSpellEntry() instead of cmangos's sSpellTemplate.LookupEntry<SpellEntry>().
+        static std::string formatSpell(uint32 spellId) {SpellEntry const* spellInfo = sSpellMgr.GetSpellEntry(spellId); if (!spellInfo) return ""; return formatSpell(spellInfo);};
         uint32 parseSpell(std::string& text);
 
         static std::string formatGameobject(const GameObject* go);

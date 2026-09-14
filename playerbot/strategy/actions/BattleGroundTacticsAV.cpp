@@ -1,6 +1,6 @@
 #include "playerbot/playerbot.h"
-#include "BattleGround/BattleGround.h"
-#include "BattleGround/BattleGroundAV.h"
+#include "Battlegrounds/BattleGround.h"
+#include "Battlegrounds/BattleGroundAV.h"
 #include "BattleGroundTactics.h"
 
 static std::tuple<uint32, uint32, std::string> AV_HordeAttackObjectives[] =

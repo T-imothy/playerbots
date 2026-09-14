@@ -1,9 +1,9 @@
 
 #include "playerbot/playerbot.h"
 #include "UseTrinketAction.h"
-#include "Entities/Item.h"
-#include "Entities/ItemPrototype.h"
-#include "Entities/Player.h"
+#include "Objects/Item.h"
+#include "Objects/ItemPrototype.h"
+#include "Objects/Player.h"
 
 using namespace ai;
 

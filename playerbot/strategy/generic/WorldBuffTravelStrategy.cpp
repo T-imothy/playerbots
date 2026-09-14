@@ -1,4 +1,4 @@
-﻿#include "playerbot/playerbot.h"
+#include "playerbot/playerbot.h"
 #include "WorldBuffTravelStrategy.h"
 #include "playerbot/TravelMgr.h"
 

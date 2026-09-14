@@ -8,7 +8,7 @@ using namespace ai;
 
 float ThreatMultiplier::GetValue(Action* action)
 {
-    if (action == NULL || action->getThreatType() == ActionThreatType::ACTION_THREAT_NONE || action->getThreatType() == ActionThreatType::ACTION_THREAT_LOW)
+    if (action == NULL || action->getThreatType() == ActionThreatType::ACTION_THREAT_NONE)
         return 1.0f;
 
     // Keep urgently needed healing available even when optional low-threat

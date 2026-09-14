@@ -2,6 +2,11 @@
 #include "playerbot/strategy/Value.h"
 #include "playerbot/TravelNode.h"
 
+// Declared in MovementActions.h, which includes this header the other way
+// around - a scoped enum with fixed underlying type forward-declares cleanly,
+// and the Set() parameter below only passes it through.
+enum class MovementPriority : uint8;
+
 namespace ai
 {
     class LastMovement
@@ -40,6 +45,8 @@ namespace ai
             lastAreaTrigger = 0;
             lastTransportEntry = 0;
             lastFlee = 0;
+            fleeCount = 0;
+            lastFleeAttempt = 0;
             lastMoveShort = WorldPosition();
             nextTeleport = 0;
             clearPathFailure();
@@ -56,7 +63,6 @@ namespace ai
             failedPathGeneration = 0;
             failedPathRetryUntil = 0;
         }
-
         void Set(Unit* lastFollow)
         {
             setPath(TravelPath());
@@ -64,6 +70,18 @@ namespace ai
         }
 
         void setPath(TravelPath path) { lastPath = path; }
+
+        // Ported dungeon-clear movement records where it sent the bot and for
+        // how long, and zeroes the wait to unblock the next order. This tree
+        // never read such a wait (IsWaitingForLastMove answers false, see
+        // MovementActions.h), so the field is bookkeeping the porting code
+        // maintains for its own log lines - kept faithful, not load-bearing.
+        void Set(uint32 mapId, float x, float y, float z, float o, float delay, MovementPriority /*priority*/)
+        {
+            lastMoveShort = WorldPosition(mapId, x, y, z, o);
+            lastdelayTime = delay;
+        }
+        float lastdelayTime = 0.0f;
     public:
         std::vector<uint32> taxiNodes;
         ObjectGuid taxiMaster;
@@ -71,6 +89,12 @@ namespace ai
         uint32 lastAreaTrigger;
         uint32 lastTransportEntry;
         time_t lastFlee;
+        // Number of flee actions dispatched in quick succession (within returnDelay of each
+        // other). Used to detect a "subsequent" flee loop so spellcasting can take priority.
+        uint32 fleeCount;
+        // Wall-clock of the last dispatched flee, used to decide whether the next flee is
+        // "subsequent" (close in time) or a fresh flee (window lapsed -> count resets).
+        time_t lastFleeAttempt;
         TravelPath lastPath;
         WorldPosition lastMoveShort;
         time_t nextTeleport;

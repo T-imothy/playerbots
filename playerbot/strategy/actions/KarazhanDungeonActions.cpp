@@ -1,3 +1,4 @@
+#include "playerbot/NativeCombatQueries.h"
 
 #include "playerbot/playerbot.h"
 #include "KarazhanDungeonActions.h"
@@ -67,7 +68,7 @@ Unit* KarazhanPriorityTargetAction::GetTarget()
         const uint32 entry = unit->GetEntry();
         const bool priority = illhoof ? entry == 17248 :
             (entry == 17096 || entry == 19781 || entry == 19782 || entry == 19783);
-        if (!priority || !valid(unit) || unit->GetSpawnerGuid() != boss->GetObjectGuid()) continue;
+        if (!priority || !valid(unit) || ai::NativeSpawnerGuid(unit) != boss->GetObjectGuid()) continue;
         if (unit == current) return unit;
         if (!selected || bot->GetDistance(unit) < bot->GetDistance(selected)) selected = unit;
     }
@@ -146,7 +147,7 @@ bool NetherspitePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan
     if (!boss || !portal || !boss->IsInWorld() || !portal->IsInWorld() ||
         !bot->IsInMap(boss) || !bot->IsInMap(portal) ||
         !boss->IsAlive() || !boss->IsInCombat() || !portal->IsAlive() || boss->HasAura(38542) ||
-        boss->GetEntry() != 15689 || portal->GetSpawnerGuid() != boss->GetObjectGuid()) return false;
+        boss->GetEntry() != 15689 || ai::NativeSpawnerGuid(portal) != boss->GetObjectGuid()) return false;
     const float oldZ = plan.destination.z;
     bot->UpdateAllowedPositionZ(plan.destination.x, plan.destination.y, plan.destination.z);
     return std::isfinite(plan.destination.z) && std::fabs(plan.destination.z - oldZ) < 6.0f;

@@ -1,9 +1,10 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "HazardsValue.h"
 #include "EncounterPositionValue.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -80,7 +81,7 @@ void ai::AppendNativeEncounterActorHazards(PlayerbotAI* ai, std::list<HazardPosi
                 // exact native summon and group GUID checks even after that
                 // player dies; the eye can remain alive for its native duration.
                 if (actor->GetUInt32Value(UNIT_CREATED_BY_SPELL) != rule.playerSummonSpell ||
-                    !bot->GetGroup()->IsMember(actor->GetSpawnerGuid())) continue;
+                    !bot->GetGroup()->IsMember(ai::NativeSpawnerGuid(actor))) continue;
                 auto found = encounterOwners.find(rule.boss);
                 if (found == encounterOwners.end())
                 {
@@ -99,7 +100,7 @@ void ai::AppendNativeEncounterActorHazards(PlayerbotAI* ai, std::list<HazardPosi
                 }
                 else boss = found->second;
             }
-            else boss = ai->GetUnit(actor->GetSpawnerGuid());
+            else boss = ai->GetUnit(ai::NativeSpawnerGuid(actor));
             if (!boss || boss->GetEntry() != rule.boss || !boss->IsInWorld() || !boss->IsAlive() ||
                 !boss->IsInCombat() || boss->HasCharmer() || !bot->IsInMap(boss)) continue;
             const float radius = NativeEncounterSpellRadius(rule.payload);

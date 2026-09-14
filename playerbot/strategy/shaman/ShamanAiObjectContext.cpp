@@ -406,6 +406,7 @@ namespace ai
                 creators["frost shock"] = [](PlayerbotAI* ai) { return new CastFrostShockAction(ai); };
                 creators["chain lightning"] = [](PlayerbotAI* ai) { return new CastChainLightningAction(ai); };
                 creators["lightning bolt"] = [](PlayerbotAI* ai) { return new CastLightningBoltAction(ai); };
+                creators["calm elements"] = [](PlayerbotAI* ai) { return new CastCalmElementsAction(ai); };
 #ifdef MANGOSBOT_TWO
                 creators["lava burst"] = [](PlayerbotAI* ai) { return new CastLavaBurstAction(ai); };
                 creators["feral spirit"] = [](PlayerbotAI* ai) { return new CastFeralSpiritAction(ai); };

@@ -1,9 +1,9 @@
 #include "playerbot/playerbot.h"
 #include "MonitorMovement.h"
 #include "playerbot/WorldPosition.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 #include "TestRegistry.h"
 #include "playerbot/TravelNode.h"
 
@@ -57,7 +57,7 @@ bool MonitorNotOnMap::IsConditionMet(const std::string& monitorStr, Player* bot,
     if (!botPos)
         return true;
 
-    std::string currentMapName = botPos.getMapEntry()->name[0];
+    std::string currentMapName = botPos.getMapEntry()->name;
 
     if (currentMapName != wantMapName)
         return true;

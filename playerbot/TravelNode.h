@@ -2,7 +2,7 @@
 
 #include <shared_mutex>
 #include "WorldPosition.h"
-#include "MotionGenerators/PathFinder.h"
+#include "Maps/PathFinder.h"
 
 //THEORY
 // 
@@ -82,13 +82,27 @@ namespace ai
         //Setters
         void setComplete(bool complete1) { complete = complete1; }
         void setPath(std::vector<WorldPosition> path1) { path = path1; }
-        void setPathAndCost(std::vector<WorldPosition> path1, float speed) { setPath(path1); calculateCost(true); extraCost = distance / speed; }
+        void setPathAndCost(std::vector<WorldPosition> path1, float speed)
+        {
+            setPath(path1);
+
+            // Persisted special paths are already marked calculated. Temporarily
+            // clear that flag so their real distance can still be rebuilt from
+            // the loaded points and stale generated costs can be normalized.
+            bool const wasCalculated = calculated;
+            calculated = false;
+            calculateCost(true);
+            calculated = wasCalculated;
+
+            extraCost = speed > 0.0f ? distance / speed : 0.0f;
+        }
         //void setPortal(bool portal1, uint32 portalId1 = 0) { portal = portal1; portalId = portalId1; }
         //void setTransport(bool transport1) { transport = transport1; }
         void setPathType(TravelNodePathType pathType1) { pathType = pathType1; }
         void setPathObject(uint64 pathObject1) { pathObject = pathObject1; }
 
         void calculateCost(bool distanceOnly = false);
+        bool recalculateGeometry();
 
         float getCost(Unit* unit = nullptr, uint32 cGold = 0);
         uint32 getPrice();
@@ -400,7 +414,10 @@ namespace ai
         void generateNpcNodes();                  //Creates node at innkeepers, flightmasters, spirithealers and bosses.
         void generateStartNodes();                //Create node at lvl1 players spawn.
         void generateAreaTriggerNodes();          //Create node at area trigger (dungeon portals/teleports) and also link the entry and exit.
-        void makeDockNode(TravelNode* node, WorldPosition pos, std::string dockName); //Create helper node to enter/exit transport.
+        //Create helper node to enter/exit transport. transportEntry is the vehicle's
+        //gameobject entry and becomes the link's pathObject; passing 0 leaves the hop
+        //unresolvable and forces a whole-map gameobject scan at boarding time.
+        void makeDockNode(TravelNode* node, WorldPosition pos, std::string dockName, uint32 transportEntry);
         void generateTransportNodes();            //Create node at transport (boats/zepelins/elevators) and also create the path they move.
         void generateZoneMeanNodes();             //Create node at zone mean (the avg location of all objects and creatures of a certain area/zone)
         void generatePortalNodes();               //Create node at static portal (ie. dalaran->ironforge) and the desination of teleport spell (ie. teleport to ironforge)

@@ -1,7 +1,11 @@
 #include "playerbot/playerbot.h"
 #include "CombatDiagnostics.h"
+#include "CombatOutcomeCounters.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
+#include "TravelMgr.h"
+#include "strategy/AiObjectContext.h"
+#include "Movement/spline/MoveSpline.h"
 #include "Config/Config.h"
 #include <algorithm>
 #include <chrono>
@@ -17,9 +21,12 @@ namespace
 {
     std::mutex combatMutex;
     std::map<std::string, uint64> buckets;
+    ai::diagnostics::OutcomeCounters outcomeCounters;
     std::vector<std::string> traces;
+    std::vector<std::string> progress;
     uint64 droppedKeys = 0, droppedTraces = 0, sequence = 0;
     thread_local const std::string* currentAction = nullptr;
+    thread_local const std::string* currentSpellName = nullptr;
     std::string Clean(std::string value)
     {
         value.resize(std::min<size_t>(value.size(), 96));
@@ -27,7 +34,7 @@ namespace
             if (c == '"' || c == '\r' || c == '\n' || c == '\t') c = '_';
         return value;
     }
-    uint64 Milliseconds()
+    uint64 DiagnosticMilliseconds()
     {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -58,6 +65,14 @@ std::string CombatActionContext::Current()
     return currentAction ? *currentAction : "outside_engine_action";
 }
 
+CombatSpellNameContext::CombatSpellNameContext(const std::string& name)
+    : previous(currentSpellName), enabled(sPlayerbotAIConfig.combatDiagnosticsEnabled)
+{ if (enabled) currentSpellName = &name; }
+CombatSpellNameContext::~CombatSpellNameContext()
+{ if (enabled) currentSpellName = previous; }
+std::string CombatSpellNameContext::Current()
+{ return currentSpellName ? *currentSpellName : ""; }
+
 bool CombatDiagnostics::Select(PlayerbotAI* ai)
 {
     if (!sPlayerbotAIConfig.combatDiagnosticsEnabled || !sPlayerbotAIConfig.diagnosticsEnabled || !ai)
@@ -84,6 +99,8 @@ void CombatDiagnostics::Record(PlayerbotAI* ai, const std::string& action, const
         << "\" source=\"" << Clean(source) << '"';
     if (std::string(stage) == "spell_check" && result >= 0)
         key << " reason=\"" << Clean(GetSpellCastResultString(static_cast<SpellCastResult>(result))) << '"';
+    if (std::string_view(stage) == "spell_check")
+        key << " requested_spell=\"" << Clean(CombatSpellNameContext::Current()) << '\"';
     const uint32 guid = bot->GetGUIDLow();
     // A deterministic small cohort provides examples, not population-wide sequences.
     const bool trace = sPlayerbotAIConfig.combatDiagnosticsTraceBot ?
@@ -92,7 +109,7 @@ void CombatDiagnostics::Record(PlayerbotAI* ai, const std::string& action, const
     if (trace)
     {
         std::ostringstream out;
-        out << " time_ms=" << Milliseconds() << " bot=" << guid << " map=" << bot->GetMapId()
+        out << " time_ms=" << DiagnosticMilliseconds() << " bot=" << guid << " map=" << bot->GetMapId()
             << " instance=" << bot->GetInstanceId() << " target_kind=";
         if (!target) out << "none_or_unobserved";
         else if (target == bot) out << "self";
@@ -105,6 +122,7 @@ void CombatDiagnostics::Record(PlayerbotAI* ai, const std::string& action, const
         detail = out.str();
     }
     std::lock_guard<std::mutex> guard(combatMutex);
+    outcomeCounters.Add(bot->getClass(), stage, result);
     const std::string name = key.str();
     auto found = buckets.find(name);
     if (found != buckets.end()) ++found->second;
@@ -118,16 +136,51 @@ void CombatDiagnostics::Record(PlayerbotAI* ai, const std::string& action, const
     }
 }
 
+void CombatDiagnostics::RecordProgress(PlayerbotAI* ai)
+{
+    if (!sPlayerbotAIConfig.combatDiagnosticsEnabled || !sPlayerbotAIConfig.diagnosticsEnabled || !ai)
+        return;
+    Player* bot = ai->GetBot();
+    if (!bot || !bot->IsInWorld() || ai->IsRealPlayer()) return;
+    const uint32 guid = bot->GetGUIDLow();
+    if (sPlayerbotAIConfig.combatDiagnosticsTraceBot ?
+        guid != sPlayerbotAIConfig.combatDiagnosticsTraceBot : guid % 256 != 0) return;
+    std::ostringstream out;
+    out << "time_ms=" << DiagnosticMilliseconds() << " bot=" << guid
+        << " generation=" << bot->GetMapWorkGeneration() << " map=" << bot->GetMapId()
+        << " instance=" << bot->GetInstanceId() << " zone=" << bot->GetZoneId()
+        << " x=" << bot->GetPositionX() << " y=" << bot->GetPositionY() << " z=" << bot->GetPositionZ()
+        << " level=" << uint32(bot->GetLevel()) << " xp=" << bot->GetUInt32Value(PLAYER_XP)
+        << " alive=" << bot->IsAlive() << " combat=" << bot->IsInCombat()
+        << " moving=" << bot->IsMoving() << " spline=" << (bot->movespline && !bot->movespline->Finalized())
+        << " casting=" << bot->IsNonMeleeSpellCasted(true) << " mail=" << bot->GetMailSize()
+        << " action_delay_ms=" << ai->GetAIInternalUpdateDelay()
+        << " minimal_delay_ms=" << ai->GetBackgroundMinimalDelay();
+    auto* context = ai->GetAiObjectContext();
+    if (context && context->HasValue("travel target"))
+        if (auto* value = context->GetValue<TravelTarget*>("travel target"))
+            if (auto* target = value->LazyGet())
+                out << " travel_status=" << uint32(target->GetStatus()) << " travel_entry=" << target->GetEntry();
+    if (context && context->HasValue("next rpg action"))
+        if (auto* value = context->GetValue<std::string>("next rpg action"))
+            out << " rpg=\"" << Clean(value->LazyGet()) << '"';
+    std::lock_guard<std::mutex> guard(combatMutex);
+    if (progress.size() < 128) progress.push_back(out.str());
+}
+
 void CombatDiagnostics::Flush()
 {
     if (!sPlayerbotAIConfig.combatDiagnosticsEnabled) return;
     std::map<std::string, uint64> batch;
-    std::vector<std::string> detail;
+    ai::diagnostics::OutcomeCounters totals;
+    std::vector<std::string> detail, progressBatch;
     uint64 keyDrops, traceDrops;
     {
         std::lock_guard<std::mutex> guard(combatMutex);
         batch.swap(buckets);
+        totals.values.swap(outcomeCounters.values);
         detail.swap(traces);
+        progressBatch.swap(progress);
         keyDrops = droppedKeys; traceDrops = droppedTraces;
         droppedKeys = droppedTraces = 0;
     }
@@ -165,8 +218,39 @@ void CombatDiagnostics::Flush()
         std::to_string(sPlayerbotAIConfig.combatDiagnosticsTraceBot) + " key_drops=" +
         std::to_string(keyDrops) + " trace_drops=" + std::to_string(traceDrops) +
         " completion_observed=0");
+    // Compact totals use their own bounded two-file history so verbose examples
+    // cannot evict the only evidence for a multi-hour run.
+    const std::string totalsPath = directory + "PlayerbotCombatTotals.log";
+    FILE* totalsFile = fopen(totalsPath.c_str(), "ab+");
+    if (totalsFile)
+    {
+        fseek(totalsFile, 0, SEEK_END);
+        if (ftell(totalsFile) >= static_cast<long>(limit))
+        {
+            fclose(totalsFile); totalsFile = nullptr;
+            const std::string oldTotals = totalsPath + ".1";
+            if ((std::remove(oldTotals.c_str()) == 0 || errno == ENOENT) &&
+                std::rename(totalsPath.c_str(), oldTotals.c_str()) == 0)
+                totalsFile = fopen(totalsPath.c_str(), "ab+");
+        }
+    }
+    totals.Each([&](size_t cls, std::string_view stage, int result, uint64_t count)
+    {
+        std::string line = timestamp + " PB_COMBAT_TOTAL class=" + std::to_string(cls) +
+            " stage=" + std::string(stage) + " result=" + std::to_string(result) +
+            " count=" + std::to_string(count) + " sample_rate=" +
+            std::to_string(sPlayerbotAIConfig.combatDiagnosticsSampleRate);
+        if(stage == "spell_check" && result >= 0)
+            line += " reason=\"" + Clean(GetSpellCastResultString(static_cast<SpellCastResult>(result))) + "\"";
+        if(stage == "travel_result" && result >= 0 && size_t(result) < ai::diagnostics::TravelReasons.size())
+            line += " reason=\"" + std::string(ai::diagnostics::TravelReasons[result]) + "\"";
+        if(totalsFile && (fwrite(line.data(), 1, line.size(), totalsFile) != line.size() || fputc('\n', totalsFile) == EOF))
+        { fclose(totalsFile); totalsFile = nullptr; }
+    });
+    if(totalsFile) fclose(totalsFile);
     for (const auto& entry : batch)
         write(timestamp + " PB_COMBAT_COUNT count=" + std::to_string(entry.second) + " " + entry.first);
     for (const auto& entry : detail) write(timestamp + " PB_COMBAT_TRACE " + entry);
+    for (const auto& entry : progressBatch) write(timestamp + " PB_BOT_PROGRESS " + entry);
     if (file) fclose(file);
 }

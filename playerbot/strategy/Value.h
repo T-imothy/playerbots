@@ -1,14 +1,13 @@
+#include "Util/DevDiagnostics.h"
 #pragma once
 #include "Action.h"
 #include "Event.h"
 #include "playerbot/PlayerbotAIAware.h"
 #include "playerbot/PerformanceMonitor.h"
-#include "Globals/ObjectMgr.h"
+#include "ObjectMgr.h"
 #include "AiObject.h"
 #include "playerbot/GuidPosition.h"
 #include "NamedObjectContext.h"
-
-#include <algorithm>
 
 namespace ai
 {
@@ -51,7 +50,7 @@ namespace ai
     {
     public:
         CalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) : UntypedValue(ai, name),
-            checkInterval(checkInterval)
+            checkInterval(checkInterval), value{}
         {
             lastCheckTime = 0;
         }
@@ -66,6 +65,7 @@ namespace ai
                 lastCheckTime = now;
 
                 auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, AiNamedObject::getName(), this->ai);
+                MANTECH_DIAG_SCOPE(BotValue, 32, this->getName().c_str());
                 value = Calculate();
             }
             return value;
@@ -79,7 +79,7 @@ namespace ai
         virtual void Set(T value) override { this->value = value; }
         virtual void Update() { }
         virtual void Reset() override { lastCheckTime = 0; }
-        virtual bool Expired() override { return Expired(static_cast<uint32>(std::max(1, checkInterval / 2))); }
+        virtual bool Expired() override { return Expired(checkInterval / 2); }
         virtual bool Expired(uint32 interval) override { return time(0) - lastCheckTime >= interval; }
     protected:
         virtual T Calculate() = 0;
@@ -100,10 +100,12 @@ namespace ai
             time_t now = time(0);
             if (!this->lastCheckTime)
             {
-                this->lastCheckTime = now;
-
                 auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, AiNamedObject::getName(), this->ai);
+                MANTECH_DIAG_SCOPE(BotValue, 32, this->getName().c_str());
                 this->value = this->Calculate();
+                // A failed calculation must remain retryable, never publish
+                // an uninitialized result as an already populated cache.
+                this->lastCheckTime = now;
             }
             return this->value;
         }
@@ -260,11 +262,38 @@ namespace ai
         UnitCalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) :
             CalculatedValue<Unit*>(ai, name, checkInterval) {}
 
+        // The base class caches its result for up to checkInterval/2 seconds.
+        // Here that result is a raw Unit* which can outlive its object: if the
+        // creature dies inside that window, the next read follows a freed
+        // pointer. Crashed exactly that way on 2026-08-06, in
+        // AttackAction::IsTargetValid via IsFriendlyTo.
+        //
+        // So the guid is carried alongside and a cached read is resolved
+        // through the object accessor instead. If the object is gone the
+        // result is nullptr, which every caller already handles - they all
+        // null-check. The calculation itself stays on its interval.
+        //
+        // The interval condition is copied from CalculatedValue::Get; if it
+        // changes there it has to be carried over here.
+        //
+        // Defined in Value.cpp: PlayerbotAI is only forward declared here.
+        Unit* Get() override;
+        Unit* LazyGet() override;
+
+        void Set(Unit* unit) override
+        {
+            this->value = unit;
+            m_guid = unit ? unit->GetObjectGuid() : ObjectGuid();
+        }
+
         virtual std::string Format() override
         {
             Unit* unit = this->Calculate();
             return unit ? unit->GetName() : "<none>";
         }
+
+    protected:
+        ObjectGuid m_guid;
     };
 
     class CDPairCalculatedValue : public CalculatedValue<CreatureDataPair const*>
@@ -278,8 +307,8 @@ namespace ai
             CreatureDataPair const* creatureDataPair = this->Calculate();
             if (!creatureDataPair)
                 return "<none>";
-            CreatureInfo const* bmTemplate = ObjectMgr::GetCreatureTemplate(creatureDataPair->second.id);
-            return bmTemplate ? bmTemplate->Name : "<none>";
+            CreatureInfo const* bmTemplate = sObjectMgr.GetCreatureTemplate(creatureDataPair->second.creature_id[0]);
+            return bmTemplate ? bmTemplate->name : "<none>";
         }
     };
 
@@ -355,6 +384,15 @@ namespace ai
         virtual void Set(T value) override { this->value = value; }
         virtual void Update() { }
         virtual void Reset() override { value = defaultValue; }
+        // mod-playerbots hands out a writable reference so a caller can update
+        // the stored value in place instead of Get-modify-Set. Same storage,
+        // one fewer copy; only meaningful on a manually set value, which is
+        // why it lives here and not on Value.
+        // mod-playerbots writes through a reference to the stored value
+        // instead of Get-modify-Set. Only a manually set value has storage
+        // to hand out, so this is not on the Value base - and cannot be:
+        // some instantiations have T already a reference.
+        T& RefGet() { return value; }
 
     protected:
         T value;

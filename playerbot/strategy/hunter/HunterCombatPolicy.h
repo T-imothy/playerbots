@@ -48,7 +48,7 @@ namespace ai
         {
             m_targets.setUnitTarget(target);
         }
-        std::pair<float, float> Bounds() { return GetMinMaxRange(true); }
+        std::pair<float, float> Bounds() { return GetGenericRangeBounds(true, m_targets.getUnitTarget()); }
     };
 
     inline std::pair<float, float> HunterShotRange(PlayerbotAI* ai, Unit* target, const std::string& name = "auto shot")
@@ -56,23 +56,37 @@ namespace ai
         const SpellEntry* spell = sServerFacade.LookupSpellInfo(HunterSpell(ai, name));
         if (!spell || !target) return {0.0f, 0.0f};
         HunterRangeProbe probe(ai->GetBot(), spell, target);
-        return probe.Bounds();
+        auto bounds = probe.Bounds();
+        const float reach = ai->GetBot()->GetSizeFactorForDistance(target, SizeFactor::CombatReach);
+        if (bounds.first > 0.0f) bounds.first += reach;
+        bounds.second += reach;
+        return bounds;
     }
 
     inline bool HunterInShotRange(PlayerbotAI* ai, Unit* target, float margin = 0.0f)
     {
         if (!MeleeCombatTarget(ai, target) || !HunterAmmoReady(ai)) return false;
         const auto bounds = HunterShotRange(ai, target);
-        const float dist2 = ai->GetBot()->GetDistance(target, true, DIST_CALC_NONE);
+        const float dist2 = ai->GetBot()->GetDistance(target, DIST_CALC_NONE);
         return bounds.second > 0.0f && dist2 >= (bounds.first + margin) * (bounds.first + margin) &&
             dist2 <= bounds.second * bounds.second && ai->GetBot()->IsWithinLOSInMap(target);
     }
 
     inline bool HunterManualAspect(PlayerbotAI* ai)
     {
-        for (const char* name : {"aspect hawk", "aspect monkey", "aspect cheetah", "aspect pack", "aspect beast", "aspect wild", "aspect viper", "aspect dragonhawk"})
+        for (const char* name : {"aspect hawk", "aspect wolf", "aspect monkey", "aspect cheetah", "aspect pack", "aspect beast", "aspect wild", "aspect viper", "aspect dragonhawk"})
             if (ai->HasStrategy(name, BotState::BOT_STATE_COMBAT) || ai->HasStrategy(name, BotState::BOT_STATE_NON_COMBAT)) return true;
         return false;
+    }
+
+    inline bool HunterWantsWolf(PlayerbotAI* ai)
+    {
+        if (ai->HasStrategy("aspect wolf", BotState::BOT_STATE_COMBAT) ||
+            ai->HasStrategy("aspect wolf", BotState::BOT_STATE_NON_COMBAT)) return true;
+        if (HunterManualAspect(ai)) return false;
+        const uint32 spell = HunterSpell(ai, "aspect of the wolf");
+        return spell && ai->GetBot()->HasSpell(spell) && ai->GetBot()->IsInCombat() &&
+            ai->HasStrategy("close", BotState::BOT_STATE_COMBAT);
     }
 
     inline bool HunterWantsViper(PlayerbotAI* ai)

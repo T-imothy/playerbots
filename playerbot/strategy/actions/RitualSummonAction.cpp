@@ -3,9 +3,9 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/ServerFacade.h"
 #include "Spells/SpellMgr.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -35,7 +35,8 @@ bool ai::HasActiveSummoningRitual(Player* player)
     {
         const Spell* spell = player->GetCurrentSpell(type);
         if (spell && spell->m_spellInfo && spell->getState() != SPELL_STATE_FINISHED &&
-            IsNativeSummoningRitual(spell->m_spellInfo->Id)) return true;
+            (IsNativeSummoningRitual(spell->m_spellInfo->Id) ||
+             (player->GetMapId() == 70 && spell->m_spellInfo->Id == 11206))) return true;
     }
     return false;
 }
@@ -100,7 +101,7 @@ bool AssistSummoningRitualAction::isUseful()
 bool AssistSummoningRitualAction::isPossible()
 {
     GameObject* ritual = GetRitual();
-    return ritual && (bot->GetDistance(ritual) <= ritual->GetInteractionDistance() || ai->CanMove());
+    return ritual && (ritual->IsAtInteractDistance(bot) || ai->CanMove());
 }
 
 bool AssistSummoningRitualAction::UseRitual(GameObject* ritual)
@@ -108,10 +109,10 @@ bool AssistSummoningRitualAction::UseRitual(GameObject* ritual)
     // Resolve again from a live group caster instead of trusting a stale event
     // pointer. Never mark participants or finish someone else's channel ourselves.
     if (!ritual || GetRitual() != ritual) return false;
-    if (bot->GetDistance(ritual) > ritual->GetInteractionDistance())
+    if (!ritual->IsAtInteractDistance(bot))
     {
         if (!ai->CanMove()) return false;
-        return MoveNear(ritual, std::min(2.0f, ritual->GetInteractionDistance() * 0.5f));
+        return MoveNear(ritual, std::min(2.0f, ritual->GetGOInfo()->GetInteractionDistance() * 0.5f));
     }
     if (!bot->IsWithinLOSInMap(ritual)) return false;
     ai->StopMoving();

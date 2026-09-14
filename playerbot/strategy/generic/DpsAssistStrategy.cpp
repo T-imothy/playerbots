@@ -9,10 +9,6 @@ void DpsAssistStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
     triggers.push_back(new TriggerNode(
         "not dps target active",
         NextAction::array(0, new NextAction("dps assist", 60.0f), NULL)));
-
-    triggers.push_back(new TriggerNode(
-        "dps assist",
-        NextAction::array(0, new NextAction("dps assist", 60.0f), NULL)));
 }
 
 void DpsAoeStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)

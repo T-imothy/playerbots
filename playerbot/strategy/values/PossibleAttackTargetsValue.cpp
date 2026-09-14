@@ -5,11 +5,10 @@
 #include "playerbot/strategy/actions/EncounterSpellPolicy.h"
 
 #include "playerbot/ServerFacade.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 #include "AttackersValue.h"
-#include "RtiTargetValue.h"
 #include "EnemyPlayerValue.h"
 
 using namespace ai;
@@ -124,7 +123,7 @@ bool PossibleAttackTargetsValue::HasBreakableCC(Unit* target, Player* player)
         return true;
     }
 
-    PlayerbotAI* ai = player->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(player);
     if (ai)
     {
         if (ai->HasAura("sap", target))
@@ -167,46 +166,6 @@ bool PossibleAttackTargetsValue::HasUnBreakableCC(Unit* target, Player* player)
     return false;
 }
 
-bool PossibleAttackTargetsValue::IsCcTarget(Unit* attacker, Player* player)
-{
-    PlayerbotAI* ai = player->GetPlayerbotAI();
-    if (ai)
-    {
-        Group* group = ai->GetBot()->GetGroup();
-        if (group)
-        {
-            Group::MemberSlotList const& groupSlot = group->GetMemberSlots();
-            for (Group::member_citerator itr = groupSlot.begin(); itr != groupSlot.end(); itr++)
-            {
-                Player *player = sObjectMgr.GetPlayer(itr->guid);
-                if (!player || !sServerFacade.IsAlive(player) || !ai->IsSafe(player))
-                    continue;
-
-                if (player->GetPlayerbotAI())
-                {
-                    if (PAI_VALUE(Unit*,"rti cc target") == attacker)
-                        return true;
-
-                    std::string rti = PAI_VALUE(std::string,"rti cc");
-                    int index = RtiTargetValue::GetRtiIndex(rti);
-                    if (index != -1)
-                    {
-                        uint64 guid = group->GetTargetIcon(index);
-                        if (guid && attacker->GetObjectGuid() == ObjectGuid(guid))
-                            return true;
-                    }
-                }
-            }
-
-            uint64 guid = group->GetTargetIcon(4);
-            if (guid && attacker->GetObjectGuid() == ObjectGuid(guid))
-                return true;
-        }
-    }
-
-    return false;
-}
-
 bool PossibleAttackTargetsValue::IsImmuneToDamage(Unit* target, Player* player)
 {
     // Charmed
@@ -216,15 +175,7 @@ bool PossibleAttackTargetsValue::IsImmuneToDamage(Unit* target, Player* player)
     }
 
     // Immune to damage
-    // Before we check auras, check school derived immunity for creatures
-    if (target->IsCreature())
-    {
-        if(((Creature*)target)->GetCreatureInfo()->SchoolImmuneMask == SPELL_SCHOOL_MASK_ALL)
-            return true;
-    }
-
-
-    PlayerbotAI* ai = player->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(player);
     if (!ai)
         return false;
 
@@ -274,7 +225,7 @@ bool PossibleAttackTargetsValue::IsTapped(Unit* target, Player* player)
 {
     if (player)
     {
-        PlayerbotAI* ai = player->GetPlayerbotAI();
+        PlayerbotAI* ai = GetBotAI(player);
 
         if (ai && ai->HasAura("tame beast", target))
             return false;
@@ -284,7 +235,7 @@ bool PossibleAttackTargetsValue::IsTapped(Unit* target, Player* player)
         {
             Unit* victim = creature->GetVictim();
             Player* master = ai ? ai->GetMaster() : nullptr;
-            PlayerbotAI* ai = player->GetPlayerbotAI();
+            PlayerbotAI* ai = GetBotAI(player);
 
              if (!victim) //Target is not attacking anything.
                 return true;
@@ -333,13 +284,13 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
     if (target->GetObjectGuid().IsPlayer())
         return true;
 
-    if (player->GetPlayerbotAI() && (target->GetObjectGuid() == PAI_VALUE(ObjectGuid, "attack target")))
+    if (GetBotAI(player) && (target->GetObjectGuid() == PAI_VALUE(ObjectGuid, "attack target")))
         return true;
 
     if(!HasIgnoreCCRti(target, player) && (HasBreakableCC(target, player) || HasUnBreakableCC(target, player)))
         return true;
 
-    if (player->GetPlayerbotAI() && !player->GetPlayerbotAI()->HasActivePlayerMaster()&& PAI_VALUE(Unit*, "rti target") == target)
+    if (GetBotAI(player) && !GetBotAI(player)->HasActivePlayerMaster()&& PAI_VALUE(Unit*, "rti target") == target)
         return true;
 
     return false;
@@ -351,6 +302,18 @@ bool PossibleAttackTargetsValue::IsPossibleTarget(Unit* target, Player* player, 
     if (!PossibleTargetsValue::IsValid(target, player, true)) return false;
     if(target)
     {
+        // Defer to the same attackability check the real spell-cast validation uses
+        // (Spell::CheckCast -> WorldObject::IsValidAttackTarget). This rejects targets
+        // that have turned friendly (PvP flag drop, charm/MC ended, etc.) as well as
+        // opposing-faction players who aren't actually PvP-flagged/in an FFA zone/duelling -
+        // faction hostility alone isn't enough to legally attack another player, but the
+        // bot target-selection logic only ever checked faction, so bots were picking
+        // targets they could never actually hit and then never re-evaluating them.
+        if (!player->IsValidAttackTarget(target))
+        {
+            return false;
+        }
+
         // If the target is in an attackable distance
         if(!player->IsWithinDistInMap(target, range))
         {
@@ -363,8 +326,8 @@ bool PossibleAttackTargetsValue::IsPossibleTarget(Unit* target, Player* player, 
             return false;
         }
 
-        // If the target is CC'ed or is a CC target (don't place a dot before we recast cc...)
-        if(!ignoreCC && !HasIgnoreCCRti(target, player) && (HasBreakableCC(target, player) || HasUnBreakableCC(target, player)) || IsCcTarget(target, player))
+        // If the target is CC'ed
+        if(!ignoreCC && !HasIgnoreCCRti(target, player) && (HasBreakableCC(target, player) || HasUnBreakableCC(target, player)))
         {
             return false;
         }
@@ -388,7 +351,7 @@ bool PossibleAttackTargetsValue::IsPossibleTarget(Unit* target, Player* player, 
 
 bool PossibleAddsValue::Calculate()
 {
-    PlayerbotAI *ai = bot->GetPlayerbotAI();
+    PlayerbotAI *ai = GetBotAI(bot);
     std::list<ObjectGuid> possible = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get();
     std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
 

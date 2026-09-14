@@ -1,4 +1,5 @@
 #include "MountValues.h"
+#include "MountManager.hpp"
 #include "playerbot/ChatHelper.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "BudgetValues.h"
@@ -85,6 +86,30 @@ uint32 MountValue::GetSpeed(uint32 spellId, bool canFly)
     return 0;
 }
 
+uint32 MountValue::GetSpeedFor(uint32 spellId, Player const* player, bool canFly)
+{
+    const uint32 raw = GetSpeed(spellId, canFly);
+    if (!player || canFly || !raw)
+        return raw;
+    SpellEntry const* spell = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
+    if (!spell || spell->EffectApplyAuraName[0] != SPELL_AURA_MOUNTED)
+        return raw;
+
+    // Match Aura::HandleAuraModIncreaseMountedSpeed. ManTech represents mount
+    // speeds as aura amount minus one, reserving zero for no mount.
+    if (spell->Custom & SPELL_CUSTOM_MOUNT_SPEED_100)
+        return 99;
+    if (spell->Custom & SPELL_CUSTOM_IGNORE_RIDING_SKILL_MOUNT_SPEED)
+        return raw;
+    switch (player->GetSkillValue(SKILL_RIDING))
+    {
+    case 75: return 59;
+    case 150: return 99;
+    case 0: return player->GetLevel() / 2 > 0 ? player->GetLevel() / 2 - 1 : 0;
+    default: return 0; // Native aura removes mounts for invalid riding tiers.
+    }
+}
+
 uint32 MountValue::GetMountSpell(uint32 itemId)
 {
     const ItemPrototype* proto = sObjectMgr.GetItemPrototype(itemId);
@@ -92,7 +117,11 @@ uint32 MountValue::GetMountSpell(uint32 itemId)
     if (!proto)
         return 0;
 
-    uint32 speed = 0;
+    // Collection items cast a shared learning spell; the ride itself is mapped
+    // by the native MountManager, not by that generic item spell's effects.
+    if (auto spell = sMountMgr.GetMountSpellId(itemId))
+        return IsMountSpell(*spell) ? *spell : 0;
+
     for (int j = 0; j < MAX_ITEM_PROTO_SPELLS; j++)
     {
         if (GetSpeed(proto->Spells[j].SpellId))
@@ -129,6 +158,9 @@ bool MountValue::IsValidLocation(Player* bot)
     }
 
     const SpellEntry* const spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(spellId);
+
+    if (!spellInfo)
+        return false;
 
     bool isAQ40Mounted = false;
 
@@ -186,7 +218,7 @@ uint32 CurrentMountSpeedValue::Calculate()
         if (auras.empty())
             continue;
 
-        for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); ++i)
+        for (Unit::AuraList::const_iterator i = auras.begin(); i != auras.end(); i++)
         {
             Aura* aura = *i;
             if (!aura)
@@ -194,7 +226,7 @@ uint32 CurrentMountSpeedValue::Calculate()
 
             SpellEntry const* auraSpell = aura->GetSpellProto();
 
-            uint32 auraSpeed = MountValue::GetSpeed(auraSpell->Id);
+            uint32 auraSpeed = MountValue::GetSpeedFor(auraSpell->Id, unit->ToPlayer(), false);
 
             if (auraSpeed < mountSpeed)
                 continue;
@@ -210,7 +242,7 @@ std::vector<MountValue> FullMountListValue::Calculate()
 {
     std::vector<MountValue> mounts;
 
-    for (uint32 id = 0; id < sItemStorage.GetMaxEntry(); ++id)
+    for (auto const& [id, nativeTemplate] : sObjectMgr.GetItemPrototypeMap())
     {
         ItemPrototype const* pProto = sItemStorage.LookupEntry<ItemPrototype>(id);
         if (!pProto)
@@ -263,7 +295,7 @@ uint32 MaxMountSpeedValue::Calculate()
     uint32 maxSpeed = 0;
 
     for (auto& mount : mounts)
-        maxSpeed = std::max(maxSpeed, mount.GetSpeed(canFly));
+        maxSpeed = std::max(maxSpeed, mount.GetSpeedFor(bot, canFly));
 
     return maxSpeed;
 }
@@ -273,7 +305,7 @@ std::string MountListValue::Format()
     std::ostringstream out; out << "{";
     for (auto& mount : this->Calculate())
     {
-        std::string speed = std::to_string(mount.GetSpeed(false) + 1) + "%" + (mount.GetSpeed(true) ? ("/" + (std::to_string(mount.GetSpeed(true) + 1) + "%")) : "");
+        std::string speed = std::to_string(mount.GetSpeedFor(bot, false) + 1) + "%" + (mount.GetSpeedFor(bot, true) ? ("/" + (std::to_string(mount.GetSpeedFor(bot, true) + 1) + "%")) : "");
         out << (mount.IsItem() ? "(item)" : "(spell)") << chat->formatSpell(mount.GetSpellId()) << "(" << speed << "),";
     }
     out << "}";
@@ -282,39 +314,8 @@ std::string MountListValue::Format()
 
 uint32 MountSkillTypeValue::Calculate()
 {
-#ifdef MANGOSBOT_ZERO
-    switch (bot->getRace())
-    {
-    case RACE_HUMAN:
-        return SKILL_RIDING_HORSE;
-    case RACE_ORC:
-        return SKILL_RIDING_WOLF;
-        break;
-    case RACE_NIGHTELF:
-        return SKILL_RIDING_TIGER;
-        break;
-    case RACE_DWARF:
-        return SKILL_RIDING_RAM;
-        break;
-    case RACE_TROLL:
-        return SKILL_RIDING_RAPTOR;
-        break;
-    case RACE_GNOME:
-        return SKILL_RIDING_MECHANOSTRIDER;
-        break;
-    case RACE_UNDEAD:
-        return SKILL_RIDING_UNDEAD_HORSE;
-        break;
-    case RACE_TAUREN:
-        return SKILL_RIDING_KODO;
-        break;
-    default:
-        return SKILL_RIDING;
-        break;
-    }
-#else
+    // Turtle uses the shared riding skill for every playable race.
     return SKILL_RIDING;
-#endif
 }
 
 std::vector<int32> AvailableMountVendors::Calculate()

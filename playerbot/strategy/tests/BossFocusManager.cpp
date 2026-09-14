@@ -1,8 +1,8 @@
 #include "BossFocusManager.h"
-#include "Entities/Creature.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Objects/Creature.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 #include "Spells/Spell.h"
 #include "Chat/Chat.h"
 
@@ -54,10 +54,10 @@ Creature* BossFocusManager::FindFocusMob()
     // Search map object store
     if (!focusMob && !foundDead)
     {
-        auto& objectStore = bot->GetMap()->GetObjectsStore();
-        for (auto itr = objectStore.begin<Creature>(); itr != objectStore.end<Creature>(); ++itr)
+        auto objectStore = bot->GetMap()->GetCreatureSnapshot();
+        for (Creature* storedCreature : objectStore)
         {
-            if (Creature* c = itr->second)
+            if (Creature* c = storedCreature)
             {
                 if (c->GetEntry() == ctx.focusMobEntry)
                 {
@@ -103,7 +103,7 @@ void BossFocusManager::RespawnFocusMob()
 void BossFocusManager::EngageFocusMob(Creature* focusMob)
 {
     // Disable leashing
-    focusMob->GetCombatManager().SetLeashingDisable(true);
+    focusMob->SetLeashingDisabled(true);
 
     // Ensure boss attacks bot
     if (focusMob->AI() && !focusMob->GetVictim())

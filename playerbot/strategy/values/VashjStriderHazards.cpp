@@ -1,9 +1,10 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "HazardsValue.h"
 #include "VashjCoreValue.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 
 using namespace ai;
 
@@ -23,7 +24,7 @@ void ai::AppendVashjStriderHazards(PlayerbotAI* ai, std::list<HazardPosition>& h
     for (Unit* strider : striders)
     {
         if (!strider->IsInWorld() || !strider->IsAlive() || !strider->IsInCombat() ||
-            !bot->IsInMap(strider) || strider->HasCharmer() || strider->GetSpawnerGuid() != boss->GetObjectGuid() ||
+            !bot->IsInMap(strider) || strider->HasCharmer() || ai::NativeSpawnerGuid(strider) != boss->GetObjectGuid() ||
             !strider->GetSpellAuraHolder(38257, strider->GetObjectGuid()) ||
             std::fabs(strider->GetPositionZ() - bot->GetPositionZ()) > 8) continue;
         // Rebuild from live positions, so death, phase changes and movement do

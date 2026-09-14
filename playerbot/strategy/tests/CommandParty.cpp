@@ -1,11 +1,11 @@
 #include "playerbot/playerbot.h"
 #include "CommandParty.h"
-#include "Grids/GridNotifiers.h"
-#include "Grids/GridNotifiersImpl.h"
-#include "Grids/CellImpl.h"
+#include "Maps/GridNotifiers.h"
+#include "Maps/GridNotifiersImpl.h"
+#include "Maps/CellImpl.h"
 #include "TestContext.h"
 #include "playerbot/PlayerbotMgr.h"
-#include "Groups/Group.h"
+#include "Group/Group.h"
 
 using namespace ai;
 
@@ -95,7 +95,7 @@ TestResult CommandPartyForm::Execute(const std::string& params, Player* bot,
             return TestResult::IMPOSSIBLE;
         }
 
-        if (PlayerbotAI* memberAi = member->GetPlayerbotAI())
+        if (PlayerbotAI* memberAi = GetBotAI(member))
             memberAi->HandleCommand(CHAT_MSG_WHISPER, "follow " + std::string(bot->GetName()), *bot);
     }
 

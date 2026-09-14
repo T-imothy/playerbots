@@ -1,3 +1,4 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "DungeonActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -48,7 +49,7 @@ Unit* DungeonAddTargetAction::GetIcecrownAddTarget()
                 break;
             default: continue;
         }
-        Unit* boss = ai->GetUnit(add->GetSpawnerGuid());
+        Unit* boss = ai->GetUnit(ai::NativeSpawnerGuid(add));
         if (!boss || boss->GetEntry() != bossEntry || !boss->IsInWorld() || !boss->IsAlive() ||
             !boss->IsInCombat() || !bot->IsInMap(boss) || boss->HasCharmer() || boss->GetVictim() == bot ||
             bot->GetDistance(boss) > 100 || add->GetDistance(boss) > 100) continue;

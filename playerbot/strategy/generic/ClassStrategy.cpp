@@ -151,7 +151,7 @@ void AoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("goblin sapper", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "ranged high aoe",
+        "ranged medium aoe",
         NextAction::array(0, new NextAction("throw grenade", ACTION_HIGH), NULL)));
 }
 
@@ -622,7 +622,7 @@ void AoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("goblin sapper", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "ranged high aoe",
+        "ranged medium aoe",
         NextAction::array(0, new NextAction("throw grenade", ACTION_HIGH), NULL)));
 }
 
@@ -1099,7 +1099,7 @@ void AoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("goblin sapper", ACTION_HIGH + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "ranged high aoe",
+        "ranged medium aoe",
         NextAction::array(0, new NextAction("throw grenade", ACTION_HIGH), NULL)));
 }
 

@@ -2,8 +2,8 @@
 #include "playerbot/playerbot.h"
 #include "BankValues.h"
 #include "ItemCountValue.h"
-#include "Guilds/Guild.h"
-#include "Guilds/GuildMgr.h"
+#include "Guild/Guild.h"
+#include "Guild/GuildMgr.h"
 #include "playerbot/strategy/values/GuildValues.h"
 
 using namespace ai;

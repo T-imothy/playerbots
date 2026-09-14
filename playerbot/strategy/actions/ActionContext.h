@@ -1,6 +1,8 @@
 #pragma once
 
 #include "GenericActions.h"
+#include "TurtleRacialActions.h"
+#include "TurtleClassActions.h"
 #include "EncounterCastActions.h"
 #include "EmoteAction.h"
 #include "AddLootAction.h"
@@ -24,6 +26,7 @@
 #include "ImbueAction.h"
 #include "MovementActions.h"
 #include "RitualSummonAction.h"
+#include "UldamanAltarAction.h"
 #include "MoveToRpgTargetAction.h"
 #include "MoveToTravelTargetAction.h"
 #include "OutfitAction.h"
@@ -349,6 +352,42 @@ namespace ai
             creators["war stomp"] = [](PlayerbotAI* ai) { return new CastWarStompAction(ai); };
             creators["berserking"] = [](PlayerbotAI* ai) { return new CastBerserkingAction(ai); };
             creators["blood fury"] = [](PlayerbotAI* ai) { return new CastBloodFuryAction(ai); };
+            creators["quel'dorei meditation"] = [](PlayerbotAI* ai) { return new CastQuelDoreiMeditationAction(ai); };
+            creators["exit strategy"] = [](PlayerbotAI* ai) { return new CastGoblinExitStrategyAction(ai); };
+            creators["arcane surge"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "arcane surge", TurtleAbility::ArcaneSurge); };
+            creators["pain spike"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "pain spike", TurtleAbility::PainSpike); };
+            creators["searing shot"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "searing shot", TurtleAbility::SearingShot); };
+            creators["earthshaker slam"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "earthshaker slam", TurtleAbility::EarthshakerSlam); };
+            creators["savage bite"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "savage bite", TurtleAbility::SavageBite); };
+            creators["barkskin (feral)"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "barkskin (feral)", TurtleAbility::FeralBarkskin); };
+            creators["light of an'she"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "light of an'she", TurtleAbility::LightOfAnshe); };
+            creators["detection"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "detection", TurtleAbility::Detection); };
+            creators["reshift"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "reshift", TurtleAbility::Reshift); };
+            creators["create felstone"] = [](PlayerbotAI* ai) { return new TurtleCreateStoneAction(ai, "create felstone"); };
+            creators["use felstone"] = [](PlayerbotAI* ai) { return new TurtleUseStoneAction(ai, "felstone"); };
+            creators["create voidstone"] = [](PlayerbotAI* ai) { return new TurtleCreateStoneAction(ai, "create voidstone"); };
+            creators["use voidstone"] = [](PlayerbotAI* ai) { return new TurtleUseStoneAction(ai, "voidstone"); };
+            creators["create wrathstone"] = [](PlayerbotAI* ai) { return new TurtleCreateStoneAction(ai, "create wrathstone"); };
+            creators["use wrathstone"] = [](PlayerbotAI* ai) { return new TurtleUseStoneAction(ai, "wrathstone"); };
+            creators["tree of life form"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "tree of life form", TurtleAbility::TreeOfLife); };
+            creators["master strike"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "master strike", TurtleAbility::MasterStrike); };
+            creators["bulwark of the righteous"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "bulwark of the righteous", TurtleAbility::Bulwark); };
+            creators["carve"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "carve", TurtleAbility::Carve); };
+            creators["surprise attack"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "surprise attack", TurtleAbility::SurpriseAttack); };
+            creators["noxious assault"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "noxious assault", TurtleAbility::NoxiousAssault); };
+            creators["mark for death"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "mark for death", TurtleAbility::MarkForDeath); };
+            creators["shadow of death"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "shadow of death", TurtleAbility::ShadowOfDeath); };
+            creators["smoke bomb"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "smoke bomb", TurtleAbility::SmokeBomb); };
+            creators["enlighten"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "enlighten", TurtleAbility::Enlighten); };
+            creators["ascendance"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "ascendance", TurtleAbility::Ascendance); };
+            creators["earthquake"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "earthquake", TurtleAbility::Earthquake); };
+            creators["lightning strike"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "lightning strike", TurtleAbility::LightningStrike); };
+            creators["ancestral swiftness"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "ancestral swiftness", TurtleAbility::AncestralSwiftness); };
+            creators["spirit link"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "spirit link", TurtleAbility::SpiritLink); };
+            creators["arcane rupture"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "arcane rupture", TurtleAbility::ArcaneRupture); };
+            creators["icicles"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "icicles", TurtleAbility::Icicles); };
+            creators["dark harvest"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "dark harvest", TurtleAbility::DarkHarvest); };
+            creators["power overwhelming"] = [](PlayerbotAI* ai) { return new TurtleClassSpellAction(ai, "power overwhelming", TurtleAbility::PowerOverwhelming); };
             creators["cannibalize"] = [](PlayerbotAI* ai) { return new CastCannibalizeAction(ai); };
             creators["escape artist"] = [](PlayerbotAI* ai) { return new CastEscapeArtistAction(ai); };
             creators["shadowmeld"] = [](PlayerbotAI* ai) { return new CastShadowmeldAction(ai); };
@@ -416,6 +455,7 @@ namespace ai
             creators["magtheridon cube"] = [](PlayerbotAI* ai) { return new MagtheridonCubeAction(ai); };
             creators["gruul shatter spread"] = [](PlayerbotAI* ai) { return new GruulSpreadAction(ai); };
             creators["assist summoning ritual"] = [](PlayerbotAI* ai) { return new AssistSummoningRitualAction(ai); };
+            creators["assist uldaman altar"] = [](PlayerbotAI* ai) { return new AssistUldamanAltarAction(ai); };
             creators["hold summoning ritual"] = [](PlayerbotAI* ai) { return new HoldSummoningRitualAction(ai); };
             creators["continue ritual summon"] = [](PlayerbotAI* ai) { return new ContinueRitualSummonAction(ai); };
             creators["pathaleon attack adds"] = [](PlayerbotAI* ai) { return new PathaleonAddsAction(ai); };

@@ -11,12 +11,14 @@ namespace ai
 
     class ChooseTravelTargetAction : public Action {
     public:
+        bool RequiresWorldOwner() const override;
         ChooseTravelTargetAction(PlayerbotAI* ai, std::string name = "choose travel target") : Action(ai, name) {}
 
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override;
         static void ReportTravelTarget(Player* bot, Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget);
     protected:
+        bool IsTravelUseful();
         void setNewTarget(Player* requester, TravelTarget* newTarget, TravelTarget* oldTarget);        
 
         bool SetBestTarget(Player* requester, TravelTarget* target, PartitionedTravelList& travelPartitions, bool onlyActive = true);
@@ -39,6 +41,7 @@ namespace ai
 
     class ChooseGroupTravelTargetAction : public ChooseTravelTargetAction {
     public:
+        bool RequiresWorldOwner() const override;
         ChooseGroupTravelTargetAction(PlayerbotAI* ai, std::string name = "choose group travel target") : ChooseTravelTargetAction(ai, name) {}
 
         virtual bool Execute(Event& event) override;
@@ -47,6 +50,7 @@ namespace ai
 
     class RefreshTravelTargetAction : public ChooseTravelTargetAction {
     public:
+        bool RequiresWorldOwner() const override;
         RefreshTravelTargetAction(PlayerbotAI* ai, std::string name = "refresh travel target") : ChooseTravelTargetAction(ai, name) {}
 
         virtual bool Execute(Event& event) override;
@@ -55,6 +59,7 @@ namespace ai
 
     class ResetTargetAction : public ChooseTravelTargetAction {
     public:
+        bool RequiresWorldOwner() const override;
         ResetTargetAction(PlayerbotAI* ai, std::string name = "reset travel target") : ChooseTravelTargetAction(ai, name) {}
 
         virtual bool Execute(Event& event) override;
@@ -63,6 +68,7 @@ namespace ai
 
     class RequestTravelTargetAction : public Action, public Qualified {
     public:
+        bool RequiresWorldOwner() const override;
         RequestTravelTargetAction(PlayerbotAI* ai, std::string name = "request travel target") : Action(ai, name), Qualified() {}
     private:
         virtual bool Execute(Event& event) override;
@@ -88,6 +94,7 @@ namespace ai
 
     class FocusTravelTargetAction : public ChatCommandAction {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         FocusTravelTargetAction(PlayerbotAI* ai, std::string name = "focus travel target") : ChatCommandAction(ai, name) {}
 
         virtual bool Execute(Event& event) override;

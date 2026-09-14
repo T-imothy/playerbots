@@ -96,7 +96,7 @@ Unit* PartyMemberToHeal::Calculate()
             bool isTank = ai->IsTank(player);
 
             // do not heal dueling members
-            if (player->duel && player->duel->opponent)
+            if (player->m_duel && player->m_duel->opponent)
             {
                 continue;
             }
@@ -165,7 +165,7 @@ Unit* PartyMemberToHeal::Calculate()
             {
                 break;
             }
-            else if (player->IsAlive() && bot->IsInMap(player) && ai->IsHeal(player) && player->GetPlayerbotAI() && player->GetMaxPower(POWER_MANA))
+            else if (player->IsAlive() && bot->IsInMap(player) && ai->IsHeal(player) && GetBotAI(player) && player->GetMaxPower(POWER_MANA))
             {
                 float percent = (float)player->GetPower(POWER_MANA) / (float)player->GetMaxPower(POWER_MANA) * 100.0;
                 if (percent > sPlayerbotAIConfig.lowMana)
@@ -279,7 +279,7 @@ Unit* PartyMemberToProtect::Calculate()
         Player* player = static_cast<Player*>(pVictim);
         if (pVictim == bot || !ai->IsSafe(player) || !player->IsInWorld() || !player->IsAlive() ||
             player->IsBeingTeleported() || !bot->IsInMap(player) || !bot->IsInGroup(player) ||
-            !sServerFacade.IsFriendlyTo(bot, player) || player->duel)
+            !sServerFacade.IsFriendlyTo(bot, player) || player->m_duel)
             continue;
 
 #ifdef MANGOSBOT_TWO
@@ -294,13 +294,13 @@ Unit* PartyMemberToProtect::Calculate()
         if (sServerFacade.GetDistance2d(pVictim, unit) > attackDistance)
             continue;
 
-        if (ai->IsTank((Player*)pVictim) && pVictim->GetHealthPercent() > 25)
+        if (ai->IsTank((Player*)pVictim) && pVictim->GetHealthPercent() > 10)
             continue;
-        else if ((ai->IsMelee((Player*)pVictim) || pVictim->getClass() != CLASS_HUNTER) && pVictim->GetHealthPercent() > 50)
+        else if (pVictim->GetHealthPercent() > 30)
             continue;
 
         if (find(needProtect.begin(), needProtect.end(), pVictim) == needProtect.end())
-            needProtect.push_back(pVictim);
+        needProtect.push_back(pVictim);
     }
 
     if (needProtect.empty())
@@ -322,12 +322,12 @@ Unit* PartyMemberToRemoveRoots::Calculate()
             Player* player = gref->getSource();
             if (sServerFacade.IsAlive(player))
             {
-                if (player->duel && player->duel->opponent)
+                if (player->m_duel && player->m_duel->opponent)
                     continue;
 
                 if (player->HasAuraType(SPELL_AURA_MOD_ROOT) || player->HasAuraType(SPELL_AURA_MOD_DECREASE_SPEED))
                 {
-                    if (!ai->HasAura("stealth", player) && !ai->HasAura("prowl", player) && !ai->HasAura("tree of life", player))
+                    if (!ai->HasAura("stealth", player) && !ai->HasAura("prowl", player))
                     {
                         target = player;
                         break;

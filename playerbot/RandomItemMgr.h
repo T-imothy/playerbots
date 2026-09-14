@@ -5,10 +5,10 @@
 #include "PlayerbotAIBase.h"
 #include "playerbot/AiFactory.h"
 #ifdef CMANGOS
-#include "Entities/Player.h"
+#include "Objects/Player.h"
 #endif
 #ifdef MANGOS
-#include "Object/Player.h"
+#include "Objects/Player.h"
 #endif
 #include "strategy/values/ItemUsageValue.h"
 
@@ -132,16 +132,6 @@ public:
 
 typedef std::map<BotEquipKey, RandomItemList> BotEquipCache;
 
-struct RandomItemCacheStats
-{
-    uint64 randomItems = 0;
-    uint64 equipmentItems = 0;
-    uint64 itemInfoEntries = 0;
-    uint64 consumableItems = 0;
-    uint64 tradeItems = 0;
-    uint64 enchantItems = 0;
-};
-
 class RandomItemMgr
 {
     public:
@@ -187,7 +177,7 @@ class RandomItemMgr
         uint32 ItemStatWeight(Player* player, ItemQualifier& qualifier);
         uint32 ItemStatWeight(Player* player, Item* item);
 
-        uint32 CalculateSingleStatWeight(uint8 playerclass, uint8 spec, std::string stat, uint32 value);
+        uint32 CalculateSingleStatWeight(uint8 playerclass, uint8 spec, std::string stat, int32 value);
         bool CanEquipArmor(uint8 clazz, uint8 spec, uint32 level, ItemPrototype const* proto);
         bool ShouldEquipArmorForSpec(uint8 playerclass, uint8 spec, ItemPrototype const* proto);
         bool CanEquipWeapon(uint8 clazz, ItemPrototype const* proto);
@@ -199,7 +189,6 @@ class RandomItemMgr
         std::string GetPlayerSpecName(Player* player);
         uint32 GetPlayerSpecId(Player* player);
         std::vector<uint32> GetGlyphs(uint8 playerClass) { return glyphCache.at(playerClass); }
-        RandomItemCacheStats GetCacheStats() const;
     private:
         void BuildRandomItemCache();
         void BuildEquipCache();

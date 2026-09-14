@@ -1,34 +1,37 @@
 #include "playerbot/playerbot.h"
 #include "Talentspec.h"
 #include "playerbot/ServerFacade.h"
-#include "Server/DBCStructure.h"
-#include "Guilds/GuildMgr.h"
+#include "Database/DBCStructure.h"
+#include "Guild/GuildMgr.h"
 
 using namespace std::placeholders;
 
 //Checks a talent link on basic validity.
 bool TalentSpec::CheckTalentLink(std::string link, std::ostringstream* out) {
 
-    std::string validChar = "-";
-    std::string validNums = "012345";
-    int nums = 0;
-
-    for (char& c : link) {
-        if (validChar.find(c) == std::string::npos && validNums.find(c) == std::string::npos)
+    uint32 tree = 0, count = 0, digits = 0;
+    for (char ch : link)
+    {
+        if (ch == '-')
         {
-            *out << "talent link is invalid. Must be in format 0-0-0 (see end of wowhead talent calculator url) or a part of a predefined spec as shown with command 'talents list'";
+            if (++tree >= 3)
+            {
+                *out << "Talent link has more than three trees.";
+                return false;
+            }
+            count = 0;
+        }
+        else if (ch < '0' || ch > '5' || ++count > GetTalentTree(tree).size())
+        {
+            *out << "Talent link does not match this class's installed Turtle trees.";
             return false;
         }
-        if (validNums.find(c) != std::string::npos)
-            nums++;
+        else
+            ++digits;
     }
-
-    if (nums == 0) {
-        *out << "talents are invalid. Needs atleast one number.";
-        return false;
-    }
-
-    return true;
+    if (!digits)
+        *out << "Talent link contains no ranks.";
+    return digits != 0;
 }
 
 uint32 TalentSpec::LeveltoPoints(uint32 level)
@@ -47,10 +50,11 @@ bool TalentSpec::CheckTalents(uint32 freeTalentPoints, std::ostringstream* out)
 {
     for (auto& entry : talents)
     {
-        if (entry.rank > entry.maxRank)
+        if (entry.rank < 0 || entry.rank > entry.maxRank ||
+            (entry.rank && !sServerFacade.LookupSpellInfo(entry.talentInfo->RankID[entry.rank - 1])))
         {
             SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(entry.talentInfo->RankID[0]);
-            *out << "spec is not for this class. " << spellInfo->SpellName[0] << " has " << (entry.rank - entry.maxRank) << " points above max rank.";
+            *out << "spec is not for this class. " << (spellInfo ? spellInfo->SpellName[0] : "missing talent spell") << " has " << (entry.rank - entry.maxRank) << " points above max rank.";
             return false;
         }
 
@@ -61,19 +65,14 @@ bool TalentSpec::CheckTalents(uint32 freeTalentPoints, std::ostringstream* out)
                 continue;
 
             bool found = false;
-            SpellEntry const* spellInfodep;
-
-            for (auto& dep : talents)
-                if (dep.talentInfo->TalentID == entry.talentInfo->DependsOn)
-                {
-                    spellInfodep = sServerFacade.LookupSpellInfo(dep.talentInfo->RankID[0]);
-                    if (dep.rank >= (int)entry.talentInfo->DependsOnRank)
-                        found = true;
-                }
+            const uint32 requiredRank = entry.talentInfo->DependsOnRank + 1;
+            for (auto const& dep : talents)
+                if (dep.talentInfo->TalentID == entry.talentInfo->DependsOn && dep.rank >= requiredRank)
+                    found = true;
             if (!found)
             {
-                SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(entry.talentInfo->RankID[0]);
-                *out << "spec is is invalid. Talent:" << spellInfo->SpellName[0] << " needs: " << spellInfodep->SpellName[0] << " at rank: " << entry.talentInfo->DependsOnRank;
+                *out << "Talent " << entry.talentInfo->TalentID << " requires talent "
+                     << entry.talentInfo->DependsOn << " at rank " << requiredRank << ".";
                 return false;
             }
         }
@@ -89,7 +88,7 @@ bool TalentSpec::CheckTalents(uint32 freeTalentPoints, std::ostringstream* out)
             if (entry.rank > 0 && (int)(entry.talentInfo->Row * 5) > points)
             {
                 SpellEntry const* spellInfo = sServerFacade.LookupSpellInfo(entry.talentInfo->RankID[0]);
-                *out << "spec is is invalid. Talent " << spellInfo->SpellName[0] << " is selected with only " << points << " in row below it.";
+                *out << "spec is is invalid. Talent " << (spellInfo ? spellInfo->SpellName[0] : "missing talent spell") << " is selected with only " << points << " in row below it.";
                 return false;
             }
             points += entry.rank;
@@ -108,24 +107,51 @@ bool TalentSpec::CheckTalents(uint32 freeTalentPoints, std::ostringstream* out)
 //Set the talents for the bots to the current spec.
 void TalentSpec::ApplyTalents(Player* bot, std::ostringstream* out)
 {
-    for (auto& entry : talents)
-        for (int rank = 0; rank < MAX_TALENT_RANK; ++rank)
+    if (!CheckTalents(LeveltoPoints(bot->GetLevel()), out))
+        return;
+
+    bool needsReset = false;
+    for (auto const& entry : talents)
+        for (uint32 rank = entry.rank; rank < MAX_TALENT_RANK; ++rank)
+            if (entry.talentInfo->RankID[rank] && bot->HasSpell(entry.talentInfo->RankID[rank]))
+                needsReset = true;
+    if (needsReset && !bot->ResetTalents(true))
+    {
+        *out << "Native talent reset failed.";
+        return;
+    }
+
+    // Native LearnTalent owns prerequisites, spell dependencies, rank replacement,
+    // spell side effects and point accounting. Retry dependencies encountered later
+    // in the configured ordering, stopping if the native core accepts no progress.
+    bool progress;
+    do
+    {
+        progress = false;
+        for (auto const& entry : talents)
         {
-            uint32 spellId = entry.talentInfo->RankID[rank];
-
-            if (!spellId)
+            if (!entry.rank || bot->HasSpell(entry.talentInfo->RankID[entry.rank - 1]))
                 continue;
-
-            if (bot->HasSpell(spellId) && entry.rank - 1 != rank)
+            for (uint32 rank = 0; rank < uint32(entry.rank); ++rank)
             {
-                bot->removeSpell(spellId, false, false);
-            }
-            else if (!bot->HasSpell(spellId) && entry.rank - 1 == rank)
-            {
-                bot->learnSpell(spellId, false);
+                const uint32 spell = entry.talentInfo->RankID[rank];
+                bool higherKnown = false;
+                for (uint32 higher = rank; higher < uint32(entry.rank); ++higher)
+                    higherKnown |= bot->HasSpell(entry.talentInfo->RankID[higher]);
+                if (higherKnown)
+                    continue;
+                bot->LearnTalent(entry.talentInfo->TalentID, rank);
+                if (!bot->HasSpell(spell))
+                    break;
+                progress = true;
             }
         }
+    } while (progress);
 
+    for (auto const& entry : talents)
+        if (entry.rank && !bot->HasSpell(entry.talentInfo->RankID[entry.rank - 1]))
+            *out << "Native talent requirements prevented " << entry.talentInfo->TalentID
+                 << " rank " << entry.rank << ". ";
     SetPublicNote(bot);
 }
 
@@ -137,7 +163,7 @@ void TalentSpec::SetPublicNote(Player* bot)
         Guild* guild = sGuildMgr.GetGuildById(bot->GetGuildId());
         MemberSlot* member = guild ? guild->GetMemberSlot(bot->GetObjectGuid()) : nullptr;
         if (member && guild->HasRankRight(member->RankId, GR_RIGHT_EPNOTE))
-            member->SetPNOTE(ChatHelper::specName(bot) + " (" + std::to_string(spec.GetTalentPoints(0)) + "/" + std::to_string(spec.GetTalentPoints(1)) + "/" + std::to_string(spec.GetTalentPoints(2)) + ")");
+            member->SetPublicNote(ChatHelper::specName(bot) + " (" + std::to_string(spec.GetTalentPoints(0)) + "/" + std::to_string(spec.GetTalentPoints(1)) + "/" + std::to_string(spec.GetTalentPoints(2)) + ")");
     }
 }
 
@@ -160,6 +186,7 @@ void TalentSpec::GetTalents(uint32 classMask) {
 
         entry.entry = i;
         entry.rank = 0;
+        entry.maxRank = 0;
         entry.talentInfo = talentInfo;
         entry.talentTabInfo = talentTabInfo;
 
@@ -233,51 +260,33 @@ void TalentSpec::ReadTalents(Player* bot) {
 }
 
 //Set the talent ranks to the ranks of the link.
-void TalentSpec::ReadTalents(std::string link) {
-    int rank = 0;
-    int pos = 0;
-    int tab = 0;
-    std::string chr;
-
-    if (link.substr(pos, 1) == "-") {
-        pos++;
-        tab++;
-    }
-
-    if (link.substr(pos, 1) == "-") {
-        pos++;
-        tab++;
-    }
-
+void TalentSpec::ReadTalents(std::string link)
+{
+    points = 0;
     for (auto& entry : talents)
+        entry.rank = 0;
+    std::ostringstream error;
+    if (!CheckTalentLink(link, &error))
     {
-        if (entry.tabPage() == tab)
-        {
-            chr = link.substr(pos, 1);
-
-            if (chr == " " || chr == "#")
-                break;
-
-            entry.rank = stoi(chr);
-            points += entry.rank;
-
-            pos++;
-            if (pos <= link.size())
-                if (link.substr(pos, 1) == "-")
-                {
-                    pos++;
-                    tab++;
-                }
-            if (pos <= link.size())
-                if (link.substr(pos, 1) == "-")
-                {
-                    pos++;
-                    tab++;
-                }
-        }
-        if (pos > link.size() - 1)
+        sLog.outError("Invalid Turtle talent link: %s", error.str().c_str());
+        return;
+    }
+    size_t start = 0;
+    for (uint32 page = 0; page < 3; ++page)
+    {
+        size_t end = link.find('-', start);
+        std::string ranks = link.substr(start, end == std::string::npos ? end : end - start);
+        uint32 index = 0;
+        for (auto& entry : talents)
+            if (entry.tabPage() == page && index < ranks.size())
+            {
+                entry.rank = ranks[index++] - '0';
+                points += entry.rank;
+            }
+        if (end == std::string::npos)
             break;
-    };
+        start = end + 1;
+    }
 }
 
 //Returns only a specific tree from a talent list.
@@ -393,6 +402,7 @@ void TalentSpec::CropTalents(Player* bot)
         points += entry.rank;
     }
 
+    this->points = points;
     SortTalents(talents, SORT_BY_DEFAULT);
 }
 

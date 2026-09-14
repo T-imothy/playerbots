@@ -3,7 +3,7 @@
 #include "playerbot/ChatHelper.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomPlayerbotFactory.h"
-#include "Globals/ObjectMgr.h"
+#include "ObjectMgr.h"
 
 #include <algorithm>
 

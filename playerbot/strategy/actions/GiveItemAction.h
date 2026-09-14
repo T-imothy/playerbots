@@ -1,11 +1,13 @@
 #pragma once
 #include "playerbot/strategy/Action.h"
 
+#include "playerbot/BotSlots.h"
 namespace ai
 {
     class GiveItemAction : public Action
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GiveItemAction(PlayerbotAI* ai, std::string name, std::string item) : Action(ai, name), item(item) {}
         virtual bool Execute(Event& event) override;
         virtual bool isUseful() override { return GetTarget() && AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.lowMana; }
@@ -18,6 +20,7 @@ namespace ai
     class GiveFoodAction : public GiveItemAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GiveFoodAction(PlayerbotAI* ai) : GiveItemAction(ai, "give food", "conjured food") {}
         virtual Unit* GetTarget() override;
         virtual bool isUseful() override
@@ -26,15 +29,16 @@ namespace ai
             if (!target)
                 return false;
 
-            bool isBot = target->IsPlayer() && ((Player*)target)->GetPlayerbotAI();
+            bool isBot = target->IsPlayer() && GetBotAI(((Player*)target));
 
-            return !isBot || (isBot && !((Player*)target)->GetPlayerbotAI()->HasCheat(BotCheatMask::item));
+            return !isBot || (isBot && !GetBotAI(((Player*)target))->HasCheat(BotCheatMask::item));
         }
     };
 
     class GiveWaterAction : public GiveItemAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         GiveWaterAction(PlayerbotAI* ai) : GiveItemAction(ai, "give water", "conjured water") {}
         virtual Unit* GetTarget() override;
         virtual bool isUseful() override
@@ -43,9 +47,9 @@ namespace ai
             if (!target)
                 return false;
 
-            bool isBot = target->IsPlayer() && ((Player*)target)->GetPlayerbotAI();
+            bool isBot = target->IsPlayer() && GetBotAI(((Player*)target));
 
-            return !isBot || (isBot && !((Player*)target)->GetPlayerbotAI()->HasCheat(BotCheatMask::item));
+            return !isBot || (isBot && !GetBotAI(((Player*)target))->HasCheat(BotCheatMask::item));
         }
     };
 }

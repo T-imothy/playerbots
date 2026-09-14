@@ -153,7 +153,7 @@ namespace ai
     {
     protected:
         using ActionCreator = std::function<T* (PlayerbotAI* ai)>;
-        std::map<std::string, ActionCreator> creators;
+        std::map<std::string, ActionCreator, std::less<>> creators;
 
     public:
         T* Create(std::string_view name, PlayerbotAI* ai)
@@ -167,7 +167,7 @@ namespace ai
                 nameView = nameView.substr(0, pos);
             }
 
-            auto it = creators.find(std::string(nameView));
+            auto it = creators.find(nameView);
             if (it == creators.end())
                 return nullptr;
 
@@ -199,22 +199,24 @@ namespace ai
         NamedObjectContext(bool shared = false, bool supportsSiblings = false) :
             NamedObjectFactory<T>(), shared(shared), supportsSiblings(supportsSiblings) {}
 
-        T* Create(std::string name, PlayerbotAI* ai)
+        T* Create(std::string_view name, PlayerbotAI* ai)
         {
-            // A bot can briefly be visible to two map/update paths while it is
-            // logging in or changing maps. Shared contexts are also queried by
-            // several map workers. Serialise the entire find/create/insert
-            // transaction: concurrent std::map insertion corrupts the RB tree.
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
             auto const existing = created.find(name);
             if (existing == created.end())
             {
-                // Unsupported qualified names are common probes. Do not cache
-                // nullptr entries forever; those maps otherwise grow as bots
-                // encounter new GUID/item/spell qualifiers.
+                // Qualified lookups routinely probe unsupported combinations.
+                // Do not retain a string/map node forever when no object was
+                // created; at 4k bots those null entries consume substantial
+                // memory and can grow for the lifetime of the process.
                 T* object = NamedObjectFactory<T>::Create(name, ai);
                 if (object)
-                    created.emplace(std::move(name), object);
+                {
+                    std::string key(name);
+                    estimatedCreatedBytes += sizeof(typename decltype(created)::value_type) +
+                        3 * sizeof(void*) + key.capacity() + 1 + sizeof(T);
+                    created.emplace(std::move(key), object);
+                }
                 return object;
             }
 
@@ -229,22 +231,26 @@ namespace ai
         void Clear()
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
-            for (typename std::map<std::string, T*>::iterator i = created.begin(); i != created.end(); i++)
+            for (typename std::map<std::string, T*, std::less<>>::iterator i = created.begin(); i != created.end(); i++)
             {
                 if (i->second)
                     delete i->second;
             }
 
             created.clear();
+            estimatedCreatedBytes = 0;
         }
 
         void Erase(const std::string& name)
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
-            typename std::map<std::string, T*>::iterator existing = created.find(name);
+            typename std::map<std::string, T*, std::less<>>::iterator existing = created.find(name);
             if (existing != created.end())
             {
-                delete existing->second;
+                auto const& entry = *existing;
+                estimatedCreatedBytes -= sizeof(typename decltype(created)::value_type) +
+                    3 * sizeof(void*) + entry.first.capacity() + 1 + (entry.second ? sizeof(T) : 0);
+                delete entry.second;
                 created.erase(existing);
             }
         }
@@ -262,6 +268,9 @@ namespace ai
                     continue;
                 }
 
+                estimatedCreatedBytes -= sizeof(typename decltype(created)::value_type) +
+                    3 * sizeof(void*) + existing->first.capacity() + 1 +
+                    (existing->second ? sizeof(T) : 0);
                 delete existing->second;
                 existing = created.erase(existing);
                 ++erased;
@@ -272,7 +281,7 @@ namespace ai
         void Update()
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
-            for (typename std::map<std::string, T*>::iterator i = created.begin(); i != created.end(); i++)
+            for (typename std::map<std::string, T*, std::less<>>::iterator i = created.begin(); i != created.end(); i++)
             {
                 if (i->second)
                     i->second->Update();
@@ -282,7 +291,7 @@ namespace ai
         void Reset()
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
-            for (typename std::map<std::string, T*>::iterator i = created.begin(); i != created.end(); i++)
+            for (typename std::map<std::string, T*, std::less<>>::iterator i = created.begin(); i != created.end(); i++)
             {
                 if (i->second)
                     i->second->Reset();
@@ -302,7 +311,7 @@ namespace ai
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
             std::set<std::string> keys;
-            for (typename std::map<std::string, T*>::iterator it = created.begin(); it != created.end(); it++)
+            for (typename std::map<std::string, T*, std::less<>>::iterator it = created.begin(); it != created.end(); it++)
                 keys.insert(it->first);
             return keys;
         }
@@ -316,22 +325,13 @@ namespace ai
         size_t GetEstimatedCreatedBytes() const
         {
             std::lock_guard<std::recursive_mutex> lock(createdMutex);
-            size_t bytes = 0;
-            for (const auto& entry : created)
-            {
-                // std::map node bookkeeping is implementation-specific. Three
-                // links plus the value, owned key storage and the concrete base
-                // object give a stable lower-bound useful for growth correlation.
-                bytes += sizeof(entry) + 3 * sizeof(void*) + entry.first.capacity() + 1;
-                if (entry.second)
-                    bytes += sizeof(T);
-            }
-            return bytes;
+            return estimatedCreatedBytes;
         }
 
     protected:
-        std::map<std::string, T*> created;
+        std::map<std::string, T*, std::less<>> created;
         mutable std::recursive_mutex createdMutex;
+        size_t estimatedCreatedBytes = 0;
         bool shared;
         bool supportsSiblings;
     };
@@ -352,6 +352,16 @@ namespace ai
         void Add(NamedObjectContext<T>* context)
         {
             contexts.push_back(context);
+        }
+
+        // Same as Add, but the context is consulted FIRST. Module contexts
+        // need this: overriding a stock object by registering the same name
+        // (dungeon clear's "auto release"/"loot roll") only works when the
+        // module context sits ahead of the stock ones in GetObject's walk -
+        // the first Create that answers wins.
+        void AddFront(NamedObjectContext<T>* context)
+        {
+            contexts.push_front(context);
         }
 
         T* GetObject(const std::string& name, PlayerbotAI* ai)
@@ -445,8 +455,7 @@ namespace ai
         size_t GetEstimatedCreatedBytes() const
         {
             size_t bytes = 0;
-            for (typename std::list<NamedObjectContext<T>*>::const_iterator i = contexts.begin(); i != contexts.end(); ++i)
-                bytes += (*i)->GetEstimatedCreatedBytes();
+            for (auto const* context : contexts) bytes += context->GetEstimatedCreatedBytes();
             return bytes;
         }
 

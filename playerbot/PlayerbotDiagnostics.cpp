@@ -1,3 +1,4 @@
+#include "WorldActions.h"
 #include "playerbot/playerbot.h"
 #include "PlayerbotDiagnostics.h"
 
@@ -285,8 +286,9 @@ void PlayerbotDiagnostics::Flush(const PlayerbotManagerSnapshot& snapshot)
         static_cast<unsigned long long>(Take(suppressedImpossible)), static_cast<unsigned long long>(Take(exactFailed)),
         static_cast<unsigned long long>(Take(exactImpossible)));
 
+    auto worldActions = ai::WorldActions::Instance().GetStats();
     sPlayerbotAIConfig.log(sPlayerbotAIConfig.diagnosticsLogFile,
-        "%s PB_DIAG_MANAGER passes=%llu avg_us=%.2f max_us=%llu process_scans=%llu process_calls=%llu login_scans=%llu login_requests=%llu login_backpressure_passes=%llu pending_logins=%llu admission_capacity=%llu login_scan_budget=%llu login_scan_budget_exhausted_passes=%llu db_delay_ms=%u db_pending_results=%u db_pending_ops=%u db_pings=%llu",
+        "%s PB_DIAG_MANAGER passes=%llu avg_us=%.2f max_us=%llu process_scans=%llu process_calls=%llu login_scans=%llu login_requests=%llu login_backpressure_passes=%llu pending_logins=%llu admission_capacity=%llu login_scan_budget=%llu login_scan_budget_exhausted_passes=%llu db_delay_ms=%u db_pending_results=%u db_pending_ops=%u db_pings=%llu world_pending=%zu world_accepted_total=%llu world_rejected_total=%llu world_executed_total=%llu world_cancelled_total=%llu world_top_action=\"%s\" world_top_pending=%zu world_budget_ms=%u world_last_drained=%u world_last_drain_us=%llu",
         timestamp.c_str(), static_cast<unsigned long long>(managerCount), managerCount ? static_cast<double>(managerUs) / managerCount : 0.0,
         static_cast<unsigned long long>(maxManagerUs), static_cast<unsigned long long>(Take(processScans)),
         static_cast<unsigned long long>(Take(processCalls)), static_cast<unsigned long long>(Take(loginScans)),
@@ -296,7 +298,9 @@ void PlayerbotDiagnostics::Flush(const PlayerbotManagerSnapshot& snapshot)
         static_cast<unsigned long long>(Take(loginScanBudget)),
         static_cast<unsigned long long>(Take(loginScanBudgetExhaustedPasses)),
         snapshot.characterDbDelay, snapshot.pendingDbResults, snapshot.pendingDbOperations,
-        static_cast<unsigned long long>(Take(databasePings)));
+        static_cast<unsigned long long>(Take(databasePings)), worldActions.pending,
+        static_cast<unsigned long long>(worldActions.accepted), static_cast<unsigned long long>(worldActions.rejected),
+        static_cast<unsigned long long>(worldActions.executed), static_cast<unsigned long long>(worldActions.cancelled), worldActions.topAction.c_str(), worldActions.topPending, worldActions.budgetMs, worldActions.lastDrained, static_cast<unsigned long long>(worldActions.lastDrainUs));
 
     const uint64 cacheLoads = Take(eventCacheLoads);
     const uint64 cacheLoadUs = Take(eventCacheLoadUs);

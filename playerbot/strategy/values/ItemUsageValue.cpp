@@ -268,14 +268,16 @@ ItemUsage ItemUsageValue::Calculate()
     }
 
     //EQUIP
-    if (MountValue::GetMountSpell(itemId) && bot->CanUseItem(proto) == EQUIP_ERR_OK && MountValue::GetSpeed(MountValue::GetMountSpell(itemId)))
+    if (MountValue::GetMountSpell(itemId) && bot->CanUseItem(proto) == EQUIP_ERR_OK &&
+        (!proto->RequiredReputationFaction || bot->GetReputationRank(proto->RequiredReputationFaction) >= proto->RequiredReputationRank) &&
+        MountValue::GetSpeed(MountValue::GetMountSpell(itemId)))
     {
         std::vector<MountValue> mounts = AI_VALUE(std::vector<MountValue>, "mount list");
 
         if (mounts.empty())
             return ItemUsage::ITEM_USAGE_EQUIP;
 
-        uint32 newSpeed[2] = { MountValue::GetSpeed(MountValue::GetMountSpell(itemId), false), MountValue::GetSpeed(MountValue::GetMountSpell(itemId), true) };
+        uint32 newSpeed[2] = { MountValue::GetSpeedFor(MountValue::GetMountSpell(itemId), bot, false), MountValue::GetSpeedFor(MountValue::GetMountSpell(itemId), bot, true) };
 
         bool hasBetterMount = false, hasSameMount = false;
 
@@ -286,7 +288,7 @@ ItemUsage ItemUsageValue::Calculate()
                 if (!newSpeed[canFly])
                     continue;
 
-                uint32 currentSpeed = mount.GetSpeed(canFly);
+                uint32 currentSpeed = mount.GetSpeedFor(bot, canFly);
 
                 if (currentSpeed > newSpeed[canFly])
                     hasBetterMount = true;
@@ -542,7 +544,7 @@ if ((proto->Class == ITEM_CLASS_PROJECTILE ||
 
 ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
     ChatHelper* chat = ai->GetChatHelper();
     ItemPrototype const* itemProto = itemQualifier.GetProto();
@@ -599,7 +601,7 @@ ItemUsage ItemUsageValue::QueryItemUsageForEquip(ItemQualifier& itemQualifier, P
             if (!isCorrectQuiverTypeForCurrentWeapon)
                 return ItemUsage::ITEM_USAGE_NONE;
 
-            std::vector<Bag*> equippedQuivers = bot->GetPlayerbotAI()->GetEquippedQuivers();
+            std::vector<Bag*> equippedQuivers = GetBotAI(bot)->GetEquippedQuivers();
 
             for (auto quiver : equippedQuivers)
             {
@@ -1077,7 +1079,7 @@ bool ItemUsageValue::IsItemNeededForUsefullCraft(ItemPrototype const* proto, boo
 
 Item* ItemUsageValue::CurrentItem(ItemPrototype const* proto, Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
     ChatHelper* chat = ai->GetChatHelper();
     Item* bestItem = nullptr;
@@ -1399,7 +1401,7 @@ void ItemUsageValue::PopulateReagentItemIdsForCraftableItemIds()
 
                             uint32 reagentItemId = spellInfo->Reagent[x];
                             uint32 reagentsRequiredCount = spellInfo->ReagentCount[x];
-                            if (reagentItemId && ObjectMgr::GetItemPrototype(reagentItemId))
+                            if (reagentItemId && sObjectMgr.GetItemPrototype(reagentItemId))
                             {
                                 m_craftingReagentItemIdsForCraftableItem[craftedItemId].push_back({ reagentItemId , reagentsRequiredCount });
                             }
@@ -1424,7 +1426,7 @@ void ItemUsageValue::PopulateSoldByVendorItemIds()
             if (!entry)
                 continue;
 
-            if (!ObjectMgr::GetItemPrototype(entry))
+            if (!sObjectMgr.GetItemPrototype(entry))
                 continue;
 
             m_allItemIdsSoldByAnyVendors.insert(fields[0].GetUInt32());
@@ -1442,7 +1444,7 @@ void ItemUsageValue::PopulateSoldByVendorItemIds()
             if (!entry)
                 continue;
 
-            if (!ObjectMgr::GetItemPrototype(entry))
+            if (!sObjectMgr.GetItemPrototype(entry))
                 continue;
 
             m_itemIdsSoldByAnyVendorsWithLimitedMaxCount.insert(fields[0].GetUInt32());
@@ -1472,7 +1474,7 @@ bool ItemUsageValue::IsItemSoldByAnyVendor(ItemPrototype const* proto)
 
 bool ItemUsageValue::MustEquipForQuest(ItemPrototype const* proto, Player* bot)
 {
-    PlayerbotAI* ai = bot->GetPlayerbotAI();
+    PlayerbotAI* ai = GetBotAI(bot);
     AiObjectContext* context = ai->GetAiObjectContext();
 
     switch (proto->ItemId)
@@ -1834,7 +1836,7 @@ uint32 ItemUsageValue::GetItemBaseValue(ItemPrototype const* proto, uint8 maxRea
 
         for (auto idCountPair : GetAllReagentItemIdsForCraftingItem(proto))
         {
-            ItemPrototype const* reagentProto = ObjectMgr::GetItemPrototype(idCountPair.first);
+            ItemPrototype const* reagentProto = sObjectMgr.GetItemPrototype(idCountPair.first);
             totalReagentsValue += GetItemBaseValue(reagentProto, maxReagentLevel) * idCountPair.second;
         }
 

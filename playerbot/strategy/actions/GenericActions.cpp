@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "GenericActions.h"
+#include <map>
 #include "playerbot/PlayerbotFactory.h"
 #include "EncounterSpellPolicy.h"
 
@@ -17,34 +18,6 @@ bool MeleeAction::isUseful()
     if (ai->IsInVehicle() && !ai->IsInVehicle(false, false, true))
         return false;
 
-    Unit* target = GetTarget();
-
-    if (target)
-    {
-        // If the target has a damage shield, melee action not useful and we should actually stop attacking
-        std::set<Aura*> alreadyDone;
-        Unit::AuraList const& vDamageShields = target->GetAurasByType(SPELL_AURA_DAMAGE_SHIELD);
-        for (Unit::AuraList::const_iterator i = vDamageShields.begin(); i != vDamageShields.end();)
-        {
-            if (alreadyDone.find(*i) == alreadyDone.end())
-            {
-                alreadyDone.insert(*i);
-                uint32 damage = (*i)->GetModifier()->m_amount;
-
-                // If the damage shield does at least 10% of our max hp on each hit we do, we shouldn't melee
-                if (damage >= bot->GetMaxHealth() * 0.10f)
-                {
-                    bot->AttackStop();
-                    return false;
-                }
-
-                i = vDamageShields.begin();
-            }
-            else
-                ++i;
-        }
-    }
-
     return true;
 }
 
@@ -52,21 +25,32 @@ bool UpdateStrategyDependenciesAction::Execute(Event& event)
 {
     if (!strategiesToAdd.empty() || !strategiesToRemove.empty())
     {
-        // Strategies to add
+        // One list per bot state instead of one call per strategy. Every call
+        // ends in a full rebuild of that engine's triggers, and the rebuild
+        // only has to happen once the whole set is in place. Additions stay
+        // ahead of removals, as before.
+        std::map<BotState, std::string> changesPerState;
+
         for (const StrategyToUpdate* strategy : strategiesToAdd)
         {
-            std::stringstream changeStr;
-            changeStr << "+" << strategy->name;
-            ai->ChangeStrategy(changeStr.str(), strategy->state);
+            std::string& line = changesPerState[strategy->state];
+            if (!line.empty())
+                line += ",";
+
+            line += "+" + strategy->name;
         }
 
-        // Strategies to remove
         for (const StrategyToUpdate* strategy : strategiesToRemove)
         {
-            std::stringstream changeStr;
-            changeStr << "-" << strategy->name;
-            ai->ChangeStrategy(changeStr.str(), strategy->state);
+            std::string& line = changesPerState[strategy->state];
+            if (!line.empty())
+                line += ",";
+
+            line += "-" + strategy->name;
         }
+
+        for (std::map<BotState, std::string>::const_iterator i = changesPerState.begin(); i != changesPerState.end(); ++i)
+            ai->ChangeStrategy(i->second, i->first);
 
         return true;
     }
@@ -158,15 +142,15 @@ bool InitializePetAction::isUseful()
             bool hasTamedPet = bot->GetPet();
             if (!hasTamedPet)
             {
-                std::unique_ptr<QueryResult> queryResult = CharacterDatabase.PQuery("SELECT id, entry, owner "
+                std::unique_ptr<QueryResult> queryResult(CharacterDatabase.PQuery("SELECT id, entry, owner "
                                                                                     "FROM character_pet WHERE owner = '%u' AND (slot = '%u' OR slot > '%u') ",
-                                                                                    bot->GetGUIDLow(), PET_SAVE_AS_CURRENT, PET_SAVE_LAST_STABLE_SLOT);
+                                                                                    bot->GetGUIDLow(), PET_SAVE_AS_CURRENT, PET_SAVE_LAST_STABLE_SLOT));
             
                 if (queryResult)
                 {
                     Field* fields = queryResult->Fetch();
                     const uint32 entry = fields[1].GetUInt32();
-                    hasTamedPet = ObjectMgr::GetCreatureTemplate(entry);
+                    hasTamedPet = sObjectMgr.GetCreatureTemplate(entry);
                 }
             }
 
@@ -413,7 +397,11 @@ bool SetPetAction::Execute(Event& event)
                     };
 
                     const bool autocastActive = IsAutocastActive();
-                    pet->ToggleAutocast(spellId, !autocastActive);
+                    // Keep the native spell list and action-bar autocast state
+                    // synchronized through the same handler as a real player.
+                    WorldPacket packet(CMSG_PET_SPELL_AUTOCAST);
+                    packet << pet->GetObjectGuid() << spellId << uint8(!autocastActive);
+                    bot->GetSession()->HandlePetSpellAutocastOpcode(packet);
 
                     std::ostringstream out;
                     out << (autocastActive ? "Disabling" : "Enabling") << " pet autocast for ";

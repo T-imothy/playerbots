@@ -3,7 +3,7 @@
 #include <stdarg.h>
 #include "AiObjectContext.h"
 #include "Action.h"
-#include "Entities/Unit.h"
+#include "Objects/Unit.h"
 
 using namespace ai;
 

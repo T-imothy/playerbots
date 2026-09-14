@@ -146,6 +146,14 @@ void PriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "party member dead",
         NextAction::array(0, new NextAction("resurrection", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("flash heal", ACTION_CRITICAL_HEAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "low health",
+        NextAction::array(0, new NextAction("greater heal", ACTION_MEDIUM_HEAL), NULL)));
 }
 
 void PriestStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -426,27 +434,27 @@ void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
 
     triggers.push_back(new TriggerNode(
         "prayer of fortitude on party",
-        NextAction::array(0, new NextAction("prayer of fortitude on party", ACTION_NORMAL + 5), NULL)));
+        NextAction::array(0, new NextAction("prayer of fortitude on party", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "prayer of spirit on party",
-        NextAction::array(0, new NextAction("prayer of spirit on party", ACTION_NORMAL + 5), NULL)));
+        NextAction::array(0, new NextAction("prayer of spirit on party", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "prayer of shadow protection on party",
-        NextAction::array(0, new NextAction("prayer of shadow protection on party", ACTION_NORMAL + 5), NULL)));
+        NextAction::array(0, new NextAction("prayer of shadow protection on party", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "power word: fortitude on party",
-        NextAction::array(0, new NextAction("power word: fortitude on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("power word: fortitude on party", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "divine spirit on party",
-        NextAction::array(0, new NextAction("divine spirit on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("divine spirit on party", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "shadow protection on party",
-        NextAction::array(0, new NextAction("shadow protection on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("shadow protection on party", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "power word: fortitude",
@@ -737,6 +745,14 @@ void PriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "party member dead",
         NextAction::array(0, new NextAction("resurrection", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("flash heal", ACTION_CRITICAL_HEAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "low health",
+        NextAction::array(0, new NextAction("greater heal", ACTION_MEDIUM_HEAL), NULL)));
 }
 
 void PriestStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -1029,27 +1045,27 @@ void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
 
     triggers.push_back(new TriggerNode(
         "prayer of fortitude on party",
-        NextAction::array(0, new NextAction("prayer of fortitude on party", ACTION_NORMAL + 5), NULL)));
+        NextAction::array(0, new NextAction("prayer of fortitude on party", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "prayer of spirit on party",
-        NextAction::array(0, new NextAction("prayer of spirit on party", ACTION_NORMAL + 5), NULL)));
+        NextAction::array(0, new NextAction("prayer of spirit on party", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "prayer of shadow protection on party",
-        NextAction::array(0, new NextAction("prayer of shadow protection on party", ACTION_NORMAL + 5), NULL)));
+        NextAction::array(0, new NextAction("prayer of shadow protection on party", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "power word: fortitude on party",
-        NextAction::array(0, new NextAction("power word: fortitude on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("power word: fortitude on party", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "divine spirit on party",
-        NextAction::array(0, new NextAction("divine spirit on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("divine spirit on party", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "shadow protection on party",
-        NextAction::array(0, new NextAction("shadow protection on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("shadow protection on party", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "power word: fortitude",
@@ -1343,6 +1359,14 @@ void PriestStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
     triggers.push_back(new TriggerNode(
         "party member dead",
         NextAction::array(0, new NextAction("resurrection", ACTION_EMERGENCY), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "critical health",
+        NextAction::array(0, new NextAction("flash heal", ACTION_CRITICAL_HEAL), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "low health",
+        NextAction::array(0, new NextAction("greater heal", ACTION_MEDIUM_HEAL), NULL)));
 }
 
 void PriestStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
@@ -1627,27 +1651,27 @@ void PriestBuffStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
 
     triggers.push_back(new TriggerNode(
         "prayer of fortitude on party",
-        NextAction::array(0, new NextAction("prayer of fortitude on party", ACTION_NORMAL + 5), NULL)));
+        NextAction::array(0, new NextAction("prayer of fortitude on party", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "prayer of spirit on party",
-        NextAction::array(0, new NextAction("prayer of spirit on party", ACTION_NORMAL + 5), NULL)));
+        NextAction::array(0, new NextAction("prayer of spirit on party", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "prayer of shadow protection on party",
-        NextAction::array(0, new NextAction("prayer of shadow protection on party", ACTION_NORMAL + 5), NULL)));
+        NextAction::array(0, new NextAction("prayer of shadow protection on party", ACTION_NORMAL + 3), NULL)));
 
     triggers.push_back(new TriggerNode(
         "power word: fortitude on party",
-        NextAction::array(0, new NextAction("power word: fortitude on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("power word: fortitude on party", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "divine spirit on party",
-        NextAction::array(0, new NextAction("divine spirit on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("divine spirit on party", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "shadow protection on party",
-        NextAction::array(0, new NextAction("shadow protection on party", ACTION_NORMAL + 3), NULL)));
+        NextAction::array(0, new NextAction("shadow protection on party", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "power word: fortitude",

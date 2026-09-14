@@ -3,7 +3,7 @@
 #include "SetAvoidAreaAction.h"
 
 #include "playerbot/strategy/values/PositionValue.h"
-#include "MotionGenerators/PathFinder.h"
+#include "Maps/PathFinder.h"
 using namespace ai;
 
 
@@ -23,7 +23,7 @@ bool SetAvoidAreaAction::Execute(Event& event)
 
     for (auto& target : targets)
     {
-        CreatureInfo const* cInfo = ObjectMgr::GetCreatureTemplate(target.GetEntry());
+        CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(target.GetEntry());
 
         if (!cInfo)
             continue;
@@ -31,7 +31,7 @@ bool SetAvoidAreaAction::Execute(Event& event)
         if (cInfo->NpcFlags > 0) //Ignore npcs.
             continue;
 
-        if (cInfo->MaxLevel < bot->GetLevel() - 3) //Ignore lower level mobs.
+        if (bot->GetLevel() > 3 && cInfo->MaxLevel < bot->GetLevel() - 3) //Ignore lower level mobs.
             continue;
 
         FactionTemplateEntry const* factionEntry = sFactionTemplateStore.LookupEntry(cInfo->Faction);
@@ -56,7 +56,7 @@ bool SetAvoidAreaAction::Execute(Event& event)
 
 bool SetAvoidAreaAction::isUseful()
 {
-    if (bot->GetInstanceId())
+    if (!bot->GetMap()->IsContinent())
         return false;
 
     PositionEntry p = AI_VALUE2(PositionEntry, "pos", "last avoid");

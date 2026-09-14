@@ -1,3 +1,4 @@
+#include "playerbot/NativeCombatQueries.h"
 #include "playerbot/playerbot.h"
 #include "DungeonActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -39,7 +40,7 @@ Unit* DungeonAddTargetAction::GetGluthTarget()
         if (!live(chow) || chow->GetEntry() != 16360 || !chow->GetMaxHealth() ||
             chow->GetHealth() > chow->GetMaxHealth() / 20 + 1 ||
             chow->GetUInt32Value(UNIT_CREATED_BY_SPELL) != 28217 || chow->GetDistance(boss) > 100) continue;
-        Unit* trigger = ai->GetUnit(chow->GetSpawnerGuid());
+        Unit* trigger = ai->GetUnit(ai::NativeSpawnerGuid(chow));
         if (!live(trigger) || trigger->GetEntry() != 15384 || trigger->GetDistance(boss) > 100) continue;
         // The native trigger summons these; Gluth is not their spawner. Wrath
         // clears their attack victim after Decimate, so do not require one.
