@@ -19,6 +19,7 @@ Unit* DungeonAddTargetAction::GetTarget()
     bool engagedStaticAdd = false;
     switch (bot->GetMapId())
     {
+        case 70: break; // Uldaman healing wards resolved below.
         case 209: break; // Sandfury Witch Doctor healing wards below.
         case 230: break; // Flamelash's native summoned spirits below.
         case 309: bossEntry = 14834; addEntry = 11357; engagedStaticAdd = true; break; // Son of Hakkar: already engaged by this group.

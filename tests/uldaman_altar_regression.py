@@ -12,6 +12,8 @@ code=r'''
 #include <cmath>
 #include <ctime>
 #include <iostream>
+#include <list>
+#include <type_traits>
 using uint32=unsigned;using ObjectGuid=unsigned;
 enum {GO_JUST_DEACTIVATED=3,GAMEOBJECT_TYPE_SUMMONING_RITUAL=18,CURRENT_CHANNELED_SPELL=1,SPELL_STATE_FINISHED=2,CMSG_GAMEOBJ_USE=22};
 time_t now=1000;time_t testTime(void*){return now;}
@@ -25,8 +27,8 @@ struct GameObject{bool world=true,spawned=true,same=true;unsigned guid=9,entry=1
  unsigned GetObjectGuid(){return guid;}unsigned GetUniqueUseCount(){return users;}float GetInteractionDistance(){return 5;}};
 struct WorldPacket{unsigned guid=0;WorldPacket(int){}WorldPacket& operator<<(unsigned g){guid=g;return *this;}};
 struct Session{unsigned uses=0,guid=0;void HandleGameObjectUseOpcode(WorldPacket& p){++uses;guid=p.guid;}};
-struct Group;struct Player{unsigned guid=1,map=70,instance=1;bool valid=true,world=true,teleport=false,busy=false,los=true;float x=0;Group* group=nullptr;Spell* channel=nullptr;Session session;
- bool IsInWorld(){return world;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return map;}
+struct Group;struct Player{unsigned guid=1,map=70,instance=1;bool real=true,valid=true,world=true,teleport=false,busy=false,los=true;float x=0;Group* group=nullptr;Spell* channel=nullptr;Session session;
+ bool isRealPlayer(){return real;}bool IsInWorld(){return world;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return map;}
  unsigned GetMap(){return map*1000+instance;}unsigned GetInstanceId(){return instance;}Group* GetGroup(){return group;}
  unsigned GetObjectGuid(){return guid;}bool IsInMap(GameObject* o){return o->same;}
  float GetDistance(GameObject* o){return std::abs(x-o->x);}bool IsNonMeleeSpellCasted(bool){return busy||channel;}
@@ -35,7 +37,7 @@ struct GroupReference{Player* player;GroupReference* nextRef;Player* getSource()
 struct Group{GroupReference* first=nullptr;GroupReference* GetFirstMember(){return first;}};
 namespace ai{struct UldamanAltarRequest{unsigned altar=0,requester=0,instance=0;time_t expires=0;};}
 template<class T>struct Stored{T data{};T Get(){return data;}void Set(T t){data=t;}};
-struct Context{Stored<ai::UldamanAltarRequest> request;template<class T>Stored<T>* GetValue(const char*){return &request;}};
+struct Context{Stored<ai::UldamanAltarRequest> request;Stored<std::list<ObjectGuid>> nearby;template<class T>Stored<T>* GetValue(const char*){if constexpr(std::is_same_v<T,ai::UldamanAltarRequest>)return &request;else return &nearby;}};
 struct PlayerbotAI{Player* bot;GameObject* altar;Context context;bool movable=true;unsigned moves=0,stops=0;
  Player* GetBot(){return bot;}GameObject* GetGameObject(unsigned g){return altar&&altar->guid==g?altar:nullptr;}
  Context* GetAiObjectContext(){return &context;}bool CanMove(){return movable;}void StopMoving(){++stops;}};
@@ -53,8 +55,18 @@ __HEADER__
 __METHODS__
 int main(){
  Player bot,master;GameObject altar;Group group,other;SpellEntry entry;Spell channel{&entry};GroupReference member{&master,nullptr};PlayerbotAI ai{&bot,&altar};ai::Event event;ai::AssistUldamanAltarAction action(&ai);
- auto reset=[&](){bot=Player{};master=Player{};master.guid=2;altar=GameObject{};bot.group=master.group=&group;group.first=&member;master.channel=&channel;ai.context.request.Set({});ai.moves=ai.stops=0;ai.movable=true;ai.altar=&altar;now=1000;entry.Id=11206;channel.state=0;};
+ auto reset=[&](){bot=Player{};master=Player{};master.guid=2;altar=GameObject{};bot.group=master.group=&group;group.first=&member;master.channel=&channel;ai.context.request.Set({});ai.context.nearby.Set({});ai.moves=ai.stops=0;ai.movable=true;ai.altar=&altar;now=1000;entry.Id=11206;channel.state=0;};
  auto start=[&](){return ai::AssistUldamanAltarAction::Start(&ai,&master,altar.guid);};
+ // A real party member is already channeling, but no master-click event arrived.
+ reset();ai.context.nearby.Set({altar.guid});assert(action.isUseful());assert(ai.context.request.data.requester==master.guid);assert(action.Execute(event)&&bot.session.uses==1);
+ reset();ai.context.nearby.Set({altar.guid});master.channel=nullptr;assert(!action.isUseful());
+ reset();ai.context.nearby.Set({altar.guid});master.real=false;assert(!action.isUseful());
+ reset();ai.context.nearby.Set({altar.guid});altar.users=0;assert(!action.isUseful());
+ reset();ai.context.nearby.Set({altar.guid});altar.users=3;assert(!action.isUseful());
+ reset();ai.context.nearby.Set({altar.guid});master.x=6;assert(!action.isUseful());
+ reset();ai.context.nearby.Set({altar.guid});master.group=&other;assert(!action.isUseful());
+ reset();ai.context.nearby.Set({altar.guid});entry.Id=698;assert(!action.isUseful());
+ reset();ai.context.nearby.Set({altar.guid});altar.owner=2;assert(!action.isUseful());
  reset();assert(!action.isUseful());assert(start()&&action.isUseful());assert(action.Execute(event)&&bot.session.uses==1&&bot.session.guid==altar.guid);assert(altar.users==1); // Native handler owns participant changes.
  reset();altar.entry=133234;altar.info.summoningRitual.spellId=10340;assert(start()&&action.Execute(event));
  reset();altar.info.summoningRitual.reqParticipants=1;assert(!start());

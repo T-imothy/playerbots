@@ -88,11 +88,12 @@ int main(){
   ai.objective=nullptr;assert(!action.GetTarget());
  }
 
- // Passive ZF wards are selected and remain valid across the next AI tick.
- {
-  Group group,other;Player bot,tank;bot.map=tank.map=209;bot.group=tank.group=&group;
-  Unit doctor,ward,second;doctor.guid=1;doctor.map=209;doctor.entry=5650;doctor.victim=&tank;
-  ward.guid=2;ward.map=209;ward.entry=8179;ward.spawner=1;ward.combat=false;ward.x=5;
+ // Passive ZF and Uldaman wards remain valid across the next AI tick.
+ struct WardCase{unsigned map,owner,entry;};
+ for(WardCase row:{WardCase{209,5650,8179},WardCase{70,4852,3560},WardCase{70,2894,3560}}){
+  Group group,other;Player bot,tank;bot.map=tank.map=row.map;bot.group=tank.group=&group;
+  Unit doctor,ward,second;doctor.guid=1;doctor.map=row.map;doctor.entry=row.owner;doctor.victim=&tank;
+  ward.guid=2;ward.map=row.map;ward.entry=row.entry;ward.spawner=1;ward.combat=false;ward.x=5;
   second=ward;second.guid=3;second.x=10;
   PlayerbotAI ai{&bot};ai.units={{1,&doctor},{2,&ward},{3,&second}};ai.possible={1,2,3};
   DungeonAddTargetAction action(&ai);PreserveDungeonAddTargetMultiplier preserve{&ai};
@@ -108,11 +109,11 @@ int main(){
   ai.healer=true;rejected();ai.healer=false;ai.tank=true;rejected();ai.tank=false;
   doctor.spawner=0;doctor.victim=&bot;assert(action.GetTarget()==&ward);doctor.victim=&tank;
   doctor.victim=nullptr;rejected();doctor.victim=&tank;
-  doctor.entry=8127;rejected();doctor.entry=5650;
+  doctor.entry=8127;rejected();doctor.entry=row.owner;
   doctor.combat=false;rejected();doctor.combat=true;
   tank.group=&other;rejected();tank.group=&group;
   ward.spawner=99;rejected();ward.spawner=1;
-  ward.map=1;rejected();ward.map=209;ward.instance=2;rejected();ward.instance=1;
+  ward.map=1;rejected();ward.map=row.map;ward.instance=2;rejected();ward.instance=1;
   ward.x=61;rejected();ward.x=5;
   for(bool Unit::*field:{&Unit::world,&Unit::alive,&Unit::attackable,&Unit::freeAttack}){
    ward.*field=false;rejected();ward.*field=true;
@@ -357,7 +358,9 @@ int main(){
 '''.replace('__METHODS__',methods)
 for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
     if realm!='classic':
-        scripts=root.parent/f'mangos-{realm}-behavior/src/game/AI/ScriptDevAI/scripts'
+        native_root=root.parent/realm
+        if not (native_root/'src/game').is_dir():native_root=root.parent/f'mangos-{realm}-behavior'
+        scripts=native_root/'src/game/AI/ScriptDevAI/scripts'
         expected={
             'boss_high_botanist_freywinn.cpp':['19953','34551','SummonedCreatureJustDied','InterruptTreeForm()'],
             'boss_mekgineer_steamrigger.cpp':['17951','31532','37936','MoveFollow(m_creature'],
@@ -382,7 +385,7 @@ for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
             matches=list(scripts.rglob(name));assert len(matches)==1,(realm,name)
             native=matches[0].read_text()
             for contract in contracts:assert contract in native,(realm,name,contract)
-        native=(root.parent/f'mangos-{realm}-behavior/src/game/Entities/TemporarySpawn.h').read_text()
+        native=(native_root/'src/game/Entities/TemporarySpawn.h').read_text()
         assert 'GetSpawnerGuid() const override { return m_spawner' in native
     with tempfile.TemporaryDirectory(prefix='mantech-dungeon-add-priority-') as directory:
         tmp=Path(directory);(tmp/'test.cpp').write_text(code)

@@ -35,7 +35,8 @@ bool InvalidTargetValue::Calculate()
 
     // Healing wards have no hostile victim of their own. Keep the exact active
     // dungeon objective instead of rejecting it as a non-threatening creature.
-    if (qualifier == "current target" && bot->GetMapId() == 209 && target->GetEntry() == 8179 &&
+    if (qualifier == "current target" && ((bot->GetMapId() == 209 && target->GetEntry() == 8179) ||
+         (bot->GetMapId() == 70 && target->GetEntry() == 3560)) &&
         ai->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT))
     {
         DungeonAddTargetAction priority(ai);

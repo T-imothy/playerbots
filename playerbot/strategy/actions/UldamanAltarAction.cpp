@@ -42,7 +42,34 @@ GameObject* AssistUldamanAltarAction::GetAltar()
 {
     if (!bot->IsInWorld() || bot->IsBeingTeleported() || bot->GetMapId() != 70) return nullptr;
     auto* value = ai->GetAiObjectContext()->GetValue<UldamanAltarRequest>("uldaman altar request");
-    const auto request = value->Get();
+    auto request = value->Get();
+    if (!request.expires && CanParticipateInRitual(bot) && bot->GetGroup() &&
+        !bot->IsNonMeleeSpellCasted(true))
+    {
+        // A queued master-click event is not a reliable invitation: another
+        // real party member can start the ritual, or the event can be lost
+        // during an AI state reset. Recover only an already active ritual.
+        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* player = ref->getSource();
+            if (!CanParticipateInRitual(player) || !player->isRealPlayer() ||
+                player == bot || player->GetMap() != bot->GetMap()) continue;
+            const Spell* channel = player->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
+            if (!channel || !channel->m_spellInfo || channel->getState() == SPELL_STATE_FINISHED ||
+                channel->m_spellInfo->Id != 11206) continue;
+            // Search only after finding a live party channel, using the existing
+            // bounded nearby-object value rather than scanning on every AI tick.
+            for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest game objects no los")->Get())
+            {
+                GameObject* altar = ai->GetGameObject(guid);
+                if (!IsUldamanAltar(altar) || !altar->GetUniqueUseCount() ||
+                    altar->GetUniqueUseCount() >= altar->GetGOInfo()->summoningRitual.reqParticipants) continue;
+                if (Start(ai, player, guid)) break;
+            }
+            request = value->Get();
+            if (request.expires) break;
+        }
+    }
     if (!request.expires) return nullptr;
     if (request.expires <= time(nullptr) || request.instance != bot->GetInstanceId() ||
         !CanParticipateInRitual(bot) || !bot->GetGroup())
