@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess,tempfile
 root=Path(__file__).resolve().parents[1]
 corpse=(root/'playerbot/strategy/actions/ReviveFromCorpseAction.cpp').read_text(encoding='utf-8')
+helper=corpse[corpse.index('#ifdef MANGOSBOT_TWO'):corpse.index('bool ReviveFromCorpseAction::Execute')]
 start=corpse.index('bool FindCorpseAction::Execute(Event& event)')
 end=corpse.index('    Player* master = ai->GetGroupMaster();',start)
 corpse=corpse[start:end]+'    fallback = true; return false;\n}\n'
@@ -11,6 +12,8 @@ start=pull.index('    strategy->SetBodyPull(false);');end=pull.index('    //Set 
 pull=pull[start:end]
 fixture=r'''
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cassert>
 #include <iostream>
 #include <string>
@@ -24,8 +27,10 @@ struct Player{Corpse corpse;bool hasCorpse=true,bg=false,alive=false,charmed=fal
  bool IsAlive(){return alive;}unsigned GetMapId(){return map;}float GetDistance(float,float,float){return distance;}
  bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}};
 struct AreaTrigger{unsigned entry=1;};struct AreaTriggerEntry{unsigned mapid=0;float x=1,y=2,z=3;};
-struct ObjectMgr{AreaTrigger entry;bool present=true;int lookups=0;const AreaTrigger* GetMapEntranceTrigger(unsigned){++lookups;return present?&entry:nullptr;}}sObjectMgr;
-struct TriggerStore{AreaTriggerEntry entry;const AreaTriggerEntry* LookupEntry(unsigned){return &entry;}}sAreaTriggerStore;
+struct ObjectMgr{AreaTrigger entry;bool present=true;int lookups=0,idLookups=0;const AreaTrigger* GetMapEntranceTrigger(unsigned){++lookups;return present?&entry:nullptr;}
+ const AreaTrigger* GetAreaTrigger(unsigned id){++idLookups;return present&&id==1?&entry:nullptr;}}sObjectMgr;
+struct TriggerStore{AreaTriggerEntry entry;const AreaTriggerEntry* LookupEntry(unsigned id){return id==1?&entry:nullptr;}
+ unsigned GetNumRows(){return 6;}}sAreaTriggerStore;
 const int CMSG_AREATRIGGER=1;
 struct WorldPacket{unsigned id=0;WorldPacket(int){}void operator<<(unsigned value){id=value;}};
 struct Event{std::string source="pull";Event(){}Event(const char*,WorldPacket&){}std::string getSource(){return source;}};
@@ -35,7 +40,7 @@ struct ReachAreaTriggerAction{AI* ai;static bool accepted;static int calls;Reach
 bool ReachAreaTriggerAction::accepted=true;int ReachAreaTriggerAction::calls=0;
 struct FindCorpseAction{Player* bot;AI* ai;bool fallback=false;int moved=0;unsigned duration=0;
  bool MoveTo(unsigned,float,float,float){++moved;return true;}void SetDuration(unsigned value){duration=value;}bool Execute(Event&);};
-'''+corpse+r'''
+'''+helper+corpse+r'''
 enum class PullFailure{None,Unavailable,NoRangedWeapon,NoAmmo,NotKnown,NotReady,NoLineOfSight,OutOfRange,InvalidState};
 struct Strategy{bool body=true,can=false;void SetBodyPull(bool value){body=value;}bool CanDoPullAction(Player*){return can;}};
 PullFailure reason=PullFailure::NoAmmo;PullFailure GetPullReadiness(AI*,Player*){return reason;}
@@ -48,7 +53,12 @@ bool Attempt(Strategy* strategy,AI* ai,Player* bot,Player* requester,Player* tar
 int main(){
  Player bot,requester,target;AI ai;Event event;FindCorpseAction action{&bot,&ai};
  assert(action.Execute(event));assert(ReachAreaTriggerAction::calls==1&&action.duration==3000);
- bot.distance=100;assert(action.Execute(event));assert(action.moved==1&&ReachAreaTriggerAction::calls==1);
+#ifdef MANGOSBOT_TWO
+ int searches=sObjectMgr.idLookups;assert(searches>=1);
+ assert(action.Execute(event));assert(sObjectMgr.idLookups==searches+1); // validated cached ID
+#endif
+ int beforeDistance=ReachAreaTriggerAction::calls;
+ bot.distance=100;assert(action.Execute(event));assert(action.moved==1&&ReachAreaTriggerAction::calls==beforeDistance);
  bot.distance=25;ReachAreaTriggerAction::accepted=false;assert(!action.Execute(event));assert(!action.fallback);
  sObjectMgr.present=false;assert(!action.Execute(event));assert(!action.fallback);sObjectMgr.present=true;
  bot.bg=true;int before=sObjectMgr.lookups;assert(!action.Execute(event));assert(sObjectMgr.lookups==before);bot.bg=false;

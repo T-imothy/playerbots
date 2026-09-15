@@ -8,8 +8,35 @@
 #include "playerbot/TravelMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/DeadValues.h"
+#include <array>
+#include <atomic>
 
 using namespace ai;
+
+#ifdef MANGOSBOT_TWO
+namespace
+{
+// Wrath stores the portal ID as the AreaTriggerMap key rather than a field in
+// AreaTrigger. Match the selected native entrance against registered IDs and
+// retain only the ID. Validate every cached hit in case the GM reloads data.
+uint32 EntranceTriggerId(uint32 destinationMap, AreaTrigger const* entrance)
+{
+    if (!entrance) return 0;
+    static std::array<std::atomic<uint32>, 1024> cache{};
+    const bool cacheable = destinationMap < cache.size();
+    const uint32 previous = cacheable ? cache[destinationMap].load(std::memory_order_relaxed) : 0;
+    if (previous && sAreaTriggerStore.LookupEntry(previous) &&
+        sObjectMgr.GetAreaTrigger(previous) == entrance) return previous;
+    for (uint32 id = 1; id < sAreaTriggerStore.GetNumRows(); ++id)
+        if (sAreaTriggerStore.LookupEntry(id) && sObjectMgr.GetAreaTrigger(id) == entrance)
+        {
+            if (cacheable) cache[destinationMap].store(id, std::memory_order_relaxed);
+            return id;
+        }
+    return 0;
+}
+}
+#endif
 
 bool ReviveFromCorpseAction::Execute(Event& event)
 {
@@ -76,13 +103,18 @@ bool FindCorpseAction::Execute(Event& event)
         corpseMap && corpseMap->IsDungeon() && bot->GetMapId() != corpse->GetMapId())
     {
         const AreaTrigger* entrance = sObjectMgr.GetMapEntranceTrigger(corpse->GetMapId());
-        const AreaTriggerEntry* trigger = entrance ? sAreaTriggerStore.LookupEntry(entrance->entry) : nullptr;
+#ifdef MANGOSBOT_TWO
+        const uint32 triggerId = EntranceTriggerId(corpse->GetMapId(), entrance);
+#else
+        const uint32 triggerId = entrance ? entrance->entry : 0;
+#endif
+        const AreaTriggerEntry* trigger = triggerId ? sAreaTriggerStore.LookupEntry(triggerId) : nullptr;
         if (!trigger) return false; // No invented entrance or forced resurrection.
         if (bot->GetMapId() != trigger->mapid ||
             bot->GetDistance(trigger->x, trigger->y, trigger->z) > sPlayerbotAIConfig.sightDistance)
             return MoveTo(trigger->mapid, trigger->x, trigger->y, trigger->z);
         WorldPacket packet(CMSG_AREATRIGGER);
-        packet << entrance->entry;
+        packet << triggerId;
         Event portal("reach area trigger", packet);
         ReachAreaTriggerAction approach(ai);
         const bool result = approach.Execute(portal);
