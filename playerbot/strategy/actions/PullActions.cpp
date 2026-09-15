@@ -96,10 +96,20 @@ bool PullRequestAction::Execute(Event& event)
         return fail(PullFailure::InvalidTarget);
     }
 
+    // A previous command must never leave this request in fallback mode.
+    strategy->SetBodyPull(false);
     if (!strategy->CanDoPullAction(target))
     {
         const PullFailure reason = GetPullReadiness(ai, target);
-        return fail(reason == PullFailure::None ? PullFailure::Unavailable : reason);
+        const bool explicitRequest = (event.getSource() == "pull" || event.getSource() == "pull rti") &&
+            CanManageBotCommands(ai, requester);
+        const bool missingRanged = reason == PullFailure::NoRangedWeapon ||
+            reason == PullFailure::NoAmmo || reason == PullFailure::NotKnown;
+        if (!sPlayerbotAIConfig.explicitBodyPull || !explicitRequest || !missingRanged ||
+            !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported())
+            return fail(reason == PullFailure::None ? PullFailure::Unavailable : reason);
+        strategy->SetBodyPull(true);
+        ai->TellPlayerNoFacing(requester, "No usable ranged pull; approaching for a melee pull.");
     }
 
     //Set position to return to after pulling.
@@ -194,7 +204,7 @@ bool PullAction::Execute(Event& event)
         Unit* target = strategy->GetTarget();
         if (target)
         {
-            if (ai->IsMelee(bot) && bot->CanReachWithMeleeAttack(target))
+            if ((strategy->IsBodyPull() || ai->IsMelee(bot)) && bot->CanReachWithMeleeAttack(target))
             {
                 SET_AI_VALUE(Unit*, "current target", target);
                 if (ai->DoSpecificAction("melee", event, true))
@@ -203,6 +213,11 @@ bool PullAction::Execute(Event& event)
                     return true;
                 }
                 return false;
+            }
+            if (strategy->IsBodyPull())
+            {
+                Event approach("reach pull");
+                return ai->DoSpecificAction("reach pull", approach, true);
             }
             // Check if we are on pull range
             const float distanceToTarget = target->GetDistance(bot);
@@ -246,7 +261,7 @@ bool PullAction::isUseful()
     // strategy's spell before the inherited capability check runs.
     InitPullAction();
     PullStrategy* strategy = PullStrategy::Get(ai);
-    return strategy && !strategy->HasPullActionIssued() && CastSpellAction::isUseful();
+    return strategy && !strategy->HasPullActionIssued() && (strategy->IsBodyPull() || CastSpellAction::isUseful());
 }
 
 bool PullAction::isPossible()
@@ -256,11 +271,12 @@ bool PullAction::isPossible()
     PullStrategy* strategy = PullStrategy::Get(ai);
     if (strategy)
     {
-        std::string spellName = strategy->GetSpellName();
         Unit* target = strategy->GetTarget();
+        if (strategy->IsBodyPull()) return target && target->IsAlive() && bot->IsInMap(target);
+        std::string spellName = strategy->GetSpellName();
         if (!spellName.empty() && target)
         {
-            if (ai->IsMelee(bot) && bot->CanReachWithMeleeAttack(target))
+            if ((strategy->IsBodyPull() || ai->IsMelee(bot)) && bot->CanReachWithMeleeAttack(target))
                 return true;
             if (!ai->CanCastSpell(spellName, target, 0, nullptr, true))
             {

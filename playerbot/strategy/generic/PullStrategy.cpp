@@ -39,6 +39,7 @@ PullStrategy::PullStrategy(PlayerbotAI* ai, std::string pullAction, std::string 
 
 std::string PullStrategy::GetPullActionName() const
 {
+    if (bodyPull) return "melee";
     std::string modPullActionName = pullActionName;
 
     // Select the faerie fire based on druid strategy
@@ -105,6 +106,7 @@ std::string PullStrategy::GetSpellName() const
 
 float PullStrategy::GetRange() const
 {
+    if (bodyPull) return CONTACT_DISTANCE;
     float range;
 
     // Try to get the pull action range
@@ -123,6 +125,7 @@ float PullStrategy::GetRange() const
 
 std::string PullStrategy::GetPreActionName() const
 {
+    if (bodyPull) return "";
     std::string modPullActionName = preActionName;
 
     // Select the faerie fire based on druid strategy
@@ -237,6 +240,7 @@ void PullStrategy::OnPullEnded()
     pullActionTime = 0;
     petReactStateSaved = false;
     requesterGuid.Clear();
+    bodyPull = false;
     SetTarget(nullptr);
 }
 

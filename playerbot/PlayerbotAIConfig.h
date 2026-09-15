@@ -176,6 +176,12 @@ public:
     uint32 randomBotManagerScanLimit;
     uint32 randomBotLoginDbQueueLimit;
     uint32 randomBotDatabasePingInterval, performanceMapScanInterval;
+    // Experimental reliability adaptations: enable individually in DEV.
+    bool unreachableTargetRecovery = false;
+    bool dungeonCorpseRecovery = false;
+    bool explicitBodyPull = false;
+    bool partyCommandCoordinator = false;
+    bool incidentHistory = false;
     bool diagnosticsEnabled = false;
     uint32 diagnosticsMode = 0;
     uint32 diagnosticsInterval = 30000;

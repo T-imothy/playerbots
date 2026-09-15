@@ -1,6 +1,7 @@
 #include "Config/Config.h"
 
 #include "playerbot/playerbot.h"
+#include "BotIncidentHistory.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotDiagnostics.h"
 #include "playerbot/PlayerbotFactory.h"
@@ -684,6 +685,7 @@ void RandomPlayerbotMgr::LogPlayerLocation()
 
 void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
+    BotIncidentHistory::Flush();
 #ifdef MEMORY_MONITOR
     sMemoryMonitor.Print();
     sMemoryMonitor.LogCount(sConfig.GetStringDefault("LogsDir") + "/" + "memory.csv");

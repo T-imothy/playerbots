@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ActiveSpellValue.h"
+#include "BotReliabilityValue.h"
 #include "EncounterPositionValue.h"
 #include "VashjCoreValue.h"
 #include "RitualSummonValue.h"
@@ -331,6 +332,7 @@ namespace ai
             creators["ignore rpg target"] = [](PlayerbotAI* ai) { return new IgnoreRpgTargetValue(ai); };
             creators["next rpg action"] = [](PlayerbotAI* ai) { return new NextRpgActionValue(ai); };
             creators["talk target"] = [](PlayerbotAI* ai) { return new TalkTargetValue(ai); };
+            creators["bot reliability"] = [](PlayerbotAI* ai) { return new BotReliabilityValue(ai); };
             creators["attack target"] = [](PlayerbotAI* ai) { return new AttackTargetValue(ai); };
             creators["pull target"] = [](PlayerbotAI* ai) { return new PullTargetValue(ai); };
             creators["follow target"] = [](PlayerbotAI* ai) { return new FollowTargetValue(ai); };

@@ -2707,7 +2707,8 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
 
     const float distanceToTarget = botPosition.distance(targetPosition);
 
-    if (distanceToTarget > sPlayerbotAIConfig.sightDistance)
+    if (distanceToTarget > sPlayerbotAIConfig.sightDistance ||
+        (sPlayerbotAIConfig.unreachableTargetRecovery && !bot->IsWithinLOSInMap(obj, true)))
         return MoveTo(targetPosition.getMapId(), targetPosition.getX(), targetPosition.getY(), targetPosition.getZ());
 
     const Vector3 directionToTarget = (targetPoint - botPoint).directionOrZero();

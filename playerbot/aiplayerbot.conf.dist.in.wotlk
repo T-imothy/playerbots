@@ -1217,3 +1217,11 @@ AiPlayerbot.RandomBotManagerScanLimit = 512
 # Group invitations never revive bots. Native summon/ritual rules are unchanged.
 # Default: 1 (preserves the existing convenience-summon revival policy).
 AiPlayerbot.Recruitment.Revive = 1
+
+# Experimental reliability adaptations; enable individually in DEV.
+AiPlayerbot.Reliability.UnreachableTargets = 0
+AiPlayerbot.Reliability.DungeonCorpse = 0
+AiPlayerbot.Reliability.BodyPull = 0
+AiPlayerbot.Reliability.PartyCommands = 0
+# Bounded, observation-only episodes in LogsDir/PlayerbotIncidents.jsonl.
+AiPlayerbot.Reliability.IncidentHistory = 0

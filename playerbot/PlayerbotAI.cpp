@@ -1,6 +1,8 @@
 #include "Util/DevDiagnostics.h"
 #include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
+#include "BotPartyCommands.h"
+#include "BotIncidentHistory.h"
 #include <stdarg.h>
 #include <iomanip>
 
@@ -311,6 +313,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
     // and retry the normal CMaNGOS area-trigger path if an update was missed.
     if (ProcessPendingTransition())
         return;
+
+    if (bot->IsInWorld() && !bot->IsBeingTeleported())
+    {
+        if (sPlayerbotAIConfig.incidentHistory) BotIncidentHistory::Sample(this);
+        if (sPlayerbotAIConfig.partyCommandCoordinator && BotPartyCommands::Update(this)) return;
+    }
 
     AiObjectContext* context = aiObjectContext;
     std::unique_ptr<PerformanceMonitorOperation> pmo;

@@ -17,6 +17,8 @@ namespace ai
         const time_t& GetPullStartTime() const { return pullStartTime; }
         
         bool CanDoPullAction(Unit* target);
+        bool IsBodyPull() const { return bodyPull; }
+        void SetBodyPull(bool value) { bodyPull = value; }
 
         Unit* GetTarget() const;
         bool HasTarget() const { return GetTarget() != nullptr; }
@@ -54,6 +56,7 @@ namespace ai
         std::string pullActionName; //shoot
         std::string preActionName;
         bool pendingToStart;
+        bool bodyPull = false;
         time_t pullStartTime;
         time_t pullActionTime = 0;
         bool petReactStateSaved = false;

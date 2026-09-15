@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "BotReliabilityValue.h"
 #include "AttackersValue.h"
 #include "PossibleTargetsValue.h"
 #include "EnemyPlayerValue.h"
@@ -333,6 +334,8 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
 
     PlayerbotAI* ai = playerToCheckAgainst->GetPlayerbotAI();
     AiObjectContext* context = ai->GetAiObjectContext();
+
+    if (IsUnreachableTarget(ai, target)) return true;
 
     //Ignore Hard hostiles while not already fighting.
     if (target->GetLevel() > (playerToCheckAgainst->GetLevel() + 5) && ai->GetState() == BotState::BOT_STATE_NON_COMBAT)

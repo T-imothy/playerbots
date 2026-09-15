@@ -1,6 +1,7 @@
 #include "Util/DevDiagnostics.h"
 
 #include "playerbot/playerbot.h"
+#include "playerbot/BotIncidentHistory.h"
 #include <stdarg.h>
 #include <iomanip>
 
@@ -124,6 +125,8 @@ bool Engine::IsFailureBackedOff(Action* action, const Event& event, ActionResult
 
 void Engine::RecordFailure(Action* action, const Event& event, ActionResult reason)
 {
+    if (sPlayerbotAIConfig.incidentHistory && reason == ACTION_RESULT_IMPOSSIBLE)
+        BotIncidentHistory::ActionResult(ai, action->getName(), false);
     if (IsExplicitPlayerCommand(action, event))
         return;
 
@@ -515,6 +518,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                         auto pmo4 = sPerformanceMonitor.start(PERF_MON_ACTION, "Execute", ai);
             MANTECH_DIAG_BEGIN(devDiagPmo4,BotExecute,32,actionName.c_str());
                         actionExecuted = ListenAndExecute(action, event);
+                        if (sPlayerbotAIConfig.incidentHistory)
+                            BotIncidentHistory::ActionResult(ai, action->getName(), actionExecuted);
                         if (CombatDiagnostics::Select(ai))
                             CombatDiagnostics::Record(ai, action->getName(), event.getSource(), "action_execute", actionExecuted ? 1 : 0);
                         MANTECH_DIAG_END(devDiagPmo4);

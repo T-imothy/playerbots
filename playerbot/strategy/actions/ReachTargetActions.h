@@ -2,6 +2,7 @@
 
 #include "playerbot/strategy/Action.h"
 #include "MovementActions.h"
+#include "playerbot/strategy/values/BotReliabilityValue.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
@@ -62,6 +63,8 @@ namespace ai
                     SetDuration(sPlayerbotAIConfig.reactDelay);
                     return true;
                 }                 
+
+                if (ObserveUnreachableTarget(ai, target)) return false;
 
                 if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
                 {
@@ -199,7 +202,7 @@ namespace ai
         {
             PullStrategy* strategy = PullStrategy::Get(ai);
             if (!strategy || strategy->HasPullActionIssued()) return false;
-            spellName = strategy->GetSpellName();
+            spellName = strategy->IsBodyPull() ? "" : strategy->GetSpellName();
             range = strategy->GetRange();
             if (range > 5.0f) range -= 5.0f;
             float maximum = 0.0f, minimum = 0.0f;

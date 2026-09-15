@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "BotRecruitment.h"
+#include "BotPartyCommands.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "PlayerbotDbStore.h"
 #include "playerbot/PlayerbotFactory.h"
@@ -977,6 +978,8 @@ void PlayerbotMgr::HandleCommand(uint32 type, const std::string& text, uint32 la
         }
         return;
     }
+
+    if (BotPartyCommands::Queue(master, text, type)) return;
 
     ForEachPlayerbot([&](Player *bot)
     {

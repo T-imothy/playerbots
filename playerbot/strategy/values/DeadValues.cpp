@@ -203,6 +203,11 @@ GuidPosition BestGraveyardValue::Calculate()
 
 bool ShouldSpiritHealerValue::Calculate()
 {
+    if (sPlayerbotAIConfig.dungeonCorpseRecovery)
+        if (Corpse* corpse = bot->GetCorpse())
+            if (const MapEntry* entry = sMapStore.LookupEntry(corpse->GetMapId()))
+                if (entry->IsDungeon() && time(nullptr) - corpse->GetGhostTime() < 10 * MINUTE &&
+                    sObjectMgr.GetMapEntranceTrigger(corpse->GetMapId())) return false;
     uint32 deathCount = AI_VALUE(uint32, "death count");
     uint8 durability = AI_VALUE(uint8, "durability");
 

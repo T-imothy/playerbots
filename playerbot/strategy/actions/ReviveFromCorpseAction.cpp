@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "AreaTriggerAction.h"
 #include "ReviveFromCorpseAction.h"
 #include "playerbot/PlayerbotFactory.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -66,6 +67,28 @@ bool FindCorpseAction::Execute(Event& event)
     Corpse* corpse = bot->GetCorpse();
     if (!corpse)
         return false;
+
+    // A ghost outside its corpse's dungeon must enter through the native
+    // portal. Corpse coordinates belong to a different map; walking directly
+    // to them or waiting next to a dead human leader cannot recover the bot.
+    const MapEntry* corpseMap = sMapStore.LookupEntry(corpse->GetMapId());
+    if (sPlayerbotAIConfig.dungeonCorpseRecovery && !bot->IsAlive() &&
+        corpseMap && corpseMap->IsDungeon() && bot->GetMapId() != corpse->GetMapId())
+    {
+        const AreaTrigger* entrance = sObjectMgr.GetMapEntranceTrigger(corpse->GetMapId());
+        const AreaTriggerEntry* trigger = entrance ? sAreaTriggerStore.LookupEntry(entrance->entry) : nullptr;
+        if (!trigger) return false; // No invented entrance or forced resurrection.
+        if (bot->GetMapId() != trigger->mapid ||
+            bot->GetDistance(trigger->x, trigger->y, trigger->z) > sPlayerbotAIConfig.sightDistance)
+            return MoveTo(trigger->mapid, trigger->x, trigger->y, trigger->z);
+        WorldPacket packet(CMSG_AREATRIGGER);
+        packet << entrance->entry;
+        Event portal("reach area trigger", packet);
+        ReachAreaTriggerAction approach(ai);
+        const bool result = approach.Execute(portal);
+        SetDuration(sPlayerbotAIConfig.reactDelay);
+        return result;
+    }
 
     Player* master = ai->GetGroupMaster();
     if (master)
