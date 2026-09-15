@@ -21,10 +21,11 @@ time_t now=1000;time_t testTime(void*){return now;}
 struct SpellEntry{unsigned Id=11206;};
 struct Spell{SpellEntry* m_spellInfo=nullptr;int state=0;int getState()const{return state;}};
 struct GameObjectInfo{struct {unsigned reqParticipants=3,animSpell=11206,spellId=11568;}summoningRitual;};
-struct GameObject{bool world=true,spawned=true,same=true;unsigned guid=9,entry=130511,owner=0,users=1;int loot=0,type=18;float x=0;GameObjectInfo info;
+struct Player;
+struct GameObject{bool world=true,spawned=true,same=true;unsigned guid=9,entry=130511,owner=0,users=1;int loot=0,type=18;float x=0,nativePadding=0;GameObjectInfo info;
  bool IsInWorld(){return world;}int GetLootState(){return loot;}unsigned GetOwnerGuid(){return owner;}
  int GetGoType(){return type;}GameObjectInfo* GetGOInfo(){return &info;}unsigned GetEntry(){return entry;}
- unsigned GetObjectGuid(){return guid;}unsigned GetUniqueUseCount(){return users;}float GetInteractionDistance(){return 5;}};
+ unsigned GetObjectGuid(){return guid;}unsigned GetUniqueUseCount(){return users;}float GetInteractionDistance(){return 5;}bool IsAtInteractDistance(Player*);bool IsWithinDistInMap(Player*,float);};
 struct WorldPacket{unsigned guid=0;WorldPacket(int){}WorldPacket& operator<<(unsigned g){guid=g;return *this;}};
 struct Session{unsigned uses=0,guid=0;void HandleGameObjectUseOpcode(WorldPacket& p){++uses;guid=p.guid;}};
 struct Group;struct Player{unsigned guid=1,map=70,instance=1;bool real=true,valid=true,world=true,teleport=false,busy=false,los=true;float x=0;Group* group=nullptr;Spell* channel=nullptr;Session session;
@@ -33,6 +34,8 @@ struct Group;struct Player{unsigned guid=1,map=70,instance=1;bool real=true,vali
  unsigned GetObjectGuid(){return guid;}bool IsInMap(GameObject* o){return o->same;}
  float GetDistance(GameObject* o){return std::abs(x-o->x);}bool IsNonMeleeSpellCasted(bool){return busy||channel;}
  Spell* GetCurrentSpell(int){return channel;}bool IsWithinLOSInMap(GameObject*){return los;}Session* GetSession(){return &session;}};
+bool GameObject::IsAtInteractDistance(Player* p){return std::abs(x-p->x)<=5+nativePadding;}
+bool GameObject::IsWithinDistInMap(Player* p,float range){return std::abs(x-p->x)<=range;}
 struct GroupReference{Player* player;GroupReference* nextRef;Player* getSource(){return player;}GroupReference* next(){return nextRef;}};
 struct Group{GroupReference* first=nullptr;GroupReference* GetFirstMember(){return first;}};
 namespace ai{struct UldamanAltarRequest{unsigned altar=0,requester=0,instance=0;time_t expires=0;};}
@@ -57,6 +60,9 @@ int main(){
  Player bot,master;GameObject altar;Group group,other;SpellEntry entry;Spell channel{&entry};GroupReference member{&master,nullptr};PlayerbotAI ai{&bot,&altar};ai::Event event;ai::AssistUldamanAltarAction action(&ai);
  auto reset=[&](){bot=Player{};master=Player{};master.guid=2;altar=GameObject{};bot.group=master.group=&group;group.first=&member;master.channel=&channel;ai.context.request.Set({});ai.context.nearby.Set({});ai.moves=ai.stops=0;ai.movable=true;ai.altar=&altar;now=1000;entry.Id=11206;channel.state=0;};
  auto start=[&](){return ai::AssistUldamanAltarAction::Start(&ai,&master,altar.guid);};
+#ifndef MANGOSBOT_ZERO
+ reset();altar.nativePadding=3;master.x=7;assert(start());bot.x=7;assert(action.Execute(event)&&bot.session.uses==1&&!ai.moves);
+#endif
  // A real party member is already channeling, but no master-click event arrived.
  reset();ai.context.nearby.Set({altar.guid});assert(action.isUseful());assert(ai.context.request.data.requester==master.guid);assert(action.Execute(event)&&bot.session.uses==1);
  reset();ai.context.nearby.Set({altar.guid});master.channel=nullptr;assert(!action.isUseful());
@@ -81,7 +87,7 @@ int main(){
  reset();bot.valid=false;assert(!start());
  reset();assert(start());bot.x=20;assert(action.Execute(event)&&ai.moves==1&&!bot.session.uses);
  reset();assert(start());bot.x=20;ai.movable=false;assert(!action.isPossible()&&!action.Execute(event));
- reset();assert(start());bot.los=false;assert(!action.Execute(event)&&!bot.session.uses);
+ reset();assert(start());bot.los=false;assert(action.Execute(event)&&bot.session.uses==1); // Native GO clicks do not reject a ray blocked by the altar model.
  reset();assert(start());master.channel=nullptr;assert(!action.Execute(event));
  reset();assert(start());channel.state=SPELL_STATE_FINISHED;assert(!action.Execute(event));
  reset();assert(start());entry.Id=698;assert(!action.Execute(event));
@@ -104,7 +110,8 @@ assert 'new NextAction("assist uldaman altar"' in default
 assert 'AssistUldamanAltarAction::Start' in (actions/'UseMeetingStoneAction.cpp').read_text()
 assert 'player->GetMapId() == 70 && spell->m_spellInfo->Id == 11206' in (actions/'RitualSummonAction.cpp').read_text()
 for forbidden in ('AddUniqueUse(', 'SetData(', 'TriggerSummoningRitual(', 'TeleportTo('):assert forbidden not in methods
-with tempfile.TemporaryDirectory(prefix='uldaman-altar-') as tmp:
-    p=Path(tmp);(p/'test.cpp').write_text(code)
-    subprocess.run(['cl','/nologo','/std:c++20','/EHsc','/UNDEBUG',str(p/'test.cpp'),'/Fe:'+str(p/'test.exe'),'/Fo:'+str(p/'test.obj')],check=True)
-    subprocess.run([str(p/'test.exe')],check=True)
+for era in ('ZERO','ONE','TWO'):
+    with tempfile.TemporaryDirectory(prefix='uldaman-altar-') as tmp:
+        p=Path(tmp);(p/'test.cpp').write_text(code)
+        subprocess.run(['cl','/nologo','/std:c++20','/EHsc','/UNDEBUG','/DMANGOSBOT_'+era,str(p/'test.cpp'),'/Fe:'+str(p/'test.exe'),'/Fo:'+str(p/'test.obj')],check=True)
+        subprocess.run([str(p/'test.exe')],check=True)

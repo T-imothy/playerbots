@@ -8,6 +8,16 @@ using namespace ai;
 
 namespace
 {
+    bool IsWithinAltarUseRange(Player* player, GameObject* altar)
+    {
+#ifdef MANGOSBOT_ZERO
+        return altar->IsWithinDistInMap(player, altar->GetInteractionDistance());
+#else
+        // TBC/Wrath use the model's interaction bounds, not its center distance.
+        return altar->IsAtInteractDistance(player);
+#endif
+    }
+
     bool IsUldamanAltar(GameObject* altar)
     {
         if (!altar || !altar->IsInWorld() || !sServerFacade.isSpawned(altar) ||
@@ -29,7 +39,7 @@ bool AssistUldamanAltarAction::Start(PlayerbotAI* ai, Player* requester, ObjectG
         requester->GetGroup() != bot->GetGroup() || requester->GetMap() != bot->GetMap()) return false;
     GameObject* altar = ai->GetGameObject(altarGuid);
     if (!IsUldamanAltar(altar) || !bot->IsInMap(altar) ||
-        requester->GetDistance(altar) > altar->GetInteractionDistance() ||
+        !IsWithinAltarUseRange(requester, altar) ||
         bot->GetDistance(altar) > sPlayerbotAIConfig.reactDistance) return false;
     // This bounded request originates only from the master's actual object click.
     // Store identities, never pointers, across movement and map updates.
@@ -91,7 +101,7 @@ GameObject* AssistUldamanAltarAction::GetAltar()
     GameObject* altar = ai->GetGameObject(request.altar);
     if (!IsUldamanAltar(altar) || !bot->IsInMap(altar) ||
         bot->GetDistance(altar) > sPlayerbotAIConfig.reactDistance ||
-        requester->GetDistance(altar) > altar->GetInteractionDistance()) return nullptr;
+        !IsWithinAltarUseRange(requester, altar)) return nullptr;
     const Spell* channel = requester->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
     if (!channel || !channel->m_spellInfo || channel->getState() == SPELL_STATE_FINISHED ||
         channel->m_spellInfo->Id != altar->GetGOInfo()->summoningRitual.animSpell ||
@@ -103,16 +113,18 @@ GameObject* AssistUldamanAltarAction::GetAltar()
 bool AssistUldamanAltarAction::isPossible()
 {
     GameObject* altar = GetAltar();
-    return altar && (bot->GetDistance(altar) <= altar->GetInteractionDistance() || ai->CanMove());
+    return altar && (IsWithinAltarUseRange(bot, altar) || ai->CanMove());
 }
 
 bool AssistUldamanAltarAction::Execute(Event&)
 {
     GameObject* altar = GetAltar();
     if (!altar) return false;
-    if (bot->GetDistance(altar) > altar->GetInteractionDistance())
+    if (!IsWithinAltarUseRange(bot, altar))
         return ai->CanMove() && MoveNear(altar, std::min(2.0f, altar->GetInteractionDistance() * 0.5f));
-    if (!bot->IsWithinLOSInMap(altar)) return false;
+    // Match a player's native GO click. A center-point LOS ray can hit the
+    // altar's own collision model; the native handler checks range, flags and
+    // CanUseNow rather than imposing that extra LOS test.
     ai->StopMoving();
     WorldPacket packet(CMSG_GAMEOBJ_USE);
     packet << altar->GetObjectGuid();
