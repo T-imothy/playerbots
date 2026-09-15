@@ -1,3 +1,4 @@
+#include "playerbot/NativeVendorStock.h"
 #include "playerbot/playerbot.h"
 #include "TravelValues.h"
 #include "QuestValues.h"
@@ -109,6 +110,8 @@ EntryTravelPurposeMap EntryTravelPurposeMapValue::Calculate()
 
         for (auto& [flag, flagPurpose] : npcPurposeMap)
         {
+            if (flag == UNIT_NPC_FLAG_VENDOR && !HasNativeVendorStock(entry))
+                continue;
             if ((cInfo->NpcFlags & flag) != 0)
             {
                 purpose |= (uint32)flagPurpose;

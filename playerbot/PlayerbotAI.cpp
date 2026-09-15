@@ -389,8 +389,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
         if (action) action->UpdateManualChat();
         else manualRpgChatPending = false;
     }
-    std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
-    auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAI " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
+    std::unique_ptr<PerformanceMonitorOperation> pmo;
+    if (sPlayerbotAIConfig.perfMonEnabled)
+    {
+        std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
+        pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAI " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
+    }
 
     SC_PHASE("UpdateAI.entry", bot ? bot->GetName() : "(null)");
 
@@ -818,8 +822,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
 bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
 {
     bool reactionFound;
-    std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
-    auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAIReaction " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
+    std::unique_ptr<PerformanceMonitorOperation> pmo;
+    if (sPlayerbotAIConfig.perfMonEnabled)
+    {
+        std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
+        pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAIReaction " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
+    }
     MANTECH_DIAG_BEGIN(reactionDiagnostic, BotReaction, 32, "reaction_update");
     const bool reactionInProgress = reactionEngine->Update(elapsed, minimal, isStunned, reactionFound);
     MANTECH_DIAG_END(reactionDiagnostic);
@@ -1361,8 +1369,12 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
     if (bot->IsBeingTeleported() || !bot->IsInWorld())
         return;
 
-    std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
-    auto pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAIInternal " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
+    std::unique_ptr<PerformanceMonitorOperation> pmo;
+    if (sPlayerbotAIConfig.perfMonEnabled)
+    {
+        std::string mapString = WorldPosition(bot).isInstance() ? "I" : std::to_string(bot->GetMapId());
+        pmo = sPerformanceMonitor.start(PERF_MON_TOTAL, "PlayerbotAI::UpdateAIInternal " + mapString, nullptr, bot->GetMapId(), bot->GetInstanceId());
+    }
 
     ExternalEventHelper helper(aiObjectContext);
 

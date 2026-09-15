@@ -185,23 +185,21 @@ bool RandomPlayerbotFactory::CreateRandomBot(uint8 cls, uint8 inputRace)
 
     std::string name;
     auto it = freeNames.find(raceAndGender);
-    if (it == freeNames.end() || it->second.empty())
-    {
-        // Try fallback: generate new name with suffix if all names exhausted
-        // First try other gender
-        std::string baseName = CreateRandomBotName(raceAndGender);
-        if (baseName.empty())
-            return false;
-        name = baseName;
-    }
-    else
+    if (it == freeNames.end())
+        return false;
+    // Consume unusable imported names without wasting a character-creation slot.
+    // Stay under this lock; the public picker would reacquire nameMutex.
+    while (!it->second.empty())
     {
         uint32 i = urand(0, it->second.size() - 1);
         name = it->second[i];
         swap(it->second[i], it->second.back());
         it->second.pop_back();
+        if (ObjectMgr::CheckPlayerName(name) == CHAR_NAME_SUCCESS &&
+            !sObjectMgr.IsReservedName(name))
+            break;
+        name.clear();
     }
-
     if (name.empty())
         return false;
 
@@ -354,15 +352,17 @@ std::string RandomPlayerbotFactory::CreateRandomBotName(NameRaceAndGender raceAn
         return "";
     }
 
-    // Get random index
-    uint32 idx = urand(0, it->second.size() - 1);
-    std::string name = it->second[idx];
-    
-    // Swap-remove for O(1)
-    std::swap(it->second[idx], it->second.back());
-    it->second.pop_back();
-
-    return name;
+    while (!it->second.empty())
+    {
+        uint32 idx = urand(0, it->second.size() - 1);
+        std::string name = it->second[idx];
+        std::swap(it->second[idx], it->second.back());
+        it->second.pop_back();
+        if (ObjectMgr::CheckPlayerName(name) == CHAR_NAME_SUCCESS &&
+            !sObjectMgr.IsReservedName(name))
+            return name;
+    }
+    return "";
 }
 
 inline std::string GetNamePostFix(int32 nr)

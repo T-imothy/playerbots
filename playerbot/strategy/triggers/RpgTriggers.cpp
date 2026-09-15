@@ -1,3 +1,4 @@
+#include "playerbot/NativeVendorStock.h"
 
 #include "playerbot/playerbot.h"
 #include "RpgTriggers.h"
@@ -174,7 +175,7 @@ bool RpgSellTrigger::IsActive()
 {
     GuidPosition guidP(getGuidP());
 
-    if (!guidP.HasNpcFlag(UNIT_NPC_FLAG_VENDOR))
+    if (!guidP.HasNpcFlag(UNIT_NPC_FLAG_VENDOR) || !HasNativeVendorStock(guidP.GetEntry()))
         return false;
 
     if (guidP.IsHostileTo(bot))

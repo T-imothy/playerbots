@@ -94,6 +94,8 @@ bool VendorHasUsefulItemValue::Calculate()
     for (auto vendorItem : vendorItems)
     {
         ItemPrototype const* proto = sObjectMgr.GetItemPrototype(vendorItem->item);
+        if (!proto)
+            continue;
 #ifndef MANGOSBOT_ZERO
         if (vendorItem->ExtendedCost) //Needs to be replaced with check if bot has (free) currency for this item.
             continue;

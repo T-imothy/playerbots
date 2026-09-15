@@ -173,6 +173,7 @@ public:
             auto it = ahMirror.find(itemId);
             return (it != ahMirror.end()) ? it->second : emptyVector;}
         uint32 GetPlayersLevel() { return playersLevel; }
+        void OnBotLoginQueryComplete(uint32 bot);
     protected:
         virtual void OnBotLoginInternal(Player * const bot) override;
     private:

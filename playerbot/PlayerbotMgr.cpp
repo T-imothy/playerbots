@@ -247,7 +247,7 @@ void PlayerbotHolder::HandlePlayerBotLoginCallback(QueryResult* /*dummy*/, SqlQu
     if (owner == &sRandomPlayerbotMgr && !sPlayerbotAIConfig.asyncBotLogin)
     {
         // A failed/rejected completion must not leave a permanent "login" event.
-        sRandomPlayerbotMgr.SetValue(info.botGuid.GetCounter(), "login", 0);
+        sRandomPlayerbotMgr.OnBotLoginQueryComplete(info.botGuid.GetCounter());
         uint32 const target = sRandomPlayerbotMgr.GetValue(uint32(0), "bot_count");
         if (owner->GetPlayerbotsAmount() >= target)
         {

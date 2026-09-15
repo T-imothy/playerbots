@@ -58,6 +58,18 @@ using namespace MaNGOS;
 
 namespace
 {
+    // Mirror native Player::LoadFromDB name admission before reserving a slot.
+    // Imported bot names may violate Turtle's DBC rules even when they were
+    // accepted by their original core. Leave the character intact for rename.
+    bool IsRandomBotLoginCandidate(uint32 guid)
+    {
+        PlayerCacheData const* character = sObjectMgr.GetPlayerDataByGUID(guid);
+        return character && sPlayerbotAIConfig.IsInRandomAccountList(character->uiAccount) &&
+            ObjectMgr::CheckPlayerName(character->sName) == CHAR_NAME_SUCCESS &&
+            (sAccountMgr.GetSecurity(character->uiAccount) != SEC_PLAYER ||
+                !sObjectMgr.IsReservedName(character->sName));
+    }
+
     // Measure maintenance stages without changing combat scheduling or decisions.
     class BotMaintenanceTimer
     {
@@ -1563,6 +1575,9 @@ uint32 RandomPlayerbotMgr::AddRandomBots()
                     }
 
                     if (classRaceAllowed[cls][race] <= 0)
+                        continue;
+
+                    if (!IsRandomBotLoginCandidate(guid))
                         continue;
 
                     SetEventValue(guid, "add", 1, urand(sPlayerbotAIConfig.minRandomBotInWorldTime, sPlayerbotAIConfig.maxRandomBotInWorldTime));
@@ -3684,6 +3699,11 @@ const std::vector<uint32>& RandomPlayerbotMgr::GetBots()
         {
             Field* fields = results->Fetch();
             uint32 bot = fields[0].GetUInt32();
+            if (!IsRandomBotLoginCandidate(bot))
+            {
+                sLog.outString("PLAYERBOT_POOL_EXCLUDED guid=%u reason=native_name_or_account_admission", bot);
+                continue;
+            }
             currentBots.push_back(bot);
         } while (results->NextRow());
     }
@@ -3827,6 +3847,14 @@ uint32 RandomPlayerbotMgr::PrunePendingBotLogins(time_t now)
 void RandomPlayerbotMgr::MarkPendingBotLogin(uint32 bot, time_t now)
 {
     pendingBotLogins[bot] = now;
+}
+
+void RandomPlayerbotMgr::OnBotLoginQueryComplete(uint32 bot)
+{
+    // The holder has completed even if native session admission rejects it.
+    // A finished attempt must not reserve capacity until the timeout expires.
+    ClearPendingBotLogin(bot);
+    SetEventValue(bot, "login", 0, 0);
 }
 
 void RandomPlayerbotMgr::ClearPendingBotLogin(uint32 bot)

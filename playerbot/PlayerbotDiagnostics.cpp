@@ -267,11 +267,12 @@ void PlayerbotDiagnostics::Flush(const PlayerbotManagerSnapshot& snapshot)
 
     const std::string timestamp = sPlayerbotAIConfig.GetTimestampStr();
     sPlayerbotAIConfig.log(sPlayerbotAIConfig.diagnosticsLogFile,
-        "%s PB_DIAG_STATE interval_ms=%llu bots_online=%u bots_target=%u bots_available=%u bots_active=%u real_players=%u activity_pct=%u private_mb=%.2f world_diff_ms=%u world_avg_ms=%u world_max_ms=%u maps=%u",
+        "%s PB_DIAG_STATE interval_ms=%llu bots_online=%u bots_target=%u bots_available=%u bots_active=%u real_players=%u activity_pct=%u private_mb=%.2f world_diff_ms=%u world_avg_ms=%u world_max_ms=%u maps=%u background_config_pct=%u activity_priorities_disabled=%u",
         timestamp.c_str(), static_cast<unsigned long long>(intervalMs), snapshot.botsOnline, snapshot.botsTarget,
         snapshot.botsAvailable, snapshot.botsActive, snapshot.realPlayers, snapshot.activityPercent,
         static_cast<double>(snapshot.privateBytes) / (1024.0 * 1024.0), snapshot.worldDiff,
-        snapshot.worldAverageDiff, snapshot.worldMaxDiff, snapshot.trackedMaps);
+        snapshot.worldAverageDiff, snapshot.worldMaxDiff, snapshot.trackedMaps,
+        sPlayerbotAIConfig.botActiveAlone, static_cast<uint32>(sPlayerbotAIConfig.disableActivityPriorities));
 
     sPlayerbotAIConfig.log(sPlayerbotAIConfig.diagnosticsLogFile,
         "%s PB_DIAG_ENGINE samples=%llu avg_us=%.2f max_us=%llu avg_evaluations=%.2f max_evaluations=%llu avg_queue_start=%.2f avg_queue_end=%.2f max_queue=%llu no_action=%llu minimal=%llu sampled_ok=%llu sampled_failed=%llu sampled_impossible=%llu sampled_useless=%llu sampled_unknown=%llu sampled_suppressed_failed=%llu sampled_suppressed_impossible=%llu exact_failed=%llu exact_impossible=%llu",
