@@ -1054,6 +1054,16 @@ AiPlayerbot.PerformanceMapScanInterval = 30000
 # cache, teleport, and Character DB bottlenecks. Frequent AI ticks are sampled
 # to keep diagnostic overhead low; actual failed/impossible actions are tracked
 # exactly and grouped in the top-failure report.
+# Autonomous PvE targets without LOS: abandon after no measurable pursuit progress.
+# Milliseconds; timeout 0 disables. Real-player masters and enemies already fighting are exempt.
+AiPlayerbot.UnreachableTargetTimeout = 15000
+AiPlayerbot.UnreachableTargetRetry = 300000
+
+# Persistent incident observations require Diagnostics.Mode = 2.
+# At most 1024 active incidents + 200 resolved; two log files capped at 8 MiB each.
+# Disable this flag to remove the extra 1 Hz per-bot observations.
+AiPlayerbot.Diagnostics.Incidents = 1
+
 AiPlayerbot.Diagnostics.Enabled = 0
 AiPlayerbot.Diagnostics.Mode = 0
 AiPlayerbot.Diagnostics.Interval = 30000

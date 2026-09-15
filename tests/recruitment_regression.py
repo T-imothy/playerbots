@@ -38,7 +38,7 @@ stubs=r'''
 #include <vector>
 #include <functional>
 #include <string>
-using uint32=uint32_t; using uint64=uint64_t;
+using uint8=uint8_t; using uint32=uint32_t; using uint64=uint64_t;
 uint64 fakeNow=100;
 constexpr int POWER_MANA=0;
 enum {HIGHGUID_PLAYER, CHAT_MSG_WHISPER, LANG_UNIVERSAL, CHAT_TAG_NONE,
@@ -48,7 +48,7 @@ struct PlayerbotSecurityLevel {static constexpr int PLAYERBOT_SECURITY_ALLOW_ALL
 struct BotState {static constexpr int BOT_STATE_NON_COMBAT=0;};
 struct ObjectGuid {
  uint32 value=0; ObjectGuid()=default; ObjectGuid(int,uint32 n):value(n){}
- uint32 GetCounter()const{return value;} explicit operator bool()const{return value!=0;}
+ uint64 GetRawValue()const{return value;} uint32 GetCounter()const{return value;} explicit operator bool()const{return value!=0;}
  bool operator==(ObjectGuid x)const{return value==x.value;} bool operator!=(ObjectGuid x)const{return value!=x.value;}
 };
 struct Player; struct Group; struct WorldSession;
@@ -62,7 +62,7 @@ struct AI {Player* master=nullptr; Security security; int changes=0;
  void CompleteSummonRevival(){}
  Player* GetMaster(){return master;} void SetMaster(Player* p){master=p;} Security* GetSecurity(){return &security;}
  void ChangeStrategy(std::string const&,int){++changes;} std::string GetDefaultMovementStrategy(){return "follow";}};
-struct Map{bool instanced=true;bool Instanceable(){return instanced;}};
+struct Unit{}; struct Map{Unit* GetUnit(ObjectGuid g){static Unit u;return g.value?&u:nullptr;}bool instanced=true;bool Instanceable(){return instanced;}};
 struct WorldLocation{float coord_x=0,coord_y=0,coord_z=0;};
 struct LfgData {int state=LFG_STATE_NONE;int GetState(){return state;}};
 class PlayerbotHolder {public:std::string ProcessBotCommand(std::string,ObjectGuid,ObjectGuid,bool,uint32,uint32);};
@@ -70,11 +70,12 @@ struct WorldSession {Player* player=nullptr;uint32 account=1;bool logout=false;s
  bool isLogingOut(){return logout;} uint32 GetAccountId(){return account;}void SendPacket(WorldPacket const& p){messages.push_back(p.name);}
  void HandleGroupAcceptOpcode(WorldPacket&);void HandleGroupInviteOpcode(WorldPacket&);
 };
-struct Group {ObjectGuid leader,assistant;unsigned count=1;bool raid=false,bg=false;
+struct Group {ObjectGuid mark;ObjectGuid GetTargetIcon(uint8){return mark;}ObjectGuid leader,assistant;unsigned count=1;bool raid=false,bg=false;
  bool IsBattleGroup(){return bg;}bool isBGGroup(){return bg;}ObjectGuid GetLeaderGuid(){return leader;}bool IsLeader(ObjectGuid g){return leader==g;}
  bool IsAssistant(ObjectGuid guid){return assistant==guid;}unsigned GetMembersCount(){return count;}bool IsRaidGroup(){return raid;}};
 std::vector<std::unique_ptr<Group>> groups;
 struct Player {
+ ObjectGuid selection;ObjectGuid GetSelectionGuid(){return selection;}
  uint32 id,level=43,cls=1,guild=0,team=0,mapId=1,instance=0;bool real=false,world=true,transfer=false,alive=true,combat=false,
  taxi=false,transport=false,charm=false,bg=false,bgQueue=false,afk=false,los=true;float distance=0;
  std::string name,talents="0-0-10";WorldSession session;AI ai;Social social;Group* group=nullptr;Group* invite=nullptr;
@@ -121,6 +122,17 @@ struct EventOwner {Player* p=nullptr;ObjectGuid guid;EventOwner(Player* b=nullpt
 struct Event {Player* owner;Event(std::string,std::string,Player* p):owner(p){}};
 struct WhoAction{explicit WhoAction(AI*){}std::string QuerySpec(std::string){return "Warrior (43 lvl), 100 GS (green)";}};
 struct SummonAction{static void CancelAutonomousQueues(Player* p){++p->queueCancellations;p->bgQueue=false;p->session.m_lfgInfo.queued=false;p->lfg.state=0;}AI* ai;explicit SummonAction(AI* a):ai(a){}bool ExecuteImmediate(Event&){for(auto& x:players)if(&x.second->ai==ai){x.second->transfer=true;++x.second->summons;return true;}return false;}};
+}
+'''
+tacticalPolicy=(root/'playerbot/TacticalCommandPolicy.h').read_text(encoding='utf-8').replace('#pragma once','')
+tacticalFixture=r'''
+namespace ai {
+struct TacticalResult{bool started=false;uint32 executor=0,spell=0;std::string reason;};
+struct TacticalCommands {static inline unsigned attempts=0;static TacticalResult Execute(Player* p,Unit* target,TacticalCommand const&,std::function<bool(Player*)> const& authorized){
+ if(!target)return {false,0,0,"invalid_target"};
+ for(auto const& pair:players) {Player* b=pair.second;if(b!=p&&!b->real&&b->group==p->group&&authorized(b)){++attempts;return {true,b->id,123,"cast_started"};}}
+ return {false,0,0,"no_ready_bot"};
+}};
 }
 '''
 tests=r'''
@@ -254,13 +266,29 @@ int main(){
  command(p,"warrior summon 2");b.transfer=false;tick();assert(b.health==100&&b.mana==0&&b.otherPower==23);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.health=4;b.mana=2;b.landingDistance=100;
  command(p,"failed summon 2");for(int i=0;i<3;++i){b.transfer=false;tick(3);}assert(b.health==4&&b.mana==2);}
+
+ reset();{Player p(1,true),b(2);Group g;g.leader=p.GetObjectGuid();p.group=b.group=&g;b.ai.master=&p;p.selection=ObjectGuid(HIGHGUID_PLAYER,100);
+ unsigned before=ai::TacticalCommands::attempts;
+ assert(ai::BotRecruitment::HandleCommand(&p,"action interrupt once"));tick();assert(has("PBACTION 1 action_once interrupt started cast_started")&&ai::TacticalCommands::attempts==before+1);
+ ai::BotRecruitment::HandleCommand(&p,"action interrupt once");tick();assert(ai::TacticalCommands::attempts==before+1);
+ p.selection=ObjectGuid(HIGHGUID_PLAYER,101);ai::BotRecruitment::HandleCommand(&p,"action interrupt once");tick();assert(has("id_conflict")&&ai::TacticalCommands::attempts==before+1);
+ ai::BotRecruitment::HandleCommand(&p,"action interrupt changed");p.selection=ObjectGuid(HIGHGUID_PLAYER,102);tick();assert(has("target_changed")&&ai::TacticalCommands::attempts==before+1);
+ ai::BotRecruitment::HandleCommand(&p,"action interrupt mapchange");p.mapId=2;tick();assert(has("party_or_map_changed"));p.mapId=1;
+ ai::BotRecruitment::HandleCommand(&p,"action interrupt partychange");p.group=nullptr;tick();assert(has("party_or_map_changed"));p.group=&g;
+ ai::BotRecruitment::HandleCommand(&p,"action interrupt expired");tick(4);assert(has("queue_deadline")&&ai::TacticalCommands::attempts==before+1);
+ g.mark=p.selection;ai::BotRecruitment::HandleCommand(&p,"action cc moon cc1");tick();assert(has("PBACTION 1 action_cc1 cc started")&&ai::TacticalCommands::attempts==before+2);
+ ai::BotRecruitment::HandleCommand(&p,"action cc moon cc2");g.mark=ObjectGuid();tick();assert(has("target_changed"));
+ b.ai.security.allow=false;ai::BotRecruitment::HandleCommand(&p,"action interrupt denied");tick();assert(has("no_ready_bot")&&ai::TacticalCommands::attempts==before+2);
+ }
+ reset();{Player p(1,true);p.selection=ObjectGuid(HIGHGUID_PLAYER,100);ai::BotRecruitment::HandleCommand(&p,"action interrupt queued");p.selection=ObjectGuid(HIGHGUID_PLAYER,101);ai::BotRecruitment::HandleCommand(&p,"action interrupt queued");assert(State().incoming.size()==2);tick();assert(has("target_changed")&&has("id_conflict"));}
+ std::cout<<"PASS: tactical queue target/group/map/deadline validation, CC marks, replay, conflicting queued payloads and authorization\n";
  std::cout<<"PASS: actual coordinator permissions, native-invite scheduling, stale/replaced invites, ownership, combat/death, session loss, transports, arrival, replay, cancellation, mixed 40-member capacity, bounded discovery/work\n";
 }
 '''
 policy=(root/'playerbot/RecruitmentPolicy.h').read_text(encoding="utf-8").replace('#pragma once','')
 with tempfile.TemporaryDirectory(prefix='pb-recruitment-') as directory:
     folder=Path(directory);cpp=folder/'test.cpp';exe=folder/'test.exe'
-    cpp.write_text(stubs+'\n'+policy+'\n'+header+'\n'+source+'\n'+tests)
+    cpp.write_text(stubs+'\n'+tacticalPolicy+'\n'+tacticalFixture+'\n'+policy+'\n'+header+'\n'+source+'\n'+tests)
     for macro in ('MANGOSBOT_ZERO','MANGOSBOT_ONE','MANGOSBOT_TWO'):
         subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/D'+macro,str(cpp),'/Fe:'+str(exe),'/Fo:'+str(folder/'test.obj')],check=True)
         subprocess.run([str(exe)],check=True)

@@ -368,6 +368,8 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
     PlayerbotAI* ai = GetBotAI(playerToCheckAgainst);
     AiObjectContext* context = ai->GetAiObjectContext();
 
+    if (ai->IgnoreUnreachableTarget(target)) return true;
+
     //Ignore Hard hostiles while not already fighting.
     if (target->GetLevel() > (playerToCheckAgainst->GetLevel() + 5) && ai->GetState() == BotState::BOT_STATE_NON_COMBAT)
     {

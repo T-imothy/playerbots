@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Common.h"
+#include "BotIncidentStore.h"
 
 #include <atomic>
 #include <mutex>
@@ -80,6 +81,11 @@ namespace ai
         static PlayerbotDiagnostics& instance();
 
         bool IsEnabled() const;
+        bool IncidentsEnabled() const;
+        void RecordBotIncident(uint32 bot, BotIncidentKind kind, bool open, uint64 target,
+            uint32 duration, uint32 map, uint32 zone, std::string const& action);
+        void CloseBotIncidents(uint32 bot);
+        void FlushIncidents();
         bool IsDeepEnabled() const;
         bool ShouldSampleEngineTick();
         bool IsFlushDue() const;
@@ -155,6 +161,9 @@ namespace ai
         std::atomic<uint64> teleportFailures{0};
         std::atomic<uint64> failureKeyOverflow{0};
 
+        std::mutex incidentMutex;
+        BotIncidentStore incidentStore;
+        uint64 incidentSequence = 0;
         mutable std::mutex failureMutex;
         std::unordered_map<std::string, FailureBucket> failures;
         uint64 lastFlushMs = 0;

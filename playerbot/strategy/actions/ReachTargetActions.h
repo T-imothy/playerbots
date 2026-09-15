@@ -64,11 +64,17 @@ namespace ai
                         sServerFacade.IsInFront(target, bot, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT) &&
                         sServerFacade.IsDistanceGreaterThan(distanceToTarget, sPlayerbotAIConfig.tooCloseDistance))
                 {
+                    ai->ObserveTargetProgress(nullptr, 0.0f, true); // Waiting is not failed pursuit.
                     // This action instance can retain a previous long movement duration.
                     // Waiting for an approaching enemy needs a normal decision recheck.
                     SetDuration(sPlayerbotAIConfig.reactDelay);
                     return true;
                 }                 
+
+                // Native pathfinding remains responsible for movement. Abandon only
+                // autonomous hostile pursuit with sustained lack of actual progress.
+                if (ai->ObserveTargetProgress(target, distanceToTarget, inLos))
+                    return false;
 
                 if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
                 {

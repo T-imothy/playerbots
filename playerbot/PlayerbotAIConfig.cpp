@@ -391,6 +391,9 @@ bool PlayerbotAIConfig::Initialize()
     randomBotLoginDbQueueLimit = std::max<int32>(16, config.GetIntDefault("AiPlayerbot.RandomBotLoginDbQueueLimit", 256));
     randomBotDatabasePingInterval = std::max<int32>(1000, config.GetIntDefault("AiPlayerbot.RandomBotDatabasePingInterval", 10000));
     performanceMapScanInterval = std::max<int32>(1000, config.GetIntDefault("AiPlayerbot.PerformanceMapScanInterval", 30000));
+    unreachableTargetTimeout = uint32(std::max(0, std::min(120000, config.GetIntDefault("AiPlayerbot.UnreachableTargetTimeout", 15000))));
+    unreachableTargetRetry = uint32(std::max(1000, std::min(600000, config.GetIntDefault("AiPlayerbot.UnreachableTargetRetry", 300000))));
+    diagnosticIncidents = config.GetBoolDefault("AiPlayerbot.Diagnostics.Incidents", true);
     diagnosticsEnabled = config.GetBoolDefault("AiPlayerbot.Diagnostics.Enabled", false);
     diagnosticsMode = std::min<uint32>(2, std::max<int32>(0,
         config.GetIntDefault("AiPlayerbot.Diagnostics.Mode", diagnosticsEnabled ? 2 : 0)));

@@ -1,6 +1,8 @@
 #include "playerbot/playerbot.h"
 #include "BotRecruitment.h"
 #include "RecruitmentPolicy.h"
+#include "TacticalCommands.h"
+#include <atomic>
 #include "PlayerbotMgr.h"
 #include "RandomPlayerbotMgr.h"
 #include "RandomItemMgr.h"
@@ -31,6 +33,8 @@ namespace
     struct Request
     {
         ObjectGuid owner, bot, leader;
+        ObjectGuid tacticalTarget;
+        TacticalCommand tactical;
         Group* invitation = nullptr;
         Group* membership = nullptr;
         EventOwner ownerIdentity, botIdentity;
@@ -114,10 +118,14 @@ namespace
     }
     std::string Payload(Request const& request)
     {
-        return request.operation + " " + std::to_string(request.bot.GetCounter()) + " " + request.arguments;
+        std::string payload=request.operation + " " + std::to_string(request.bot.GetCounter()) + " " + request.arguments;
+        if(request.operation=="tactical") payload += " " + std::to_string(request.tacticalTarget.GetRawValue()) +
+            " " + std::to_string(request.map) + " " + std::to_string(request.instance);
+        return payload;
     }
     std::string Response(Request const& request, const std::string& status, const std::string& reason)
     {
+        if(request.operation=="tactical") return "PBACTION 1 " + request.id + " " + request.tactical.intent + " " + status + " " + reason;
         return "PBRECRUIT 1 " + request.id + " " + std::to_string(request.bot.GetCounter()) +
             " " + status + " " + reason;
     }
@@ -177,7 +185,7 @@ namespace
             if (pending.owner == request.owner)
             {
                 if (pending.bot == request.bot && pending.operation == request.operation &&
-                    pending.id == request.id && pending.arguments == request.arguments)
+                    pending.id == request.id && Payload(pending) == Payload(request))
                     return true;
                 ++count;
             }
@@ -278,6 +286,22 @@ namespace
                 return;
             }
             state.receipts[key] = {Payload(request), Response(request, "pending", "queued"), Now() + limits::ReceiptSeconds};
+        }
+        if(request.operation=="tactical")
+        {
+            if(!owner->IsInWorld() || owner->IsBeingTeleported() || owner->GetGroup()!=request.membership ||
+                owner->GetMapId()!=request.map || owner->GetInstanceId()!=request.instance)
+            { Report(request,"refused","party_or_map_changed");return; }
+            ObjectGuid current = request.tactical.intent=="cc" && owner->GetGroup() ?
+                owner->GetGroup()->GetTargetIcon(static_cast<uint8>(request.tactical.markIndex)) : owner->GetSelectionGuid();
+            if(current!=request.tacticalTarget) {Report(request,"refused","target_changed");return;}
+            Unit* target=owner->GetMap()->GetUnit(request.tacticalTarget);
+            auto result=TacticalCommands::Execute(owner,target,request.tactical,[owner](Player* candidate) {
+                return Control(owner,candidate).empty();
+            });
+            Report(request,result.started ? "started" : "refused",result.reason + ";executor=" +
+                std::to_string(result.executor) + ";spell=" + std::to_string(result.spell));
+            return;
         }
         if (request.operation == "cancel")
         {
@@ -507,6 +531,23 @@ bool BotRecruitment::Queue(Player* owner, Player* bot, const std::string& operat
 
 bool BotRecruitment::HandleCommand(Player* owner, const std::string& command)
 {
+    if(command=="action" || command.compare(0,7,"action ")==0)
+    {
+        if(!Connected(owner) || !IsRealPlayer(owner)) return true;
+        TacticalCommand action;
+        if(!action.Parse(command)) {Tell(owner,"PBACTION 1 - invalid refused syntax");return true;}
+        static std::atomic<uint32> nextId{0};
+        if(action.id.empty()) action.id="t"+std::to_string(++nextId);
+        Request request;request.owner=owner->GetObjectGuid();request.ownerIdentity=EventOwner(owner);
+        request.operation="tactical";request.tactical=action;request.id="action_"+action.id;
+        request.arguments=action.intent+" "+action.mark;
+        request.membership=owner->GetGroup();request.map=owner->GetMapId();request.instance=owner->GetInstanceId();
+        request.tacticalTarget=action.intent=="cc" && request.membership ?
+            request.membership->GetTargetIcon(static_cast<uint8>(action.markIndex)) : owner->GetSelectionGuid();
+        request.expires=Now()+3;
+        if(!Enqueue(request)) Tell(owner,Response(request,"refused","busy"));
+        return true;
+    }
     if (command.compare(0,8,"recruit ") != 0) return false;
     std::istringstream input(command);
     std::string prefix,version,id,operation,guid;

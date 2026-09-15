@@ -190,6 +190,9 @@ public:
     uint32 randomBotManagerScanLimit;
     uint32 randomBotLoginDbQueueLimit;
     uint32 randomBotDatabasePingInterval, performanceMapScanInterval;
+    uint32 unreachableTargetTimeout = 15000;
+    uint32 unreachableTargetRetry = 300000;
+    bool diagnosticIncidents = true;
     bool diagnosticsEnabled = false;
     uint32 diagnosticsMode = 0;
     uint32 diagnosticsInterval = 30000;

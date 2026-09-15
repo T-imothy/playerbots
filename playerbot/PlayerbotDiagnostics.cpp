@@ -242,6 +242,7 @@ void PlayerbotDiagnostics::Flush(const PlayerbotManagerSnapshot& snapshot)
         return;
 
     EnsureSessionHeader();
+    FlushIncidents();
     if (!sessionHeaderWritten)
         return;
 
@@ -267,8 +268,8 @@ void PlayerbotDiagnostics::Flush(const PlayerbotManagerSnapshot& snapshot)
 
     const std::string timestamp = sPlayerbotAIConfig.GetTimestampStr();
     sPlayerbotAIConfig.log(sPlayerbotAIConfig.diagnosticsLogFile,
-        "%s PB_DIAG_STATE interval_ms=%llu bots_online=%u bots_target=%u bots_available=%u bots_active=%u real_players=%u activity_pct=%u private_mb=%.2f world_diff_ms=%u world_avg_ms=%u world_max_ms=%u maps=%u background_config_pct=%u activity_priorities_disabled=%u",
-        timestamp.c_str(), static_cast<unsigned long long>(intervalMs), snapshot.botsOnline, snapshot.botsTarget,
+        "%s PB_DIAG_STATE incidents_enabled=%u interval_ms=%llu bots_online=%u bots_target=%u bots_available=%u bots_active=%u real_players=%u activity_pct=%u private_mb=%.2f world_diff_ms=%u world_avg_ms=%u world_max_ms=%u maps=%u background_config_pct=%u activity_priorities_disabled=%u",
+        timestamp.c_str(), IncidentsEnabled() ? 1u : 0u, static_cast<unsigned long long>(intervalMs), snapshot.botsOnline, snapshot.botsTarget,
         snapshot.botsAvailable, snapshot.botsActive, snapshot.realPlayers, snapshot.activityPercent,
         static_cast<double>(snapshot.privateBytes) / (1024.0 * 1024.0), snapshot.worldDiff,
         snapshot.worldAverageDiff, snapshot.worldMaxDiff, snapshot.trackedMaps,

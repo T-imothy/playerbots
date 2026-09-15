@@ -308,6 +308,7 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
 
 PlayerbotAI::~PlayerbotAI()
 {
+    ResetBotProgress();
     chatLifetime.reset(); // Cancel delayed replies before destroying action/packet state.
     for (uint8 i = 0 ; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
@@ -407,6 +408,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal)
     // (set in SetMaster, see PlayerbotAI.h) is the safe lookup key â€”
     // we never deref the cached `master` pointer in this check.
     RevalidateMasterPointer();
+    ObserveBotIncidents();
 
     if(aiInternalUpdateDelay > elapsed)
     {
@@ -1312,6 +1314,7 @@ void PlayerbotAI::OnResurrected()
 {
     if (IsStateActive(BotState::BOT_STATE_DEAD) && sServerFacade.IsAlive(bot))
     {
+        ResetBotProgress();
         // Stop following on resurrected
         if ((HasStrategy("follow", BotState::BOT_STATE_COMBAT) || HasStrategy("wander", BotState::BOT_STATE_COMBAT)) &&
             !(HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
@@ -1547,6 +1550,7 @@ void PlayerbotAI::HandleTeleportAck()
 
 void PlayerbotAI::Reset(bool full)
 {
+    if (full) ResetBotProgress();
     AiObjectContext* context = aiObjectContext;
     if (manualRpgChatPending)
     {

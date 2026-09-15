@@ -9,6 +9,7 @@
 #include "PlayerbotSecurity.h"
 #include "PlayerbotTextMgr.h"
 #include "BotState.h"
+#include "BotProgress.h"
 #include "AsyncBotChat.h"
 #include "PlayerTalentSpec.h"
 #include <stack>
@@ -647,6 +648,12 @@ public:
     }
     bool IsSelfMaster() { return master ? (master == bot) : false; }
     //Bot has a master that is a player.
+    bool IgnoreUnreachableTarget(Unit* target);
+    bool ObserveTargetProgress(Unit* target, float distance, bool inLos);
+    void RecordBotActionFailure(std::string const& action, Unit* target);
+    void RecordBotActionSuccess();
+    void ObserveBotIncidents();
+    void ResetBotProgress();
     bool HasRealPlayerMaster() { return master && (!GetBotAI(master) || GetBotAI(master)->IsRealPlayer()); } 
     //Bot has a master that is actively playing.
     bool HasActivePlayerMaster() const { return master && !GetBotAI(master); }
@@ -796,6 +803,13 @@ public:
 #endif
 
 private:
+    ai::UnreachableTargetMemory unreachableTargets;
+    ai::BotIncidentTracker incidentTracker;
+    uint32 incidentSample=0, incidentMap=0, incidentInstance=0, incidentBotGuid=0;
+    uint32 incidentFailureSince=0, incidentFailureLast=0, incidentFailureCount=0;
+    uint64 incidentFailureTarget=0;
+    float incidentX=0, incidentY=0;
+    std::string incidentFailureAction;
     bool UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned);
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
 

@@ -125,6 +125,8 @@ bool Engine::IsFailureBackedOff(Action* action, const Event& event, ActionResult
 
 void Engine::RecordFailure(Action* action, const Event& event, ActionResult reason)
 {
+    if (!IsExplicitPlayerCommand(action, event))
+        ai->RecordBotActionFailure(action->getName(), action->GetTarget());
     if (IsExplicitPlayerCommand(action, event))
         return;
 
@@ -179,6 +181,7 @@ void Engine::RecordFailure(Action* action, const Event& event, ActionResult reas
 
 void Engine::ClearFailures(Action* action, const Event& event)
 {
+    ai->RecordBotActionSuccess();
     const size_t removed = actionFailures.erase(GetFailureKey(action, event, ACTION_RESULT_IMPOSSIBLE)) +
         actionFailures.erase(GetFailureKey(action, event, ACTION_RESULT_FAILED));
     if (removed)
