@@ -17,6 +17,7 @@ struct BotIncidentState
     uint32 sampled = 0, map = 0, instance = 0, bot = 0;
     float x = 0, y = 0, z = 0;
     std::string failedAction;
+    uint64 unreachableTarget = 0;
 };
 class BotIncidentHistory
 {

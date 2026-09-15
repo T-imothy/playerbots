@@ -86,7 +86,7 @@ bool FindCorpseAction::Execute(Event& event)
         Event portal("reach area trigger", packet);
         ReachAreaTriggerAction approach(ai);
         const bool result = approach.Execute(portal);
-        SetDuration(sPlayerbotAIConfig.reactDelay);
+        SetDuration(std::max(approach.GetDuration(), sPlayerbotAIConfig.reactDelay));
         return result;
     }
 

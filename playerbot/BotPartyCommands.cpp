@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "BotPartyCommands.h"
+#include "ServerFacade.h"
 #include "strategy/actions/BotCommandAccess.h"
 #include "strategy/actions/PullDiagnostics.h"
 #include "strategy/generic/PullStrategy.h"

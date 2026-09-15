@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "BotReliabilityValue.h"
+#include "playerbot/ServerFacade.h"
 
 using namespace ai;
 
@@ -36,6 +37,7 @@ bool ai::ObserveUnreachableTarget(PlayerbotAI* ai, Unit* target)
         CanTemporarilyIgnore(ai, target))) return false;
     state.unreachable.Add(target->GetObjectGuid().GetRawValue(), bot->GetMapId(), bot->GetInstanceId(), now);
     state.pursuit.Reset();
+    state.incidents.unreachableTarget = target->GetObjectGuid().GetRawValue();
     BotIncidentHistory::Unreachable(ai);
     // The normal invalid-target decision will reselect from the same bounded
     // exclusion list. Stop this bot's obsolete chase, never the creature's AI.

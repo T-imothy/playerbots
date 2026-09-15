@@ -32,12 +32,13 @@ struct Unit {
  bool CanReachWithMeleeAttack(Unit* u){return u->distance<=5;}
 };
 using Player=Unit;
-struct Event {};
+struct Event { Event(const char* = "") {} };
 struct PlayerbotAI {
  Player* bot; Unit* selected=nullptr; bool castSucceeds=true; int stopped=0,attempts=0;
- bool IsMelee(Player*){return true;}
+ bool melee=true;std::string lastAction;
+ bool IsMelee(Player*){return melee;}
  void StopMoving(){bot->moving=false;++stopped;}
- bool DoSpecificAction(const std::string&, Event&, bool){++attempts;return castSucceeds;}
+ bool DoSpecificAction(const std::string& name, Event&, bool){lastAction=name;++attempts;return castSucceeds;}
 };
 struct Facade {
  bool isMoving(Player* p){return p->moving;}
@@ -45,6 +46,7 @@ struct Facade {
 } sServerFacade;
 struct PullStrategy {
  static PullStrategy* active; Unit* target=nullptr;
+ bool body=false;bool IsBodyPull()const{return body;}
  bool pending=false,issued=false; time_t started=100;
  static PullStrategy* Get(PlayerbotAI*){return active;}
  Unit* GetTarget()const{return target;}
@@ -92,6 +94,12 @@ int main(){
  mob.world=true;pull.target=nullptr;assert(!trigger.IsActive());pull.target=&mob;
  // Melee fallback remains usable for a warrior already in melee reach.
  mob.distance=3;assert(action.Execute(event));assert(pull.issued);
+ // An explicitly selected body pull approaches without issuing a fake shot.
+ pull.body=true;pull.issued=false;ai.melee=false;mob.distance=25;
+ assert(action.Execute(event));assert(ai.lastAction=="reach pull"&&!pull.issued);
+ // Even a caster uses native melee contact, then returns through normal pull logic.
+ mob.distance=3;assert(action.Execute(event));assert(ai.lastAction=="melee"&&pull.issued);
+
 }
 '''
 with tempfile.TemporaryDirectory(prefix='pull-approach-') as tmp:

@@ -47,7 +47,7 @@ using namespace ai;
 struct PositionEntry{float x=0,y=0,z=0;bool set=true;bool isSet(){return set;}};using PositionMap=std::map<std::string,PositionEntry>;PositionMap positions;
 #define AI_VALUE(T,N) positions
 const float ATTACK_DISTANCE=5,BASE_MELEERANGE_OFFSET=1;
-struct PullStrategy{PlayerbotAI* ai;Unit* target=nullptr;bool pendingToStart=false,petReactStateSaved=false;time_t pullStartTime=0,pullActionTime=0;int petReactState=2;ObjectGuid requesterGuid;
+struct PullStrategy{PlayerbotAI* ai;Unit* target=nullptr;bool bodyPull=false;bool pendingToStart=false,petReactStateSaved=false;time_t pullStartTime=0,pullActionTime=0;int petReactState=2;ObjectGuid requesterGuid;
  static PullStrategy* active;static PullStrategy* Get(PlayerbotAI*){return active;}Unit* GetTarget()const{return target;}void SetTarget(Unit* u){target=u;}bool HasTarget()const{return target!=nullptr;}
  bool HasPullStarted()const{return pullStartTime>0;}bool HasPullActionIssued()const{return pullActionTime>0;}bool IsPullPendingToStart()const{return pendingToStart;}
  time_t GetPullStartTime()const{return pullStartTime;}time_t GetPullActionTime()const{return pullActionTime;}int GetMaxPullTime()const{return 15;}
