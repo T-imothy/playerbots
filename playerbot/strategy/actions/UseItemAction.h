@@ -25,7 +25,14 @@ namespace ai
         SpellCastResult ForceSpellStart(SpellCastTargets const* targets, Aura* triggeredByAura = nullptr);
         bool OpenLockCheck();
 
+        void SetCooldownItemPrototype(ItemPrototype const* proto) { cooldownItemPrototype = proto; }
+        ItemPrototype const* GetCooldownItemPrototype() const override
+        {
+            return cooldownItemPrototype ? cooldownItemPrototype : Spell::GetCooldownItemPrototype();
+        }
+
     private:
+        ItemPrototype const* cooldownItemPrototype = nullptr;
         bool itemCheats;
     };
 

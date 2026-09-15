@@ -658,6 +658,10 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
             // Use triggered flag only for items with many spell casts and for not first cast
             BotUseItemSpell* spell = new BotUseItemSpell(bot, spellInfo, (successCasts > 0) ? TRIGGERED_OLD_TRIGGERED : TRIGGERED_NONE);
             spell->m_clientCast = true;
+            // Apply the item metadata during the native cast, before any spell-only
+            // cooldown can hide its longer duration/category or Wrath combat lockout.
+            if (!itemUsed)
+                spell->SetCooldownItemPrototype(proto);
             
 #ifdef MANGOSBOT_ONE
             // used in item_template.spell_2 with spell_id with SPELL_GENERIC_LEARN in spell_1
@@ -696,15 +700,6 @@ bool UseAction::UseItemInternal(Player* requester, uint32 itemId, Unit* unit, Ga
 
             if (successCast)
             {
-                if (itemUsed == nullptr && ai->HasCheat(BotCheatMask::item))
-                {
-                    if (!HasItemCooldown(itemId))
-                    {
-                        bot->RemoveSpellCooldown(*spellInfo, false);
-                        bot->AddCooldown(*spellInfo, proto, false);
-                    }
-                }
-
                 if (IsFood(proto) || IsDrink(proto))
                 {
                     SetDuration(24000);
