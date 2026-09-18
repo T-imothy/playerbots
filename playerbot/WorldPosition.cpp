@@ -573,7 +573,11 @@ bool WorldPosition::HasFaction(const Team team) const
 std::set<GenericTransport*> WorldPosition::getTransports(uint32 entry)
 {
     std::set<GenericTransport*> transports;
-    for (auto transport : getMap(getFirstInstanceId())->GetTransports()) //Boats&Zeppelins.
+    Map* map = getMap(getFirstInstanceId());
+    if (!map)
+        return transports;
+
+    for (auto transport : map->GetTransports()) //Boats&Zeppelins.
         if (!entry || transport->GetEntry() == entry)
             transports.insert(transport);
 
@@ -584,11 +588,23 @@ std::set<GenericTransport*> WorldPosition::getTransports(uint32 entry)
         // but produced a guid whose high bits are 0 instead of HIGHGUID_GAMEOBJECT,
         // so GetGameObject could never match it and this branch always came back
         // empty. Built properly it needs the entry too, which is gopair->second.id.
-        for (auto gopair : getGameObjectsNear(0.0f, entry))
-            if (GameObject* go = getMap(getFirstInstanceId())->GetGameObject(
-                    ObjectGuid(HIGHGUID_GAMEOBJECT, gopair->second.id, gopair->first)))
+        // Visit matching spawns directly instead of allocating and copying a
+        // map-sized pointer vector on every movement update. Preserve the
+        // zero-radius FindPointGameObjectData entry/map filtering, including
+        // its unset-position behavior. Do not retain live object pointers.
+        auto visit = [&](GameObjectDataPair const& gopair)
+        {
+            if (entry && gopair.second.id != entry)
+                return false;
+            if (*this && gopair.second.position.mapid != getMapId())
+                return false;
+            if (GameObject* go = map->GetGameObject(
+                    ObjectGuid(HIGHGUID_GAMEOBJECT, gopair.second.id, gopair.first)))
                 if (GenericTransport* transport = dynamic_cast<GenericTransport*>(go))
                     transports.insert(transport);
+            return false;
+        };
+        sObjectMgr.DoGOData(visit);
     }
 
     return transports;
