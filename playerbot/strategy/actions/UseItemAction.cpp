@@ -939,7 +939,10 @@ bool UseAction::UseGameObject(Player* requester, Event& event, GameObject* gameO
         }
     }
 
-    std::unique_ptr<WorldPacket> packet(new WorldPacket(CMSG_GAMEOBJ_USE));
+    // Mailboxes use the mail-list opcode. Generic GO use has no mailbox case
+    // in Turtle and reports an error instead of opening the native mail flow.
+    std::unique_ptr<WorldPacket> packet(new WorldPacket(
+        gameObject->GetGoType() == GAMEOBJECT_TYPE_MAILBOX ? CMSG_GET_MAIL_LIST : CMSG_GAMEOBJ_USE));
     *packet << guid;
     bot->GetSession()->QueuePacket(std::move(packet));
     

@@ -10,6 +10,7 @@ namespace ai
     class CastCustomSpellAction : public ChatCommandAction, public Qualified
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         CastCustomSpellAction(PlayerbotAI* ai, std::string name = "cast") : ChatCommandAction(ai, name), Qualified() {}
         virtual bool Execute(Event& event) override;
         virtual std::string castString(WorldObject* target) { return "cast"; }

@@ -33,14 +33,14 @@ bool EnemyPlayerNear::IsActive()
     // Check if we have any enemy players to attack
     if(AI_VALUE(bool, "has enemy player targets"))
     {
-        Unit* currentTarget = AI_VALUE(Unit*, "current target");
+        Unit* currentTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
         if (currentTarget)
         {
             // Check if we have a better enemy player to attack
             Player* currentPlayerTarget = dynamic_cast<Player*>(currentTarget);
             if(currentPlayerTarget)
             {
-                return currentPlayerTarget != AI_VALUE(Unit*, "enemy player target");
+                return currentPlayerTarget != ai->GetUnit(AI_VALUE(ObjectGuid, "enemy player target"));
             }
         }
 
@@ -148,13 +148,13 @@ bool EnemyTeamHasFlag::IsActive()
 
 bool EnemyFlagCarrierNear::IsActive()
 {
-    Unit* carrier = AI_VALUE(Unit*, "enemy flag carrier");
+    Unit* carrier = ai->GetUnit(AI_VALUE(ObjectGuid, "enemy flag carrier"));
     return carrier && sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.GetDistance2d(bot, carrier), VISIBILITY_DISTANCE_SMALL);
 }
 
 bool TeamFlagCarrierNear::IsActive()
 {
-    Unit* carrier = AI_VALUE(Unit*, "team flag carrier");
+    Unit* carrier = ai->GetUnit(AI_VALUE(ObjectGuid, "team flag carrier"));
     return carrier && sServerFacade.IsDistanceLessOrEqualThan(sServerFacade.GetDistance2d(bot, carrier), VISIBILITY_DISTANCE_SMALL);
 }
 
@@ -209,7 +209,7 @@ bool ThornObjectiveTravel::IsActive()
     // Fight nearby opponents around the assignment. Once a chase has taken us
     // more than 45 yards away, resume the assignment; survival still outranks us.
     Unit* victim = bot->GetVictim();
-    if (!victim) victim = AI_VALUE(Unit*, "enemy player target");
+    if (!victim) victim = ai->GetUnit(AI_VALUE(ObjectGuid, "enemy player target"));
     if (victim && bot->IsWithinDistInMap(victim,12.0f) && bot->IsWithinLOSInMap(victim) &&
         bot->IsWithinDist3d(x,y,z,45.0f)) return false;
     return true;
@@ -219,7 +219,7 @@ bool ThornCarrierIntercept::IsActive()
     BattleGround* bg = bot->GetBattleGround();
     if (!bg || bg->GetTypeId() != BATTLEGROUND_TG || bg->GetStatus() != STATUS_IN_PROGRESS ||
         bg->GetFlagCarrierGuid() == bot->GetObjectGuid() || bot->IsNonMeleeSpellCasted(false)) return false;
-    Unit* carrier = AI_VALUE(Unit*, "enemy flag carrier");
+    Unit* carrier = ai->GetUnit(AI_VALUE(ObjectGuid, "enemy flag carrier"));
     if (!carrier || !bot->IsWithinDistInMap(carrier, 35.0f)) return false;
     float x=0, y=0, z=0;
     // Interceptors are assigned to the carrier; other roles defend their nearby

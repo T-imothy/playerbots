@@ -212,7 +212,41 @@ public:
 
         std::list<std::string> HandleHelp(std::string param);
         std::list<std::string> HandleConsoleReset(std::string param);
+
+        // Aggregated view over all online bots (populated once per GatherBotStats pass).
+        struct BotStats
+        {
+            uint32 total = 0;
+            uint32 alliance[10] = { 0 };
+            uint32 horde[10] = { 0 };
+            std::map<uint8, uint32> perRace;
+            std::map<uint8, uint32> perClass;
+            uint32 roleTank = 0, roleHeal = 0, roleDps = 0;
+            uint32 active = 0, moving = 0, taxi = 0, mounted = 0, combat = 0, dead = 0, afk = 0;
+            uint32 stuck = 0;
+            std::map<uint8, uint32> perState;          // BotState -> count
+            std::map<std::string, uint32> activity;    // idle / moving / traveling / combat
+            std::map<uint32, uint32> perZone;          // zone id -> count
+            std::map<uint8, uint32> perTravelState;    // TravelState -> count
+        };
+        BotStats GatherBotStats();
+        std::list<std::string> FormatBotStats(const BotStats& stats, bool includeAllZones = false);
+
+        // Shared per-bot classification (used by stats, sample and find so they cannot drift)
+        std::string GetBotActivity(Player* bot);
+        bool GetBotStuck(Player* bot);
+
+        // Per-bot row output
+        std::string FormatBotLine(Player* bot);
+        bool BotMatchesFilter(Player* bot, const std::string& filter);
+        std::list<std::string> SampleBots(std::string param, bool exhaustive);
+        std::list<std::string> HandleConsoleSample(std::string param);
+        std::list<std::string> HandleConsoleFind(std::string param);
+
         std::list<std::string> HandleConsoleStats(std::string param);
+        uint32 ResolveActionHistorySize(Player* bot);
+        void ApplyActionHistorySize(Player* bot);
+        std::list<std::string> HandleConsoleHistory(std::string param);
         std::list<std::string> HandleConsoleReload(std::string param);
         std::list<std::string> HandleConsoleUpdate(std::string param);
         std::list<std::string> HandleConsolePid(std::string param);

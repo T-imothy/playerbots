@@ -24,7 +24,7 @@ namespace ai
 	class CastDeathchillAction : public CastBuffSpellAction {
 	public:
 		CastDeathchillAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "deathchill") {}
-        bool isUseful() override { return ai->HasStrategy("boost", BotState::BOT_STATE_COMBAT) && MeleeOpportunity(ai) && (ai->CanCastSpell("frost strike", AI_VALUE(Unit*, "current target"), 0) || ai->CanCastSpell("obliterate", AI_VALUE(Unit*, "current target"), 0) || ai->CanCastSpell("icy touch", AI_VALUE(Unit*, "current target"), 0)) && CastBuffSpellAction::isUseful(); }
+        bool isUseful() override { return ai->HasStrategy("boost", BotState::BOT_STATE_COMBAT) && MeleeOpportunity(ai) && (ai->CanCastSpell("frost strike", ai->GetUnit(AI_VALUE(ObjectGuid, "current target")), 0) || ai->CanCastSpell("obliterate", ai->GetUnit(AI_VALUE(ObjectGuid, "current target")), 0) || ai->CanCastSpell("icy touch", ai->GetUnit(AI_VALUE(ObjectGuid, "current target")), 0)) && CastBuffSpellAction::isUseful(); }
 
 	};
 

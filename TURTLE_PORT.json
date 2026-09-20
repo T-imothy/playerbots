@@ -136,5 +136,39 @@
       "actual bulk/lazy NULL event loaders passed"
     ],
     "production_deployment": "not deployed; production remains build87"
+  },
+  "upstream_sync_20260919": {
+    "upstream": "https://github.com/cmangos/playerbots",
+    "through": "4120aa9d3abf0afc1836f6ba90596c978b1161f5",
+    "commits": [
+      "7bcee961",
+      "b36cec53",
+      "a541d244",
+      "f299b8ba",
+      "fe6f4b31",
+      "1ae52c41",
+      "d685f18f",
+      "53ebb2d4",
+      "7f23556e",
+      "4120aa9d"
+    ],
+    "scope": "Native Turtle module only; local working-tree integration, not committed or deployed",
+    "adaptations": [
+      "GUID target values and every additional ManTech caller; retain fresh initial calculation and virtual reset/lazy semantics",
+      "Preserve ManTech healing, crowd control, WSG, summons, memory fixes and native module-slot APIs",
+      "Native WorldActions queue replaces CMaNGOS messaging; summon and world-buff actions require world owner",
+      "Retain Turtle explicit summon/revival behavior instead of importing incompatible CMaNGOS resurrection APIs",
+      "Diagnostics and RA stats remain on native owner dispatch; action history defaults off"
+    ],
+    "validation": [
+      "MSVC syntax checks: 104 changed translation units plus 11 class contexts/factory; initial errors corrected and rechecked",
+      "Extracted GUID cache/lifetime/reset/visibility regression passed",
+      "Extracted owner-dispatch regression passed",
+      "Actual healing selection fixture passed in all three conditional modes",
+      "Allocation-churn preservation regression passed"
+    ],
+    "pending": [
+      "User full Build-Local-Turtle, linking and live gameplay testing"
+    ]
   }
 }

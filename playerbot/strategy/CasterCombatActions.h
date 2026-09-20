@@ -26,7 +26,7 @@ namespace ai
         std::string GetTargetName() override
         {
             const auto& spell = GetSpellName();
-            if ((spell == "cyclone" || spell == "hex") && context->GetValue<Unit*>("cc target", spell)->Get()) return "cc target";
+            if ((spell == "cyclone" || spell == "hex") && ai->GetUnit(context->GetValue<ObjectGuid>("cc target", spell)->Get())) return "cc target";
             if (spell == "health funnel" || spell == "demonic empowerment") return "pet target";
             for (const char* self : {"elemental mastery", "fel domination", "immolation aura", "hellfire", "thunderstorm",
                 "demonic circle: summon", "demonic circle: teleport", "fire elemental totem", "earth elemental totem"})
@@ -64,7 +64,7 @@ namespace ai
             }
             if (spell == "cyclone" || spell == "hex")
             {
-                Unit* marked = context->GetValue<Unit*>("cc target", spell)->Get();
+                Unit* marked = ai->GetUnit(context->GetValue<ObjectGuid>("cc target", spell)->Get());
                 if (marked) return marked;
             }
             return CastSpellAction::GetTarget();
@@ -75,7 +75,7 @@ namespace ai
             if (!CastSpellAction::isUseful()) return false;
             const std::string& spell = GetSpellName();
             Unit* target = GetTarget();
-            Unit* enemy = context->GetValue<Unit*>("current target")->Get();
+            Unit* enemy = ai->GetUnit(context->GetValue<ObjectGuid>("current target")->Get());
             const bool combat = ai->IsStateActive(BotState::BOT_STATE_COMBAT);
             const bool pvp = enemy && enemy->IsPlayer();
             const float mana = bot->GetMaxPower(POWER_MANA) ? 100.0f * bot->GetPower(POWER_MANA) / bot->GetMaxPower(POWER_MANA) : 100.0f;
@@ -96,7 +96,7 @@ namespace ai
             {
                 if (target->HasBreakableByDamageCrowdControlAura() || ai->HasAura(spell, target) || !CasterControlAvailable(ai, spell, target)) return false;
                 if (spell == "hex" && (target->HasAuraType(SPELL_AURA_PERIODIC_DAMAGE) || target->HasAuraType(SPELL_AURA_PERIODIC_LEECH))) return false;
-                if (context->GetValue<Unit*>("cc target", spell)->Get() == target) return true;
+                if (ai->GetUnit(context->GetValue<ObjectGuid>("cc target", spell)->Get()) == target) return true;
                 return pvp && target->GetVictim() == bot && bot->GetHealthPercent() < 60.0f;
             }
             if (spell == "force of nature") return combat && MeleeCombatTarget(ai, target);
@@ -168,7 +168,7 @@ namespace ai
         CasterFallbackAction(PlayerbotAI* ai) : CastSpellAction(ai, "caster fallback") {}
         bool isUseful() override
         {
-            Unit* target = context->GetValue<Unit*>("current target")->Get();
+            Unit* target = ai->GetUnit(context->GetValue<ObjectGuid>("current target")->Get());
             if (!MeleeCombatTarget(ai, target)) return false;
             std::vector<std::string> spells;
             switch (bot->getClass())
@@ -221,7 +221,7 @@ namespace ai
         bool isUseful() override
         {
             if (!ai->HasAura("presence of mind", bot)) return false;
-            Unit* target = context->GetValue<Unit*>("current target")->Get();
+            Unit* target = ai->GetUnit(context->GetValue<ObjectGuid>("current target")->Get());
             if (!MeleeCombatTarget(ai, target)) return false;
             for (const char* spell : {"arcane blast", "fireball", "frostbolt"})
             {

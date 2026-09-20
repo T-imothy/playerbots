@@ -30,7 +30,7 @@ Unit* DungeonAddTargetAction::GetGluthTarget()
     }
     if (!boss) return nullptr;
     Unit* closest = nullptr;
-    Unit* current = AI_VALUE(Unit*, "current target");
+    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     bool currentValid = false;
     for (const auto& guid : nearby)
     {

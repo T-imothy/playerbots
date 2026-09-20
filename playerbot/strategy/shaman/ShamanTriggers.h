@@ -338,7 +338,7 @@ namespace ai
         PurgeTrigger(PlayerbotAI* ai) : TargetAuraDispelTrigger(ai, "purge", DISPEL_MAGIC, 3) {}
         virtual bool IsActive() override
         {
-            Unit* target = AI_VALUE(Unit*, "current target");
+            Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
             if (!target)
                 return false;
 
@@ -347,6 +347,9 @@ namespace ai
 
             for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
             {
+                if (!target->HasAuraType((AuraType)type))
+                    continue;
+
                 Unit::AuraList const& auras = target->GetAurasByType((AuraType)type);
                 for (Unit::AuraList::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
                 {

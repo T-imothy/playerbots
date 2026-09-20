@@ -24,7 +24,7 @@ Unit* InnerDemonAction::GetDemon(PlayerbotAI* ai)
             !sServerFacade.IsFriendlyTo(unit, bot) && bot->GetDistance(unit) <= sPlayerbotAIConfig.sightDistance;
     };
     if (commanded(ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("attack target")->Get())) ||
-        commanded(ai->GetAiObjectContext()->GetValue<Unit*>("rti target")->Get())) return nullptr;
+        commanded(ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("rti target")->Get()))) return nullptr;
 
     Unit* selected = nullptr;
     for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets", "100:1")->Get())

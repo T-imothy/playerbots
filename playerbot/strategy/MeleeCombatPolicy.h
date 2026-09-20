@@ -54,7 +54,7 @@ namespace ai
 
     inline bool MeleeOpportunity(PlayerbotAI* ai)
     {
-        Unit* target = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+        Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
         return ai->IsStateActive(BotState::BOT_STATE_COMBAT) && MeleeCombatTarget(ai, target) &&
             ai->GetBot()->CanReachWithMeleeAttack(target);
     }

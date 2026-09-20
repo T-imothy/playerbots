@@ -282,7 +282,7 @@ namespace
                 if (jump->getQualifier() == "position bg objective" && !advance) return 0.0f;
             const std::string& name = action->getName();
             const WarsongObjective objective = AI_VALUE(WarsongObjective, "warsong objective");
-            Unit* preferred = AI_VALUE(Unit*, "enemy player target");
+            Unit* preferred = ai->GetUnit(AI_VALUE(ObjectGuid, "enemy player target"));
             // Assist strategies must not undo the same automatic target choice
             // used by normal PvP and flag-carrier attacks.
             if ((name == "dps assist" || name == "tank assist") && preferred && action->GetTarget() != preferred)

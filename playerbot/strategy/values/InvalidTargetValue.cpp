@@ -13,13 +13,13 @@ using namespace ai;
 
 bool InvalidTargetValue::Calculate()
 {
-    Unit* target = AI_VALUE(Unit*, qualifier);
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, qualifier));
     if (!PossibleTargetsValue::IsValid(target, bot, true) || MeleeCcCheck(ai).Protected(target))
     {
         return true;
     }
 
-    Unit* duelTarget = AI_VALUE(Unit*, "duel target");
+    Unit* duelTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "duel target"));
     if (duelTarget && duelTarget == target)
     {
         return false;

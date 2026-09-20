@@ -9,6 +9,7 @@ namespace ai
     class WorldBuffTravelApplyAction : public Action
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         WorldBuffTravelApplyAction(PlayerbotAI* ai)
             : Action(ai, "world buff travel apply") {
         }

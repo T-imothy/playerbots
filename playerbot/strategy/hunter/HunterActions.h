@@ -537,7 +537,7 @@ private:
         HunterSnakeTrapAction(PlayerbotAI* ai) : TrapInPlace(ai, "snake trap") {}
         bool isUseful() override
         {
-            Unit* attacker = AI_VALUE(Unit*, "closest attacker targeting me");
+            Unit* attacker = ai->GetUnit(AI_VALUE(ObjectGuid, "closest attacker targeting me"));
             return MeleeCombatTarget(ai, attacker) && bot->CanReachWithMeleeAttack(attacker) && TrapInPlace::isUseful();
         }
     };
@@ -578,7 +578,7 @@ private:
 
         bool isUseful() override
         {
-            return CastSpellAction::isUseful() && AI_VALUE(Unit*, "pet target");
+            return CastSpellAction::isUseful() && ai->GetUnit(AI_VALUE(ObjectGuid, "pet target"));
         }
     };
 

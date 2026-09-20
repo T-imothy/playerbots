@@ -375,9 +375,6 @@ bool BGJoinAction::gatherArenaTeam(ArenaType type)
 
         GetBotAI(member)->Reset(true);
 
-        if (!member->IsWithinDistInMap(bot, sPlayerbotAIConfig.sightDistance, false))
-            member->TeleportTo(bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), 0);
-
         sLog.outDetail("Bot #%d <%s>: Member of <%s>", member->GetGUIDLow(), member->GetName(), arenateam->GetName().c_str());
     }
 

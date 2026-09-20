@@ -351,7 +351,7 @@ bool SpiritHealerAction::Execute(Event& event)
         // an enemy town (Razor Hill, Aerie Peak) resurrected into the same guards
         // indefinitely. The count is still cleared by XpGainAction, i.e. once the
         // bot is alive and earning again.
-        context->GetValue<Unit*>("current target")->Set(nullptr);
+        context->GetValue<ObjectGuid>("current target")->Set(ObjectGuid());
         bot->SetSelectionGuid(ObjectGuid());
         ai->TellPlayer(requester, BOT_TEXT("hello"), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);
         sPlayerbotAIConfig.logEvent(ai, "ReviveFromSpiritHealerAction");

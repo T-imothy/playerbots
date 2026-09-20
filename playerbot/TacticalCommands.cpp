@@ -52,7 +52,7 @@ TacticalResult TacticalCommands::Execute(Player* owner,Unit* target,TacticalComm
     if(result.started && command.intent=="cc") {
         for(auto* ai:party) {
             ai->GetAiObjectContext()->GetValue<std::string>("rti cc")->Set(command.mark);
-            ai->GetAiObjectContext()->GetValue<Unit*>("rti cc target")->Reset();
+            ai->GetAiObjectContext()->GetValue<ObjectGuid>("rti cc target")->Reset();
         }
     }
     return result;

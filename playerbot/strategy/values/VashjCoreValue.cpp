@@ -62,7 +62,7 @@ bool ai::CanReceiveVashjCore(PlayerbotAI* ai, Player* member)
     if (context->GetValue<std::set<uint32>&>("skip loot list")->Get().count(31088)) return false;
     const ObjectGuid order = context->GetValue<ObjectGuid>("attack target")->Get();
     Unit* commanded = memberAI->GetUnit(order);
-    Unit* marked = context->GetValue<Unit*>("rti target")->Get();
+    Unit* marked = ai->GetUnit(context->GetValue<ObjectGuid>("rti target")->Get());
     if ((commanded && commanded->IsInWorld() && commanded->IsAlive() && member->IsInMap(commanded)) ||
         (marked && marked->IsInWorld() && marked->IsAlive() && member->IsInMap(marked))) return false;
     ItemPosCountVec destination;

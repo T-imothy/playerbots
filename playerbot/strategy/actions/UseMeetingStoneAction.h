@@ -6,6 +6,7 @@ namespace ai
     class SummonAction : public MovementAction
     {
     public:
+        bool RequiresWorldOwner() const override { return true; }
         SummonAction(PlayerbotAI* ai, std::string name = "summon") : MovementAction(ai, name) {}
         bool isPossible() override { return true; }
         bool isUseful() override { return true; }

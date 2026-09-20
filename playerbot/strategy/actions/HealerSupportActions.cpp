@@ -8,7 +8,7 @@ using namespace ai;
 bool ai::HasHealingPressure(PlayerbotAI* ai, uint32 healthThreshold)
 {
     Player* bot = ai->GetBot();
-    Unit* patient = ai->GetAiObjectContext()->GetValue<Unit*>("party member to heal")->Get();
+    Unit* patient = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("party member to heal")->Get());
     const auto needsHeal = [&](Unit* unit) {
         return unit && unit->IsInWorld() && unit->IsAlive() && unit->GetMaxHealth() && bot->IsInMap(unit) &&
             (unit->GetHealthPercent() < healthThreshold || NeedsFullHealingToRemoveAura(unit) || RemainingHealingAbsorb(unit));

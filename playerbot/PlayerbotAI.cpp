@@ -1,3 +1,4 @@
+#include "WorldActions.h"
 #include "Util/DevDiagnostics.h"
 #include "PlayerbotMgr.h"
 #include "cmangos-ahbot/AhBot.h"
@@ -222,6 +223,12 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
         engines[e]->initMode = false;
         engines[e]->Init();
     }
+
+    // Action history listeners. Engines own and delete these (ActionExecutionListeners dtor).
+    engines[(uint8)BotState::BOT_STATE_COMBAT]->AddActionExecutionListener(new ActionHistoryListener(this, false));
+    engines[(uint8)BotState::BOT_STATE_NON_COMBAT]->AddActionExecutionListener(new ActionHistoryListener(this, false));
+    engines[(uint8)BotState::BOT_STATE_DEAD]->AddActionExecutionListener(new ActionHistoryListener(this, false));
+    engines[(uint8)BotState::BOT_STATE_REACTION]->AddActionExecutionListener(new ActionHistoryListener(this, true));
 
     currentEngine = engines[(uint8)BotState::BOT_STATE_NON_COMBAT];
     currentState = BotState::BOT_STATE_NON_COMBAT;
@@ -868,11 +875,11 @@ void PlayerbotAI::UpdateFaceTarget(uint32 elapsed, bool minimal)
             if (!sServerFacade.isMoving(bot) && !bot->isMovingOrTurning())
             {
                 AiObjectContext* context = GetAiObjectContext();
-                Unit* target = AI_VALUE(Unit*, "current target");
+                Unit* target = GetBotAI(bot)->GetUnit(AI_VALUE(ObjectGuid, "current target"));
                 if(target)
                 {
                     // Do not update the facing while pulling
-                    Unit* pullTarget = AI_VALUE(Unit*, "pull target");
+                    Unit* pullTarget = GetBotAI(bot)->GetUnit(AI_VALUE(ObjectGuid, "pull target"));
                     if (pullTarget == nullptr)
                     {
                         if (!AI_VALUE2(bool, "facing", "current target"))
@@ -934,6 +941,94 @@ const Action* PlayerbotAI::GetLastExecutedAction(BotState state) const
     }
 
     return nullptr;
+}
+
+std::string PlayerbotAI::GetLastAction(BotState state)
+{
+    Engine* engine = engines[(uint8)state];
+    if (engine)
+    {
+        return engine->GetLastAction();
+    }
+
+    return "";
+}
+
+std::string PlayerbotAI::GetLastExecutedActionName(BotState state)
+{
+    const Action* action = GetLastExecutedAction(state);
+    if (action)
+    {
+        return const_cast<Action*>(action)->getName();
+    }
+
+    return "";
+}
+
+std::string PlayerbotAI::GetLastActionDecision(BotState state)
+{
+    // The engine's lastAction is a tick log joined by '|'; the final segment is the decision taken.
+    std::string log = GetLastAction(state);
+
+    size_t pos = log.find_last_of('|');
+    std::string segment = (pos == std::string::npos) ? log : log.substr(pos + 1);
+
+    size_t begin = segment.find_first_not_of(" \t\r\n");
+    if (begin == std::string::npos)
+    {
+        return "";
+    }
+
+    size_t end = segment.find_last_not_of(" \t\r\n");
+    return segment.substr(begin, end - begin + 1);
+}
+
+void PlayerbotAI::SetActionHistorySize(uint32 size)
+{
+    actionHistorySize = size;
+
+    if (!size)
+        actionHistory.clear();
+    else
+        while (actionHistory.size() > size)
+            actionHistory.pop_front();
+}
+
+void PlayerbotAI::RecordActionHistory(Action* action, bool executed, bool reaction, uint32 elapsedMs)
+{
+    if (!actionHistorySize || !action)
+        return;
+
+    ActionHistoryEntry entry;
+    entry.tick = aiTick;
+    entry.timeMs = WorldTimer::getMSTime();
+    entry.elapsedMs = elapsedMs;
+    entry.action = action->getName();
+    entry.executed = executed;
+    entry.reaction = reaction;
+    entry.targetCounter = aiObjectContext->GetValue<ObjectGuid>("current target")->Get().GetCounter();
+
+    WorldPosition pos(bot);
+    entry.x = pos.getX();
+    entry.y = pos.getY();
+    entry.z = pos.getZ();
+    entry.mapId = pos.getMapId();
+
+    actionHistory.push_back(entry);
+
+    while (actionHistory.size() > actionHistorySize)
+        actionHistory.pop_front();
+}
+
+bool ActionHistoryListener::Before(Action* action, const Event& event)
+{
+    startMs = WorldTimer::getMSTime();
+    return true;
+}
+
+void ActionHistoryListener::After(Action* action, bool executed, const Event& event)
+{
+    ai->RecordActionHistory(action, executed, reaction, WorldTimer::getMSTimeDiff(startMs, WorldTimer::getMSTime()));
 }
 
 bool PlayerbotAI::IsImmuneToSpell(uint32 spellId) const
@@ -1251,7 +1346,7 @@ void PlayerbotAI::OnDeath()
 
                 AiObjectContext* context = GetAiObjectContext();
 
-                Unit* ctarget = AI_VALUE(Unit*, "current target");
+                Unit* ctarget = GetBotAI(bot)->GetUnit(AI_VALUE(ObjectGuid, "current target"));
 
                 if (ctarget)
                 {
@@ -1298,9 +1393,9 @@ void PlayerbotAI::OnDeath()
             }
         }
 
-        SET_AI_VALUE(Unit*, "current target", nullptr);
-        SET_AI_VALUE(Unit*, "enemy player target", nullptr);
-        SET_AI_VALUE(Unit*, "pull target", nullptr);
+        SET_AI_VALUE(ObjectGuid, "current target", ObjectGuid());
+        SET_AI_VALUE(ObjectGuid, "enemy player target", ObjectGuid());
+        SET_AI_VALUE(ObjectGuid, "pull target", ObjectGuid());
         SET_AI_VALUE(ObjectGuid, "attack target", ObjectGuid());
         SET_AI_VALUE(LootObject, "loot target", LootObject());
         SET_AI_VALUE(time_t, "combat start time", 0);
@@ -1364,6 +1459,23 @@ void PlayerbotAI::HandleCommands()
     }
 }
 
+void PlayerbotAI::RunOnOwningThread(Player* target, std::function<void(Player*)> action)
+{
+    if (!target || !action) return;
+    if (!ai::WorldActions::IsMapExecution() || (target->IsInWorld() && IsSafe(target)))
+    {
+        if (target->IsInWorld() && !target->IsBeingTeleported()) action(target);
+        return;
+    }
+    const ObjectGuid guid = target->GetObjectGuid();
+    if (!ai::WorldActions::Instance().Enqueue(bot, "cross-map player action", ai::Event(),
+        [guid, action](PlayerbotAI&) {
+            Player* player = sObjectAccessor.FindPlayer(guid);
+            if (player && player->IsInWorld() && !player->IsBeingTeleported()) action(player);
+        }))
+        sLog.outError("ManTech: cross-map player action queue full for bot %u", bot->GetGUIDLow());
+}
+
 void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
     MANTECH_DIAG_SCOPE(BotAI, 16, nullptr);
@@ -1372,6 +1484,7 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
     if (bot->IsBeingTeleported() || !bot->IsInWorld())
         return;
 
+    aiTick++;
     std::unique_ptr<PerformanceMonitorOperation> pmo;
     if (sPlayerbotAIConfig.perfMonEnabled)
     {
@@ -1579,9 +1692,9 @@ void PlayerbotAI::Reset(bool full)
     if (strategy)
         strategy->OnPullEnded();
 
-    RESET_AI_VALUE(Unit*,"old target");
-    RESET_AI_VALUE(Unit*,"current target");
-    RESET_AI_VALUE(Unit*,"pull target");
+    RESET_AI_VALUE(ObjectGuid,"old target");
+    RESET_AI_VALUE(ObjectGuid,"current target");
+    RESET_AI_VALUE(ObjectGuid,"pull target");
     RESET_AI_VALUE(ObjectGuid,"attack target");
     RESET_AI_VALUE(GuidPosition,"rpg target");
     RESET_AI_VALUE(LootObject,"loot target");
@@ -2609,9 +2722,9 @@ void PlayerbotAI::DoNextAction(bool min)
     SC_PHASE("DoNextAction.staleTargetCheck", bot ? bot->GetName() : "(null)");
     if (currentEngine == engines[(uint8)BotState::BOT_STATE_NON_COMBAT] && sServerFacade.IsInCombat(bot))
     {
-        if (aiObjectContext->GetValue<Unit*>("current target")->Get() != NULL ||
+        if (aiObjectContext->GetValue<ObjectGuid>("current target")->Get() != ObjectGuid() ||
             aiObjectContext->GetValue<ObjectGuid>("attack target")->Get() != ObjectGuid() ||
-            aiObjectContext->GetValue<Unit*>("dps target")->Get() != NULL)
+            aiObjectContext->GetValue<ObjectGuid>("dps target")->Get() != ObjectGuid())
         {
             Reset();
         }
@@ -4327,6 +4440,9 @@ bool PlayerbotAI::HasAura(std::string name, Unit* unit, bool maxStack, bool chec
         if (auraTypeId != TOTAL_AURAS && auraType != auraTypeId)
             continue;
 
+        if (!unit->HasAuraType((AuraType)auraType))
+            continue;
+
 		Unit::AuraList const& auras = unit->GetAurasByType((AuraType)auraType);
 
         if (auras.empty())
@@ -4446,6 +4562,9 @@ Aura* PlayerbotAI::GetAura(std::string name, Unit* unit, bool checkIsOwner)
 
         for (uint32 auraType = SPELL_AURA_BIND_SIGHT; auraType < TOTAL_AURAS; auraType++)
         {
+            if (!unit->HasAuraType((AuraType)auraType))
+                continue;
+
             Unit::AuraList const& auras = unit->GetAurasByType((AuraType)auraType);
 
             if (auras.empty())
@@ -4495,6 +4614,9 @@ std::vector<Aura*> PlayerbotAI::GetAuras(Unit* unit, bool allAuras, bool positiv
     std::vector<Aura*> outAuras;
     for (uint32 auraType = SPELL_AURA_BIND_SIGHT; auraType < TOTAL_AURAS; auraType++)
     {
+        if (!unit->HasAuraType((AuraType)auraType))
+            continue;
+
         Unit::AuraList const& auras = unit->GetAurasByType((AuraType)auraType);
 
         if (auras.empty())
@@ -6257,6 +6379,9 @@ bool PlayerbotAI::HasAuraToDispel(Unit* target, uint32 dispelType)
         return false;
     for (uint32 type = SPELL_AURA_NONE; type < TOTAL_AURAS; ++type)
 	{
+        if (!target->HasAuraType((AuraType)type))
+            continue;
+
 		Unit::AuraList const& auras = target->GetAurasByType((AuraType)type);
 		for (Unit::AuraList::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
 		{
@@ -7304,7 +7429,8 @@ std::string PlayerbotAI::HandleRemoteCommand(std::string command)
     }
     else if (command == "tpos")
     {
-        Unit* target = *GetAiObjectContext()->GetValue<Unit*>("current target");
+        PlayerbotAI* ai = GetBotAI(bot);
+        Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
         if (!target) {
             return "";
         }
@@ -7314,7 +7440,8 @@ std::string PlayerbotAI::HandleRemoteCommand(std::string command)
     }
     else if (command == "target")
     {
-        Unit* target = *GetAiObjectContext()->GetValue<Unit*>("current target");
+        PlayerbotAI* ai = GetBotAI(bot);
+        Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
         if (!target) {
             return "";
         }
@@ -7326,7 +7453,8 @@ std::string PlayerbotAI::HandleRemoteCommand(std::string command)
         int pct = (int)((static_cast<float> (bot->GetHealth()) / bot->GetMaxHealth()) * 100);
         std::ostringstream out; out << pct << "%";
 
-        Unit* target = *GetAiObjectContext()->GetValue<Unit*>("current target");
+        PlayerbotAI* ai = GetBotAI(bot);
+        Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
         if (!target) {
             return out.str();
         }
@@ -7350,7 +7478,8 @@ std::string PlayerbotAI::HandleRemoteCommand(std::string command)
         out << ", victim: " << (victim ? victim->GetName() : "none");
 
         out << " | BotAI: current target: ";
-        Unit* aiTarget = *GetAiObjectContext()->GetValue<Unit*>("current target");
+        PlayerbotAI* ai = GetBotAI(bot);
+        Unit* aiTarget = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
         if (aiTarget)
         {
             out << aiTarget->GetName() << " (" << aiTarget->GetObjectGuid().GetCounter() << ")";

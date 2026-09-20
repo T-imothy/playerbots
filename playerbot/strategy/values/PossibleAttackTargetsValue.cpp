@@ -290,7 +290,7 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
     if(!HasIgnoreCCRti(target, player) && (HasBreakableCC(target, player) || HasUnBreakableCC(target, player)))
         return true;
 
-    if (GetBotAI(player) && !GetBotAI(player)->HasActivePlayerMaster()&& PAI_VALUE(Unit*, "rti target") == target)
+    if (GetBotAI(player) && !GetBotAI(player)->HasActivePlayerMaster()&& GetBotAI(player)->GetUnit(PAI_VALUE(ObjectGuid, "rti target")) == target)
         return true;
 
     return false;

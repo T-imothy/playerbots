@@ -110,7 +110,7 @@ bool TurtleClassSpellAction::isUseful()
     case TurtleAbility::Ascendance:
     case TurtleAbility::AncestralSwiftness:
     {
-        Unit* patient = AI_VALUE(Unit*, "party member to heal");
+        Unit* patient = ai->GetUnit(AI_VALUE(ObjectGuid, "party member to heal"));
         return !ai->HasAura(GetSpellName(), bot) &&
             (hp < 40 || (patient && patient->IsAlive() && patient->GetMap() == bot->GetMap() && patient->GetHealthPercent() < 40));
     }

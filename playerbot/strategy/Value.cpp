@@ -50,32 +50,14 @@ std::string GuidPositionManualSetValue::Format()
     return chat->formatGuidPosition(value,bot);
 }
 
-Unit* UnitCalculatedValue::Get()
+std::string UnitCalculatedValue::Format()
 {
-    time_t now = time(0);
-    if (!lastCheckTime ||
-        (checkInterval < 2 && (now - lastCheckTime > 0.1)) ||
-        now - lastCheckTime >= checkInterval / 2)
-    {
-        lastCheckTime = now;
-
-        auto pmo = sPerformanceMonitor.start(PERF_MON_VALUE, AiNamedObject::getName(), ai);
-        value = Calculate();
-        m_guid = value ? value->GetObjectGuid() : ObjectGuid();
-        return value;
-    }
-
-    // Cached read: resolve through the guid instead of following the old
-    // pointer. If the object is gone this cleanly yields nullptr.
-    value = m_guid.IsEmpty() ? nullptr : ai->GetUnit(m_guid);
-    return value;
+    Unit* unit = ai->GetUnit(Calculate());
+    return unit ? unit->GetName() : "<none>";
 }
 
-Unit* UnitCalculatedValue::LazyGet()
+std::string UnitManualSetValue::Format()
 {
-    if (!lastCheckTime)
-        return Get();
-
-    value = m_guid.IsEmpty() ? nullptr : ai->GetUnit(m_guid);
-    return value;
+    Unit* unit = ai->GetUnit(Get());
+    return unit ? unit->GetName() : "<none>";
 }

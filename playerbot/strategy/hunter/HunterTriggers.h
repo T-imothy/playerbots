@@ -170,7 +170,7 @@ namespace ai
     {
     public:
         RapidFireTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "rapid fire") {}
-        bool IsActive() override { return BuffTrigger::IsActive() && HunterInShotRange(ai, AI_VALUE(Unit*, "current target")); }
+        bool IsActive() override { return BuffTrigger::IsActive() && HunterInShotRange(ai, ai->GetUnit(AI_VALUE(ObjectGuid, "current target"))); }
     };
 
     class TrueshotAuraTrigger : public BuffTrigger
@@ -236,7 +236,7 @@ namespace ai
         SwitchToRangedTrigger(PlayerbotAI* ai) : Trigger(ai, "switch to ranged", 1) {}
         bool IsActive() override
         {
-            Unit* target = AI_VALUE(Unit*, "current target");
+            Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
             return ai->HasStrategy("close", BotState::BOT_STATE_COMBAT) && HunterAmmoReady(ai) &&
                 MeleeCombatTarget(ai, target) && (HunterInShotRange(ai, target, 1.0f) ||
                 target->GetVictim() != bot || target->IsImmobilizedState());
@@ -249,7 +249,7 @@ namespace ai
         SwitchToMeleeTrigger(PlayerbotAI* ai) : Trigger(ai, "switch to melee", 1) {}
         bool IsActive() override
         {
-            Unit* target = AI_VALUE(Unit*, "current target");
+            Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
             if (!ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT) || !MeleeCombatTarget(ai, target)) return false;
             if (!HunterAmmoReady(ai)) return !HunterAmmoReserve(ai);
             const auto bounds = HunterShotRange(ai, target);
@@ -296,7 +296,7 @@ namespace ai
         AimedShotTrigger(PlayerbotAI* ai) : Trigger(ai, "aimed shot", 1) {}
         bool IsActive() override
         {
-            Unit* target = AI_VALUE(Unit*, "current target");
+            Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
             if (!MeleeCombatTarget(ai, target) || !HunterAmmoReady(ai)) return false;
 #ifndef MANGOSBOT_TWO
             if (sServerFacade.isMoving(bot) || (target->GetVictim() == bot && !target->IsImmobilizedState())) return false;
@@ -352,7 +352,7 @@ namespace ai
             if (!bot->HasSpell(1543))
                 return false;
 
-            Unit* target = AI_VALUE(Unit*, "nearest stealthed unit");
+            Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "nearest stealthed unit"));
             return target;
         }
     };

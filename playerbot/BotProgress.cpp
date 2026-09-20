@@ -85,7 +85,7 @@ void PlayerbotAI::ObserveBotIncidents()
     bool suspended=!bot->IsInWorld() || bot->IsBeingTeleported() || bot->IsTaxiFlying() ||
         bot->GetTransport() || bot->HasCharmer();
     if(suspended) { incidentTracker.Reset(now,emit); unreachableTargets.Reset(); return; }
-    Unit* target=aiObjectContext->GetValue<Unit*>("current target")->Get();
+    Unit* target=GetUnit(aiObjectContext->GetValue<ObjectGuid>("current target")->Get());
     uint64 targetId=target ? target->GetObjectGuid().GetRawValue() : 0;
     bool movingIntent=bot->IsAlive() && !bot->IsNonMeleeSpellCasted(true) &&
         bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==POINT_MOTION_TYPE;

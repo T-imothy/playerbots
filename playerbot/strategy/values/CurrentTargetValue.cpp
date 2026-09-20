@@ -5,14 +5,14 @@
 #include "playerbot/ServerFacade.h"
 using namespace ai;
 
-Unit* CurrentTargetValue::Get()
+ObjectGuid CurrentTargetValue::Get()
 {
     if (selection.IsEmpty())
-        return NULL;
+        return ObjectGuid();
 
     Unit* unit = sObjectAccessor.GetUnit(*bot, selection);
     if (unit && !bot->IsWithinDistInMap(unit, sPlayerbotAIConfig.sightDistance))
-        return NULL;
+        return ObjectGuid();
 
     // Distance was the only test here, so a target kept once was kept for good -
     // a player who stealthed after being targeted stayed targeted. This asks the
@@ -21,12 +21,12 @@ Unit* CurrentTargetValue::Get()
     // involve line of sight, so a target behind a pillar is not lost.
     if (unit && unit != bot &&
         !unit->IsVisibleForOrDetect(bot, bot->GetCamera().GetBody(), true))
-        return NULL;
+        return ObjectGuid();
 
-    return unit;
+    return unit ? unit->GetObjectGuid() : ObjectGuid();
 }
 
-void CurrentTargetValue::Set(Unit* target)
+void CurrentTargetValue::Set(ObjectGuid unitGuid)
 {
-    selection = target ? target->GetObjectGuid() : ObjectGuid();
+    selection = unitGuid;
 }

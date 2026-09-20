@@ -1280,14 +1280,15 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         return false;
     }
 
-    if (movePath.getFront().getMapId() == endPos.getMapId() && !endPos.isUnderWater())
+    // Only touch points on the map the bot is actually on, so a cross-map destination can never
+    // resolve another map's terrain/VMap. (The old front-map guard did not imply the bot's map.)
+    // Keep the "don't surface a deliberate dive" rule, but only for a destination on our own map.
+    bool endUnderwater = endPos.getMapId() == bot->GetMapId() && endPos.isUnderWater();
+    for (auto& p : movePath.getPath())
     {
-        for (auto& p : movePath.getPath())
+        if (p.point.getMapId() == bot->GetMapId() && p.point.isUnderWater() && !endUnderwater)
         {
-            if (p.point.isUnderWater())
-            {
-                p.point.setAtWaterSurface();
-            }
+            p.point.setAtWaterSurface();
         }
     }
 
@@ -1340,7 +1341,8 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 #ifndef MANGOSBOT_ZERO
     if (bot->IsFreeFlying())
     {
-        if (bot->HasMovementFlag(MOVEFLAG_SWIMMING) && startPos.isInWater() && !startPos.isUnderWater() && !endPos.isInWater())
+        if (bot->HasMovementFlag(MOVEFLAG_SWIMMING) && startPos.isInWater() && !startPos.isUnderWater() &&
+            (endPos.getMapId() != bot->GetMapId() || !endPos.isInWater()))
         {
             generatePath = true;
         }
@@ -2898,8 +2900,8 @@ void MovementAction::WaitForReach(float distance)
     if (duration > sPlayerbotAIConfig.maxWaitForMove)
         duration = sPlayerbotAIConfig.maxWaitForMove;
 
-    /*Unit* target = *ai->GetAiObjectContext()->GetValue<Unit*>("current target");
-    Unit* player = *ai->GetAiObjectContext()->GetValue<Unit*>("enemy player target");
+    /*Unit* target = *ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target");
+    Unit* player = *ai->GetAiObjectContext()->GetValue<ObjectGuid>("enemy player target");
     if ((player || target) && duration > sPlayerbotAIConfig.globalCoolDown)
         duration = sPlayerbotAIConfig.globalCoolDown;*/
 
@@ -3334,7 +3336,7 @@ bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& mov
 
 bool FleeAction::Execute(Event& event)
 {
-    return Flee(AI_VALUE(Unit*, "current target"));
+    return Flee(ai->GetUnit(AI_VALUE(ObjectGuid, "current target")));
 }
 
 bool FleeWithPetAction::Execute(Event& event)
@@ -3350,12 +3352,12 @@ bool FleeWithPetAction::Execute(Event& event)
         }
     }
 
-    return Flee(AI_VALUE(Unit*, "current target"));
+    return Flee(ai->GetUnit(AI_VALUE(ObjectGuid, "current target")));
 }
 
 bool RunAwayAction::Execute(Event& event)
 {
-    return Flee(AI_VALUE(Unit*, "master target"));
+    return Flee(ai->GetUnit(AI_VALUE(ObjectGuid, "master target")));
 }
 
 bool MoveToLootAction::Execute(Event& event)
@@ -3404,7 +3406,7 @@ bool MoveToLootAction::Execute(Event& event)
 
 bool MoveOutOfEnemyContactAction::Execute(Event& event)
 {
-    Unit* target = AI_VALUE(Unit*, "current target");
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     if (!target)
         return false;
 
@@ -3418,7 +3420,7 @@ bool MoveOutOfEnemyContactAction::isUseful()
 
 bool SetFacingTargetAction::Execute(Event& event)
 {
-    Unit* target = AI_VALUE(Unit*, "current target");
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     if (!target)
         return false;
 
@@ -3450,7 +3452,7 @@ bool SetFacingTargetAction::isPossible()
 
 bool SetBehindTargetAction::Execute(Event& event)
 {
-    Unit* target = AI_VALUE(Unit*, "current target");
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     if (!target)
         return false;
 
@@ -3491,7 +3493,7 @@ bool SetBehindTargetAction::isUseful()
     if(!MovementAction::isUseful())
         return false;
 
-    Unit* target = AI_VALUE(Unit*, "current target");
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     if (target && (target->isInFront(bot) || !bot->isInFront(target)))
     {
         // Don't move behind if the target is too far away
@@ -3507,7 +3509,7 @@ bool SetBehindTargetAction::isPossible()
     if(MovementAction::isPossible())
     {
         // Check if the target is targeting the bot
-        Unit* target = AI_VALUE(Unit*, "current target");
+        Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
         if (target)
         {
             // If the target is a player
@@ -3725,7 +3727,7 @@ bool JumpAction::Execute(ai::Event &event)
             if (!ai->HasRealPlayerMaster())
                 return false;
 
-            Unit* followTarget = AI_VALUE(Unit*, "follow target");
+            Unit* followTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "follow target"));
             if (!followTarget || !ai->IsSafe(followTarget))
                 return false;
 
@@ -3755,7 +3757,7 @@ bool JumpAction::Execute(ai::Event &event)
 
         if (options == "chase")
         {
-            Unit* chaseTarget = AI_VALUE(Unit*, "current target");
+            Unit* chaseTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
             if (!chaseTarget || !ai->IsSafe(chaseTarget))
                 return false;
 

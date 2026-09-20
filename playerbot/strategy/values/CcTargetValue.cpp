@@ -20,7 +20,7 @@ namespace
             !bot->IsInCombat() || bot->HasCharmer() || ai->IsRealPlayer()) return false;
         AiObjectContext* context = ai->GetAiObjectContext();
         // An explicit CC mark retains the usual player-directed selection.
-        if (AI_VALUE(Unit*, "rti cc target")) return false;
+        if (ai->GetUnit(AI_VALUE(ObjectGuid, "rti cc target"))) return false;
         const auto possible = AI_VALUE(std::list<ObjectGuid>, "possible targets no los");
         Unit* boss = nullptr;
         for (const auto& guid : possible)
@@ -100,7 +100,7 @@ public:
 
         AiObjectContext* context = ai->GetAiObjectContext();
 
-        Unit* markedTarget = AI_VALUE(Unit*, "rti cc target");
+        Unit* markedTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "rti cc target"));
         if (markedTarget && markedTarget->GetObjectGuid() == creature->GetObjectGuid())
         {
             // The mark overrides automatic CC heuristics, not spellbook,
@@ -111,10 +111,10 @@ public:
             return;
         }
 
-        if (AI_VALUE(Unit*,"current target") == creature)
+        if (AI_VALUE(ObjectGuid,"current target") == creature->GetObjectGuid())
             return;
 
-        if (AI_VALUE(Unit*,"rti target") == creature)
+        if (AI_VALUE(ObjectGuid,"rti target") == creature->GetObjectGuid())
             return;
 
         uint8 health = creature->GetHealthPercent();
@@ -173,10 +173,10 @@ private:
     float maxDistance;
 };
 
-Unit* CcTargetValue::Calculate()
+ObjectGuid CcTargetValue::Calculate()
 {
     if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported())
-        return nullptr;
+        return ObjectGuid();
 
     std::list<ObjectGuid> possible = AI_VALUE(std::list<ObjectGuid>,"possible targets no los");
 
@@ -188,19 +188,20 @@ Unit* CcTargetValue::Calculate()
             continue;
 
         if (ai->HasMyAura(qualifier, add))
-            return NULL;
+            return ObjectGuid();
 
         if (qualifier == "polymorph")
         {
             if (ai->HasMyAura("polymorph: pig", add))
-                return NULL;
+                return ObjectGuid();
             if (ai->HasMyAura("polymorph: turtle", add))
-                return NULL;
+                return ObjectGuid();
         }
     }
 
     Unit* assigned = nullptr;
-    if (GarrBanishAssignment(ai, qualifier, assigned)) return assigned;
+    if (GarrBanishAssignment(ai, qualifier, assigned)) return assigned ? assigned->GetObjectGuid() : ObjectGuid();
     FindTargetForCcStrategy strategy(ai, qualifier);
-    return FindTarget(&strategy);
+    Unit* target = FindTarget(&strategy);
+    return target ? target->GetObjectGuid() : ObjectGuid();
 }

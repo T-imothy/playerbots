@@ -39,14 +39,14 @@ namespace ai
 	public:
         PlagueStrikeDebuffOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "blood plague") { checkIsOwner = true; }
         std::string getName() override { return "plague strike on attacker"; }
-        Value<Unit*>* GetTargetValue() override { return context->GetValue<Unit*>("attacker without my aura", "blood plague"); }
+        Value<ObjectGuid>* GetTargetValue() override { return context->GetValue<ObjectGuid>("attacker without my aura", "blood plague"); }
 	};
 		class IcyTouchDebuffOnAttackerTrigger : public DebuffOnAttackerTrigger
 	{
 	public:
         IcyTouchDebuffOnAttackerTrigger(PlayerbotAI* ai) : DebuffOnAttackerTrigger(ai, "frost fever") { checkIsOwner = true; }
         std::string getName() override { return "icy touch on attacker"; }
-        Value<Unit*>* GetTargetValue() override { return context->GetValue<Unit*>("attacker without my aura", "frost fever"); }
+        Value<ObjectGuid>* GetTargetValue() override { return context->GetValue<ObjectGuid>("attacker without my aura", "frost fever"); }
 	};
 
     class DKPresenceTrigger : public BuffTrigger {

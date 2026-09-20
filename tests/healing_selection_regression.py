@@ -9,7 +9,7 @@ source=(root/'playerbot/strategy/values/PartyMemberToHeal.cpp').read_text()
 shared=(root/'playerbot/strategy/values/PartyMemberValue.cpp').read_text()
 methods='\n'.join([block(source,'class IsTargetOfHealingSpell')+';',
     block(source,'uint32 getIncomingdamage('),block(shared,'bool PartyMemberValue::IsTargetOfSpellCast(')] +
-    [block(source,key) for key in ('Unit* PartyMemberToHeal::Calculate(', 'bool PartyMemberToHeal::CanHealPet(',
+    [block(source,key) for key in ('ObjectGuid PartyMemberToHeal::Calculate(', 'bool PartyMemberToHeal::CanHealPet(',
      'bool PartyMemberToHeal::Check(', 'std::vector<Player*> PartyMemberToHeal::GetPartyMembers(')])
 code=r'''
 #include <algorithm>
@@ -82,7 +82,7 @@ struct Facade{bool IsFriendlyTo(Unit*,Unit* u){return u&&u->friendly;}bool IsAli
 struct Config{unsigned almostFullHealth=95,lowMana=20,criticalHealth=20,lowHealth=50;}sPlayerbotAIConfig;
 struct SpellEntryPredicate{virtual bool Check(const SpellEntry*)=0;};
 struct PartyMemberValue{PlayerbotAI* ai;Player* bot;bool IsTargetOfSpellCast(Unit*,SpellEntryPredicate&);};
-struct PartyMemberToHeal:PartyMemberValue{Unit* Calculate();bool CanHealPet(Pet*);bool Check(Unit*);std::vector<Player*> GetPartyMembers();};
+struct PartyMemberToHeal:PartyMemberValue{ObjectGuid Calculate();bool CanHealPet(Pet*);bool Check(Unit*);std::vector<Player*> GetPartyMembers();};
 #define AI_VALUE(type,key) ai->value<type>(key)
 __METHODS__
 int main(){
@@ -90,49 +90,49 @@ int main(){
  Pet pet;pet.guid=6;owner.pet=&pet;PlayerbotAI ai{&bot};Group group;group.Set({&bot,&owner});
  ai.units={{1,&bot},{2,&owner},{3,&healer},{4,&a},{5,&b},{6,&pet}};
  PartyMemberToHeal selector;selector.ai=&ai;selector.bot=&bot;
- assert(selector.Calculate()==nullptr); // full-health pet no longer fabricates work
- owner.hp=98;assert(selector.Calculate()==nullptr);owner.fullHealWound=true;
- assert(selector.Calculate()==&owner);owner.fullHealWound=false;owner.hp=100;
- owner.absorb=60000;assert(selector.Calculate()==&owner);owner.absorb=0;
- pet.hp=40;assert(selector.Calculate()==&pet);
+ assert(selector.Calculate()==ObjectGuid()); // full-health pet no longer fabricates work
+ owner.hp=98;assert(selector.Calculate()==ObjectGuid());owner.fullHealWound=true;
+ assert(selector.Calculate()==owner.GetObjectGuid());owner.fullHealWound=false;owner.hp=100;
+ owner.absorb=60000;assert(selector.Calculate()==owner.GetObjectGuid());owner.absorb=0;
+ pet.hp=40;assert(selector.Calculate()==pet.GetObjectGuid());
  SpellEntry heal;Spell healing{&heal,{pet.guid,0}};healer.casts[0]=&healing;ai.nearest={healer.guid};
- assert(selector.Calculate()==nullptr); // the pet, not its owner, is already being healed
- healing.m_targets.unit=owner.guid;assert(selector.Calculate()==&pet);
- healing.m_targets.unit=pet.guid;healing.finished=true;assert(selector.Calculate()==&pet);healing.finished=false;
- healer.phase=2;assert(selector.Calculate()==&pet);healer.phase=1;healer.teleport=true;assert(selector.Calculate()==&pet);healer.teleport=false;
- ai.nearest.clear();pet.alive=false;assert(selector.Calculate()==nullptr);pet.alive=true;
- pet.instance=2;assert(selector.Calculate()==nullptr);pet.instance=1;pet.healing=-100;assert(selector.Calculate()==nullptr);pet.healing=0;
- pet.petType=MINI_PET;assert(selector.Calculate()==nullptr);pet.petType=0;pet.hp=100;
+ assert(selector.Calculate()==ObjectGuid()); // the pet, not its owner, is already being healed
+ healing.m_targets.unit=owner.guid;assert(selector.Calculate()==pet.GetObjectGuid());
+ healing.m_targets.unit=pet.guid;healing.finished=true;assert(selector.Calculate()==pet.GetObjectGuid());healing.finished=false;
+ healer.phase=2;assert(selector.Calculate()==pet.GetObjectGuid());healer.phase=1;healer.teleport=true;assert(selector.Calculate()==pet.GetObjectGuid());healer.teleport=false;
+ ai.nearest.clear();pet.alive=false;assert(selector.Calculate()==ObjectGuid());pet.alive=true;
+ pet.instance=2;assert(selector.Calculate()==ObjectGuid());pet.instance=1;pet.healing=-100;assert(selector.Calculate()==ObjectGuid());pet.healing=0;
+ pet.petType=MINI_PET;assert(selector.Calculate()==ObjectGuid());pet.petType=0;pet.hp=100;
  owner.hp=20;Unit enemy;enemy.damage=50;owner.attackers={&enemy};ai.preheal=true;
  assert(getIncomingdamage(&owner)==20);owner.attackerReads=0;
- assert(selector.Calculate()==&owner&&owner.attackerReads==1); // saturate, never wrap into healthy range
+ assert(selector.Calculate()==owner.GetObjectGuid()&&owner.attackerReads==1); // saturate, never wrap into healthy range
  enemy.damage=std::numeric_limits<float>::max();assert(getIncomingdamage(&owner)==20);
  enemy.damage=-5;assert(getIncomingdamage(&owner)==0);enemy.damage=std::numeric_limits<float>::quiet_NaN();assert(getIncomingdamage(&owner)==0);
- enemy.damage=50;ai.preheal=false;owner.attackerReads=0;assert(selector.Calculate()==&owner&&owner.attackerReads==0);
- owner.phase=2;assert(selector.Calculate()==nullptr);owner.phase=1;owner.teleport=true;assert(selector.Calculate()==nullptr);owner.teleport=false;
- owner.friendly=false;assert(selector.Calculate()==nullptr);owner.friendly=true;owner.maxhp=0;assert(selector.Calculate()==nullptr);owner.maxhp=100;
- bot.bg=true;owner.distance=25;assert(selector.Calculate()==&owner);owner.distance=40;assert(selector.Calculate()==&owner);owner.distance=41;assert(selector.Calculate()==nullptr);bot.bg=false;assert(selector.Calculate()==nullptr);owner.distance=25;assert(selector.Calculate()==&owner);owner.distance=0;
- owner.hp=100;ai.rpg.unit=&pet;pet.hp=40;pet.instance=2;assert(selector.Calculate()==nullptr);pet.instance=1;assert(selector.Calculate()==&pet);ai.rpg.unit=nullptr;
+ enemy.damage=50;ai.preheal=false;owner.attackerReads=0;assert(selector.Calculate()==owner.GetObjectGuid()&&owner.attackerReads==0);
+ owner.phase=2;assert(selector.Calculate()==ObjectGuid());owner.phase=1;owner.teleport=true;assert(selector.Calculate()==ObjectGuid());owner.teleport=false;
+ owner.friendly=false;assert(selector.Calculate()==ObjectGuid());owner.friendly=true;owner.maxhp=0;assert(selector.Calculate()==ObjectGuid());owner.maxhp=100;
+ bot.bg=true;owner.distance=25;assert(selector.Calculate()==owner.GetObjectGuid());owner.distance=40;assert(selector.Calculate()==owner.GetObjectGuid());owner.distance=41;assert(selector.Calculate()==ObjectGuid());bot.bg=false;assert(selector.Calculate()==ObjectGuid());owner.distance=25;assert(selector.Calculate()==owner.GetObjectGuid());owner.distance=0;
+ owner.hp=100;ai.rpg.unit=&pet;pet.hp=40;pet.instance=2;assert(selector.Calculate()==ObjectGuid());pet.instance=1;assert(selector.Calculate()==pet.GetObjectGuid());ai.rpg.unit=nullptr;
  // Upstream pending loot suppresses only incidental RPG healing. Real party
  // healing, native Check validation and candidate deduplication remain intact.
  pet.hp=100;Unit npc;npc.guid=77;npc.hp=40;ai.rpg.unit=&npc;
- ai.lootPossible=true;assert(selector.Calculate()==nullptr);
- owner.hp=20;assert(selector.Calculate()==&owner);owner.hp=100;
- ai.lootPossible=false;assert(selector.Calculate()==&npc);
- npc.phase=2;assert(selector.Calculate()==nullptr);npc.phase=1;
+ ai.lootPossible=true;assert(selector.Calculate()==ObjectGuid());
+ owner.hp=20;assert(selector.Calculate()==owner.GetObjectGuid());owner.hp=100;
+ ai.lootPossible=false;assert(selector.Calculate()==npc.GetObjectGuid());
+ npc.phase=2;assert(selector.Calculate()==ObjectGuid());npc.phase=1;
  ai.rpg.unit=nullptr;
  // De-duplicate selected+group candidates before distributing two healers.
  owner.pet=nullptr;a.hp=10;b.hp=20;healer.healer=true;group.Set({&healer,&bot,&a,&b});bot.selection=a.guid;
- assert(selector.Calculate()==&a);healer.maxmana=0;assert(selector.Calculate()==&a);healer.maxmana=100;
+ assert(selector.Calculate()==a.GetObjectGuid());healer.maxmana=0;assert(selector.Calculate()==a.GetObjectGuid());healer.maxmana=100;
  // Low-health cloth wearer outranks a much healthier tank with more missing HP.
  bot.selection=0;a.hp=30;b.maxhp=10000;b.hp=9000;b.tank=true;
- assert(selector.Calculate()==&a); // healer index must stay within the urgent band
+ assert(selector.Calculate()==a.GetObjectGuid()); // healer index must stay within the urgent band
  // An incoming cast is not a guarantee that a critically injured player is safe.
  a.hp=10;healing.m_targets.unit=a.guid;healer.casts[0]=&healing;ai.nearest={healer.guid};
- assert(selector.Calculate()==&a);ai.nearest.clear();b.tank=false;b.maxhp=100;
+ assert(selector.Calculate()==a.GetObjectGuid());ai.nearest.clear();b.tank=false;b.maxhp=100;
  // Absorb amount competes with ordinary missing health; actual critical health wins.
  healer.maxmana=0;ai.preheal=false;a.hp=100;a.absorb=60000;b.hp=50;
- assert(selector.Calculate()==&a);b.hp=10;assert(selector.Calculate()==&b);
+ assert(selector.Calculate()==a.GetObjectGuid());b.hp=10;assert(selector.Calculate()==b.GetObjectGuid());
  a.absorb=0;a.hp=10;b.hp=20;healer.maxmana=100;
  bot.selection=0;ai.preheal=true;ai.nearest.clear();a.attackers={&enemy};b.attackers={&enemy};
  a.attackerReads=b.attackerReads=0;selector.Calculate();assert(a.attackerReads==1&&b.attackerReads==1);

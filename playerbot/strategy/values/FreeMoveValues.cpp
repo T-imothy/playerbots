@@ -12,7 +12,7 @@ GuidPosition FreeMoveCenterValue::Calculate()
     if (ai->HasStrategy("follow", ai->GetState()) ||
         ai->HasStrategy("wander", ai->GetState()))
     {
-        Unit* followTarget = AI_VALUE(Unit*, "follow target");
+        Unit* followTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "follow target"));
 
         if (!followTarget)
             return bot;
@@ -59,10 +59,10 @@ float FreeMoveRangeValue::Calculate()
 
     // CMaNGOS: permit the designated crowd-control target's spell range
     // instead of pinning the caster to its ordinary follow radius.
-    if (AI_VALUE(Unit*, "rti cc target"))
+    if (ai->GetUnit(AI_VALUE(ObjectGuid, "rti cc target")))
         return ai->GetRange("spell");
 
-    Unit* followTarget = AI_VALUE(Unit*, "follow target");
+    Unit* followTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "follow target"));
 
     if (!followTarget || followTarget == bot)
         return 0;

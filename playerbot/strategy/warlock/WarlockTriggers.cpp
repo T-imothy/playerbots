@@ -48,7 +48,7 @@ bool DrainSoulTrigger::IsActive()
 {
 #ifdef MANGOSBOT_TWO
     // Execute damage is independent of shard farming and item cheats.
-    Unit* target = AI_VALUE(Unit*, "current target");
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     if (ai->HasStrategy("affliction", BotState::BOT_STATE_COMBAT) && MeleeCombatTarget(ai, target) && target->GetHealthPercent() <= 25.0f)
         return true;
 #endif
@@ -116,7 +116,7 @@ bool NoCurseTrigger::IsActive()
 bool NoCurseOnAttackerTrigger::IsActive()
 {
     std::list<ObjectGuid> attackers = AI_VALUE(std::list<ObjectGuid>, "possible attack targets");
-    Unit* currentTarget = AI_VALUE(Unit*, "current target");
+    Unit* currentTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); ++i)
     {
         Unit* attacker = ai->GetUnit(*i);
@@ -141,7 +141,7 @@ bool NoCurseOnAttackerTrigger::IsActive()
 
 bool FearPvpTrigger::IsActive()
 {
-    Unit* target = AI_VALUE(Unit*, "current target");
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
 	if (target && target->IsPlayer())
 	{
 		// Check if low health
@@ -178,7 +178,7 @@ bool FearPvpTrigger::IsActive()
 
 bool ConflagrateTrigger::IsActive()
 {
-	Unit* target = AI_VALUE(Unit*, "current target");
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
 	if (target)
 	{
 		// Check if immolate in target
@@ -217,12 +217,12 @@ bool DemonicSacrificeTrigger::IsActive()
 
 bool SoulLinkTrigger::IsActive()
 {
-	return ai->HasSpell(19028) && !ai->HasAura(19028, bot) && AI_VALUE(Unit*, "pet target");
+    return ai->HasSpell(19028) && !ai->HasAura(19028, bot) && ai->GetUnit(AI_VALUE(ObjectGuid, "pet target"));
 }
 
 bool NoSpecificPetTrigger::IsActive()
 {
-    Unit* pet = AI_VALUE(Unit*, "pet target");
+    Unit* pet = ai->GetUnit(AI_VALUE(ObjectGuid, "pet target"));
     if (pet)
     {
         return pet->GetEntry() != entry;

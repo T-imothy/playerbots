@@ -47,7 +47,7 @@ Unit* DungeonAddTargetAction::GetThekalTarget()
         for (unsigned index : {1u, 2u, 0u})
             if (std::find(targets.begin(), targets.end(), trio[index]) != targets.end()) return trio[index];
     }
-    Unit* current = AI_VALUE(Unit*, "current target");
+    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     if (std::find(targets.begin(), targets.end(), current) != targets.end() &&
         current->GetHealthPercent() + 5 >= highest->GetHealthPercent()) return current;
     return highest;

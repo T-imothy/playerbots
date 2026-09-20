@@ -204,7 +204,7 @@ bool MountValue::IsValidLocation(Player* bot)
 
 uint32 CurrentMountSpeedValue::Calculate()
 {
-    Unit* unit = AI_VALUE(Unit*, getQualifier());
+    Unit* unit = ai->GetUnit(AI_VALUE(ObjectGuid, getQualifier()));
 
     if (!unit)
         return 0;
@@ -213,6 +213,9 @@ uint32 CurrentMountSpeedValue::Calculate()
 
     for (uint32 auraType = SPELL_AURA_BIND_SIGHT; auraType < TOTAL_AURAS; auraType++)
     {
+        if (!unit->HasAuraType((AuraType)auraType))
+            continue;
+
         Unit::AuraList const& auras = unit->GetAurasByType((AuraType)auraType);
 
         if (auras.empty())

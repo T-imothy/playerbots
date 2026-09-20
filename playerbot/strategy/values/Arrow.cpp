@@ -17,7 +17,7 @@ WorldLocation ArrowFormation::GetLocationInternal()
     float offset = 0;
     float range = ai->GetRange("follow");
 
-    Unit* followTarget = AI_VALUE(Unit*, "follow target");
+    Unit* followTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "follow target"));
     if (!ai->IsSafe(followTarget))
         return Formation::NullLocation;
 
@@ -82,7 +82,7 @@ FormationSlot* ArrowFormation::FindSlot(Player* member)
 
 void ArrowFormation::FillSlotsExceptMaster()
 {
-    Unit* followTarget = AI_VALUE(Unit*, "follow target");
+    Unit* followTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "follow target"));
     Group* group = bot->GetGroup();
     GroupReference *gref = group->GetFirstMember();
     uint32 index = 0;
@@ -103,7 +103,7 @@ void ArrowFormation::FillSlotsExceptMaster()
 
 void ArrowFormation::AddMasterToSlot()
 {
-    Unit* followTarget = AI_VALUE(Unit*, "follow target");
+    Unit* followTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "follow target"));
     Group* group = bot->GetGroup();
     GroupReference *gref = group->GetFirstMember();
     uint32 index = 0;

@@ -61,10 +61,10 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
     // Manual attack commands and configured raid marks remain authoritative.
     Unit* commanded = ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"));
     if (valid(commanded)) return nullptr;
-    Unit* marked = AI_VALUE(Unit*, "rti target");
+    Unit* marked = ai->GetUnit(AI_VALUE(ObjectGuid, "rti target"));
     if (valid(marked)) return nullptr;
 
-    Unit* current = AI_VALUE(Unit*, "current target");
+    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     Unit* selected = nullptr;
     unsigned priority = 0;
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
@@ -86,7 +86,7 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
 bool MoltenCorePriorityTargetAction::isUseful()
 {
     Unit* target = GetTarget();
-    return target && target != AI_VALUE(Unit*, "current target");
+    return target && target != ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
 }
 
 bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)

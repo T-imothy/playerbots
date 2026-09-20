@@ -314,7 +314,7 @@ namespace ai
         bool isUseful() override
         {
             if (!CastBuffSpellAction::isUseful()) return false;
-            Unit* pet = AI_VALUE(Unit*, "pet target");
+            Unit* pet = ai->GetUnit(AI_VALUE(ObjectGuid, "pet target"));
             if (pet && pet->IsAlive())
             {
                 return pet->GetEntry() != 416;
@@ -333,7 +333,7 @@ namespace ai
         bool isUseful() override
         {
             if (!CastSpellAction::isUseful()) return false;
-            Unit* pet = AI_VALUE(Unit*, "pet target");
+            Unit* pet = ai->GetUnit(AI_VALUE(ObjectGuid, "pet target"));
             if (pet && pet->IsAlive())
             {
                 return pet->GetEntry() != 1863;
@@ -352,7 +352,7 @@ namespace ai
         bool isUseful() override
         {
             if (!CastSpellAction::isUseful()) return false;
-            Unit* pet = AI_VALUE(Unit*, "pet target");
+            Unit* pet = ai->GetUnit(AI_VALUE(ObjectGuid, "pet target"));
             if (pet && pet->IsAlive())
             {
                 return pet->GetEntry() != 417;
@@ -371,7 +371,7 @@ namespace ai
         bool isUseful() override
         {
             if (!CastSpellAction::isUseful()) return false;
-            Unit* pet = AI_VALUE(Unit*, "pet target");
+            Unit* pet = ai->GetUnit(AI_VALUE(ObjectGuid, "pet target"));
             if (pet && pet->IsAlive())
             {
                 return pet->GetEntry() != 1860;
@@ -390,7 +390,7 @@ namespace ai
         bool isUseful() override
         {
             if (!CastSpellAction::isUseful()) return false;
-            Unit* pet = AI_VALUE(Unit*, "pet target");
+            Unit* pet = ai->GetUnit(AI_VALUE(ObjectGuid, "pet target"));
             if (pet && pet->IsAlive())
             {
                 return pet->GetEntry() != 17252;

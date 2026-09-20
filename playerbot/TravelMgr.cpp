@@ -2920,19 +2920,27 @@ std::vector<std::pair<WorldPosition, float>> TravelMgr::sqMapTransDistances(cons
 
 float TravelMgr::MapTransDistance(const WorldPosition& start, const WorldPosition& end, bool toMap) const
 {
-    //These are the portals on the end map that start can reach.
-    std::vector<std::pair<WorldPosition, float>> portals = sqMapTransDistances(start, end.getMapId());
-
-    if (portals.empty())
-        return FLT_MAX;
-
+    // Compute the same minimum directly; this scalar query does not need an
+    // allocated vector containing every portal candidate.
     float minsqDist = FLT_MAX;
-
-    for (auto& [portal, sqDistanceFromStartToPortal] : portals)
+    if (start.getMapId() == end.getMapId())
     {
-        float sqDist = sqDistanceFromStartToPortal + portal.sqDistance2d(end);
+        float sqDist = start.sqDistance2d(end);
         if (sqDist < minsqDist)
             minsqDist = sqDist;
+    }
+    else
+    {
+        auto const transfers = mapTransfersMap.find({ start.getMapId(), end.getMapId() });
+        if (transfers == mapTransfersMap.end() || transfers->second.empty())
+            return FLT_MAX;
+        for (auto const& transfer : transfers->second)
+        {
+            WorldPosition const portal = transfer.GetPointTo();
+            float sqDist = transfer.sqDist(start, portal) + portal.sqDistance2d(end);
+            if (sqDist < minsqDist)
+                minsqDist = sqDist;
+        }
     }
 
     return sqrt(minsqDist);

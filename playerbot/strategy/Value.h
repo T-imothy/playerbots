@@ -256,44 +256,12 @@ namespace ai
         }
     };
 
-    class UnitCalculatedValue : public CalculatedValue<Unit*>
+    class UnitCalculatedValue : public CalculatedValue<ObjectGuid>
     {
     public:
-        UnitCalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) :
-            CalculatedValue<Unit*>(ai, name, checkInterval) {}
+        UnitCalculatedValue(PlayerbotAI* ai, std::string name = "value", int checkInterval = 1) : CalculatedValue<ObjectGuid>(ai, name, checkInterval) {}
 
-        // The base class caches its result for up to checkInterval/2 seconds.
-        // Here that result is a raw Unit* which can outlive its object: if the
-        // creature dies inside that window, the next read follows a freed
-        // pointer. Crashed exactly that way on 2026-08-06, in
-        // AttackAction::IsTargetValid via IsFriendlyTo.
-        //
-        // So the guid is carried alongside and a cached read is resolved
-        // through the object accessor instead. If the object is gone the
-        // result is nullptr, which every caller already handles - they all
-        // null-check. The calculation itself stays on its interval.
-        //
-        // The interval condition is copied from CalculatedValue::Get; if it
-        // changes there it has to be carried over here.
-        //
-        // Defined in Value.cpp: PlayerbotAI is only forward declared here.
-        Unit* Get() override;
-        Unit* LazyGet() override;
-
-        void Set(Unit* unit) override
-        {
-            this->value = unit;
-            m_guid = unit ? unit->GetObjectGuid() : ObjectGuid();
-        }
-
-        virtual std::string Format() override
-        {
-            Unit* unit = this->Calculate();
-            return unit ? unit->GetName() : "<none>";
-        }
-
-    protected:
-        ObjectGuid m_guid;
+        virtual std::string Format() override;
     };
 
     class CDPairCalculatedValue : public CalculatedValue<CreatureDataPair const*>
@@ -399,22 +367,16 @@ namespace ai
         T defaultValue;
     };
 
-    class UnitManualSetValue : public ManualSetValue<Unit*>
+    class UnitManualSetValue : public ManualSetValue<ObjectGuid>
     {
     public:
-        UnitManualSetValue(PlayerbotAI* ai, Unit* defaultValue, std::string name = "value") :
-            ManualSetValue<Unit*>(ai, defaultValue, name) {}
+        UnitManualSetValue(PlayerbotAI* ai, ObjectGuid defaultValue, std::string name = "value") :
+            ManualSetValue<ObjectGuid>(ai, defaultValue, name) {}
 
-        // Current and pull targets store GUIDs through Set/Get. Dispatch through
-        // those overrides so reset and lazy access cannot use stale storage.
-        Unit* LazyGet() override { return Get(); }
+        ObjectGuid LazyGet() override { return Get(); }
         void Reset() override { Set(defaultValue); }
 
-        virtual std::string Format() override
-        {
-            Unit* unit = Get();
-            return unit ? unit->GetName() : "<none>";
-        }
+        virtual std::string Format() override;
     };
 
     class GuidPositionManualSetValue : public ManualSetValue<GuidPosition>

@@ -6,25 +6,25 @@
 
 using namespace ai;
 
-Unit* RighteousDefenseTargetValue::Calculate()
+ObjectGuid RighteousDefenseTargetValue::Calculate()
 {
 #ifndef MANGOSBOT_ZERO
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
-        !bot->GetGroup() || !ai->IsTank(bot)) return nullptr;
-    Unit* enemy = AI_VALUE(Unit*, "current target");
+        !bot->GetGroup() || !ai->IsTank(bot)) return ObjectGuid();
+    Unit* enemy = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || !enemy->IsInCombat() || enemy->IsPlayer() ||
-        enemy->HasCharmer() || !bot->IsInMap(enemy)) return nullptr;
+        enemy->HasCharmer() || !bot->IsInMap(enemy)) return ObjectGuid();
     Unit* victim = enemy->GetVictim();
     if (!victim || victim == bot || !victim->IsPlayer() || !victim->IsInWorld() || !victim->IsAlive() ||
-        victim->HasCharmer() || !bot->IsInMap(victim)) return nullptr;
+        victim->HasCharmer() || !bot->IsInMap(victim)) return ObjectGuid();
     Player* member = static_cast<Player*>(victim);
     if (member->GetGroup() != bot->GetGroup() || member->IsBeingTeleported() || !member->GetSession() ||
-        member->GetSession()->isLogingOut() || (ai->IsTank(member) && !ShouldSwapEncounterTank(ai, enemy))) return nullptr;
+        member->GetSession()->isLogingOut() || (ai->IsTank(member) && !ShouldSwapEncounterTank(ai, enemy))) return ObjectGuid();
     const SpellEntry* spell = sServerFacade.LookupSpellInfo(31789);
     // Both native scripts select up to three attackers OF A FRIENDLY UNIT.
     // Sending the enemy itself is not equivalent to taunting that enemy.
-    return spell && bot->CanAssistSpell(member, spell) && member->getAttackers().count(enemy) ? member : nullptr;
+    return spell && bot->CanAssistSpell(member, spell) && member->getAttackers().count(enemy) ? member->GetObjectGuid() : ObjectGuid();
 #else
-    return nullptr;
+    return ObjectGuid();
 #endif
 }

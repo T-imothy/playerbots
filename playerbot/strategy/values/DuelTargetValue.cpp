@@ -4,8 +4,8 @@
 
 using namespace ai;
 
-Unit* DuelTargetValue::Calculate()
+ObjectGuid DuelTargetValue::Calculate()
 {
-    if (!bot->m_duel || bot->m_duel->opponent.IsEmpty()) return nullptr;
-    return ObjectAccessor::GetUnit(*bot, bot->m_duel->opponent);
+    if (!bot->m_duel || bot->m_duel->opponent.IsEmpty()) return ObjectGuid();
+    return bot->m_duel->opponent;
 }

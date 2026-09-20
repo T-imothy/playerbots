@@ -78,7 +78,7 @@ bool AttackMyTargetAction::Execute(Event& event)
 bool AttackRTITargetAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    Unit* rtiTarget = AI_VALUE(Unit*, "rti target");
+    Unit* rtiTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "rti target"));
 
     if (rtiTarget && rtiTarget->IsInWorld() && rtiTarget->GetMapId() == bot->GetMapId())
     {
@@ -145,13 +145,13 @@ bool AttackAction::Attack(Player* requester, Unit* target)
         ObjectGuid guid = target->GetObjectGuid();
         bot->SetSelectionGuid(target->GetObjectGuid());
 
-        Unit* oldTarget = AI_VALUE(Unit*, "current target");
+        Unit* oldTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
         if(oldTarget)
         {
-            SET_AI_VALUE(Unit*, "old target", oldTarget);
+            SET_AI_VALUE(ObjectGuid, "old target", oldTarget->GetObjectGuid());
         }
 
-        SET_AI_VALUE(Unit*, "current target", target);
+        SET_AI_VALUE(ObjectGuid, "current target", target->GetObjectGuid());
         AI_VALUE(LootObjectStack*, "available loot")->Add(guid);
 
         const bool isWaitingForAttack = WaitForAttackStrategy::ShouldWait(ai);
@@ -271,11 +271,11 @@ bool AttackAction::IsTargetValid(Player* requester, Unit* target)
 
 bool AttackDuelOpponentAction::isUseful()
 {
-    return AI_VALUE(Unit*, "duel target");
+    return ai->GetUnit(AI_VALUE(ObjectGuid, "duel target"));
 }
 
 bool AttackDuelOpponentAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
-    return Attack(requester, AI_VALUE(Unit*, "duel target"));
+    return Attack(requester, ai->GetUnit(AI_VALUE(ObjectGuid, "duel target")));
 }

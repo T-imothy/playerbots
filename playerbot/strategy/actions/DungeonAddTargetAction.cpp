@@ -80,7 +80,7 @@ Unit* DungeonAddTargetAction::GetTarget()
         return unit && unit->IsInWorld() && unit->IsAlive() && bot->IsInMap(unit) && !unit->HasCharmer() &&
             !sServerFacade.IsFriendlyTo(unit, bot) && bot->GetDistance(unit) <= sPlayerbotAIConfig.sightDistance;
     };
-    if (commanded(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"))) || commanded(AI_VALUE(Unit*, "rti target"))) return nullptr;
+    if (commanded(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"))) || commanded(ai->GetUnit(AI_VALUE(ObjectGuid, "rti target")))) return nullptr;
     if (bot->GetMapId() == 309)
         if (Unit* trio = GetThekalTarget()) return trio;
     if (bot->GetMapId() == 533)
@@ -103,7 +103,7 @@ Unit* DungeonAddTargetAction::GetTarget()
     };
     Unit* owner = nullptr;
     Unit* selected = nullptr;
-    Unit* current = AI_VALUE(Unit*, "current target");
+    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     const auto possibleTargets = AI_VALUE(std::list<ObjectGuid>, "possible targets");
     if (engagedStaticAdd)
     {
@@ -223,5 +223,5 @@ Unit* DungeonAddTargetAction::GetTarget()
 bool DungeonAddTargetAction::isUseful()
 {
     Unit* target = GetTarget();
-    return target && target != AI_VALUE(Unit*, "current target");
+    return target && target != ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
 }
