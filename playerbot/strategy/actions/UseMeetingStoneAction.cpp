@@ -208,8 +208,104 @@ void SummonAction::CancelAutonomousQueues(Player* bot)
     }
 }
 
+bool SummonAction::TeleportForMaster(Player* requester, Player *summoner, Player *player)
+{
+    if (!requester || !summoner || !player || player != bot || player->isRealPlayer() ||
+        !summoner->IsInWorld() || !player->IsInWorld() ||
+        !summoner->GetSession() || !player->GetSession() ||
+        summoner->GetSession()->isLogingOut() || player->GetSession()->isLogingOut())
+        return false;
+
+    // Never attach a passenger manually after starting a far teleport. That
+    // mixes world coordinates with transport offsets before the worldport ACK.
+    if (summoner->GetTransport() || summoner->IsTaxiFlying())
+    {
+        ai->TellPlayerNoFacing(requester, "Your destination is moving on a flight or transport. Summon me again after you disembark.");
+        return false;
+    }
+
+    // A near teleport cannot transfer between two instances of the same map.
+    // Let the regular instance-entry/transition system handle that case.
+    if (summoner->GetMapId() == player->GetMapId() && summoner->GetMap() != player->GetMap() &&
+        summoner->GetMap()->Instanceable())
+        return false;
+    if (summoner->GetMap() != player->GetMap() && !summoner->GetMap()->CanEnter(player))
+        return false;
+
+    if (!summoner->IsBeingTeleported() && !player->IsBeingTeleported() && summoner != player)
+    {
+        float followAngle = GetFollowAngle();
+        for (double angle = followAngle - M_PI; angle <= followAngle + M_PI; angle += M_PI / 4)
+        {
+            uint32 mapId = summoner->GetMapId();
+            float x = summoner->GetPositionX() + cos(angle) * ai->GetRange("follow");
+            float y = summoner->GetPositionY() + sin(angle) * ai->GetRange("follow");
+            float z = summoner->GetPositionZ();
+            summoner->UpdateGroundPositionZ(x, y, z);
+
+            if (!summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
+            {
+                x = summoner->GetPositionX();
+                y = summoner->GetPositionY();
+                z = summoner->GetPositionZ();
+            }
+
+            if (summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
+            {
+                bool const revive = sServerFacade.UnitIsDead(player);
+
+                // Only the explicitly summoned bot is interrupted. Native cleanup
+                // restores possession/mover and taxi state; TeleportTo detaches a
+                // transport passenger and handles combat, pets and BG departure.
+                player->BreakCharmIncoming();
+                player->BreakCharmOutgoing();
+                if (player->HasCharmer())
+                {
+                    ai->TellPlayerNoFacing(requester, "The server could not release my controlling charm.");
+                    return false;
+                }
+                if (!player->TaxiFlightInterrupt() && player->IsTaxiFlying())
+                    player->OnTaxiFlightEject();
+                player->InterruptNonMeleeSpells(false);
+
+                // Combat does not block an explicit convenience summon. The native
+                // teleport stops the summoned bot's combat; the requester stays in combat.
+                // TeleportTo owns access checks, pets and transfer state. True
+                // means accepted (possibly delayed), not a completed worldport.
+                if (!player->TeleportTo(mapId, x, y, z, summoner->GetOrientation()))
+                {
+                    ai->TellPlayerNoFacing(requester, "The server refused the summon destination.");
+                    return false;
+                }
+                CancelAutonomousQueues(bot);
+                if (!summoner->InBattleGround())
+                    ai->ChangeStrategy("-lfg,-bg", BotState::BOT_STATE_NON_COMBAT);
+                if (revive)
+                    ai->QueueSummonRevival(mapId, x, y, z, summoner->GetInstanceId());
+                player->GetMotionMaster()->Clear();
+
+                if(ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))
+                    SET_AI_VALUE2(PositionEntry, "pos", "stay", PositionEntry(x, y, z, mapId));
+                if (ai->HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT))
+                    SET_AI_VALUE2(PositionEntry, "pos", "guard", PositionEntry(x, y, z, mapId));
+
+                return true;
+            }
+        }
+    }
+
+    if(summoner != player)
+        ai->TellPlayerNoFacing(requester, "Not enough place to summon");
+    return false;
+}
+
 bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 {
+    // Explicit player summons use our acknowledged landing/revival transaction.
+    // Keep upstream request handling below for bot-originated summons.
+    if (requester && requester->isRealPlayer())
+        return TeleportForMaster(requester, summoner, player);
+
     if (!requester || !summoner || !player || player != bot || player->isRealPlayer() ||
         !summoner->IsInWorld() || !player->IsInWorld() ||
         !summoner->GetSession() || !player->GetSession() ||
@@ -325,7 +421,7 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
                 CancelAutonomousQueues(player);
                 if (!summoner->InBattleGround())
                     ai->ChangeStrategy("-lfg,-bg", BotState::BOT_STATE_NON_COMBAT);
-                    
+
                 if(ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))
                     SET_AI_VALUE2(PositionEntry, "pos", "stay", PositionEntry(x, y, z, mapId));
                 if (ai->HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT))
@@ -354,6 +450,6 @@ bool AcceptSummonAction::Execute(Event& event)
     response << uint8(1);
 #endif
     bot->GetSession()->HandleSummonResponseOpcode(response);
-    
+
     return true;
 }

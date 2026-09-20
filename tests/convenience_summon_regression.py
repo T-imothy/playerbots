@@ -6,6 +6,8 @@ from behavior_regression import block
 
 root = Path(__file__).resolve().parents[1]
 source = (root / 'playerbot/strategy/actions/UseMeetingStoneAction.cpp').read_text()
+dispatch = block(source, 'bool SummonAction::Teleport(')
+assert 'requester->isRealPlayer()' in dispatch and 'return TeleportForMaster(requester, summoner, player);' in dispatch
 inn = block(source, 'bool SummonAction::SummonUsingNpcs(')
 for forbidden in ('SendSpellCooldown', 'IsSpellReady', 'HasItemCount', '8690', '6948'):
     assert forbidden not in inn, forbidden
@@ -94,6 +96,16 @@ int main(){
  bot.teleporting=false;bot.mapId=1;ai.CompleteSummonRevival();
  assert(bot.resurrections==1 && bot.bones==1 && !ai.pendingSummonRevival.active);
  ai.CompleteSummonRevival();assert(bot.resurrections==1);
+ // Same-instance dungeon death: revival only after the teleport ACK.
+ reset();leader.mapId=0;leader.map=&from;bot.alive=false;
+ assert(action.Teleport(&leader,&leader,&bot)&&ai.pendingSummonRevival.active);
+ ai.CompleteSummonRevival();assert(!bot.alive);
+ bot.teleporting=false;ai.CompleteSummonRevival();assert(bot.alive&&bot.resurrections==1);
+ // Another party member resurrecting during the transfer must not resurrect twice.
+ reset();bot.alive=false;assert(action.Teleport(&leader,&leader,&bot));
+ bot.alive=true;bot.teleporting=false;bot.mapId=1;ai.CompleteSummonRevival();
+ assert(bot.resurrections==0&&!ai.pendingSummonRevival.active);
+
  reset();bot.alive=false;ai.QueueSummonRevival(1,0,0,0);ai.CompleteSummonRevival();assert(bot.resurrections==0);
  reset();bot.alive=false;ai.QueueSummonRevival(0,0,0,0);ai.pendingSummonRevival.expires=0;
  ai.CompleteSummonRevival();assert(bot.resurrections==0);
@@ -105,7 +117,7 @@ int main(){
  reset();bot.alive=false;bot.instanceId=7;ai.QueueSummonRevival(0,0,0,0,7);ai.CompleteSummonRevival();assert(bot.resurrections==1);
  std::cout<<"PASS: convenience summon and post-ACK revival, combat and controlled scenarios; inn hearth independence\n";
 }
-'''.replace('__TELEPORT__', block(source, 'bool SummonAction::Teleport(')).replace(
+'''.replace('__TELEPORT__', block(source, 'bool SummonAction::TeleportForMaster(').replace('SummonAction::TeleportForMaster(', 'SummonAction::Teleport(', 1)).replace(
     '__QUEUE__', block(ai_source, 'void PlayerbotAI::QueueSummonRevival(')).replace(
     '__COMPLETE__', block(ai_source, 'void PlayerbotAI::CompleteSummonRevival('))
 with tempfile.TemporaryDirectory(prefix='mantech-convenience-summon-') as tmp:
