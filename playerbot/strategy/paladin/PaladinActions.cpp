@@ -4,6 +4,20 @@
 
 using namespace ai;
 
+namespace
+{
+    bool HasOwnedBlessing(PlayerbotAI* ai, Unit* target, const std::vector<std::string>& blessings)
+    {
+        for (const std::string& blessing : blessings)
+        {
+            if (ai->HasMyAura(blessing, target) || ai->HasMyAura("greater " + blessing, target))
+                return true;
+        }
+
+        return false;
+    }
+}
+
 std::string ai::SelectPaladinAura(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
@@ -96,6 +110,12 @@ std::string CastBlessingAction::GetBlessingForTarget(Unit* target)
     if (target)
     {
         std::vector<std::string> possibleBlessings = GetPossibleBlessingsForTarget(target);
+        // Revalidate ownership at execution time so another action pass cannot
+        // replace this paladin's active Wisdom/Salvation with a lower-priority
+        // blessing such as Might.
+        if (HasOwnedBlessing(ai, target, possibleBlessings))
+            return chosenBlessing;
+
         for (const std::string& blessing : possibleBlessings)
         {
             const std::string greaterBlessing = "greater " + blessing;
@@ -299,6 +319,12 @@ std::string CastBlessingOnPartyAction::GetBlessingForTarget(Unit* target)
     if (target)
     {
         std::vector<std::string> possibleBlessings = GetPossibleBlessingsForTarget(target);
+        // Multiple paladins may each contribute one blessing, but this
+        // paladin must never overwrite its own active blessing when the
+        // cached party target survives into the next action pass.
+        if (HasOwnedBlessing(ai, target, possibleBlessings))
+            return chosenBlessing;
+
         for (const std::string& blessing : possibleBlessings)
         {
             // Don't cast greater salvation on possible tank classes
