@@ -98,12 +98,12 @@ bool AttackEnemyPlayerAction::isUseful()
 
 bool AttackEnemyFlagCarrierAction::isUseful()
 {
-    Unit* target = AI_VALUE(Unit*, "enemy flag carrier");
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "enemy flag carrier"));
     if (ActualBattlegroundType(bot) == BATTLEGROUND_WS && !ai->HasRealPlayerMaster() &&
-        target != AI_VALUE(Unit*, "enemy player target")) return false;
+        target != ai->GetUnit(AI_VALUE(ObjectGuid, "enemy player target"))) return false;
     return target && target->IsInWorld() && target->IsAlive() && bot->IsInMap(target) &&
         !sServerFacade.IsFriendlyTo(bot, target) && !IsBattlegroundFlagCarrier(bot) &&
-        target != AI_VALUE(Unit*, "current target") && bot->IsWithinDistInMap(target, 75.0f);
+        target != ai->GetUnit(AI_VALUE(ObjectGuid, "current target")) && bot->IsWithinDistInMap(target, 75.0f);
 }
 
 bool SelectNewTargetAction::Execute(Event& event)
@@ -112,8 +112,8 @@ bool SelectNewTargetAction::Execute(Event& event)
     Unit* victim = bot->GetVictim();
     Pet* activePet = bot->GetPet();
     const bool clearedCombatTarget = victim ||
-        (activePet && activePet->GetVictim()) || AI_VALUE(Unit*, "current target");
-    Unit* target = AI_VALUE(Unit*, "current target");
+        (activePet && activePet->GetVictim()) || ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     if (target && sServerFacade.UnitIsDead(target))
     {
         // Save the dead target for later looting
@@ -135,9 +135,9 @@ bool SelectNewTargetAction::Execute(Event& event)
     // Save the old target and clear the current target
     if(target)
     {
-        SET_AI_VALUE(Unit*, "old target", target);
+        SET_AI_VALUE(ObjectGuid, "old target", target->GetObjectGuid());
     }
-    SET_AI_VALUE(Unit*, "current target", nullptr);
+    SET_AI_VALUE(ObjectGuid, "current target", ObjectGuid());
     
     // Stop attacking
     bot->SetSelectionGuid(ObjectGuid());
@@ -178,10 +178,10 @@ bool SelectNewTargetAction::Execute(Event& event)
 
     // Invalidate ranked choices so the dead/controlled target cannot win again
     // merely because its previous selection is still cached.
-    context->GetValue<Unit*>("dps target")->Reset();
-    context->GetValue<Unit*>("dps aoe target")->Reset();
-    context->GetValue<Unit*>("tank target")->Reset();
-    context->GetValue<Unit*>("enemy player target")->Reset();
+    context->GetValue<ObjectGuid>("dps target")->Reset();
+    context->GetValue<ObjectGuid>("dps aoe target")->Reset();
+    context->GetValue<ObjectGuid>("tank target")->Reset();
+    context->GetValue<ObjectGuid>("enemy player target")->Reset();
 
     bool selectedReplacement = false;
     if (AI_VALUE(bool, "has attackers"))

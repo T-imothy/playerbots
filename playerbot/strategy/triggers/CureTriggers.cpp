@@ -15,9 +15,9 @@ bool NeedCureTrigger::IsActive()
         !ShouldAvoidEncounterDispel(ai, sServerFacade.LookupSpellInfo(AI_VALUE2(uint32, "spell id", spell)), target);
 }
 
-Value<Unit*>* PartyMemberNeedCureTrigger::GetTargetValue()
+Value<ObjectGuid>* PartyMemberNeedCureTrigger::GetTargetValue()
 {
-    return context->GetValue<Unit*>("party member to dispel", std::to_string(dispelType) + "," + spell);
+    return context->GetValue<ObjectGuid>("party member to dispel", std::to_string(dispelType) + "," + spell);
 }
 
 bool NeedWorldBuffTrigger::IsActive()

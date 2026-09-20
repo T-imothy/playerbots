@@ -14,7 +14,7 @@ namespace ai
         {
             if (!ai->IsStateActive(BotState::BOT_STATE_COMBAT) || !CastSpellAction::isUseful() ||
                 SafeMeleeTargetCount(ai, radius) < targets) return false;
-            Unit* enemy = AI_VALUE(Unit*, "current target");
+            Unit* enemy = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
             if (!MeleeCombatTarget(ai, enemy)) return false;
             const SpellEntry* spell = sServerFacade.LookupSpellInfo(GetDecisionSpellId());
             if (ShouldAvoidEncounterOffense(bot, bot, spell, enemy)) return false;

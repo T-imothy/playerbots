@@ -103,16 +103,19 @@ bool HasEnemyPlayersValue::Calculate()
     return !context->GetValue<std::list<ObjectGuid>>("enemy player targets", 1)->Get().empty();
 }
 
-Unit* EnemyPlayerValue::Calculate()
+ObjectGuid EnemyPlayerValue::Calculate()
 {
     // Prioritize the duel opponent
     if(bot->duel && bot->duel->opponent && !sServerFacade.IsFriendlyTo(bot->duel->opponent, bot))
     {
-        return bot->duel->opponent;
+        return bot->duel->opponent->GetObjectGuid();
     }
 
     if (ActualBattlegroundType(bot) == BATTLEGROUND_WS && !ai->HasRealPlayerMaster())
-        return SelectWarsongCombatTarget(ai);
+    {
+        Unit* warsongTarget = SelectWarsongCombatTarget(ai);
+        return warsongTarget ? warsongTarget->GetObjectGuid() : ObjectGuid();
+    }
 
     Unit* bestEnemyPlayer = nullptr;
     std::list<ObjectGuid> enemyPlayers = AI_VALUE(std::list<ObjectGuid>, "enemy player targets");
@@ -161,7 +164,7 @@ Unit* EnemyPlayerValue::Calculate()
         }
     }
 
-    return bestEnemyPlayer;
+    return bestEnemyPlayer ? bestEnemyPlayer->GetObjectGuid() : ObjectGuid();
 }
 
 

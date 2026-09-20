@@ -8,6 +8,6 @@ namespace ai
     public:
         // Zero explicitly requests fresh calculation, not a saved victim pointer.
         RighteousDefenseTargetValue(PlayerbotAI* ai) : UnitCalculatedValue(ai, "righteous defense target", 0) {}
-        Unit* Calculate() override;
+        ObjectGuid Calculate() override;
     };
 }

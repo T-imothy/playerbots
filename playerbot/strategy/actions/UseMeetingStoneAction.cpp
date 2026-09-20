@@ -14,6 +14,7 @@
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
+#include "Entities/Transports.h"
 
 #include "playerbot/strategy/values/PositionValue.h"
 
@@ -251,37 +252,79 @@ bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)
 
             if (summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
             {
-                bool const revive = sServerFacade.UnitIsDead(player);
-
-                // Only the explicitly summoned bot is interrupted. Native cleanup
-                // restores possession/mover and taxi state; TeleportTo detaches a
-                // transport passenger and handles combat, pets and BG departure.
-                player->BreakCharmIncoming();
-                player->BreakCharmOutgoing();
-                if (player->HasCharmer())
+                bool resurrectPlayer = false;
+                if (sServerFacade.UnitIsDead(player) && sServerFacade.IsAlive(summoner))
                 {
-                    ai->TellPlayerNoFacing(requester, "The server could not release my controlling charm.");
-                    return false;
+                    if (!ai->IsSafe(player) || !ai->IsSafe(summoner))
+                        return false;
+
+                    resurrectPlayer = true;
                 }
                 if (!player->TaxiFlightInterrupt() && player->IsTaxiFlying())
                     player->OnTaxiFlightEject();
                 player->InterruptNonMeleeSpells(false);
 
-                // Combat does not block an explicit convenience summon. The native
-                // teleport stops the summoned bot's combat; the requester stays in combat.
-                // TeleportTo owns access checks, pets and transfer state. True
-                // means accepted (possibly delayed), not a completed worldport.
-                if (!player->TeleportTo(mapId, x, y, z, summoner->GetOrientation()))
+                // Dead target: a summon request cannot be accepted, so send a resurrect request
+                // instead - the target teleports itself to the spot and resurrects itself. Alive
+                // target: a normal summon request. Only a transport boarding or a rejected request
+                // falls back to a direct, thread-safe teleport on the acting bot's own thread.
+                ObjectGuid summonerGuid = summoner->GetObjectGuid();
+                bool moveOnTransport = (summoner->GetTransport() != nullptr);
+
+                bool handled = false;
+                if (resurrectPlayer)
+                    handled = PlayerbotAI::SendResurrectRequest(summoner, player, mapId, x, y, z);
+                if (!handled && !moveOnTransport)
+                    handled = PlayerbotAI::SendSummonRequest(summoner, player, mapId, x, y, z);
+
+                if (!handled)
                 {
-                    ai->TellPlayerNoFacing(requester, "The server refused the summon destination.");
-                    return false;
+                    ai->RunOnOwningThread(player, [mapId, x, y, z, resurrectPlayer, moveOnTransport, summonerGuid](Player* p)
+                    {
+                        if (resurrectPlayer)
+                        {
+                            p->ResurrectPlayer(1.0f, false);
+                            p->SpawnCorpseBones();
+                        }
+
+                        if (p->IsTaxiFlying())
+                        {
+                            p->TaxiFlightInterrupt();
+                            p->GetMotionMaster()->MovementExpired();
+                        }
+
+                        p->GetMotionMaster()->Clear();
+                        p->TeleportTo(mapId, x, y, z, 0);
+                        if (p->isRealPlayer())
+                            p->SendHeartBeat();
+
+                        if (moveOnTransport)
+                        {
+                            if (Player* s = sObjectAccessor.FindPlayer(summonerGuid))
+                            {
+                                if (GenericTransport* transport = s->GetTransport())
+                                {
+                                    // Board on the summoner's spot. We do this explicitly instead of
+                                    // passing the transport to TeleportTo: that path is client-oriented
+                                    // (it wants local coords on a far teleport but world coords on a near
+                                    // one). UpdatePassengerPosition skips us until we are on the
+                                    // transport's map, so boarding a still-teleporting player is safe.
+                                    p->m_movementInfo.t_pos = s->m_movementInfo.GetTransportPos();
+                                    transport->AddPassenger(p, false);
+                                }
+                            }
+                        }
+                    });
                 }
-                CancelAutonomousQueues(bot);
+
+                if (resurrectPlayer)
+                    ai->TellPlayerNoFacing(requester, "I live, again!");
+
+                // Preserve ManTech's post-summon policy while using upstream's
+                // thread-safe request/teleport path.
+                CancelAutonomousQueues(player);
                 if (!summoner->InBattleGround())
                     ai->ChangeStrategy("-lfg,-bg", BotState::BOT_STATE_NON_COMBAT);
-                if (revive)
-                    ai->QueueSummonRevival(mapId, x, y, z, summoner->GetInstanceId());
-                player->GetMotionMaster()->Clear();
                     
                 if(ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))
                     SET_AI_VALUE2(PositionEntry, "pos", "stay", PositionEntry(x, y, z, mapId));

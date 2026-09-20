@@ -13,6 +13,8 @@
 #include "PlayerTalentSpec.h"
 #include <stack>
 #include <unordered_map>
+#include <deque>
+#include <functional>
 #include "strategy/IterateItemsMask.h"
 #include "RandomPlayerbotMgr.h"
 
@@ -23,6 +25,41 @@ class ChatHandler;
 using namespace ai;
 
 bool IsAlliance(uint8 race);
+
+// Bounded per-bot record of executed actions/reactions (populated by ActionHistoryListener).
+struct ActionHistoryEntry
+{
+    uint32 tick = 0;            // per-bot AI update counter
+    uint32 timeMs = 0;          // WorldTimer::getMSTime() at execution
+    uint32 elapsedMs = 0;       // execution duration
+    uint32 targetCounter = 0;   // current target guid counter at execution
+    uint32 mapId = 0;
+    float x = 0.0f, y = 0.0f, z = 0.0f;
+    bool executed = false;
+    bool reaction = false;
+    std::string action;
+};
+
+class PlayerbotAI;
+
+// Records every action the engines actually attempt into the owning bot's history.
+// Attached to the normal engines and to the reaction engine (two instances, so entries
+// can be tagged as reactions); looks after itself via Engine's listener ownership.
+class ActionHistoryListener : public ActionExecutionListener
+{
+public:
+    ActionHistoryListener(PlayerbotAI* ai, bool reaction) : ai(ai), reaction(reaction) {}
+
+    virtual bool Before(Action* action, const Event& event) override;
+    virtual bool AllowExecution(Action* action, const Event& event) override { return true; }
+    virtual void After(Action* action, bool executed, const Event& event) override;
+    virtual bool OverrideResult(Action* action, bool executed, const Event& event) override { return executed; }
+
+private:
+    PlayerbotAI* ai;
+    bool reaction;
+    uint32 startMs = 0;
+};
 
 class PlayerbotChatHandler: protected ChatHandler
 {
@@ -380,6 +417,27 @@ private:
     void UpdateAIInternal(uint32 elapsed, bool minimal = false) override;
 public:    
     static std::string BotStateToString(BotState state);
+
+    // Runs action(target) on the thread that owns target's map. This AI's bot is the player whose
+    // map thread we are currently running on (the acting bot). If the acting bot and the target
+    // are on the same map (or target is the acting bot), the action runs inline. Otherwise the
+    // target belongs to a different map and the action is queued to the world thread messager,
+    // which is executed while all map updater threads are idle. This prevents mutating another
+    // map's player (teleports, resets, ...) from a foreign map thread.
+    void RunOnOwningThread(Player* target, std::function<void(Player*)> action);
+
+    // Uses the normal summon path: sets the summon point and sends SMSG_SUMMON_REQUEST so the
+    // target accepts and teleports itself on its own map thread. Works for bots and real players.
+    // Returns false when target cannot accept a summon (dead, in combat, no session) and the
+    // caller should fall back to a direct teleport.
+    static bool SendSummonRequest(Player* summoner, Player* target);
+    static bool SendSummonRequest(Player* summoner, Player* target, uint32 mapId, float x, float y, float z);
+
+    // Uses the normal resurrect path: creates a resurrect request for a dead target. Because the
+    // caster is a player, core's ResurrectUsingRequestDataInit teleports the target to the given
+    // location before resurrecting it. The target accepts and does all of it on its own map thread.
+    // Returns false if the target is alive, already has a pending request, or no rez spell resolves.
+    static bool SendResurrectRequest(Player* summoner, Player* target, uint32 mapId, float x, float y, float z);
     std::string GetDefaultMovementStrategy();
     void EnsureDefaultMovementStrategy(Player* requester = nullptr);
 	std::string HandleRemoteCommand(std::string command);
@@ -409,6 +467,12 @@ public:
     template<class T>
     T* GetStrategy(const std::string& name, BotState type);
     BotState GetState() { return currentState; };
+    void SetActionHistorySize(uint32 size);
+    uint32 GetActionHistorySize() const { return actionHistorySize; }
+    const std::deque<ActionHistoryEntry>& GetActionHistory() const { return actionHistory; }
+    void ClearActionHistory() { actionHistory.clear(); }
+    void RecordActionHistory(Action* action, bool executed, bool reaction, uint32 elapsedMs);
+    uint32 GetAITick() const { return aiTick; }
     void ResetStrategies(bool autoLoad = true);
     void ReInitCurrentEngine();
     void Reset(bool full = false);
@@ -666,6 +730,9 @@ public:
     void SetActionDuration(uint32 duration);
 
     const Action* GetLastExecutedAction(BotState state) const;
+    std::string GetLastAction(BotState state);
+    std::string GetLastExecutedActionName(BotState state);
+    std::string GetLastActionDecision(BotState state);
 
     bool IsImmuneToSpell(uint32 spellId) const;
 
@@ -719,6 +786,10 @@ protected:
     ReactionEngine* reactionEngine;
     Engine* engines[(uint8)BotState::BOT_STATE_ALL];
     BotState currentState;
+
+    std::deque<ActionHistoryEntry> actionHistory;
+    uint32 actionHistorySize = 0;
+    uint32 aiTick = 0;
     ChatHelper chatHelper;
     std::queue<ChatCommandHolder> chatCommands;
     std::queue<ChatQueuedReply> chatReplies;

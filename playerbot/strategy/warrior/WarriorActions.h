@@ -95,7 +95,7 @@ namespace ai
 #ifdef MANGOSBOT_TWO
             if (!CastBuffSpellAction::isUseful()) return false;
             if (bot->HasAuraType(SPELL_AURA_MOD_ROOT)) return true;
-            Unit* target = AI_VALUE(Unit*, "current target");
+            Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
             const uint32 intercept = AI_VALUE2(uint32, "spell id", "intercept");
             return MeleeCombatTarget(ai, target) && intercept && !bot->IsSpellReady(intercept) &&
                 bot->GetDistance(target) >= 8.0f && bot->GetDistance(target) <= 25.0f && bot->IsWithinLOSInMap(target);

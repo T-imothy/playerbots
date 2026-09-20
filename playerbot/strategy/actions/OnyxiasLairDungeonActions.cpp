@@ -29,7 +29,7 @@ bool OnyxiaPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     if (!boss || !boss->IsInWorld() || !bot->IsInMap(boss) || !boss->IsAlive() || !boss->IsInCombat()) return false;
     // An off-tank assigned to adds must be allowed to chase them, not get
     // dragged back to the boss's flank. A breath escape still takes precedence.
-    Unit* current = ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get();
+    Unit* current = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
     if (!plan.exclusive && current && current != boss) return false;
     const float oldZ = plan.destination.z;
     bot->UpdateAllowedPositionZ(plan.destination.x, plan.destination.y, plan.destination.z);
@@ -84,10 +84,10 @@ Unit* OnyxiaAddsAction::GetTarget()
             PossibleAttackTargetsValue::IsValid(unit, bot, sPlayerbotAIConfig.sightDistance, false, true);
     };
     if (validOrder(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target")))) return nullptr;
-    Unit* marked = AI_VALUE(Unit*, "rti target");
+    Unit* marked = ai->GetUnit(AI_VALUE(ObjectGuid, "rti target"));
     if (!validOrder(marked)) marked = nullptr;
     if (marked && !IsOnyxiaAddEntry(marked->GetEntry())) return nullptr;
-    Unit* current = AI_VALUE(Unit*, "current target");
+    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     Unit* nearest = nullptr;
     Unit* retained = nullptr;
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
@@ -109,5 +109,5 @@ Unit* OnyxiaAddsAction::GetTarget()
 bool OnyxiaAddsAction::isUseful()
 {
     Unit* target = GetTarget();
-    return target && target != AI_VALUE(Unit*, "current target");
+    return target && target != ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
 }

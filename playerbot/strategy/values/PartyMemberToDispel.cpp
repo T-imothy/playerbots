@@ -28,7 +28,7 @@ private:
     const SpellEntry* spell;
 };
 
-Unit* PartyMemberToDispel::Calculate()
+ObjectGuid PartyMemberToDispel::Calculate()
 {
     const size_t separator = qualifier.find(',');
     uint32 dispelType = atoi(qualifier.substr(0, separator).c_str());
@@ -36,5 +36,6 @@ Unit* PartyMemberToDispel::Calculate()
         sServerFacade.LookupSpellInfo(AI_VALUE2(uint32, "spell id", qualifier.substr(separator + 1)));
 
     PartyMemberToDispelPredicate predicate(ai, dispelType, spell);
-    return FindPartyMember(predicate);
+    Unit* target = FindPartyMember(predicate);
+    return target ? target->GetObjectGuid() : ObjectGuid();
 }

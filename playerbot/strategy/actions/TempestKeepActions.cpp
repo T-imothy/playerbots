@@ -69,10 +69,10 @@ Unit* SolarianPriorityTargetAction::GetTarget()
             PossibleAttackTargetsValue::IsPossibleTarget(unit, bot, sPlayerbotAIConfig.sightDistance, false) &&
             !PossibleAttackTargetsValue::HasBreakableCC(unit, bot) && !PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot);
     };
-    if (valid(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"))) || valid(AI_VALUE(Unit*, "rti target"))) return nullptr;
+    if (valid(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"))) || valid(ai->GetUnit(AI_VALUE(ObjectGuid, "rti target")))) return nullptr;
     Unit* boss = nullptr;
     Unit* selected = nullptr;
-    Unit* current = AI_VALUE(Unit*, "current target");
+    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets"))
     {
         Unit* add = ai->GetUnit(guid);
@@ -101,5 +101,5 @@ Unit* SolarianPriorityTargetAction::GetTarget()
 bool SolarianPriorityTargetAction::isUseful()
 {
     Unit* target = GetTarget();
-    return target && target != AI_VALUE(Unit*, "current target");
+    return target && target != ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
 }

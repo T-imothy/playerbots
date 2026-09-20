@@ -22,7 +22,7 @@ Unit* DungeonAddTargetAction::GetRaidTotemTarget()
         return unit && unit->IsInWorld() && unit->IsAlive() && bot->IsInMap(unit) && !unit->HasCharmer();
     };
     Unit* selected = nullptr;
-    Unit* current = AI_VALUE(Unit*, "current target");
+    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible targets"))
     {
         Unit* totem = ai->GetUnit(guid);

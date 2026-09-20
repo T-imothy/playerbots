@@ -36,7 +36,7 @@ namespace
 
 float MyThreatValue::Calculate()
 {
-    Unit* target = ResolveThreatTarget(bot, AI_VALUE(Unit*, qualifier));
+    Unit* target = ResolveThreatTarget(bot, ai->GetUnit(AI_VALUE(ObjectGuid, qualifier)));
     const ObjectGuid targetGuid = target ? target->GetObjectGuid() : ObjectGuid();
 
     // Follow the actual enemy rather than the GUID of a friendly target proxy.
@@ -50,7 +50,7 @@ float MyThreatValue::Calculate()
 
 float TankThreatValue::Calculate()
 {
-    Unit* target = AI_VALUE(Unit*, qualifier);
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, qualifier));
 
     return ThreatValue::GetTankThreat(ai, target);
 }
@@ -75,7 +75,7 @@ uint8 ThreatValue::Calculate()
         return maxThreat;
     }
 
-    return Calculate(AI_VALUE(Unit*, qualifier));
+    return Calculate(ai->GetUnit(AI_VALUE(ObjectGuid, qualifier)));
 }
 
 float ThreatValue::GetThreat(Player* player, Unit* target)

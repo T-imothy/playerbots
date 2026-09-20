@@ -38,7 +38,7 @@ Unit* KarazhanPriorityTargetAction::GetTarget()
     // Retain explicit player targeting and raid-mark policy, including orders
     // aimed at a passive object not yet represented in the attacker list.
     if (valid(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"))) ||
-        valid(AI_VALUE(Unit*, "rti target"))) return nullptr;
+        valid(ai->GetUnit(AI_VALUE(ObjectGuid, "rti target")))) return nullptr;
 
     const bool illhoof = boss->GetEntry() == 15688;
     if (illhoof)
@@ -56,7 +56,7 @@ Unit* KarazhanPriorityTargetAction::GetTarget()
     }
 
     Unit* selected = nullptr;
-    Unit* current = AI_VALUE(Unit*, "current target");
+    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     // Demon Chains are passive, so requiring a threat victim/IsInCombat would
     // exclude the very object that must be destroyed. Reuse the existing nearby
     // possible-target value and native attack admission, not a new world scan.
@@ -80,7 +80,7 @@ Unit* KarazhanPriorityTargetAction::GetTarget()
 bool KarazhanPriorityTargetAction::isUseful()
 {
     Unit* target = GetTarget();
-    return target && target != AI_VALUE(Unit*, "current target");
+    return target && target != ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
 }
 
 bool AranFlameWreathValue::Calculate()

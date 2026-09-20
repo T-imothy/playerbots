@@ -16,7 +16,7 @@ Unit* DungeonAddTargetAction::GetIcecrownAddTarget()
     const bool caster = ranged && bot->getClass() != CLASS_HUNTER;
     Unit* selected = nullptr;
     Unit* owner = nullptr;
-    Unit* current = AI_VALUE(Unit*, "current target");
+    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     unsigned selectedRank = 0;
     for (const auto& guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
     {

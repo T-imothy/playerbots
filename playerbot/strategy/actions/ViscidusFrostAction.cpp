@@ -22,7 +22,7 @@ uint32 ViscidusFrostAction::GetFrostSpell()
     if (bot->GetMapId() != 531 || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() ||
         !bot->GetGroup() || bot->HasCharmer() || bot->IsBeingTeleported() || ai->IsRealPlayer() ||
         ai->IsHeal(bot) || ai->IsTank(bot)) return 0;
-    Unit* target = AI_VALUE(Unit*, "current target");
+    Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     if (!target || target->GetEntry() != 15299 || !target->IsInWorld() || !target->IsAlive() ||
         !target->IsInCombat() || target->HasCharmer() || !bot->IsInMap(target) ||
         !target->GetSpellAuraHolder(25926, target->GetObjectGuid()) || target->HasAura(25937) ||
@@ -54,7 +54,7 @@ bool ViscidusFrostAction::Execute(Event& event)
     uint32 spellId = GetFrostSpell();
     if (!spellId) return false;
     uint32 duration = 0;
-    if (!ai->CastSpell(spellId, AI_VALUE(Unit*, "current target"), nullptr, false, &duration)) return false;
+    if (!ai->CastSpell(spellId, ai->GetUnit(AI_VALUE(ObjectGuid, "current target")), nullptr, false, &duration)) return false;
     SetDuration(duration);
     return true;
 }

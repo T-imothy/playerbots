@@ -14,7 +14,7 @@ namespace ai
         Unit* GetTarget()
         {
             AiObjectContext* ctx = AiObject::context;
-            return ctx->GetValue<Unit*>(qualifier)->Get();
+            return ai->GetUnit(ctx->GetValue<ObjectGuid>(qualifier)->Get());
         }
 
         virtual uint8 Calculate() override;
@@ -28,7 +28,7 @@ namespace ai
         Unit* GetTarget()
         {
             AiObjectContext* ctx = AiObject::context;
-            return ctx->GetValue<Unit*>(qualifier)->Get();
+            return ai->GetUnit(ctx->GetValue<ObjectGuid>(qualifier)->Get());
         }
 
         virtual bool Calculate() override;
@@ -59,7 +59,7 @@ namespace ai
         Unit* GetTarget()
         {
             AiObjectContext* ctx = AiObject::context;
-            return ctx->GetValue<Unit*>(qualifier)->Get();
+            return ai->GetUnit(ctx->GetValue<ObjectGuid>(qualifier)->Get());
         }
 
         virtual uint8 Calculate() override;
@@ -73,7 +73,7 @@ namespace ai
         Unit* GetTarget()
         {
             AiObjectContext* ctx = AiObject::context;
-            return ctx->GetValue<Unit*>(qualifier)->Get();
+            return ai->GetUnit(ctx->GetValue<ObjectGuid>(qualifier)->Get());
         }
 
         virtual uint8 Calculate() override;
@@ -87,7 +87,7 @@ namespace ai
         Unit* GetTarget()
         {
             AiObjectContext* ctx = AiObject::context;
-            return ctx->GetValue<Unit*>(qualifier)->Get();
+            return ai->GetUnit(ctx->GetValue<ObjectGuid>(qualifier)->Get());
         }
 
         virtual uint8 Calculate() override;
@@ -101,7 +101,7 @@ namespace ai
         Unit* GetTarget()
         {
             AiObjectContext* ctx = AiObject::context;
-            return ctx->GetValue<Unit*>(qualifier)->Get();
+            return ai->GetUnit(ctx->GetValue<ObjectGuid>(qualifier)->Get());
         }
 
         virtual bool Calculate() override;
@@ -115,7 +115,7 @@ namespace ai
         Unit* GetTarget()
         {
             AiObjectContext* ctx = AiObject::context;
-            return ctx->GetValue<Unit*>(qualifier)->Get();
+            return ai->GetUnit(ctx->GetValue<ObjectGuid>(qualifier)->Get());
         }
 
         virtual uint8 Calculate() override;
@@ -129,7 +129,7 @@ namespace ai
         Unit* GetTarget()
         {
             AiObjectContext* ctx = AiObject::context;
-            return ctx->GetValue<Unit*>(qualifier)->Get();
+            return ai->GetUnit(ctx->GetValue<ObjectGuid>(qualifier)->Get());
         }
 
         virtual bool Calculate() override;
@@ -143,7 +143,7 @@ namespace ai
         Unit* GetTarget()
         {
             AiObjectContext* ctx = AiObject::context;
-            return ctx->GetValue<Unit*>(qualifier)->Get();
+            return ai->GetUnit(ctx->GetValue<ObjectGuid>(qualifier)->Get());
         }
 
         virtual bool EqualToLast(bool value) override { return value == lastValue; }
@@ -198,7 +198,7 @@ namespace ai
         Unit* GetTarget()
         {
             AiObjectContext* ctx = AiObject::context;
-            return ctx->GetValue<Unit*>(qualifier)->Get();
+            return ai->GetUnit(ctx->GetValue<ObjectGuid>(qualifier)->Get());
         }
 
         virtual uint8 Calculate() override;

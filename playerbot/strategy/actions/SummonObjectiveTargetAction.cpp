@@ -65,7 +65,7 @@ Unit* DungeonAddTargetAction::GetSummonObjectiveTarget()
     if (!boss) return nullptr;
     if (bot->GetMapId() == 531 && boss->GetEntry() == 15510) addEntry = 15630; // Enraging Spawn of Fankriss.
     Unit* selected = nullptr;
-    Unit* current = AI_VALUE(Unit*, "current target");
+    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     for (const auto& guid : nearby)
     {
         Unit* add = ai->GetUnit(guid);

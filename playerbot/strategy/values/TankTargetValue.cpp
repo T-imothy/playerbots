@@ -51,12 +51,13 @@ protected:
 };
 
 
-Unit* TankTargetValue::Calculate()
+ObjectGuid TankTargetValue::Calculate()
 {
-    Unit* rti = RtiTargetValue::Calculate();
+    Unit* rti = ai->GetUnit(RtiTargetValue::Calculate());
     if (rti && PossibleAttackTargetsValue::IsPossibleTarget(rti, bot, sPlayerbotAIConfig.sightDistance, true) &&
-        !MeleeCcCheck(ai).Protected(rti)) return rti;
+        !MeleeCcCheck(ai).Protected(rti)) return rti->GetObjectGuid();
 
     FindTargetForTankStrategy strategy(ai);
-    return FindTarget(&strategy);
+    Unit* target = FindTarget(&strategy);
+    return target ? target->GetObjectGuid() : ObjectGuid();
 }

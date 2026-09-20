@@ -171,8 +171,8 @@ bool CastVolleyAction::isUseful()
 bool TrapOnTargetAction::isUseful()
 {
     if (!CastSpellAction::isUseful() || !HunterSpell(ai, trapSpell)) return false;
-    Unit* target = GetTrapTargetName() == "cc target" ? AI_VALUE2(Unit*, "cc target", trapSpell) :
-        GetTrapTargetName() == "self target" ? bot : AI_VALUE(Unit*, "current target");
+    Unit* target = GetTrapTargetName() == "cc target" ? ai->GetUnit(AI_VALUE2(ObjectGuid, "cc target", trapSpell)) :
+        GetTrapTargetName() == "self target" ? bot : ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     if (!target || !target->IsInWorld() || !target->IsAlive() || !bot->IsInMap(target)) return false;
     // Drop locally. Never run through the fight to plant an offensive trap.
     if (target != bot && (!bot->IsWithinDistInMap(target, 4.0f) || !bot->IsWithinLOSInMap(target))) return false;
@@ -181,7 +181,7 @@ bool TrapOnTargetAction::isUseful()
     if (damage && (WaitForAttackStrategy::ShouldWait(ai) || !HunterAreaSafe(ai, bot, 10.0f))) return false;
     if (trapSpell == "immolation trap" && target != bot && !MeleeCombatTarget(ai, target)) return false;
 #ifdef MANGOSBOT_TWO
-    Unit* enemy = AI_VALUE(Unit*, "current target");
+    Unit* enemy = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     if (damage && enemy && SafeMeleeTargetCount(ai, 10.0f) < 3 && HunterSpell(ai, "black arrow") &&
         ai->CanCastSpell("black arrow", enemy, 0)) return false;
 #endif
@@ -199,7 +199,7 @@ static void StopHunterControlDamage(PlayerbotAI* ai, Unit* target)
 {
     if (!target) return;
     Player* bot = ai->GetBot();
-    if (ai->GetAiObjectContext()->GetValue<Unit*>("current target")->Get() == target)
+    if (ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get()) == target)
     {
         bot->InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
         bot->AttackStop();
@@ -231,7 +231,7 @@ bool HunterWyvernStingAction::Execute(Event& event)
 
 bool CastReadinessAction::isUseful()
 {
-    if (!CastBuffSpellAction::isUseful() || !HunterInShotRange(ai, AI_VALUE(Unit*, "current target"))) return false;
+    if (!CastBuffSpellAction::isUseful() || !HunterInShotRange(ai, ai->GetUnit(AI_VALUE(ObjectGuid, "current target")))) return false;
     const uint32 rapid = HunterSpell(ai, "rapid fire");
     return rapid && !bot->IsSpellReady(rapid) && !ai->HasAura("rapid fire", bot);
 }
@@ -239,7 +239,7 @@ bool CastReadinessAction::isUseful()
 bool HunterDisengageAction::isUseful()
 {
     if (!CastSpellAction::isUseful() || !bot->IsInCombat()) return false;
-    Unit* enemy = AI_VALUE(Unit*, "closest attacker targeting me");
+    Unit* enemy = ai->GetUnit(AI_VALUE(ObjectGuid, "closest attacker targeting me"));
     if (!MeleeCombatTarget(ai, enemy) || !bot->CanReachWithMeleeAttack(enemy)) return false;
     if (!bot->IsSpellReady(HunterSpell(ai, "disengage"))) return false;
 #ifdef MANGOSBOT_TWO

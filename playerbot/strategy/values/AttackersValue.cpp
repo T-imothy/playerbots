@@ -29,7 +29,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
 
     if (ai->HasStrategy("focus rti targets", BotState::BOT_STATE_COMBAT))
     {
-        Unit* rtiTarget = AI_VALUE(Unit*, "rti target");
+        Unit* rtiTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "rti target"));
 
         if (rtiTarget && rtiTarget->IsInWorld() && rtiTarget->GetMapId() == bot->GetMapId())
         {
@@ -134,14 +134,15 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
             }
 
             // Add the current target
-            Unit* currentTarget = PAI_VALUE(Unit*, "current target");
+            Unit* currentTarget = ai->GetUnit(PAI_VALUE(ObjectGuid, "current target"));
             if (currentTarget)
             {
                 units.insert(currentTarget);
             }
 
             // Add the previous target
-            Unit* oldTarget = PAI_VALUE(Unit*, "old target");
+            Unit* oldTarget = ai->GetUnit(PAI_VALUE(ObjectGuid, "old target"));
+            
             if (oldTarget)
             {
                 units.insert(oldTarget);
@@ -156,7 +157,7 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
                     units.insert(attackTarget);
                 }
 
-                Unit* pullTarget = PAI_VALUE(Unit*, "pull target");
+                Unit* pullTarget = ai->GetUnit(PAI_VALUE(ObjectGuid, "pull target"));
                 if (pullTarget)
                 {
                     units.insert(pullTarget);
@@ -241,7 +242,7 @@ bool AttackersValue::InCombat(Unit* target, Player* player, bool checkPullTarget
     if(!inCombat && checkPullTargets && player->GetPlayerbotAI())
     {
         inCombat = (PAI_VALUE(ObjectGuid, "attack target") == target->GetObjectGuid()) ||
-                   (PAI_VALUE(Unit*, "pull target") == target);
+                   (PAI_VALUE(ObjectGuid, "pull target") == target->GetObjectGuid());
     }
 
     return inCombat;
@@ -295,7 +296,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
             bool isRtiTarget = false;
             if (player->GetPlayerbotAI() && !player->GetPlayerbotAI()->HasActivePlayerMaster())
             {
-                Unit* rtiTarget = PAI_VALUE(Unit*, "rti target");
+                Unit* rtiTarget = player->GetPlayerbotAI()->GetUnit(PAI_VALUE(ObjectGuid, "rti target"));
                 if (target == rtiTarget)
                     isRtiTarget = true;
             }

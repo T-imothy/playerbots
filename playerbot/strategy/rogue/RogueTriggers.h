@@ -13,7 +13,7 @@ namespace ai
             const uint32 spellId = AI_VALUE2(uint32, "spell id", spell);
             if (!spellId || !ai->HasSpell(spellId) || !bot->IsSpellReady(spellId))
                 return false;
-            Unit* target = AI_VALUE(Unit*, "current target");
+            Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
             return target && target->HasAuraState(AURA_STATE_BLEEDING) && BuffTrigger::IsActive();
         }
     };
@@ -147,14 +147,14 @@ namespace ai
                 return false;
             }
 
-            Unit* target = AI_VALUE(Unit*, "enemy player target");
+            Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "enemy player target"));
             if (!target)
             {
-                target = AI_VALUE(Unit*, "grind target");
+                target = ai->GetUnit(AI_VALUE(ObjectGuid, "grind target"));
             }
             if (!target)
             {
-                target = AI_VALUE(Unit*, "dps target");
+                target = ai->GetUnit(AI_VALUE(ObjectGuid, "dps target"));
             }
             if (!target)
             {
@@ -219,16 +219,16 @@ namespace ai
 
             bool targeted = false;
 
-            Unit* dps = AI_VALUE(Unit*, "dps target");
+            Unit* dps = ai->GetUnit(AI_VALUE(ObjectGuid, "dps target"));
             if (dps)
             {
-                targeted = (dps == AI_VALUE(Unit*, "current target"));
+                targeted = (dps == ai->GetUnit(AI_VALUE(ObjectGuid, "current target")));
             }
 
-            Unit* enemyPlayer = AI_VALUE(Unit*, "enemy player target");
+            Unit* enemyPlayer = ai->GetUnit(AI_VALUE(ObjectGuid, "enemy player target"));
             if (enemyPlayer && !targeted)
             {
-                targeted = (enemyPlayer == AI_VALUE(Unit*, "current target"));
+                targeted = (enemyPlayer == ai->GetUnit(AI_VALUE(ObjectGuid, "current target")));
             }
 
             // use sprint on players

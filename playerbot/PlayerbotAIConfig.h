@@ -212,6 +212,7 @@ public:
     bool randomBotLoginAtStartup;
     uint32 randomBotTeleLevel;
     bool logInGroupOnly, logValuesPerTick;
+    uint32 actionHistorySize;   // per-bot action history ring buffer (0 = off)
     bool fleeingEnabled;
     bool summonAtInnkeepersEnabled;
     std::string combatStrategies, nonCombatStrategies, reactStrategies, deadStrategies;

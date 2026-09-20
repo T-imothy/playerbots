@@ -21,7 +21,7 @@ bool CanTemporarilyIgnore(PlayerbotAI* ai, Unit* target)
         if (master->GetSelectionGuid() == target->GetObjectGuid()) return false;
     AiObjectContext* context = ai->GetAiObjectContext();
     return AI_VALUE(ObjectGuid, "attack target") != target->GetObjectGuid() &&
-        AI_VALUE(Unit*, "pull target") != target;
+        ai->GetUnit(AI_VALUE(ObjectGuid, "pull target")) != target;
 }
 }
 

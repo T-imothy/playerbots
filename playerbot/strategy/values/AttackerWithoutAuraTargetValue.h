@@ -9,7 +9,7 @@ namespace ai
         AttackerWithoutAuraTargetValue(PlayerbotAI* ai, bool owned = false) : UnitCalculatedValue(ai, owned ? "attacker without my aura" : "attacker without aura"), Qualified(), owned(owned) {}
 
     protected:
-        virtual Unit* Calculate() override;
+        virtual ObjectGuid Calculate() override;
         bool owned;
 	};
 }

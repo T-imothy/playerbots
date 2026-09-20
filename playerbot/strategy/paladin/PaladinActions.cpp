@@ -280,7 +280,7 @@ Unit* CastBlessingOnPartyAction::GetTarget()
         }
     }
 
-    return AI_VALUE2(Unit*, "party member without my aura", blessList);
+    return ai->GetUnit(AI_VALUE2(ObjectGuid, "party member without my aura", blessList));
 }
 
 bool CastBlessingOnPartyAction::isUseful()

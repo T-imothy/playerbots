@@ -148,7 +148,7 @@ bool CastSpellAction::Execute(Event& event)
 Unit* TankThreatTransferAction::GetTarget()
 {
     if (!bot->GetGroup()) return nullptr;
-    Unit* enemy = context->GetValue<Unit*>("current target")->Get();
+    Unit* enemy = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
     Unit* tank = enemy && enemy->IsInWorld() && enemy->GetMap() == bot->GetMap() ? enemy->GetVictim() : nullptr;
     if (tank && tank->IsPlayer() && tank != bot && tank->IsAlive() && tank->IsInWorld() &&
         tank->GetMap() == bot->GetMap() && static_cast<Player*>(tank)->GetGroup() == bot->GetGroup() && ai->IsTank(static_cast<Player*>(tank)))
@@ -399,7 +399,7 @@ Unit* CastSpellAction::GetTarget()
 {
     std::string targetName = GetTargetName();
     std::string targetNameQualifier = GetTargetQualifier();
-    return targetNameQualifier.empty() ? AI_VALUE(Unit*, targetName) : AI_VALUE2(Unit*, targetName, targetNameQualifier);
+    return targetNameQualifier.empty() ? ai->GetUnit(AI_VALUE(ObjectGuid, targetName)) : ai->GetUnit(AI_VALUE2(ObjectGuid, targetName, targetNameQualifier));
 }
 
 bool CastPetSpellAction::isPossible()
@@ -409,7 +409,7 @@ bool CastPetSpellAction::isPossible()
     if (!spellTarget)
         return false;
 
-    Unit* pet = AI_VALUE(Unit*, "pet target");
+    Unit* pet = ai->GetUnit(AI_VALUE(ObjectGuid, "pet target"));
     if (pet && ai->IsSafe(pet))
     {
         const uint32& spellId = GetSpellID();
@@ -515,7 +515,7 @@ bool CastWarStompAction::isUseful()
     if (!ai->HasStrategy("pvp", BotState::BOT_STATE_COMBAT) &&
         !ai->HasStrategy("duel", BotState::BOT_STATE_COMBAT))
     {
-        Unit* target = AI_VALUE(Unit*, "current target");
+        Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
         if (target)
             return AI_VALUE2(float, "distance", "current target") <= 8.0f;
         return false;
