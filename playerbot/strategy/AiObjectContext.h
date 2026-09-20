@@ -115,6 +115,10 @@ namespace ai
 
         void ClearValues(std::string findName = "");
 
+        // interval is the minimum number of seconds a cached value must have
+        // been unused before it can be erased. Callers performing periodic
+        // maintenance must pass an idle lifetime explicitly; using a value's
+        // calculation interval (often one second) causes delete/recreate churn.
         size_t ClearExpiredValues(std::string findName = "", uint32 interval = 0);
         static uint64 GetExpiredValuesReleased();
 

@@ -356,7 +356,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
             lastValueCacheCleanupMs = now - (bot->GetGUIDLow() % interval);
         if (WorldTimer::getMSTimeDiff(lastValueCacheCleanupMs, now) >= interval)
         {
-            aiObjectContext->ClearExpiredValues();
+            // ValueCacheCleanupInterval is milliseconds, while value expiry is
+            // expressed in seconds. Keep recently used qualified values alive
+            // across cleanup passes instead of deleting one-second calculated
+            // values and immediately allocating them again on the next AI tick.
+            uint32 const idleLifetime = std::max<uint32>(1, (interval + IN_MILLISECONDS - 1) / IN_MILLISECONDS);
+            aiObjectContext->ClearExpiredValues("", idleLifetime);
             lastValueCacheCleanupMs = now;
         }
     }

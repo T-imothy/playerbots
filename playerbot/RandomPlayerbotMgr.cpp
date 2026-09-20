@@ -867,6 +867,8 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
     {
         const auto cleanupStart = std::chrono::steady_clock::now();
         const size_t limit = std::min<size_t>(128, memoryMaintenanceRemaining);
+        const uint32 valueIdleLifetime = std::max<uint32>(1,
+            (sPlayerbotAIConfig.valueCacheCleanupInterval + IN_MILLISECONDS - 1) / IN_MILLISECONDS);
         for (size_t scanned = 0; scanned < limit && !availableBots.empty(); ++scanned)
         {
             if (scanned && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - cleanupStart).count() >= 5)
@@ -875,7 +877,7 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
             Player* activeBot = GetPlayerBot(availableBots[memoryMaintenanceCursor++]);
             --memoryMaintenanceRemaining;
             if (activeBot && activeBot->GetPlayerbotAI() && activeBot->GetPlayerbotAI()->GetAiObjectContext())
-                memoryMaintenanceReleased += activeBot->GetPlayerbotAI()->GetAiObjectContext()->ClearExpiredValues();
+                memoryMaintenanceReleased += activeBot->GetPlayerbotAI()->GetAiObjectContext()->ClearExpiredValues("", valueIdleLifetime);
         }
         if (availableBots.empty()) memoryMaintenanceRemaining = 0;
         if (!memoryMaintenanceRemaining)
@@ -2542,7 +2544,11 @@ bool RandomPlayerbotMgr::ProcessBot(uint32 bot)
     {
         //Clean up expired values
         if (ai && !ai->HasStrategy("debug", BotState::BOT_STATE_NON_COMBAT))
-            ai->GetAiObjectContext()->ClearExpiredValues();
+        {
+            const uint32 valueIdleLifetime = std::max<uint32>(1,
+                (sPlayerbotAIConfig.valueCacheCleanupInterval + IN_MILLISECONDS - 1) / IN_MILLISECONDS);
+            ai->GetAiObjectContext()->ClearExpiredValues("", valueIdleLifetime);
+        }
 
         //Randomize/teleport bot
         if (!sPlayerbotAIConfig.disableRandomLevels)
