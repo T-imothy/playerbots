@@ -51,6 +51,9 @@ namespace ai
     public:
         AddGatheringLootAction(PlayerbotAI* ai) : AddAllLootAction(ai, "add gathering loot") {}
 
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+
     private:
         bool AddLoot(Player* requester, ObjectGuid guid) override;
 

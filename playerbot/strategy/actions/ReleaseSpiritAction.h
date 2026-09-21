@@ -204,6 +204,13 @@ namespace ai
         SelfResurrectAction(PlayerbotAI* ai, std::string name = "self resurrect") : ChatCommandAction(ai, name) {}
 
     public:
+        bool isUseful() override
+        {
+            // Most dead bots have no self-resurrection spell. This is normal,
+            // not an unavailable action that should enter the failure cache.
+            return isPossible();
+        }
+
         bool Execute(Event& event) override
         {
             WorldPacket packet(CMSG_SELF_RES);

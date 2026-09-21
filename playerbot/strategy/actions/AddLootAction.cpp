@@ -204,6 +204,22 @@ bool AddAllLootAction::AddLoot(Player* requester, ObjectGuid guid)
     return AI_VALUE(LootObjectStack*, "available loot")->Add(guid);
 }
 
+bool AddGatheringLootAction::isUseful()
+{
+    return !context->GetValue<std::list<ObjectGuid>>("nearest game objects no los")->Get().empty() ||
+        !context->GetValue<std::list<ObjectGuid>>("nearest corpses")->Get().empty();
+}
+
+bool AddGatheringLootAction::Execute(Event& event)
+{
+    // This action discovers candidates; it does not perform gathering. A scan
+    // that finds nothing eligible (or only already queued loot) still completed.
+    // Keep all eligibility and safety checks in AddLoot, and let the timer
+    // schedule the next scan instead of recording an action failure.
+    AddAllLootAction::Execute(event);
+    return true;
+}
+
 bool AddGatheringLootAction::AddLoot(Player* requester, ObjectGuid guid)
 {
     LootObject loot(bot, guid);
