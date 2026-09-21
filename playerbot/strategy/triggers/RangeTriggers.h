@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PartyCombatSupport.h"
 #include "playerbot/strategy/Trigger.h"
 #include "playerbot/strategy/hunter/HunterCombatPolicy.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -367,6 +368,9 @@ namespace ai
 
             if (!followTarget || !ai->IsSafe(followTarget))
                 return false;
+
+            if (ai->IsHeal(bot) && followTarget == GetPartyCombatAnchor(ai))
+                return true; // FollowAction checks healing range and line of sight.
 
             //We need to land or liftoff.
             if (followTarget->IsFlying() != bot->IsFlying() || followTarget->IsTaxiFlying())

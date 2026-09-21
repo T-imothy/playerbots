@@ -1,4 +1,5 @@
 #pragma once
+#include <set>
 #include "playerbot/strategy/Value.h"
 #include "RtiTargetValue.h"
 #include "TargetValue.h"
@@ -12,6 +13,9 @@ namespace ai
 
     public:
         ObjectGuid Calculate() override;
+    private:
+        // Only GUIDs still engaged in this fight survive the next calculation.
+        std::set<ObjectGuid> observedHealers;
     };
 
     class DpsAoeTargetValue : public RtiTargetValue

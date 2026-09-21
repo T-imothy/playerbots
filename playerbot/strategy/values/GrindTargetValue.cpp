@@ -58,6 +58,12 @@ Unit* GrindTargetValue::FindTargetForGrinding(int assistCount)
         return unit;
     }
 
+    // A human-led party chooses its next pull. Keep the engaged/commanded
+    // targets above, but do not acquire an untouched pack just because it is
+    // nearby. Autonomous bot groups retain their grinding behavior.
+    if (bot->GetGroup() && ai->HasRealPlayerMaster())
+        return nullptr;
+
     std::list<ObjectGuid> targets = *context->GetValue<std::list<ObjectGuid> >("possible targets");
 
     if (targets.empty())

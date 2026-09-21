@@ -1,6 +1,7 @@
 #include "Util/DevDiagnostics.h"
 #include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/PartyCombatSupport.h"
 #include "BotPartyCommands.h"
 #include "BotIncidentHistory.h"
 #include <stdarg.h>
@@ -319,6 +320,15 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
     // and retry the normal CMaNGOS area-trigger path if an update was missed.
     if (ProcessPendingTransition())
         return;
+
+    // Food/drink duration must not hide a nearby party pull from its healer.
+    // Standing removes the sitting-only regeneration auras normally.
+    if (bot->IsSitState() && ai::NeedsPartyCombatSupport(this))
+    {
+        bot->SetStandState(UNIT_STAND_STATE_STAND);
+        aiInternalUpdateDelay = 0;
+        isWaiting = false;
+    }
 
     if (bot->IsInWorld() && !bot->IsBeingTeleported())
     {
@@ -2810,7 +2820,8 @@ void PlayerbotAI::DoNextAction(bool min)
 		if (master->m_movementInfo.HasMovementFlag(MOVEFLAG_WALK_MODE) && sServerFacade.GetDistance2d(bot, master) < 20.0f) bot->m_movementInfo.AddMovementFlag(MOVEFLAG_WALK_MODE);
 		else bot->m_movementInfo.RemoveMovementFlag(MOVEFLAG_WALK_MODE);
 
-        if (master->IsSitState() && aiInternalUpdateDelay < 1000)
+        if (master->IsSitState() && aiInternalUpdateDelay < 1000 &&
+            !bot->IsInCombat() && !ai::GetPartyCombatAnchor(this))
         {
             if (!sServerFacade.isMoving(bot) && sServerFacade.GetDistance2d(bot, master) < 10.0f)
                 bot->SetStandState(UNIT_STAND_STATE_SIT);

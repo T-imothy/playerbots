@@ -37,10 +37,11 @@ assert 'HasBreakableByDamageCrowdControlAura() || IsCcTarget(attacker)' in read(
 tank=read('values/TankTargetValue.cpp')
 assert 'victim->GetGroup() == bot->GetGroup()' in tank and '!ai->IsTank(victim)' in tank
 assert '(rescue && !rescueTarget)' in tank and 'rescue == rescueTarget' in tank
-assert block(tank,'Unit* TankTargetValue::Calculate').index('return rti') < block(tank,'Unit* TankTargetValue::Calculate').index('FindTargetForTankStrategy')
+selection=block(tank,'ObjectGuid TankTargetValue::Calculate')
+assert selection.index('strategy.HasRescueTarget()') < selection.index('return rti->GetObjectGuid()')
 enemy=read('values/EnemyPlayerValue.cpp')
-assert 'firstTarget' not in block(enemy,'Unit* EnemyPlayerValue::Calculate')
-assert 'EnemyPlayersValue::IsValid(target, bot)' in block(enemy,'Unit* EnemyPlayerValue::Calculate')
+assert 'firstTarget' not in block(enemy,'ObjectGuid EnemyPlayerValue::Calculate')
+assert 'EnemyPlayersValue::IsValid(target, bot)' in block(enemy,'ObjectGuid EnemyPlayerValue::Calculate')
 assert 'PossibleTargetsValue::IsValid(target, player, true)' in block(enemy,'bool EnemyPlayersValue::IsValid')
 assert 'IsFriendly(target, player)' in basic
 attack=read('actions/AttackAction.cpp')
@@ -57,7 +58,7 @@ assert 'type <= CURRENT_CHANNELED_SPELL' in recover and 'IsPositiveSpell(spell->
 assert recover.index('const uint32 spellId') < recover.index('bot->InterruptSpell') < recover.index('ai->SpellInterrupted')
 assert 'spell->m_targets.getUnitTargetGuid() != previousSelection' in recover
 for name in ('dps target','dps aoe target','tank target','enemy player target'):
-    assert 'GetValue<Unit*>("'+name+'")->Reset()' in recover
+    assert 'GetValue<ObjectGuid>("'+name+'")->Reset()' in recover
 trigger=read('triggers/GenericTriggers.cpp')
 dps=block(trigger,'bool DpsAssistTrigger::IsActive')
 assert 'bot->GetVictim() != target' in dps and 'pet->GetVictim() == target' in dps

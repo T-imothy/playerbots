@@ -27,7 +27,9 @@ struct GroupReference {Player* player=nullptr;GroupReference* following=nullptr;
 struct Group {GroupReference refs[4];GroupReference* GetFirstMember(){return &refs[0];}void set(Player*a,Player*b,Player*c=nullptr,Player*d=nullptr){Player*v[]={a,b,c,d};for(int i=0;i<4;++i){refs[i].player=v[i];refs[i].following=i<3?&refs[i+1]:nullptr;if(v[i])v[i]->group=this;}}};
 bool Player::IsInGroup(Player*p){return p&&group&&group==p->group;}
 struct Config {uint32 lowHealth=50,criticalHealth=25,mediumHealth=70,lowMana=25;}sPlayerbotAIConfig;
+using ObjectGuid = Unit*; // Controlled lookup handle for the assigned patient.
 struct PlayerbotAI {Player* bot;Player* master=nullptr;Unit* patient=nullptr;bool baseUseful=true,nsReady=true;int casts=0;std::set<std::string> learned;
+ Unit* GetUnit(ObjectGuid guid){return guid;}
  Player* GetBot(){return bot;}Player* GetMaster(){return master;}bool IsSafe(Player*p){return p&&p->safe;}bool HasSpell(std::string s){return learned.count(s);}
  bool HasMyAura(std::string s,Player*p){return p->mine.count(s);}bool HasAura(std::string s,Unit*u){auto p=dynamic_cast<Player*>(u);return p&&(p->mine.count(s)||p->auras.count(s));}
  bool IsTank(Player*p){return p->tank;}bool CanCastSpell(std::string s,Player*,unsigned){return HasSpell(s)&&nsReady;}

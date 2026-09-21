@@ -153,7 +153,23 @@ namespace ai
     {
     protected:
         using ActionCreator = std::function<T* (PlayerbotAI* ai)>;
-        std::map<std::string, ActionCreator, std::less<>> creators;
+        using CreatorMap = std::map<std::string, ActionCreator, std::less<>>;
+        CreatorMap creators;
+        CreatorMap const* sharedCreators = nullptr;
+
+        // Opt-in for constructor-only, actor-independent registration tables.
+        // Function-local static initialization publishes one immutable table per
+        // concrete context type. Created actions/values remain per-context.
+        template<class Context, class Initialize>
+        void ShareCreators(Initialize initialize)
+        {
+            static const CreatorMap table = [this, &initialize] {
+                initialize();
+                return std::move(creators);
+            }();
+            sharedCreators = &table;
+        }
+
 
     public:
         T* Create(std::string_view name, PlayerbotAI* ai)
@@ -167,11 +183,18 @@ namespace ai
                 nameView = nameView.substr(0, pos);
             }
 
+            // Retain a local overlay for a derived context's extra/overridden
+            // registrations; only explicitly opted-in tables are shared.
             auto it = creators.find(nameView);
-            if (it == creators.end())
-                return nullptr;
+            ActionCreator const* creator = it != creators.end() ? &it->second : nullptr;
+            if (!creator && sharedCreators)
+            {
+                auto shared = sharedCreators->find(nameView);
+                if (shared != sharedCreators->end()) creator = &shared->second;
+            }
+            if (!creator) return nullptr;
 
-            T* object = it->second(ai);
+            T* object = (*creator)(ai);
             if (object == nullptr)
                 return nullptr;
 
@@ -186,6 +209,9 @@ namespace ai
 
         void GetSupportedKeys(std::set<std::string>& keys) const
         {
+            if (sharedCreators)
+                for (const auto& entry : *sharedCreators)
+                    keys.insert(entry.first);
             for (const auto& entry : creators)
                 keys.insert(entry.first);
         }

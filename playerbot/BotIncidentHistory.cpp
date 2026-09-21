@@ -17,6 +17,7 @@ struct Record
     BotIncidentKind kind;
     const char* state;
     int64 timestamp;
+    bool unavailable;
 };
 std::mutex historyMutex;
 std::vector<Record> pending;
@@ -39,7 +40,7 @@ void Emit(BotIncidentState& state, BotIncidentKind kind, const char* status, uin
     if (pending.size() >= 4096) { ++dropped; return; }
     pending.push_back({state.bot, state.map, state.instance, uint32(now - episode.started),
         episode.count, episode.started, kind == BotIncidentKind::Unreachable ? state.unreachableTarget : 0,
-        kind == BotIncidentKind::ActionLoop ? state.failedAction : "", kind, status, int64(time(nullptr))});
+        kind == BotIncidentKind::ActionLoop ? state.failedAction : "", kind, status, int64(time(nullptr)), state.actionUnavailable});
 }
 void Observe(BotIncidentState& state, BotIncidentKind kind, bool condition, uint32 threshold, uint32 now)
 {
@@ -95,7 +96,7 @@ void BotIncidentHistory::Sample(PlayerbotAI* ai)
     state.sampled = now;
 }
 
-void BotIncidentHistory::ActionResult(PlayerbotAI* ai, const std::string& action, bool success)
+void BotIncidentHistory::ActionResult(PlayerbotAI* ai, const std::string& action, bool success, bool unavailable)
 {
     if (!sPlayerbotAIConfig.incidentHistory) return;
     auto& state = State(ai);
@@ -105,8 +106,15 @@ void BotIncidentHistory::ActionResult(PlayerbotAI* ai, const std::string& action
         if (state.failedAction == action) { Observe(state, BotIncidentKind::ActionLoop, false, 0, now); state.failedAction.clear(); }
         return;
     }
-    if (state.failedAction != action)
-    { Observe(state, BotIncidentKind::ActionLoop, false, 0, now); state.failedAction = action.substr(0, 96); }
+    if (state.failedAction != action || state.actionUnavailable != unavailable)
+    {
+        // A different action or outcome is not proof the previous action recovered.
+        if (state.episodes[size_t(BotIncidentKind::ActionLoop)].active)
+            Emit(state, BotIncidentKind::ActionLoop, "observation_ended", now);
+        state.episodes[size_t(BotIncidentKind::ActionLoop)] = {};
+        state.failedAction = action.substr(0, 96);
+        state.actionUnavailable = unavailable;
+    }
     Observe(state, BotIncidentKind::ActionLoop, true, 15000, now);
 }
 
@@ -165,7 +173,7 @@ void BotIncidentHistory::Flush()
             if (c >= 32 && c < 127) { if (c == '\\' || c == '"') action += '\\'; action += char(c); }
         if (fprintf(file, "{\"run\":%lld,\"time\":%lld,\"bot\":%u,\"map\":%u,\"instance\":%u,\"kind\":\"%s\",\"state\":\"%s\",\"started_ms\":%u,\"duration_ms\":%u,\"observations\":%u,\"target\":\"%llu\",\"action\":\"%s\"}\n",
             static_cast<long long>(runStarted), static_cast<long long>(record.timestamp), record.bot, record.map, record.instance,
-            Name(record.kind), record.state, record.started, record.duration, record.count,
+            record.kind == BotIncidentKind::ActionLoop && record.unavailable ? "repeated_action_unavailable" : Name(record.kind), record.state, record.started, record.duration, record.count,
             static_cast<unsigned long long>(record.target), action.c_str()) < 0)
         { fclose(file); restoreLoss(batch.size() + lost); return; }
     }

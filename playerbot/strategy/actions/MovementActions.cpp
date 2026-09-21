@@ -23,6 +23,46 @@
 
 using namespace ai;
 
+namespace
+{
+    // Only constrain pursuit of a fleeing NPC, never a tank's approach to an
+    // enemy attacking a party member. Reuse full-segment hazard geometry so
+    // sparse path waypoints cannot skip over an untouched pack's aggro area.
+    bool UnsafeFleeingPursuit(PlayerbotAI* ai, WorldObject* target)
+    {
+        Player* bot = ai->GetBot();
+        Creature* enemy = dynamic_cast<Creature*>(target);
+        if (!enemy || !enemy->IsFleeing() || !bot->GetGroup() ||
+            !ai->HasRealPlayerMaster() || bot->InBattleGround() || bot->GetTransport())
+            return false;
+
+        AiObjectContext* context = ai->GetAiObjectContext();
+        std::list<HazardPosition> packs;
+        for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "possible targets no los"))
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (!unit || unit == enemy || !unit->IsCreature() || !unit->IsInWorld() ||
+                !unit->IsAlive() || !bot->IsInMap(unit) || unit->IsInCombat() ||
+                !unit->CanAttackOnSight(bot)) continue;
+            packs.emplace_back(WorldPosition(unit), unit->GetAttackDistance(bot));
+        }
+
+        PathFinder path(bot);
+        if (!path.calculate(enemy->GetPositionX(), enemy->GetPositionY(), enemy->GetPositionZ(), false) ||
+            path.getPathType() != PATHFIND_NORMAL || path.getPath().size() < 2)
+            return true;
+
+        WorldPosition previous(bot);
+        for (const auto& point : path.getPath())
+        {
+            WorldPosition next(bot->GetMapId(), point.x, point.y, point.z);
+            if (!IsHazardSafeSegment(previous, next, packs)) return true;
+            previous = next;
+        }
+        return false;
+    }
+}
+
 void MovementAction::CreateWp(Player* wpOwner, float x, float y, float z, float o, uint32 entry, bool important)
 {
     float dist = wpOwner->GetDistance(x, y, z);
@@ -2676,6 +2716,14 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (!ai->IsSafe(obj))
         return false;
 
+    if (UnsafeFleeingPursuit(ai, obj))
+    {
+        if (sServerFacade.GetChaseTarget(bot) == obj) ai->StopMoving();
+        if (ai->HasStrategy("debug move", BotState::BOT_STATE_NON_COMBAT))
+            ai->TellPlayerNoFacing(GetMaster(), "Holding pursuit: fleeing enemy has an unsafe path or a fresh pack on its route.");
+        return false;
+    }
+
 #ifdef MANGOSBOT_TWO
     TransportInfo* transportInfo = bot->GetTransportInfo();
     if (transportInfo && transportInfo->IsOnVehicle())
@@ -3693,6 +3741,11 @@ bool JumpAction::Execute(ai::Event &event)
             if (!followTarget || !ai->IsSafe(followTarget))
                 return false;
 
+            // A combat anchor or another bot moving below us is not permission
+            // to jump off a ledge. Preserve shortcuts when following the human.
+            if (!bot->InBattleGround() && followTarget != ai->GetMaster())
+                return false;
+
             if ((bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE ||
             bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == POINT_MOTION_TYPE) &&
             (bot->GetMotionMaster()->GetCurrent()->GetCurrentTarget() != followTarget ||
@@ -3719,8 +3772,13 @@ bool JumpAction::Execute(ai::Event &event)
 
         if (options == "chase")
         {
+            // Player-led dungeon groups must not use jumps to pursue enemies.
+            // The separate follow mode still follows the human down a ledge.
             Unit* chaseTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
             if (!chaseTarget || !ai->IsSafe(chaseTarget))
+                return false;
+
+            if (chaseTarget->IsCreature() && !bot->InBattleGround() && ai->HasRealPlayerMaster())
                 return false;
 
             if ((bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE ||

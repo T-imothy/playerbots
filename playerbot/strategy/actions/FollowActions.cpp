@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PartyCombatSupport.h"
 #include "FollowActions.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -15,6 +16,11 @@ bool FollowAction::Execute(Event& event)
     bool moved = false;
     Unit* followTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "follow target"));
     Formation* formation = AI_VALUE(Formation*, "formation");
+
+    // Support the pull from casting range rather than hugging the tank.
+    if (followTarget && ai->IsHeal(bot) && followTarget == GetPartyCombatAnchor(ai) &&
+        !AI_VALUE(GuidPosition, "manual follow target"))
+        return MoveTo(followTarget, std::max(10.0f, ai->GetRange("spell") - 5.0f));
 
     if (ai->IsSafe(followTarget))
     {
@@ -41,6 +47,11 @@ bool FollowAction::isUseful()
     float distance = 0;
     Unit* followTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "follow target"));
     Formation* formation = AI_VALUE(Formation*, "formation");
+
+    if (followTarget && ai->IsHeal(bot) && followTarget == GetPartyCombatAnchor(ai) &&
+        !AI_VALUE(GuidPosition, "manual follow target"))
+        return !bot->IsWithinDistInMap(followTarget, std::max(10.0f, ai->GetRange("spell") - 5.0f)) ||
+            !bot->IsWithinLOSInMap(followTarget);
 
     if (followTarget && followTarget->IsPlayer())
     {

@@ -86,6 +86,7 @@ Unit* DungeonAddTargetAction::GetTarget()
     if (bot->GetMapId() == 533)
         if (Unit* chow = GetGluthTarget()) return chow;
     if (Unit* objective = GetSummonObjectiveTarget()) return objective;
+    if (bot->GetMapId() == 230) return GetBlackrockDepthsTarget();
     if (Unit* totem = GetRaidTotemTarget()) return totem;
     if (Unit* twin = GetTwinEmperorTarget()) return twin;
     if (Unit* icecrown = GetIcecrownAddTarget()) return icecrown;

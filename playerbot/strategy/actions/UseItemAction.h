@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PartyCombatSupport.h"
 #include "GenericActions.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/RandomItemMgr.h"
@@ -675,7 +676,7 @@ namespace ai
 
         bool Execute(Event& event) override
         {
-            if (sServerFacade.IsInCombat(bot))
+            if (sServerFacade.IsInCombat(bot) || NeedsPartyCombatSupport(ai))
                 return false;
 
             if (!bot->HasMana())
@@ -744,7 +745,7 @@ namespace ai
 
         bool isPossible() override
         {
-            return !sServerFacade.IsInCombat(bot) && UseAction::isPossible();
+            return !sServerFacade.IsInCombat(bot) && !NeedsPartyCombatSupport(ai) && UseAction::isPossible();
         }
     };
 
@@ -755,7 +756,7 @@ namespace ai
 
         bool Execute(Event& event) override
         {
-            if (sServerFacade.IsInCombat(bot))
+            if (sServerFacade.IsInCombat(bot) || NeedsPartyCombatSupport(ai))
                 return false;
 
             if (ai->HasCheat(BotCheatMask::item))

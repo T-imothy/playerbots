@@ -17,6 +17,7 @@ classes = '\n'.join(block(header, 'class ' + name) + ';' for name in
 methods = source[source.index('float MyThreatValue::Calculate()'):]
 helper = block(source, 'Unit* ResolveThreatTarget(') if 'Unit* ResolveThreatTarget(' in source else ''
 code = r'''
+#define MANTECH_DIAG_SCOPE(...) ((void)0)
 #include <algorithm>
 #include <cassert>
 #include <cmath>
@@ -61,9 +62,10 @@ struct Context {template<class T>Proxy<T>* GetValue(std::string){static Proxy<T>
 struct PlayerbotAI {
  Player* bot;Unit* selected=nullptr;Context context;
  Player* GetBot(){return bot;}bool IsSafe(Player* p){return bot->map==p->map&&bot->instance==p->instance;}
- bool IsTank(Player* p){return p->tank;}Unit* GetUnit(ObjectGuid){return nullptr;}
+ bool IsTank(Player* p){return p->tank;}Unit* GetUnit(ObjectGuid guid){return selected&&selected->guid==guid ? selected : nullptr;}
  template<class T>T Read(std::string name,std::string qualifier=""){
   if constexpr(std::is_same_v<T,Unit*>)return selected;
+  else if constexpr(std::is_same_v<T,ObjectGuid>)return selected ? selected->guid : ObjectGuid();
   else return T{};
  }
 };

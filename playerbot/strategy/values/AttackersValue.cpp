@@ -27,7 +27,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
     if (bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_CLIENT_CONTROL_LOST))
         return result;
 
-    if (ai->HasStrategy("focus rti targets", BotState::BOT_STATE_COMBAT))
+    if (!ai->IsTank(bot) && ai->HasStrategy("focus rti targets", BotState::BOT_STATE_COMBAT))
     {
         Unit* rtiTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "rti target"));
 

@@ -15,6 +15,8 @@ public:
     }
 
 public:
+    bool HasRescueTarget() const { return rescueTarget; }
+
     virtual void CheckAttacker(Unit* creature, ThreatManager* threatManager) override
     {
         Player* bot = ai->GetBot();
@@ -31,7 +33,7 @@ public:
         }
 
         // Rescue a group member before building threat on another tank's enemy.
-        // Explicit raid marks are still resolved before this unmarked fallback.
+        // Tank rescue outranks a damage mark; DPS keep their marked target.
         Player* victim = dynamic_cast<Player*>(creature->GetVictim());
         const bool rescue = victim && victim != bot && victim->IsInWorld() && victim->IsAlive() &&
             bot->IsInMap(victim) && bot->GetGroup() && victim->GetGroup() == bot->GetGroup() &&
@@ -53,11 +55,13 @@ protected:
 
 ObjectGuid TankTargetValue::Calculate()
 {
+    FindTargetForTankStrategy strategy(ai);
+    Unit* target = FindTarget(&strategy);
+    if (target && strategy.HasRescueTarget()) return target->GetObjectGuid();
+
     Unit* rti = ai->GetUnit(RtiTargetValue::Calculate());
     if (rti && PossibleAttackTargetsValue::IsPossibleTarget(rti, bot, sPlayerbotAIConfig.sightDistance, true) &&
         !MeleeCcCheck(ai).Protected(rti)) return rti->GetObjectGuid();
 
-    FindTargetForTankStrategy strategy(ai);
-    Unit* target = FindTarget(&strategy);
     return target ? target->GetObjectGuid() : ObjectGuid();
 }

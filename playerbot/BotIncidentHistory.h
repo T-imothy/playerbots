@@ -17,13 +17,14 @@ struct BotIncidentState
     uint32 sampled = 0, map = 0, instance = 0, bot = 0;
     float x = 0, y = 0, z = 0;
     std::string failedAction;
+    bool actionUnavailable = false;
     uint64 unreachableTarget = 0;
 };
 class BotIncidentHistory
 {
 public:
     static void Sample(PlayerbotAI* ai);
-    static void ActionResult(PlayerbotAI* ai, const std::string& action, bool success);
+    static void ActionResult(PlayerbotAI* ai, const std::string& action, bool success, bool unavailable = false);
     static void Unreachable(PlayerbotAI* ai);
     static void Close(BotIncidentState& state);
     static void Flush();

@@ -167,6 +167,7 @@ namespace ai
         Unit* GetThekalTarget();
         Unit* GetGluthTarget();
         Unit* GetSummonObjectiveTarget();
+        Unit* GetBlackrockDepthsTarget();
         Unit* GetRaidTotemTarget();
         Unit* GetTwinEmperorTarget();
         Unit* GetIcecrownAddTarget();

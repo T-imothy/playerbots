@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/PartyCombatSupport.h"
 #include "TargetValue.h"
 #include "PossibleTargetsValue.h"
 
@@ -163,6 +164,10 @@ ObjectGuid PullTargetValue::Get()
 ObjectGuid FollowTargetValue::Calculate()
 {
     Unit* followTarget = AI_VALUE(GuidPosition, "manual follow target").GetUnit(bot->GetInstanceId());
+    if (!followTarget && ai->IsHeal(bot) &&
+        !ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) &&
+        !ai->HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT))
+        followTarget = GetPartyCombatAnchor(ai);
     if (followTarget == nullptr)
     {
         Formation* formation = AI_VALUE(Formation*, "formation");

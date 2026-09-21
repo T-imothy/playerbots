@@ -126,7 +126,7 @@ bool Engine::IsFailureBackedOff(Action* action, const Event& event, ActionResult
 void Engine::RecordFailure(Action* action, const Event& event, ActionResult reason)
 {
     if (sPlayerbotAIConfig.incidentHistory && reason == ACTION_RESULT_IMPOSSIBLE)
-        BotIncidentHistory::ActionResult(ai, action->getName(), false);
+        BotIncidentHistory::ActionResult(ai, action->getName(), false, true);
     if (IsExplicitPlayerCommand(action, event))
         return;
 

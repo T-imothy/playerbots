@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/PartyCombatSupport.h"
 #include "playerbot/strategy/Value.h"
 #include "ItemUsageValue.h"
 #include "BudgetValues.h"
@@ -160,7 +161,7 @@ namespace ai
         ShouldDrinkValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "should drink", 2) {}
         virtual bool Calculate() override
         {
-            if (!bot->HasMana())
+            if (!bot->HasMana() || NeedsPartyCombatSupport(ai))
                 return false;
 
             if (AI_VALUE2(uint8, "mana", "self target") >= 85)
@@ -202,7 +203,7 @@ namespace ai
         ShouldEatValue(PlayerbotAI* ai) : BoolCalculatedValue(ai, "should eat", 2) {}
         virtual bool Calculate() override
         {
-            if (AI_VALUE2(uint8, "health", "self target") >= sPlayerbotAIConfig.lowHealth)
+            if (NeedsPartyCombatSupport(ai) || AI_VALUE2(uint8, "health", "self target") >= sPlayerbotAIConfig.lowHealth)
                 return false;
 
             Player* master = ai->GetMaster();
