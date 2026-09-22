@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 
 #include "playerbot/playerbot.h"
 #include "CustomStrategyEditAction.h"
@@ -26,7 +28,7 @@ bool CustomStrategyEditAction::PrintHelp(Player* requester)
 {
     ai->TellPlayer(requester, "=== Custom strategies ===");
     uint32 owner = (uint32)ai->GetBot()->GetGUIDLow();
-    auto results = CharacterDatabase.PQuery("SELECT distinct name FROM ai_playerbot_custom_strategy WHERE owner = '%u'", owner);
+    auto results = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT distinct name FROM ai_playerbot_custom_strategy WHERE owner = '%u'", owner));
     if (results)
     {
         do
@@ -48,7 +50,7 @@ bool CustomStrategyEditAction::Print(std::string name, Player* requester)
     ai->TellPlayer(requester, out.str());
 
     uint32 owner = (uint32)ai->GetBot()->GetGUIDLow();
-    auto results = CharacterDatabase.PQuery("SELECT idx, action_line FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' order by idx", name.c_str(), owner);
+    auto results = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT idx, action_line FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' order by idx", name.c_str(), owner));
     if (results)
     {
         do
@@ -67,7 +69,7 @@ bool CustomStrategyEditAction::Print(std::string name, Player* requester)
 bool CustomStrategyEditAction::Edit(std::string name, uint32 idx, std::string command, Player* requester)
 {
     uint32 owner = (uint32)ai->GetBot()->GetGUIDLow();
-    auto results = CharacterDatabase.PQuery("SELECT action_line FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' and idx = '%u'", name.c_str(), owner, idx);
+    auto results = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT action_line FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' and idx = '%u'", name.c_str(), owner, idx));
     if (results)
     {
         if (command.empty())

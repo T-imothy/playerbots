@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 
 #include "playerbot/playerbot.h"
 #include "HireAction.h"
@@ -14,7 +16,7 @@ bool HireAction::Execute(Event& event)
         return false;
 
     uint32 account = sObjectMgr.GetPlayerAccountIdByGUID(requester->GetObjectGuid());
-    auto results = CharacterDatabase.PQuery("SELECT count(*) FROM characters where account = '%u'", account);
+    auto results = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT count(*) FROM characters where account = '%u'", account));
 
     uint32 charCount = 10;
     if (results)

@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 
 #include "playerbot/playerbot.h"
 #include "LootRollAction.h"
@@ -13,8 +15,8 @@ std::string RollPolicyValue::Get()
     if (!loaded)
     {
         loaded = true;
-        auto rows = CharacterDatabase.PQuery("SELECT `value` FROM `ai_playerbot_db_store` WHERE `guid`='%llu' AND `preset`='__roll_policy' AND `key`='mode'",
-            static_cast<unsigned long long>(ai->GetBot()->GetObjectGuid().GetRawValue()));
+        auto rows = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT `value` FROM `ai_playerbot_db_store` WHERE `guid`='%llu' AND `preset`='__roll_policy' AND `key`='mode'",
+            static_cast<unsigned long long>(ai->GetBot()->GetObjectGuid().GetRawValue())));
         if (rows)
         {
             const std::string saved = rows->Fetch()[0].GetString();

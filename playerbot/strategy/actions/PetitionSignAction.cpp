@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 
 #include "playerbot/playerbot.h"
 #include "PetitionSignAction.h"
@@ -25,7 +27,7 @@ bool PetitionSignAction::Execute(Event& event)
     uint32 type = 9;
 
 #ifndef MANGOSBOT_ZERO
-    auto result = CharacterDatabase.PQuery("SELECT `type` FROM `petition` WHERE `petitionguid` = '%u'", petitionGuid.GetCounter());
+    auto result = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT `type` FROM `petition` WHERE `petitionguid` = '%u'", petitionGuid.GetCounter()));
     if (!result)
     {
         return false;

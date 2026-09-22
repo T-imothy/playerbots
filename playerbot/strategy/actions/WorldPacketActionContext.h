@@ -35,7 +35,8 @@ namespace ai
     {
     public:
         WorldPacketActionContext()
-        {   
+        {
+            ShareCreators<WorldPacketActionContext>([this] {    
             creators["lfg join"] = [](PlayerbotAI* ai) { return new LfgJoinAction(ai); };
             creators["lfg accept"] = [](PlayerbotAI* ai) { return new LfgAcceptAction(ai); };
             creators["lfg role check"] = [](PlayerbotAI* ai) { return new LfgRoleCheckAction(ai); };
@@ -89,6 +90,8 @@ namespace ai
             creators["petition sign"] = [](PlayerbotAI* ai) { return new PetitionSignAction(ai); };
             creators["see spell"] = [](PlayerbotAI* ai) { return new SeeSpellAction(ai); };
             creators["arena team accept"] = [](PlayerbotAI* ai) { return new ArenaTeamAcceptAction(ai); };
+        
+            });
         }
     };
 };

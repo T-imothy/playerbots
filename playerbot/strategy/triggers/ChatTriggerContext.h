@@ -9,6 +9,7 @@ namespace ai
     public:
         ChatTriggerContext()
         {
+            ShareCreators<ChatTriggerContext>([this] { 
             creators["quests"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "quests"); };
             creators["avoid creature"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "avoid creature"); };
             creators["quest reward"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "quest reward"); };
@@ -148,6 +149,8 @@ namespace ai
             creators["set value"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "set value");  };
             creators["glyph"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "glyph");  };
             creators["speak"] = [](PlayerbotAI* ai) { return new ChatCommandTrigger(ai, "speak"); };
+        
+            });
         }
     };
 };

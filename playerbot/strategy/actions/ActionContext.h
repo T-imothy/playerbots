@@ -98,6 +98,7 @@ namespace ai
     public:
         ActionContext()
         {
+            ShareCreators<ActionContext>([this] { 
             creators["mark rti"] = [](PlayerbotAI* ai) { return new MarkRtiAction(ai); };
             creators["set return position"] = [](PlayerbotAI* ai) { return new SetReturnPositionAction(ai); };
             creators["rpg"] = [](PlayerbotAI* ai) { return new RpgAction(ai); };
@@ -499,6 +500,8 @@ namespace ai
 #ifdef GenerateBotTests
             creators["test"] = [](PlayerbotAI* ai) { return new TestAction(ai); };
 #endif
+        
+            });
         }    
     };
 };

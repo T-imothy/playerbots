@@ -45,10 +45,8 @@ bool BuyAction::Execute(Event& event)
             //Bot will buy until no useful items are left.
 
             VendorItemData const* tItems = pCreature->GetVendorItems();
-            VendorItemData const* vItems = {};
-#ifndef MANGOSBOT_ZERO                
-            vItems = pCreature->GetVendorTemplateItems();
-#endif
+            // Turtle supports shared vendor inventories even in the Classic build.
+            VendorItemData const* vItems = pCreature->GetVendorTemplateItems();
             if (!tItems && !vItems)
                 continue;
             
@@ -232,11 +230,12 @@ bool BuyAction::Execute(Event& event)
                 if (!proto)
                     continue;
 
-                result |= BuyItem(requester, pCreature->GetVendorItems(), vendorguid, proto, bought);
-                if (!result)
-                    result |= BuyItem(requester, pCreature->GetVendorTemplateItems(), vendorguid, proto, bought);
+                bool itemBought = BuyItem(requester, pCreature->GetVendorItems(), vendorguid, proto, bought);
+                if (!itemBought)
+                    itemBought = BuyItem(requester, pCreature->GetVendorTemplateItems(), vendorguid, proto, bought);
+                result |= itemBought;
 
-                if (!result)
+                if (!itemBought)
                 {
                     std::ostringstream out; out << "Nobody sells " << ChatHelper::formatItem(proto) << " nearby";
                     ai->TellPlayer(requester, out.str(), PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, false);

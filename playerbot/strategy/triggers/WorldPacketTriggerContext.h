@@ -10,6 +10,7 @@ namespace ai
     public:
         WorldPacketTriggerContext()
         {
+            ShareCreators<WorldPacketTriggerContext>([this] { 
             creators["mail available"] = [](PlayerbotAI* ai) { return new MailAvailableTrigger(ai); };
             creators["gossip hello"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "gossip hello"); };
             creators["group invite"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "group invite"); };
@@ -65,6 +66,8 @@ namespace ai
             creators["receive text emote"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "receive text emote"); };
             creators["arena team invite"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "arena team invite"); };
             creators["summon request"] = [](PlayerbotAI* ai) { return new WorldPacketTrigger(ai, "summon request"); };
+        
+            });
         }
     };
 };

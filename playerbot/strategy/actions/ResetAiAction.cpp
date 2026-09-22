@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 
 #include "playerbot/playerbot.h"
 #include "ResetAiAction.h"
@@ -35,7 +37,7 @@ void ResetAiAction::ResetValues()
 {
     uint64 guid = ai->GetBot()->GetObjectGuid().GetRawValue();
 
-    auto results = CharacterDatabase.PQuery("SELECT `value` FROM `ai_playerbot_db_store` WHERE `guid` = '%lu' and `preset` = '' and `key` = 'value'", guid);
+    auto results = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT `value` FROM `ai_playerbot_db_store` WHERE `guid` = '%lu' and `preset` = '' and `key` = 'value'", guid));
     if (results)
     {
         std::list<std::string> values;
@@ -116,7 +118,7 @@ bool ListAiAction::Execute(Event& event)
 
       ai->TellError(requester, "### PRESETS AVAILABLE ###");
 
-      auto results = CharacterDatabase.PQuery("SELECT DISTINCT `preset` FROM `ai_playerbot_db_store` WHERE `guid` = '%lu'", guid);
+      auto results = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT DISTINCT `preset` FROM `ai_playerbot_db_store` WHERE `guid` = '%lu'", guid));
       if (results)
       {
          std::list<std::string> values;

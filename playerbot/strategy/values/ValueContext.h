@@ -122,6 +122,7 @@ namespace ai
     public:
         ValueContext()
         {
+            ShareCreators<ValueContext>([this] { 
             creators["roll policy"] = [](PlayerbotAI* ai) { return new RollPolicyValue(ai); };
             creators["netherspite position"] = [](PlayerbotAI* ai) { return new NetherspitePositionValue(ai); };
             creators["onyxia position"] = [](PlayerbotAI* ai) { return new OnyxiaPositionValue(ai); };
@@ -530,6 +531,8 @@ namespace ai
             creators["runeforge spells"] = [](PlayerbotAI* ai) { return new RuneForgeSpellsValue(ai); };
             creators["best runeforge spell"] = [](PlayerbotAI* ai) { return new BestRuneForgeSpellValue(ai); };
             creators["should runeforge"] = [](PlayerbotAI* ai) { return new ShouldRuneForgeValue(ai); };
+        
+            });
         };
     };
 }

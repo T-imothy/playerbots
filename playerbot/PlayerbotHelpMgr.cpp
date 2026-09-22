@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -924,7 +926,7 @@ void PlayerbotHelpMgr::FormatHelpTopics()
 void PlayerbotHelpMgr::LoadBotHelpTexts()
 {
     sLog.outBasic("Loading playerbot texts...");
-    auto results = WorldDatabase.PQuery("SELECT `name`, `template_text`, `text`, `text_loc1`, `text_loc2`, `text_loc3`, `text_loc4`, `text_loc5`, `text_loc6`, `text_loc7`, `text_loc8` FROM `ai_playerbot_help_texts`");
+    auto results = std::unique_ptr<QueryResult>(WorldDatabase.PQuery("SELECT `name`, `template_text`, `text`, `text_loc1`, `text_loc2`, `text_loc3`, `text_loc4`, `text_loc5`, `text_loc6`, `text_loc7`, `text_loc8` FROM `ai_playerbot_help_texts`"));
     int count = 0;
     if (results)
     {

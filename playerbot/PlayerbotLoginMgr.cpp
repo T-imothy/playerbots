@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 #include "PlayerbotLoginMgr.h"
 #include "Database/DatabaseImpl.h"
 #include "PlayerbotMgr.h"
@@ -416,7 +418,7 @@ BotPool PlayerBotLoginMgr::LoadBotsFromDb()
     BotPool botPool;
     std::set<uint32> accounts;
     std::string prefixString = sPlayerbotAIConfig.randomBotAccountPrefix + "%";
-    auto result = LoginDatabase.PQuery("SELECT id FROM account where UPPER(username) like UPPER('%s')", prefixString.c_str());
+    auto result = std::unique_ptr<QueryResult>(LoginDatabase.PQuery("SELECT id FROM account where UPPER(username) like UPPER('%s')", prefixString.c_str()));
     if (!result)
     {
         return botPool;
@@ -431,7 +433,7 @@ BotPool PlayerBotLoginMgr::LoadBotsFromDb()
 
     sLog.outDebug("PlayerbotLoginMgr: %d accounts found.", uint32(accounts.size()));
 
-    result = CharacterDatabase.PQuery("SELECT account, guid, race, class, level, online, totaltime, map, position_x, position_y, position_z, orientation, (SELECT guildid FROM guild_member m WHERE m.guid = c.guid) guildId FROM characters c");
+    result = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT account, guid, race, class, level, online, totaltime, map, position_x, position_y, position_z, orientation, (SELECT guildid FROM guild_member m WHERE m.guid = c.guid) guildId FROM characters c"));
          
     if (!result)
     {

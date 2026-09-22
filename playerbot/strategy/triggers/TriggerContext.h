@@ -37,6 +37,7 @@ namespace ai
     public:
         TriggerContext()
         {
+            ShareCreators<TriggerContext>([this] { 
             creators["return"] = [](PlayerbotAI* ai) { return new ReturnTrigger(ai); };
             creators["sit"] = [](PlayerbotAI* ai) { return new SitTrigger(ai); };
             creators["return to stay position"] = [](PlayerbotAI* ai) { return new ReturnToStayPositionTrigger(ai); };
@@ -400,6 +401,8 @@ namespace ai
 #ifdef GenerateBotTests
             creators["test ready"] = [](PlayerbotAI* ai) { return new TestReadyTrigger(ai); };
 #endif
+        
+            });
         }
     };
 };

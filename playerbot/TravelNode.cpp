@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 #include "TransportAnimation.h"
 #include "Maps/AreaTriggerAccess.h"
 // botpch.h supplied the boost headers; the module build has no precompiled
@@ -3580,7 +3582,7 @@ void TravelNodeMap::loadNodeStore()
     std::unordered_map<uint32, TravelNode*> saveNodes;   
 
     {
-        auto result = WorldDatabase.PQuery("%s", query.c_str());
+        auto result = std::unique_ptr<QueryResult>(WorldDatabase.PQuery("%s", query.c_str()));
 
         if (result)
         {
@@ -3616,7 +3618,7 @@ void TravelNodeMap::loadNodeStore()
         //                     0        1          2    3      4         5              6          7          8               9             10 
         std::string query = "SELECT node_id, to_node_id,type,object,distance,swim_distance, extra_cost,calculated, max_creature_0,max_creature_1,max_creature_2 FROM ai_playerbot_travelnode_link";
 
-        auto result = WorldDatabase.PQuery("%s", query.c_str());
+        auto result = std::unique_ptr<QueryResult>(WorldDatabase.PQuery("%s", query.c_str()));
 
         if (result)
         {
@@ -3652,7 +3654,7 @@ void TravelNodeMap::loadNodeStore()
         //                     0        1           2   3      4   5  6
         std::string query = "SELECT node_id, to_node_id, nr, map_id, x, y, z FROM ai_playerbot_travelnode_path order by node_id, to_node_id, nr";
 
-        auto result = WorldDatabase.PQuery("%s", query.c_str());
+        auto result = std::unique_ptr<QueryResult>(WorldDatabase.PQuery("%s", query.c_str()));
 
         if (result)
         {

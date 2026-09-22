@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 // std::regex used to arrive through botpch.h (line 57). The module build has
 // no per-module precompiled header - the aggregate `modules` target compiles
 // two modules' sources - so a use has to name its own header.
@@ -1036,7 +1038,7 @@ void PlayerbotHolder::OnBotLogin(Player * const bot)
     if (sRandomPlayerbotMgr.IsRandomBot(bot))
     {
         uint32 lowguid = bot->GetObjectGuid().GetCounter();
-        auto result = CharacterDatabase.PQuery("SELECT 1 FROM character_social WHERE flags='%u' and friend='%d'", SOCIAL_FLAG_FRIEND, lowguid);
+        auto result = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT 1 FROM character_social WHERE flags='%u' and friend='%d'", SOCIAL_FLAG_FRIEND, lowguid));
         if (result)
             GetBotAI(bot)->SetPlayerFriend(true);
         else
@@ -1262,7 +1264,7 @@ std::list<std::string> PlayerbotHolder::HandlePlayerbotCommand(const std::string
             return messages;
         }
 
-        auto result = CharacterDatabase.PQuery("SELECT m.guid, (select name from characters c where c.guid = m.guid) FROM guild_member m WHERE guildid = '%u'", master->GetGuildId());
+        auto result = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT m.guid, (select name from characters c where c.guid = m.guid) FROM guild_member m WHERE guildid = '%u'", master->GetGuildId()));
 
         if (!result)
         {
@@ -1305,9 +1307,9 @@ std::list<std::string> PlayerbotHolder::HandlePlayerbotCommand(const std::string
                 continue;
             }
 
-            auto results = CharacterDatabase.PQuery(
+            auto results = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery(
                 "SELECT name FROM characters WHERE account = '%u'",
-                accountId);
+                accountId));
             if (results)
             {
                 do
@@ -1360,7 +1362,7 @@ uint32 PlayerbotHolder::GetAccountId(std::string name)
 {
     uint32 accountId = 0;
 
-    auto results = LoginDatabase.PQuery("SELECT id FROM account WHERE username = '%s'", name.c_str());
+    auto results = std::unique_ptr<QueryResult>(LoginDatabase.PQuery("SELECT id FROM account WHERE username = '%s'", name.c_str()));
     if(results)
     {
         Field* fields = results->Fetch();
@@ -1411,8 +1413,8 @@ std::string PlayerbotHolder::ListBots(Player* master, const std::string param)
 
     if (master)
     {
-        auto results = CharacterDatabase.PQuery("SELECT class,name FROM characters where account = '%u'",
-            master->GetSession()->GetAccountId());
+        auto results = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT class,name FROM characters where account = '%u'",
+            master->GetSession()->GetAccountId()));
         if (results != NULL)
         {
             do
@@ -1655,9 +1657,9 @@ void PlayerbotMgr::OnPlayerLogin(Player* player)
         return;
 
     uint32 accountId = player->GetSession()->GetAccountId();
-    auto results = CharacterDatabase.PQuery(
+    auto results = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery(
         "SELECT guid, name FROM characters WHERE account = '%u'",
-        accountId);
+        accountId));
     if (results)
     {
         std::ostringstream out; out << "add ";
@@ -2556,7 +2558,7 @@ void PlayerbotHolder::CreateBot(Player* master, const std::string param, std::li
 
     if (!name.empty())
     {
-        auto result = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s'", name.c_str());
+        auto result = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s'", name.c_str()));
         if (result)
         {
             messages.push_back("Name already exists");

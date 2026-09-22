@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 
 #include "playerbot/playerbot.h"
 #include "CustomStrategy.h"
@@ -115,9 +117,8 @@ void CustomStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void CustomStrategy::LoadActionLines(uint32 owner)
 {
-    auto results = CharacterDatabase.PQuery("SELECT action_line FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' order by idx",
-            qualifier.c_str(), owner);
-    std::unique_ptr<QueryResult> results_guard(results);
+    auto results = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT action_line FROM ai_playerbot_custom_strategy WHERE name = '%s' and owner = '%u' order by idx",
+            qualifier.c_str(), owner));
     if (results)
     {
         do

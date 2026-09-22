@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 
 #include "playerbot/playerbot.h"
 #include "ListSpellsAction.h"
@@ -67,7 +69,7 @@ std::list<std::pair<uint32, std::string> > ListSpellsAction::GetSpellList(std::s
 
     if (vendorItems.empty())
     {
-        auto results = WorldDatabase.PQuery("SELECT item FROM npc_vendor where maxcount = 0");
+        auto results = std::unique_ptr<QueryResult>(WorldDatabase.PQuery("SELECT item FROM npc_vendor where maxcount = 0"));
         if (results)
         {
             do

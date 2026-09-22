@@ -90,6 +90,7 @@ namespace ai
     public:
         ChatActionContext()
         {
+            ShareCreators<ChatActionContext>([this] { 
             creators["range"] = [](PlayerbotAI* ai) { return new RangeAction(ai); };
             creators["stats"] = [](PlayerbotAI* ai) { return new StatsAction(ai); };
             creators["status"] = [](PlayerbotAI* ai) { return new BotStatusAction(ai); };
@@ -224,6 +225,8 @@ namespace ai
             creators["set value"] = [](PlayerbotAI* ai) { return new SetValueAction(ai); };
             creators["glyph"] = [](PlayerbotAI* ai) { return new GlyphAction(ai); };
             creators["speak"] = [](PlayerbotAI* ai) { return new SpeakAction(ai); };
-       }
+       
+            });
+        }
     };
 };

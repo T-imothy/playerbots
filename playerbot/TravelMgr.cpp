@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 #include "playerbot/TravelMgr.h"
 #include <numeric>
 #include <iomanip>
@@ -1215,7 +1217,7 @@ void TravelMgr::LoadAreaLevels()
     std::string query = "SELECT id, level FROM ai_playerbot_zone_level";
 
     {
-        auto result = WorldDatabase.PQuery("%s", query.c_str());
+        auto result = std::unique_ptr<QueryResult>(WorldDatabase.PQuery("%s", query.c_str()));
 
         std::vector<uint32> loadedAreas;
 
@@ -2336,7 +2338,7 @@ void TravelMgr::LoadFishLocations()
     fishMap.clear();
     destinationMap[TravelDestinationPurpose::GatherFishing].clear();
 
-    auto result = WorldDatabase.Query("SELECT `name`, `map_id`, `position_x`, `position_y`, `position_z`, `orientation`, `description` FROM `ai_playerbot_named_location` WHERE `name` LIKE 'FISH_LOCATION%'");
+    auto result = std::unique_ptr<QueryResult>(WorldDatabase.Query("SELECT `name`, `map_id`, `position_x`, `position_y`, `position_z`, `orientation`, `description` FROM `ai_playerbot_named_location` WHERE `name` LIKE 'FISH_LOCATION%'"));
 
     if (!result)
     {

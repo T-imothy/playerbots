@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 
 #include "playerbot/playerbot.h"
 #include "UpdateGearAction.h"
@@ -207,7 +209,7 @@ void UpdateGearAction::EnchantItem(Item* item)
 
         if (enchants.empty())
         {
-            auto result = WorldDatabase.PQuery("SELECT class, spec, spellid, slotid FROM ai_playerbot_enchants");
+            auto result = std::unique_ptr<QueryResult>(WorldDatabase.PQuery("SELECT class, spec, spellid, slotid FROM ai_playerbot_enchants"));
             if (result)
             {
                 do

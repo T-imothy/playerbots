@@ -65,6 +65,7 @@ namespace ai
     public:
         StrategyContext()
         {
+            ShareCreators<StrategyContext>([this] { 
             creators["turtle classes"] = [](PlayerbotAI* ai) { return new TurtleClassStrategy(ai); };
             creators["racials"] = [](PlayerbotAI* ai) { return new RacialsStrategy(ai); };
             creators["loot"] = [](PlayerbotAI* ai) { return new LootNonCombatStrategy(ai); };
@@ -187,6 +188,8 @@ namespace ai
 #ifdef GenerateBotTests
             creators["test"] = [](PlayerbotAI* ai) { return new TestStrategy(ai); };
 #endif
+        
+            });
         }
     };
 
@@ -195,6 +198,7 @@ namespace ai
     public:
         MovementStrategyContext() : NamedObjectContext<Strategy>(false, true)
         {
+            ShareCreators<MovementStrategyContext>([this] { 
             creators["follow"] = [](PlayerbotAI* ai) { return new FollowMasterStrategy(ai); };
             creators["stay"] = [](PlayerbotAI* ai) { return new StayStrategy(ai); };
             creators["runaway"] = [](PlayerbotAI* ai) { return new RunawayStrategy(ai); };
@@ -202,6 +206,8 @@ namespace ai
             creators["guard"] = [](PlayerbotAI* ai) { return new GuardStrategy(ai); };
             creators["free"] = [](PlayerbotAI* ai) { return new FreeStrategy(ai); };
             creators["wander"] = [](PlayerbotAI* ai) { return new WanderStrategy(ai); };
+        
+            });
         }
     };
 
@@ -210,9 +216,12 @@ namespace ai
     public:
         AssistStrategyContext() : NamedObjectContext<Strategy>(false, true)
         {
+            ShareCreators<AssistStrategyContext>([this] { 
             creators["dps assist"] = [](PlayerbotAI* ai) { return new DpsAssistStrategy(ai); };
             creators["dps aoe"] = [](PlayerbotAI* ai) { return new DpsAoeStrategy(ai); };
             creators["tank assist"] = [](PlayerbotAI* ai) { return new TankAssistStrategy(ai); };
+        
+            });
         }
     };
 
@@ -221,8 +230,11 @@ namespace ai
     public:
         QuestStrategyContext() : NamedObjectContext<Strategy>(false, true)
         {
+            ShareCreators<QuestStrategyContext>([this] { 
             creators["quest"] = [](PlayerbotAI* ai) { return new DefaultQuestStrategy(ai); };
             creators["accept all quests"] = [](PlayerbotAI* ai) { return new AcceptAllQuestsStrategy(ai); };
+        
+            });
         }
     };
 
@@ -231,8 +243,11 @@ namespace ai
     public:
         FishStrategyContext() : NamedObjectContext<Strategy>(false, true)
         {
+            ShareCreators<FishStrategyContext>([this] { 
             creators["fish"] = [](PlayerbotAI* ai) { return new FishStrategy(ai); };
             creators["tfish"] = [](PlayerbotAI* ai) { return new TFishStrategy(ai); };
+        
+            });
         }   
     };
 };

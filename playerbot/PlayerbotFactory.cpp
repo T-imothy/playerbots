@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 #include "MountManager.hpp"
 #include "playerbot/strategy/values/MountValues.h"
 
@@ -4446,7 +4448,7 @@ ObjectGuid PlayerbotFactory::GetRandomBot()
         if (!sAccountMgr.GetCharactersCount(accountId))
             continue;
 
-        auto result = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE account = '%u'", accountId);
+        auto result = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT guid FROM characters WHERE account = '%u'", accountId));
         if (!result)
             continue;
 
@@ -5427,7 +5429,7 @@ void PlayerbotFactory::LoadEnchantContainer()
 
    uint32 count = 0;
 
-   auto result = WorldDatabase.PQuery("SELECT class, spec, spellid, slotid FROM ai_playerbot_enchants");
+   auto result = std::unique_ptr<QueryResult>(WorldDatabase.PQuery("SELECT class, spec, spellid, slotid FROM ai_playerbot_enchants"));
    if (result)
    {
       do

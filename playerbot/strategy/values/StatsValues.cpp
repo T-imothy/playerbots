@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 
 #include "playerbot/playerbot.h"
 #include "StatsValues.h"
@@ -35,8 +37,8 @@ bool PetIsDeadValue::Calculate()
     if (lastSavedPetCheck && now - lastSavedPetCheck < 5) return savedPetDead;
     lastSavedPetCheck = now;
     // Match the native summon selection; stable-only pets are not candidates.
-    auto result = CharacterDatabase.PQuery("SELECT curhealth FROM character_pet WHERE owner = '%u' AND (slot = '%u' OR slot > '%u') ORDER BY slot ASC LIMIT 1",
-        bot->GetGUIDLow(), PET_SAVE_AS_CURRENT, PET_SAVE_LAST_STABLE_SLOT);
+    auto result = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT curhealth FROM character_pet WHERE owner = '%u' AND (slot = '%u' OR slot > '%u') ORDER BY slot ASC LIMIT 1",
+        bot->GetGUIDLow(), PET_SAVE_AS_CURRENT, PET_SAVE_LAST_STABLE_SLOT));
     savedPetDead = result && result->Fetch()[0].GetUInt32() == 0;
     return savedPetDead;
 }

@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 #include "Util/AccountMembershipIndex.h"
 
 #include "playerbot/PlayerbotAIConfig.h"
@@ -1036,7 +1038,7 @@ bool PlayerbotAIConfig::IsInRandomAccountList(uint32 id)
         return false;
 
     // Slow path: look up username and check RNDBOT prefix. Cache result either way.
-    auto qr = LoginDatabase.PQuery("SELECT username FROM account WHERE id = %u", id);
+    auto qr = std::unique_ptr<QueryResult>(LoginDatabase.PQuery("SELECT username FROM account WHERE id = %u", id));
     if (!qr)
     {
         nonRandomBotAccounts.insert(id);
@@ -1157,7 +1159,7 @@ void PlayerbotAIConfig::loadFreeAltBotAccounts()
 
     freeAltBots.clear();
 
-    auto results = LoginDatabase.PQuery("SELECT username, id FROM account where username not like '%s%%'", randomBotAccountPrefix.c_str());
+    auto results = std::unique_ptr<QueryResult>(LoginDatabase.PQuery("SELECT username, id FROM account where username not like '%s%%'", randomBotAccountPrefix.c_str()));
     if (results)
     {
         do
@@ -1171,7 +1173,7 @@ void PlayerbotAIConfig::loadFreeAltBotAccounts()
             if (std::find(toggleAlwaysOnlineAccounts.begin(), toggleAlwaysOnlineAccounts.end(), accountName) != toggleAlwaysOnlineAccounts.end())
                 accountToggle = true;
 
-            auto result = CharacterDatabase.PQuery("SELECT name, guid FROM characters WHERE account = '%u'", accountId);
+            auto result = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT name, guid FROM characters WHERE account = '%u'", accountId));
             if (!result)
                 continue;
 
@@ -1551,7 +1553,7 @@ void PlayerbotAIConfig::LoadLLMDefaultPrompts(const std::string& fileName)
 
         std::string escapedName = name;
         CharacterDatabase.escape_string(escapedName);
-        auto result = CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s' LIMIT 1", escapedName.c_str());
+        auto result = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT guid FROM characters WHERE name = '%s' LIMIT 1", escapedName.c_str()));
         if (!result)
         {
             sLog.outError("Character '%s' not found in characters DB while loading '%s'.", name.c_str(), fileName.c_str());

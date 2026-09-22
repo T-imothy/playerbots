@@ -1,3 +1,5 @@
+#include <memory>
+#include "Database/QueryResult.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -18,7 +20,7 @@ void PlayerbotDbStore::Load(PlayerbotAI *ai, std::string preset)
     if (preset == "__roll_policy") return; // Dedicated setting, never an AI strategy preset.
     uint64 guid = ai->GetBot()->GetObjectGuid().GetRawValue();
 
-    auto results = CharacterDatabase.PQuery("SELECT `key`,`value` FROM `ai_playerbot_db_store` WHERE `guid` = '%lu' AND `preset` = '%s'", guid, preset.c_str());
+    auto results = std::unique_ptr<QueryResult>(CharacterDatabase.PQuery("SELECT `key`,`value` FROM `ai_playerbot_db_store` WHERE `guid` = '%lu' AND `preset` = '%s'", guid, preset.c_str()));
     if (results)
     {
         ai->ClearStrategies(BotState::BOT_STATE_COMBAT);
