@@ -101,9 +101,6 @@ namespace ai
         {
 #ifdef MANGOSBOT_ZERO
             return SpellCanBeCastedTrigger::IsActive() && (AI_VALUE2(uint8, "health", "current target") > 20 || ai->IsTank(bot));
-#elif MANGOSBOT_ONE
-            return SpellCanBeCastedTrigger::IsActive()
-                && (AI_VALUE2(uint8, "health", "current target") > 20 || AI_VALUE2(uint8, "rage", "self target") >= 40);
 #else
             return SpellCanBeCastedTrigger::IsActive();
 #endif
@@ -117,10 +114,10 @@ namespace ai
         WhirlwindTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "whirlwind") {}
         bool IsActive() override
         {
-#ifdef MANGOSBOT_TWO
-            return SpellCanBeCastedTrigger::IsActive();
-#else
+#ifdef MANGOSBOT_ZERO
             return SpellCanBeCastedTrigger::IsActive() && AI_VALUE2(uint8, "health", "current target") > 20;
+#else
+            return SpellCanBeCastedTrigger::IsActive();
 #endif
         }
     };

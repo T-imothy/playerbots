@@ -97,4 +97,19 @@ for path in [ROOT / 'MeleeCombatPolicy.h', ROOT / 'actions/MeleeAbilityActions.h
     assert not re.search(r'(?<!::)\b(?:BOT_STATE_COMBAT|ACTION_THREAT_AOE)\b', text)
     assert not re.search(r'CanCastSpell\([^,\n]+,\s*(?:bot|target)\)', text)
 print('PASS shared source guards, active proc selection, native action keys and scoped APIs')
+for era in ('MANGOSBOT_ZERO', 'MANGOSBOT_ONE', 'MANGOSBOT_TWO'):
+    warrior = source('warrior/WarriorCombatPolicy.cpp', era)
+    assert 'WarriorFillerRageAllowed' in warrior and 'Spell::CalculatePowerCost' in warrior
+    assert ('if (name == "rend" && arms) return true;' in warrior) == (era == 'MANGOSBOT_TWO')
+    whirlwind = method('warrior/WarriorTriggers.h', 'class WhirlwindTrigger', era)
+    assert ('> 20' in whirlwind) == (era == 'MANGOSBOT_ZERO')
+    arms = method('warrior/ArmsWarriorStrategy.cpp', 'void ArmsWarriorStrategy::InitCombatTriggers', era)
+    assert ('new NextAction("whirlwind"' in arms) == (era != 'MANGOSBOT_TWO')
+    fury = method('warrior/FuryWarriorStrategy.cpp', 'void FuryWarriorStrategy::InitCombatTriggers', era)
+    if era == 'MANGOSBOT_TWO':
+        assert 'new NextAction("slam", ACTION_NORMAL + 2)' in fury
+        assert 'new NextAction("rend", ACTION_HIGH + 3)' in arms
+generic = (ROOT / 'actions/GenericSpellActions.cpp').read_text()
+assert generic.count('WarriorFillerRageAllowed(') == 2
+print('PASS warrior expansion routing and usefulness/execution policy wiring')
 print('SOURCE CHECKS ONLY: C++ compilation and runtime combat tests remain pending.')

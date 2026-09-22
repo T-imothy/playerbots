@@ -417,7 +417,7 @@ void ArmsWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "target critical health",
-        NextAction::array(0, new NextAction("execute", ACTION_HIGH + 2), NULL)));
+        NextAction::array(0, new NextAction("execute", ACTION_NORMAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "sunder armor",
@@ -429,11 +429,15 @@ void ArmsWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "heroic strike",
-        NextAction::array(0, new NextAction("heroic strike", ACTION_NORMAL + 2), NULL)));
+        NextAction::array(0, new NextAction("heroic strike", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "mortal strike",
-        NextAction::array(0, new NextAction("mortal strike", ACTION_NORMAL + 1), NULL)));
+        NextAction::array(0, new NextAction("mortal strike", ACTION_NORMAL + 3), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "whirlwind",
+        NextAction::array(0, new NextAction("whirlwind", ACTION_NORMAL + 2), NULL)));
 
     triggers.push_back(new TriggerNode(
         "rend",
@@ -777,7 +781,7 @@ void ArmsWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "heroic strike",
-        NextAction::array(0, new NextAction("heroic strike", ACTION_NORMAL + 2), NULL)));
+        NextAction::array(0, new NextAction("heroic strike", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "mortal strike",
@@ -785,7 +789,7 @@ void ArmsWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "rend",
-        NextAction::array(0, new NextAction("rend", ACTION_NORMAL), NULL)));
+        NextAction::array(0, new NextAction("rend", ACTION_HIGH + 3), NULL)));
 }
 
 void ArmsWarriorStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

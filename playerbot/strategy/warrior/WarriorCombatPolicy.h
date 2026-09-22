@@ -7,4 +7,5 @@ namespace ai
 {
     std::string WarriorStancePrerequisite(PlayerbotAI* ai, const SpellEntry* spell);
     bool CanPlanWarriorSpell(PlayerbotAI* ai, const std::string& name, Unit* target);
+    bool WarriorFillerRageAllowed(PlayerbotAI* ai, const std::string& name, Unit* target);
 }

@@ -57,6 +57,7 @@ bool CastSpellAction::Execute(Event& event)
 {
     RefreshSpellId();
     if (!CasterSpellAreaSafe(ai, GetSpellName(), GetTarget()) || !CasterHealthCostSafe(ai, GetSpellName())) return false;
+    if (!WarriorFillerRageAllowed(ai, GetSpellName(), GetTarget())) return false;
     bool executed = false;
     uint32 observedSpellId = spellId;
     uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
@@ -288,6 +289,7 @@ bool CastSpellAction::isUseful()
         spellTarget->HasBreakableByDamageCrowdControlAura() && bot->CanAttack(spellTarget)) return false;
 
     if (!CasterSpellAreaSafe(ai, GetSpellName(), spellTarget) || !CasterHealthCostSafe(ai, GetSpellName())) return false;
+    if (!WarriorFillerRageAllowed(ai, GetSpellName(), spellTarget)) return false;
 
     if ((bot->getClass() == CLASS_MAGE || bot->getClass() == CLASS_WARLOCK || bot->getClass() == CLASS_PRIEST ||
          bot->getClass() == CLASS_DRUID || bot->getClass() == CLASS_SHAMAN) && spellTarget != bot &&
