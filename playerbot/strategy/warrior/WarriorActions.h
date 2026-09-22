@@ -77,7 +77,11 @@ namespace ai
     class CastWhirlwindAction : public CastSafeMeleeAreaAction
     {
     public:
-        CastWhirlwindAction(PlayerbotAI* ai) : CastSafeMeleeAreaAction(ai, "whirlwind", 8.0f) {}
+        CastWhirlwindAction(PlayerbotAI* ai) : CastSafeMeleeAreaAction(ai, "whirlwind", 8.0f) { range = radius; }
+
+    protected:
+        // Validate the hostile victim; native spell targets still centre Whirlwind on the caster.
+        std::string GetTargetName() override { return "current target"; }
     };
     MELEE_ACTION(CastPummelAction, "pummel");
     ENEMY_HEALER_ACTION(CastPummelOnEnemyHealerAction, "pummel");
