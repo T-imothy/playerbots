@@ -5,6 +5,13 @@
 
 namespace ai
 {
+    class MoltenCoreSupportTrigger : public Trigger
+    {
+    public:
+        MoltenCoreSupportTrigger(PlayerbotAI* ai) : Trigger(ai, "molten core support", 1) {}
+        bool IsActive() override { MoltenCoreSupportAction action(ai); return action.isUseful(); }
+    };
+
     class MoltenCorePriorityTargetTrigger : public Trigger
     {
     public:

@@ -27,8 +27,11 @@ enum {SPELL_STATE_CASTING,SPELL_STATE_FINISHED};
 struct SpellEntry {unsigned Id=19695;};
 struct Spell {SpellEntry* m_spellInfo=nullptr;int state=SPELL_STATE_CASTING;int getState()const{return state;}};
 struct Map {};
+struct Aura { unsigned stacks=0; unsigned GetStackAmount(){return stacks;} };
+struct PlayerbotAI;
 struct Unit {virtual ~Unit()=default;virtual bool IsPlayer(){return false;}bool charmed=false;bool HasCharmer(){return charmed;}
  unsigned entry=0,phase=1;ObjectGuid guid;bool world=true,alive=true,combat=true;Map* map=nullptr;
+ float health=100; float GetHealthPercent(){return health;} float GetCombatReach(){return 1.5f;}
  float x=0,y=0,z=0;std::set<unsigned> auras;Unit* victim=nullptr;Spell* cast=nullptr;
  unsigned GetEntry(){return entry;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}
  bool IsInCombat(){return combat;}Map* GetMap(){return map;}ObjectGuid GetObjectGuid(){return guid;}
@@ -39,6 +42,8 @@ struct Unit {virtual ~Unit()=default;virtual bool IsPlayer(){return false;}bool 
 struct Group;
 struct Player:Unit {bool teleport=false;unsigned mapId=409,instance=1;Group* group=nullptr;
  bool IsPlayer()override{return true;}
+ PlayerbotAI* GetPlayerbotAI(){return nullptr;}
+ float GetDistance(Unit* unit){return GetDistance(unit->x,unit->y,unit->z);}
  float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c));}
  bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}
  unsigned GetInstanceId(){return instance;}Group* GetGroup(){return group;}
@@ -55,6 +60,8 @@ template<class T>struct Cached {T value;T Get(){return value;}};
 struct Context {Cached<EncounterPosition> cached;Cached<std::list<ObjectGuid>> attackers;
  template<class T>Cached<T>* GetValue(const char*){if constexpr(std::is_same_v<T,EncounterPosition>)return &cached;else return &attackers;}};
 struct PlayerbotAI {Player* bot=nullptr;Context context;std::list<ObjectGuid> attackers;std::map<unsigned,Unit*> units;
+ Aura splash; bool tank=false; bool IsTank(Player*){return tank;} bool IsRealPlayer(){return false;}
+ Aura* GetAura(unsigned id,Player* p){return p->HasAura(id)?&splash:nullptr;}
  bool validPath=true,ranged=false,healer=false,canMove=true;unsigned checked=0,moves=0;bool CanMove(){return canMove;}
  unsigned stops=0;void StopMoving(){++stops;}
  Player* GetBot(){return bot;}Context* GetAiObjectContext(){return &context;}
@@ -62,7 +69,7 @@ struct PlayerbotAI {Player* bot=nullptr;Context context;std::list<ObjectGuid> at
  Unit* GetUnit(ObjectGuid guid){auto it=units.find(guid);return it==units.end()?nullptr:it->second;}
 };
 namespace ai {
- std::map<unsigned,float> radii{{20475,10.0f},{19698,10.0f},{20478,20.0f},{19712,10.0f}};
+ std::map<unsigned,float> radii{{20475,10.0f},{19698,10.0f},{20478,20.0f},{19712,10.0f},{20566,25.0f},{21154,5.0f},{19497,15.0f},{20483,15.0f}};
  float NativeEncounterSpellRadius(unsigned id){return radii[id];} // controlled fixture, not replacement data
  bool ValidateEncounterDestination(PlayerbotAI* ai,EncounterPosition&){++ai->checked;return ai->validPath;}
  struct MoltenCorePositionValue {Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
@@ -119,6 +126,17 @@ int main(){
  boss.phase=2;boss.auras={19695};assert(!get());boss.phase=1;boss.auras.clear();
  // Shazzrah stays scoped to ranged/healer roles and excludes his current victim.
  boss.entry=12264;assert(!get());ai.ranged=true;assert(get());boss.victim=&bot;assert(!get());
+ // Golemagg: melee retreat at five stacks, tanks hold, ranged need not retreat.
+ boss.victim=nullptr;boss.entry=11988;ai.ranged=false;ai.splash.stacks=4;bot.auras={13880};assert(!get());
+ ai.splash.stacks=5;assert(get());ai.tank=true;assert(!get());ai.tank=false;
+ ai.ranged=true;assert(!get());ai.ranged=false;bot.auras.clear();assert(!get());
+ // Ragnaros: ranged stay outside knockback, the current tank stays in melee.
+ boss.entry=11502;ai.ranged=true;assert(get());boss.victim=&bot;assert(!get());boss.victim=nullptr;
+ ai.ranged=false;assert(!get());info.Id=20566;cast.m_spellInfo=&info;boss.cast=&cast;assert(get());boss.cast=nullptr;
+ // Firesworn: avoid a dying add, but not our own tanked add or a banished add.
+ boss.entry=12057;Unit add;add.entry=12099;add.guid=4;add.map=&map;add.health=9;ai.units[4]=&add;ai.attackers={1,4};
+ assert(get());add.victim=&bot;assert(!get());add.victim=nullptr;add.auras={710};assert(!get());
+ add.auras.clear();add.health=100;assert(!get());
  std::cout<<"PASS: actual MC bomb lifetime after boss death, friendly carriers, phase/map/role, native radius and bounded paths\n";
 }
 '''.replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__METHODS__',methods)

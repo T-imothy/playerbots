@@ -394,6 +394,7 @@ namespace ai
                 creators["move away from magmadar"] = [](PlayerbotAI* ai) { return new MagmadarMoveAwayAction(ai); };
                 creators["molten core safe position"] = [](PlayerbotAI* ai) { return new MoltenCorePositionAction(ai); };
                 creators["molten core priority target"] = [](PlayerbotAI* ai) { return new MoltenCorePriorityTargetAction(ai); };
+                creators["molten core support"] = [](PlayerbotAI* ai) { return new MoltenCoreSupportAction(ai); };
                 creators["mechanar safe position"] = [](PlayerbotAI* ai) { return new MechanarPositionAction(ai); };
                 creators["boss cast safe position"] = [](PlayerbotAI* ai) { return new BossCastPositionAction(ai); };
                 creators["solarian burst position"] = [](PlayerbotAI* ai) { return new SolarianPositionAction(ai); };

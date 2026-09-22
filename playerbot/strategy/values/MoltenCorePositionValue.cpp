@@ -30,7 +30,12 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
     {
         Unit* unit = ai->GetUnit(guid);
         if (unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->IsAlive() && unit->IsInCombat() &&
-            (unit->GetEntry() == 12056 || unit->GetEntry() == 12264)) { boss = unit; break; }
+            (unit->GetEntry() == 12056 || unit->GetEntry() == 12264 || unit->GetEntry() == 12057 ||
+             unit->GetEntry() == 11988 || unit->GetEntry() == 11502))
+        {
+            if (boss && boss != unit) return false;
+            boss = unit;
+        }
     }
     plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
     if (boss) plan.boss = boss->GetObjectGuid();
@@ -46,8 +51,45 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
         if (boss->HasAura(19695) || Casting(boss, 19695)) add(boss, NativeEncounterSpellRadius(19698));
         if (boss->HasAura(20478) || Casting(boss, 20478)) add(boss, NativeEncounterSpellRadius(20478));
     }
-    else if (boss && (ai->IsRanged(bot) || ai->IsHeal(bot)) && boss->GetVictim() != bot)
+    else if (boss && boss->GetEntry() == 12264 && (ai->IsRanged(bot) || ai->IsHeal(bot)) && boss->GetVictim() != bot)
         add(boss, NativeEncounterSpellRadius(19712)); // Ranged/healers stay outside Shazzrah's native explosion.
+
+    if (boss && boss->GetEntry() == 11988 && !ai->IsTank(bot) && !ai->IsRanged(bot))
+    {
+        Aura* splash = ai->GetAura(13880, bot);
+        // Melee DPS shed accumulated Magma Splash while tanks retain control.
+        // Once outside melee, keep holding until the native aura expires.
+        if (splash && (splash->GetStackAmount() >= 5 || bot->GetDistance(boss) > 8.0f))
+            add(boss, boss->GetCombatReach() + bot->GetCombatReach() + 5.0f);
+    }
+    if (boss && boss->GetEntry() == 11502 && boss->GetVictim() != bot &&
+        (ai->IsRanged(bot) || ai->IsHeal(bot) || Casting(boss, 20566)))
+        add(boss, NativeEncounterSpellRadius(20566)); // Preserve the tank in melee; avoid Wrath knockback.
+    if (boss && boss->GetEntry() == 11502 && bot->GetGroup() && (ai->IsRanged(bot) || ai->IsHeal(bot)))
+        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->getSource();
+            if (!member || member == bot || !member->IsInWorld() || !member->IsAlive() ||
+                !bot->IsInMap(member) || member->IsBeingTeleported() || member->HasCharmer() ||
+                member->GetGroup() != bot->GetGroup()) continue;
+            // Deterministic yielding avoids two bots perpetually mirroring one
+            // another. Human players have right of way regardless of GUID.
+            if (!member->GetPlayerbotAI() || member->GetPlayerbotAI()->IsRealPlayer() ||
+                member->GetObjectGuid() < bot->GetObjectGuid()) add(member, NativeEncounterSpellRadius(21154));
+        }
+
+    if (boss && boss->GetEntry() == 12057)
+        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
+        {
+            Unit* firesworn = ai->GetUnit(guid);
+            if (!firesworn || firesworn->GetEntry() != 12099 || !firesworn->IsInWorld() ||
+                !firesworn->IsAlive() || !firesworn->IsInCombat() || !bot->IsInMap(firesworn) ||
+                firesworn->HasCharmer() || firesworn->GetVictim() == bot ||
+                firesworn->HasAura(710) || firesworn->HasAura(18647)) continue;
+            if (Casting(firesworn, 20483)) add(firesworn, NativeEncounterSpellRadius(20483));
+            else if (Casting(firesworn, 19497) || firesworn->GetHealthPercent() <= 10.0f)
+                add(firesworn, NativeEncounterSpellRadius(19497));
+        }
 
     // Living Bomb can outlive Geddon and combat itself. Its native aura, not
     // boss life or a guessed encounter timer, controls separation and cleanup.

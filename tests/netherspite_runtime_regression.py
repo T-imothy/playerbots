@@ -161,7 +161,7 @@ int main(){
  CastSpellAction heal;MoveAwayFromHazard escape2;AttackAction attack2;Action assist;assist.name="dps assist";
  assert(mc.GetValue(&charge)==1);ai.mcHold=true;
  assert(mc.GetValue(&charge)==0&&mc.GetValue(&chase2)==0);
- assert(mc.GetValue(&heal)==1&&mc.GetValue(&attack2)==1&&mc.GetValue(&escape2)==1&&mc.GetValue(nullptr)==1);
+ assert(mc.GetValue(&heal)==1&&mc.GetValue(&attack2)==0&&mc.GetValue(&escape2)==1&&mc.GetValue(nullptr)==1);
  ai.mcHold=false;assert(mc.GetValue(&charge)==1);ai.mcPriority=true;assert(mc.GetValue(&assist)==0);
  ai.mcPriority=false;assert(mc.GetValue(&assist)==1);
  std::cout<<"PASS: actual Netherspite value/plan/action, phase/human/exhaustion, bounded fresh paths and native movement-spell arbitration\n";

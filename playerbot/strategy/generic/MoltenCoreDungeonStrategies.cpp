@@ -7,6 +7,9 @@ using namespace ai;
 
 void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // Below emergency healing and hazard movement, above ordinary rotations.
+    triggers.push_back(new TriggerNode("molten core support",
+        NextAction::array(0, new NextAction("molten core support", ACTION_DISPEL + 5), NULL)));
     triggers.push_back(new TriggerNode("molten core priority target",
         NextAction::array(0, new NextAction("molten core priority target", 90.0f), NULL)));
     triggers.push_back(new TriggerNode("molten core safe position",

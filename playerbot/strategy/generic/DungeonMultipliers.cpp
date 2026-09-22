@@ -249,12 +249,12 @@ float PreserveMechanarPositionMultiplier::GetValue(Action* action)
 float PreserveMoltenCorePositionMultiplier::GetValue(Action* action)
 {
     if (!action) return 1.0f;
-    if (action && action->getName() == "dps assist")
+    if (action->getName() == "dps assist" || action->getName() == "tank assist")
     {
         MoltenCorePriorityTargetAction priority(ai);
         if (priority.GetTarget()) return 0.0f;
     }
-    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+    const bool movement = dynamic_cast<MovementAction*>(action) &&
         !dynamic_cast<MoltenCorePositionAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
     CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
     if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;

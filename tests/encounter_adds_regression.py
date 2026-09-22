@@ -65,6 +65,7 @@ namespace ai {
  };
  struct PathaleonAddsAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
  struct OnyxiaAddsAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
+ Unit* MoltenCoreAssignedTankTarget(PlayerbotAI*) { return nullptr; } // DPS selection fixture; tank allocation is separate.
  struct MoltenCorePriorityTargetAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
 }
 using namespace ai;
@@ -127,7 +128,7 @@ int main(){
  bot.map=&map;bot.mapId=409;boss.map=add.map=second.map=&map;
  ai.units={{1,&boss},{2,&add},{3,&second}};ai.attackers={1};ai.possible={2,3};
  MoltenCorePriorityTargetAction mc{&bot,&ai};
- for(auto pair : {std::pair<unsigned,unsigned>{12118,12119},{12259,11661},{12098,11662},{12018,11663}}){
+ for(auto pair : {std::pair<unsigned,unsigned>{12118,12119},{12259,11661},{12057,12099},{12098,11662},{12018,11663}}){
   boss.entry=pair.first;add.entry=second.entry=pair.second;add.x=1;second.x=20;
   assert(mc.GetTarget()==&add&&mc.isUseful());
   ai.current=&second;assert(mc.GetTarget()==&second&&!mc.isUseful());ai.current=nullptr;
@@ -156,12 +157,12 @@ int main(){
  // Majordomo: a free healer takes priority over an elite; a sheeped healer does not.
  boss.entry=12018;add.entry=11663;second.entry=11664;ai.current=&second;
  assert(mc.GetTarget()==&add);add.breakCC=true;assert(mc.GetTarget()==&second);add.breakCC=false;
- // Golemagg: use normal attack admission, leave all tank/off-tank assignments alone.
+ // Golemagg DPS fixture: ignore Core Ragers; tank allocation is tested separately.
  boss.entry=11988;add.entry=second.entry=11672;ai.possible={1,2,3};ai.current=&add;
  assert(mc.GetTarget()==&boss);ai.tank=true;assert(!mc.GetTarget());ai.tank=false;
  ai.marked=&add;assert(!mc.GetTarget());ai.marked=nullptr;
  boss.attackable=false;assert(!mc.GetTarget());boss.attackable=true;
- // Garr is not assigned a made-up banish/tank policy by this feature.
+ // No unrelated Core Rager target is selected during Garr or Ragnaros.
  boss.entry=12057;assert(!mc.GetTarget());boss.entry=11502;assert(!mc.GetTarget());
  // Native submerged boss can disappear from attackers; live sons still need killing.
  add.entry=second.entry=12143;ai.attackers={2,3};ai.possible={2,3};ai.current=&add;
