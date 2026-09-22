@@ -29,7 +29,7 @@ struct Player;
 struct Map {bool allowed=true,instanceable=true;bool CanEnter(Player*){return allowed;}bool Instanceable(){return instanceable;}};
 struct Player {
  bool world=true,real=false,teleporting=false,transport=false,taxi=false,combat=false,charmed=false,alive=true;
- bool accepted=true,los=true;uint32 mapId=0,instanceId=0;float x=0,y=0,z=0;int teleports=0,resurrections=0,bones=0;
+ bool accepted=true,los=true,detachOnTeleport=false;uint32 mapId=0,instanceId=0;float x=0,y=0,z=0;int teleports=0,resurrections=0,bones=0;
  Session session;Motion motion;Map* map=nullptr;
  bool isRealPlayer(){return real;}bool IsInWorld(){return world;}bool IsBeingTeleported(){return teleporting;}
  Session* GetSession(){return &session;}bool GetTransport(){return transport;}bool IsTaxiFlying(){return taxi;}
@@ -42,7 +42,7 @@ struct Player {
  void SpawnCorpseBones(){++bones;}bool TaxiFlightInterrupt(){bool was=taxi;taxi=false;return was;}
  void OnTaxiFlightEject(){taxi=false;}void BreakCharmIncoming(){charmed=false;}void BreakCharmOutgoing(){}
  void InterruptNonMeleeSpells(bool){}Motion* GetMotionMaster(){return &motion;}
- bool TeleportTo(uint32,float,float,float,float){++teleports;teleporting=accepted;return accepted;}
+ bool TeleportTo(uint32,float,float,float,float){++teleports;teleporting=accepted;if(accepted&&detachOnTeleport)world=false;return accepted;}
  bool IsWithinDist3d(float a,float b,float c,float r){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c))<=r;}
 };
 struct PositionEntry {PositionEntry(float,float,float,uint32){}};
@@ -67,7 +67,13 @@ int main(){
  Map from,to;Player bot,leader;PlayerbotAI ai{&bot};SummonAction action{&bot,&ai};
  auto reset=[&](){from={};to={};bot=Player{};leader=Player{};bot.map=&from;leader.map=&to;leader.mapId=1;leader.real=true;ai.safe=true;ai.pendingSummonRevival={};positionWrites=0;sPlayerbotAIConfig.recruitmentRevive=true;};
  auto reject=[&](){assert(!action.Teleport(&leader,&leader,&bot));assert(bot.motion.clears==0 && positionWrites==0 && bot.resurrections==0);};
- reset();assert(action.Teleport(&leader,&leader,&bot));assert(bot.teleports==1 && bot.motion.clears==1 && positionWrites==2);
+ reset();assert(action.Teleport(&leader,&leader,&bot));assert(bot.teleports==1 && bot.motion.clears==0 && positionWrites==2);
+ // Far teleport accepted with no world attachment must not reset follow.
+ reset();bot.detachOnTeleport=true;assert(action.Teleport(&leader,&leader,&bot));
+ assert(!bot.IsInWorld() && bot.IsBeingTeleported() && bot.motion.clears==0);
+ // Pending same-map teleport also leaves cleanup to the acknowledgement path.
+ reset();leader.map=&from;leader.mapId=0;assert(action.Teleport(&leader,&leader,&bot));
+ assert(bot.IsInWorld() && bot.IsBeingTeleported() && bot.motion.clears==0);
  reset();bot.accepted=false;reject();assert(bot.teleports==1);
  reset();bot.alive=false;bot.accepted=false;reject();assert(!ai.pendingSummonRevival.active);
  reset();bot.real=true;reject();

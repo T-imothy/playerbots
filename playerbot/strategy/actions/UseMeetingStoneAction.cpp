@@ -282,7 +282,11 @@ bool SummonAction::TeleportForMaster(Player* requester, Player *summoner, Player
                     ai->ChangeStrategy("-lfg,-bg", BotState::BOT_STATE_NON_COMBAT);
                 if (revive)
                     ai->QueueSummonRevival(mapId, x, y, z, summoner->GetInstanceId());
-                player->GetMotionMaster()->Clear();
+                // TeleportTo accepting the request does not mean arrival. Clear()
+                // resets retained follow motion, which cannot access a detached
+                // owner's map. Pending transfers are cleaned up by HandleTeleportAck.
+                if (player->IsInWorld() && !player->IsBeingTeleported())
+                    player->GetMotionMaster()->Clear();
 
                 if(ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT))
                     SET_AI_VALUE2(PositionEntry, "pos", "stay", PositionEntry(x, y, z, mapId));
