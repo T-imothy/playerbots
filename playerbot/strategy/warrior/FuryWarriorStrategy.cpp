@@ -56,7 +56,7 @@ void FuryWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "target critical health",
-        NextAction::array(0, new NextAction("execute", ACTION_NORMAL + 4), NULL)));
+        NextAction::array(0, new NextAction("execute", ACTION_NORMAL + 1), NULL)));
 
     triggers.push_back(new TriggerNode(
         "bloodthirst",
@@ -72,7 +72,7 @@ void FuryWarriorStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
     triggers.push_back(new TriggerNode(
         "heroic strike",
-        NextAction::array(0, new NextAction("heroic strike", ACTION_NORMAL + 1), NULL)));
+        NextAction::array(0, new NextAction("heroic strike", ACTION_NORMAL), NULL)));
 
     triggers.push_back(new TriggerNode(
         "intercept on snare target",

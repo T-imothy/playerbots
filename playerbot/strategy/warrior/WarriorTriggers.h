@@ -99,11 +99,7 @@ namespace ai
         BloodthirstTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "bloodthirst") {}
         bool IsActive() override
         {
-#ifdef MANGOSBOT_ZERO
-            return SpellCanBeCastedTrigger::IsActive() && (AI_VALUE2(uint8, "health", "current target") > 20 || ai->IsTank(bot));
-#else
             return SpellCanBeCastedTrigger::IsActive();
-#endif
 
         }
     };
@@ -114,11 +110,7 @@ namespace ai
         WhirlwindTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "whirlwind") {}
         bool IsActive() override
         {
-#ifdef MANGOSBOT_ZERO
-            return SpellCanBeCastedTrigger::IsActive() && AI_VALUE2(uint8, "health", "current target") > 20;
-#else
             return SpellCanBeCastedTrigger::IsActive();
-#endif
         }
     };
 
@@ -128,7 +120,12 @@ namespace ai
         HeroicStrikeTrigger(PlayerbotAI* ai) : SpellCanBeCastedTrigger(ai, "heroic strike") {}
         bool IsActive() override
         {
-#ifdef MANGOSBOT_TWO
+#ifdef MANGOSBOT_ZERO
+            if (!ai->IsTank(bot))
+                return AI_VALUE2(uint8, "rage", "self target") > 65 && SpellCanBeCastedTrigger::IsActive();
+            bool hasTalents = ai->HasSpell("bloodthirst") || ai->HasSpell("mortal strike");
+            return AI_VALUE2(uint8, "rage", "self target") >= (hasTalents ? 61 : 15) && SpellCanBeCastedTrigger::IsActive();
+#elif defined(MANGOSBOT_TWO)
             return SpellCanBeCastedTrigger::IsActive();
 #else
             bool hasTalents = bot->HasSpell(12294) || bot->HasSpell(21551) || bot->HasSpell(21552) || bot->HasSpell(21553) || bot->HasSpell(25248) || bot->HasSpell(30330) || bot->HasSpell(23881) || bot->HasSpell(23892) || bot->HasSpell(23893) || bot->HasSpell(23894) || bot->HasSpell(25251) || bot->HasSpell(30335);

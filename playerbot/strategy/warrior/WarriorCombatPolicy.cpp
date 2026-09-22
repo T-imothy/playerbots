@@ -72,23 +72,23 @@ bool ai::WarriorFillerRageAllowed(PlayerbotAI* ai, const std::string& name, Unit
 {
 #ifdef MANGOSBOT_ZERO
     Player* bot = ai->GetBot();
+    const bool dump = name == "heroic strike" || name == "cleave";
+    const bool execute = name == "execute";
     if (bot->getClass() != CLASS_WARRIOR || ai->IsTank(bot) ||
-        (name != "sunder armor" && name != "heroic strike" && name != "cleave" && name != "rend"))
-        return true;
+        (!dump && !execute && name != "sunder armor" && name != "rend")) return true;
     if (!target || !target->IsAlive()) return false;
     auto context = ai->GetAiObjectContext();
-    const uint32 execute = context->GetValue<uint32>("spell id", "execute")->Get();
-    // Preserve rage for the Classic execute phase, including when currently too
-    // rage-starved to cast Execute. Whirlwind's AoE action remains independent.
-    if (target->GetHealthPercent() <= 20.0f && execute && ai->HasSpell(execute))
-        return false;
-
-    // One opening stack provides armor reduction. Further stacks must compete
-    // with damage abilities rather than consuming each incoming 15 rage.
-    if (name == "sunder armor" && !ai->HasAura("sunder armor", target) &&
-        !ai->HasAura("expose armor", target))
-        return true;
-
+    if (name == "sunder armor")
+    {
+        if (ai->HasAura("expose armor", target)) return false;
+        // Conservative longevity proxy, not a DPS/time-to-death prediction:
+        // save DPS rage on players, ordinary mobs and nearly finished elites.
+        if (target->IsPlayer()) return false;
+        Creature* creature = static_cast<Creature*>(target);
+        if ((!creature->IsElite() && !creature->IsWorldBoss()) ||
+            target->GetHealthPercent() <= 20.0f ||
+            target->GetHealth() <= bot->GetMaxHealth()) return false;
+    }
     uint32 reserve = 0;
     for (const char* mainAttack : { "bloodthirst", "mortal strike", "whirlwind" })
     {
@@ -96,14 +96,19 @@ bool ai::WarriorFillerRageAllowed(PlayerbotAI* ai, const std::string& name, Unit
         const SpellEntry* spell = sServerFacade.LookupSpellInfo(id);
         if (!spell || !ai->HasSpell(id)) continue;
         if (std::string(mainAttack) == "whirlwind" && SafeMeleeTargetCount(ai, 8.0f) == 0) continue;
-        // A ready main attack wins even if a filler was queued earlier.
-        if (CanPlanWarriorSpell(ai, mainAttack, target)) return false;
-        reserve = std::max(reserve, uint32(Spell::CalculatePowerCost(spell, bot)));
+        // Queued next-swing attacks can accompany a ready main ability.
+        // GCD fillers, including Execute, must yield to that ability.
+        if (!dump && CanPlanWarriorSpell(ai, mainAttack, target)) return false;
+        const uint32 cost = uint32(Spell::CalculatePowerCost(spell, bot));
+        reserve = dump ? reserve + cost : std::max(reserve, cost);
     }
-    const uint32 fillerId = context->GetValue<uint32>("spell id", name)->Get();
-    const SpellEntry* filler = sServerFacade.LookupSpellInfo(fillerId);
-    if (!filler) return false;
-    return bot->GetPower(POWER_RAGE) >= reserve + uint32(Spell::CalculatePowerCost(filler, bot));
+    // Execute consumes extra rage; use it in gaps, not ahead of ready main attacks.
+    if (execute) return true;
+    if (dump && bot->GetPower(POWER_RAGE) <= 650) return false;
+    const uint32 id = context->GetValue<uint32>("spell id", name)->Get();
+    const SpellEntry* spell = sServerFacade.LookupSpellInfo(id);
+    if (!spell) return false;
+    return bot->GetPower(POWER_RAGE) >= reserve + uint32(Spell::CalculatePowerCost(spell, bot));
 #else
     Player* bot = ai->GetBot();
     if (bot->getClass() != CLASS_WARRIOR || ai->IsTank(bot)) return true;

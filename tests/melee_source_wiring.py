@@ -102,7 +102,12 @@ for era in ('MANGOSBOT_ZERO', 'MANGOSBOT_ONE', 'MANGOSBOT_TWO'):
     assert 'WarriorFillerRageAllowed' in warrior and 'Spell::CalculatePowerCost' in warrior
     assert ('if (name == "rend" && arms) return true;' in warrior) == (era == 'MANGOSBOT_TWO')
     whirlwind = method('warrior/WarriorTriggers.h', 'class WhirlwindTrigger', era)
-    assert ('> 20' in whirlwind) == (era == 'MANGOSBOT_ZERO')
+    assert '> 20' not in whirlwind
+    if era == 'MANGOSBOT_ZERO':
+        assert 'if (!dump && CanPlanWarriorSpell' in warrior
+        assert 'reserve = dump ? reserve + cost' in warrior
+        assert 'bot->GetPower(POWER_RAGE) <= 650' in warrior
+        assert 'target->GetHealth() <= bot->GetMaxHealth()' in warrior
     arms = method('warrior/ArmsWarriorStrategy.cpp', 'void ArmsWarriorStrategy::InitCombatTriggers', era)
     assert ('new NextAction("whirlwind"' in arms) == (era != 'MANGOSBOT_TWO')
     fury = method('warrior/FuryWarriorStrategy.cpp', 'void FuryWarriorStrategy::InitCombatTriggers', era)

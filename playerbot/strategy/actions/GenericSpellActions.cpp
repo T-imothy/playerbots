@@ -137,6 +137,13 @@ bool CastSpellAction::Execute(Event& event)
 
     if (executed)
     {
+#ifdef MANGOSBOT_ZERO
+        // Queuing a warrior's next swing does not spend a global cooldown.
+        // Re-evaluate main attacks promptly; native cooldown checks still apply.
+        if (bot->getClass() == CLASS_WARRIOR && !ai->IsTank(bot) &&
+            (spellName == "heroic strike" || spellName == "cleave"))
+            spellDuration = 1;
+#endif
         if (ai->HasCheat(BotCheatMask::attackspeed))
             spellDuration = 1;
 
