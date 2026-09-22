@@ -57,7 +57,6 @@ bool CastSpellAction::Execute(Event& event)
 {
     RefreshSpellId();
     if (!CasterSpellAreaSafe(ai, GetSpellName(), GetTarget()) || !CasterHealthCostSafe(ai, GetSpellName())) return false;
-    if (!WarriorFillerRageAllowed(ai, GetSpellName(), GetTarget())) return false;
     bool executed = false;
     uint32 observedSpellId = spellId;
     uint32 spellDuration = sPlayerbotAIConfig.globalCoolDown;
@@ -137,13 +136,6 @@ bool CastSpellAction::Execute(Event& event)
 
     if (executed)
     {
-#ifdef MANGOSBOT_ZERO
-        // Queuing a warrior's next swing does not spend a global cooldown.
-        // Re-evaluate main attacks promptly; native cooldown checks still apply.
-        if (bot->getClass() == CLASS_WARRIOR && !ai->IsTank(bot) &&
-            (spellName == "heroic strike" || spellName == "cleave"))
-            spellDuration = 1;
-#endif
         if (ai->HasCheat(BotCheatMask::attackspeed))
             spellDuration = 1;
 
@@ -296,7 +288,6 @@ bool CastSpellAction::isUseful()
         spellTarget->HasBreakableByDamageCrowdControlAura() && bot->CanAttack(spellTarget)) return false;
 
     if (!CasterSpellAreaSafe(ai, GetSpellName(), spellTarget) || !CasterHealthCostSafe(ai, GetSpellName())) return false;
-    if (!WarriorFillerRageAllowed(ai, GetSpellName(), spellTarget)) return false;
 
     if ((bot->getClass() == CLASS_MAGE || bot->getClass() == CLASS_WARLOCK || bot->getClass() == CLASS_PRIEST ||
          bot->getClass() == CLASS_DRUID || bot->getClass() == CLASS_SHAMAN) && spellTarget != bot &&
