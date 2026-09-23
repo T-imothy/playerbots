@@ -6,6 +6,8 @@ using namespace ai;
 
 void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("razorgore orb",
+        NextAction::array(0, new NextAction("razorgore orb", 100.0f), NULL)));
     triggers.push_back(new TriggerNode("blackwing lair flank",
         NextAction::array(0, new NextAction("set behind", 80.0f), NULL)));
     triggers.push_back(new TriggerNode("blackwing lair support",
@@ -33,6 +35,8 @@ void BlackwingLairDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>&
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("razorgore orb",
+        NextAction::array(0, new NextAction("razorgore orb", 100.0f), NULL)));
     triggers.push_back(new TriggerNode("use hourglass sand",
         NextAction::array(0, new NextAction("use hourglass sand", ACTION_DISPEL + 1), NULL)));
     triggers.push_back(new TriggerNode("blackwing lair safe position",

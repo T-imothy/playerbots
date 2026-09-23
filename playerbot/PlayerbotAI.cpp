@@ -1,6 +1,7 @@
 #include "Util/DevDiagnostics.h"
 #include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
 #include "playerbot/PartyCombatSupport.h"
 #include "BotPartyCommands.h"
 #include "BotIncidentHistory.h"
@@ -335,6 +336,12 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
         if (sPlayerbotAIConfig.incidentHistory) BotIncidentHistory::Sample(this);
         if (sPlayerbotAIConfig.partyCommandCoordinator && BotPartyCommands::Update(this)) return;
     }
+
+    // Possession controls Razorgore, not the stationary player's normal class
+    // rotation. Run the controller before ordinary follow/cast/action delays.
+    if (bot->IsInWorld() && bot->GetMapId() == 469 && aiObjectContext)
+        if (auto* controller = dynamic_cast<ai::RazorgoreOrbAction*>(aiObjectContext->GetAction("razorgore orb")))
+            if (controller->UpdateControl()) return;
 
     AiObjectContext* context = aiObjectContext;
     std::unique_ptr<PerformanceMonitorOperation> pmo;

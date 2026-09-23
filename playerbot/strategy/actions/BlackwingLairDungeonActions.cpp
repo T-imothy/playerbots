@@ -1,4 +1,8 @@
 #include "playerbot/playerbot.h"
+#include "Grids/GridNotifiers.h"
+#include "Grids/GridNotifiersImpl.h"
+#include "Grids/CellImpl.h"
+#include "MotionGenerators/PathFinder.h"
 #include "BlackwingLairDungeonActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
 
@@ -79,6 +83,9 @@ bool BlackwingLairPositionAction::Execute(Event& event)
 
 namespace
 {
+    Unit* RazorgoreCreature(WorldObject* center, uint32 entry);
+    bool RazorgoreEggPhase(PlayerbotAI* ai);
+
     bool BwlReady(PlayerbotAI* ai)
     {
         Player* bot = ai->GetBot();
@@ -146,8 +153,12 @@ Unit* BlackwingLairPriorityTargetAction::GetTarget()
     {
         Unit* unit = ai->GetUnit(guid);
         if (unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->IsAlive() && unit->GetVictim() == bot &&
-            (unit->GetEntry() == 12435 || unit->GetEntry() == 11583)) return nullptr;
+            ((unit->GetEntry() == 12435 && !IsProtectedBlackwingTarget(bot, unit)) || unit->GetEntry() == 11583)) return nullptr;
     }
+    Unit* controlledDragon = RazorgoreEggPhase(ai) ? RazorgoreCreature(bot, 12435) : nullptr;
+    Unit* controller = controlledDragon ? controlledDragon->GetCharmer() : nullptr;
+    if (!controller || !controller->IsPlayer() || !BwlMember(bot, static_cast<Player*>(controller)))
+    { controlledDragon = nullptr; controller = nullptr; }
     Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     Unit* selected = nullptr;
     unsigned priority = 0;
@@ -155,8 +166,9 @@ Unit* BlackwingLairPriorityTargetAction::GetTarget()
     {
         Unit* unit = ai->GetUnit(guid);
         if (!valid(unit)) continue;
-        const unsigned rank = BwlAddPriority(unit->GetEntry());
+        unsigned rank = BwlAddPriority(unit->GetEntry());
         if (!rank) continue;
+        if (controller && (unit->GetVictim() == controller || unit->GetVictim() == controlledDragon)) rank += 10;
         if (!selected || rank > priority || (rank == priority &&
             (unit == current || (selected != current && bot->GetDistance(unit) < bot->GetDistance(selected)))))
         { selected = unit; priority = rank; }
@@ -189,6 +201,15 @@ bool BlackwingLairSupportAction::Select(std::string& spell, Unit*& target)
             Player* tank = static_cast<Player*>(enemy->GetVictim());
             if (BwlMember(bot, tank) && !ai->HasAura("fear ward", tank) && ready("fear ward", tank)) return true;
         }
+    }
+    if (ai->IsHeal(bot) && RazorgoreEggPhase(ai))
+    {
+        Unit* dragon = RazorgoreCreature(bot, 12435);
+        Unit* owner = dragon ? dragon->GetCharmer() : nullptr;
+        if (dragon && dragon->GetHealthPercent() < 70.0f && owner && owner->IsPlayer() &&
+            BwlMember(bot, static_cast<Player*>(owner)) && sServerFacade.IsFriendlyTo(bot, dragon))
+            for (const char* name : {"flash heal", "healing wave", "healing touch", "flash of light"})
+                if (ready(name, dragon)) return true;
     }
     std::vector<Player*> members;
     for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
@@ -257,4 +278,170 @@ bool ai::BlackwingMeleeFlankAngle(PlayerbotAI* ai, Unit* target, float& angle)
     const float side = std::sin(target->GetAngle(bot) - target->GetOrientation()) >= 0 ? 1.0f : -1.0f;
     angle = target->GetOrientation() + side * float(M_PI) * (2.0f / 3.0f);
     return true;
+}
+namespace
+{
+    std::vector<GameObject*> RazorgoreObjects(WorldObject* center, uint32 entry)
+    {
+        std::list<GameObject*> found;
+        MaNGOS::GameObjectEntryInPosRangeCheck check(*center, entry,
+            center->GetPositionX(), center->GetPositionY(), center->GetPositionZ(), 150.0f);
+        MaNGOS::GameObjectListSearcher<MaNGOS::GameObjectEntryInPosRangeCheck> searcher(found, check);
+        Cell::VisitAllObjects(center, searcher, 150.0f);
+        std::vector<GameObject*> result;
+        for (GameObject* object : found)
+            if (object && object->IsInWorld() && center->IsInMap(object) && sServerFacade.isSpawned(object)) result.push_back(object);
+        return result;
+    }
+
+    Unit* RazorgoreCreature(WorldObject* center, uint32 entry)
+    {
+        std::list<Unit*> found;
+        MaNGOS::AllCreaturesOfEntryInRangeCheck check(center, entry, 150.0f);
+        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(found, check);
+        Cell::VisitAllObjects(center, searcher, 150.0f);
+        for (Unit* unit : found)
+            if (unit && unit->IsInWorld() && unit->IsAlive() && center->IsInMap(unit)) return unit;
+        return nullptr;
+    }
+
+    bool RazorgoreEggPhase(PlayerbotAI* ai)
+    {
+        Player* bot = ai->GetBot();
+        if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+            bot->GetMapId() != 469 || !bot->GetGroup() || ai->IsRealPlayer()) return false;
+        InstanceData* instance = bot->GetMap()->GetInstanceData();
+        return instance && instance->GetData(0) == IN_PROGRESS;
+    }
+}
+
+GameObject* RazorgoreOrbAction::SelectOrb()
+{
+    if (!RazorgoreEggPhase(ai) || bot->GetCharm() || bot->HasAura(23958)) return nullptr;
+    Unit* dragon = RazorgoreCreature(bot, 12435);
+    // Never steal human or another bot's active control. Grethok must first die.
+    if (!dragon || dragon->HasCharmer() || RazorgoreCreature(dragon, 12557)) return nullptr;
+    auto orbs = RazorgoreObjects(dragon, 177808);
+    if (orbs.empty()) return nullptr;
+    GameObject* orb = orbs.front();
+    if (orb->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_NO_INTERACT | GO_FLAG_IN_USE)) return nullptr;
+    std::vector<Player*> candidates;
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (!BwlMember(bot, member) || !member->GetPlayerbotAI() || member->GetPlayerbotAI()->IsRealPlayer() ||
+            member->GetCharm() || member->HasAura(23958) || member->GetDistance(orb) > 150.0f ||
+            member->hasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL) || ai->IsTank(member) || ai->IsHeal(member)) continue;
+        candidates.push_back(member);
+    }
+    std::sort(candidates.begin(), candidates.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+    if (candidates.empty()) return nullptr;
+    // A bounded election lease lets another eligible DPS try if a path or click
+    // fails. Successful possession, not the timer, owns control thereafter.
+    const size_t slot = (WorldTimer::getMSTime() / 30000u) % candidates.size();
+    return candidates[slot] == bot ? orb : nullptr;
+}
+
+bool RazorgoreOrbAction::isUseful()
+{
+    return SelectOrb() != nullptr;
+}
+
+bool RazorgoreOrbAction::Execute(Event& event)
+{
+    GameObject* orb = SelectOrb();
+    if (!orb || !ai->CanMove()) return false;
+    if (!orb->IsAtInteractDistance(bot) || !bot->IsWithinLOSInMap(orb))
+        return MoveTo(bot->GetMapId(), orb->GetPositionX(), orb->GetPositionY(), orb->GetPositionZ(),
+            false, false, false, true);
+    ai->StopMoving();
+    if (bot->IsNonMeleeSpellCasted(true)) ai->InterruptSpell();
+    WorldPacket packet(CMSG_GAMEOBJ_USE);
+    packet << orb->GetObjectGuid();
+    bot->GetSession()->HandleGameObjectUseOpcode(packet);
+    SetDuration(1000); // A submitted click is not proof of possession.
+    return true;
+}
+
+bool RazorgoreOrbAction::UpdateControl()
+{
+    Unit* dragon = bot->IsInWorld() ? bot->GetCharm() : nullptr;
+    if (!RazorgoreEggPhase(ai) || !dragon || dragon->GetEntry() != 12435 ||
+        !dragon->IsInWorld() || !dragon->IsAlive() || !bot->IsInMap(dragon) ||
+        dragon->GetCharmerGuid() != bot->GetObjectGuid())
+    {
+        lastControlUpdate = 0; controlledGuid.Clear(); movingToEgg.Clear(); castEgg.Clear(); castAttempts = 0; failedEggs.clear();
+        return false;
+    }
+    // Suppress only this controller's ordinary AI while it possesses the boss.
+    // Movement/casting affect the charmed unit, never teleport or mutate eggs.
+    const uint32 now = WorldTimer::getMSTime();
+    if (lastControlUpdate && WorldTimer::getMSTimeDiff(lastControlUpdate, now) < 500) return true;
+    lastControlUpdate = now;
+    if (controlledGuid != dragon->GetObjectGuid())
+    { controlledGuid = dragon->GetObjectGuid(); movingToEgg.Clear(); castEgg.Clear(); castAttempts = 0; failedEggs.clear(); }
+    // Possession is expected here; LOST_CONTROL includes POSSESSED and would
+    // prevent every egg cast. Native stuns/fear still block the controller.
+    if (dragon->IsNonMeleeSpellCasted(true) || dragon->hasUnitState(UNIT_STAT_CAN_NOT_REACT)) return true;
+    const SpellEntry* destroy = sServerFacade.LookupSpellInfo(19873);
+    if (!destroy || !dragon->HasSpell(19873)) return true;
+    const float range = GetSpellMaxRange(sSpellRangeStore.LookupEntry(destroy->rangeIndex));
+    if (!std::isfinite(range) || range <= 0 || range > 100) return true;
+    auto eggs = RazorgoreObjects(dragon, 177807);
+    std::sort(eggs.begin(), eggs.end(), [dragon](GameObject* a, GameObject* b) {
+        if (dragon->GetDistance(a) != dragon->GetDistance(b)) return dragon->GetDistance(a) < dragon->GetDistance(b);
+        return a->GetObjectGuid() < b->GetObjectGuid();
+    });
+    unsigned pathChecks = 0;
+    for (GameObject* egg : eggs)
+    {
+        // EffectActivateObject(DESTROY) changes the native GO state. Do not
+        // count a packet attempt or repeatedly submit an already-used egg.
+        if (egg->GetGoState() != GO_STATE_READY || egg->GetLootState() != GO_READY) continue;
+        auto rejected = failedEggs.find(egg->GetObjectGuid());
+        if (rejected != failedEggs.end() && WorldTimer::getMSTimeDiff(rejected->second, now) < 15000) continue;
+        if (dragon->IsWithinDistInMap(egg, std::max(1.0f, range - 1.0f)) && dragon->IsWithinLOSInMap(egg))
+        {
+            dragon->StopMoving(); movingToEgg.Clear();
+            if (!dragon->IsSpellReady(*destroy)) return true;
+            if (castEgg != egg->GetObjectGuid()) { castEgg = egg->GetObjectGuid(); castAttempts = 0; }
+            if (++castAttempts > 3)
+            { failedEggs[egg->GetObjectGuid()] = now; castAttempts = 0; continue; }
+            dragon->SetFacingToObject(egg);
+            SpellCastTargets targets;
+            targets.setGOTarget(egg);
+            WorldPacket packet(CMSG_PET_CAST_SPELL);
+            packet << dragon->GetObjectGuid();
+#ifdef MANGOSBOT_TWO
+            packet << uint8(0) << uint32(19873) << uint8(0);
+#else
+            packet << uint32(19873);
+#endif
+            packet << targets;
+            // Native handler checks ownership, learned spell, cooldown, targets
+            // and cast admission. The native spell script records egg progress.
+            bot->GetSession()->HandlePetCastSpellOpcode(packet);
+            return true;
+        }
+        if (movingToEgg == egg->GetObjectGuid())
+        {
+            if (WorldTimer::getMSTimeDiff(eggMoveStarted, now) >= 30000)
+            {
+                dragon->StopMoving(); movingToEgg.Clear(); failedEggs[egg->GetObjectGuid()] = now;
+                continue;
+            }
+            if (!dragon->IsStopped()) return true;
+        }
+        if (++pathChecks > 4) break;
+        PathFinder path(dragon);
+        if (!path.calculate(egg->GetPositionX(), egg->GetPositionY(), egg->GetPositionZ(), false) ||
+            path.getPathType() != PATHFIND_NORMAL || path.getPath().size() < 2)
+        { failedEggs[egg->GetObjectGuid()] = now; continue; }
+        if (movingToEgg != egg->GetObjectGuid()) eggMoveStarted = now;
+        movingToEgg = egg->GetObjectGuid();
+        dragon->GetMotionMaster()->MovePoint(19873, egg->GetPositionX(), egg->GetPositionY(), egg->GetPositionZ(),
+            FORCED_MOVEMENT_RUN, true);
+        return true;
+    }
+    return true; // Keep possession intact while native cooldowns/paths recover.
 }

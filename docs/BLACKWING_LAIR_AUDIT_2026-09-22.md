@@ -24,7 +24,8 @@ baselines consume the same shared playerbots revision.
   attack commands and raid marks retain targeting priority; protected Razorgore
   and barrier targets cannot be forced through the targeting safeguard.
 - Razorgore phase admission reads native instance slot 0 and SPECIAL. It does not
-  destroy eggs, control the orb, force boss flags, or advance the instance.
+  force boss flags or advance the instance directly. The orb controller uses
+  native game-object use and pet spell handlers to destroy eggs normally.
   This is a direct-target safeguard, not a guarantee against every incidental
   untargeted area effect near an uncharmed boss.
 - DPS and available tanks focus adds; the active Razorgore/Nefarian tank is not
@@ -45,8 +46,12 @@ baselines consume the same shared playerbots revision.
 ## Remaining limitations and live checks
 
 This is not a certified autonomous BWL clear. A player still needs to start and
-lead encounters and operate Razorgore's orb/egg objective. No new automatic orb
-operator, egg route, split-room kiting system, Onyxia Scale Cloak acquisition or
+lead encounters. Razorgore now elects a DPS bot for the orb after Grethok dies,
+paths the possessed dragon to intact eggs, and casts native Destroy Egg.
+Mind Exhaustion and existing human possession are respected; another eligible
+bot takes over when native control ends. Defenders prioritize attackers on the
+controller/dragon and healers can heal the friendly controlled dragon.
+There is no split-room kiting system, Onyxia Scale Cloak acquisition or
 Nefarian hunter weapon-swap prediction is included. Class calls other than the
 existing priest safeguard continue to use normal native/class behavior. There
 is no predictive Wing Buffet tank rotation or guaranteed Chromaggus Time Lapse
@@ -65,7 +70,12 @@ against Classic, TBC and Wrath. Python regression syntax and source wiring were
 checked. C++ fixture coverage was extended for protected phase targets, add
 priorities, Broodlord spacing, Firemaw swap rules and movement arbitration.
 **No C++ tests or core builds were run**, per the user's build preference.
-The new support selection and flank behavior still require compilation/live tests.
+The new support selection, flank behavior and orb controller still require
+compilation/live tests. Orb validation must include possession expiry, controller
+death, a human holding the orb, failed paths, native seven-second spell cooldown,
+all eggs completing exactly once and the native phase-two transition.
+Source contracts verify era-specific pet packets and possession-aware guards;
+these are not proof of an unattended raid clear.
 
 Build **Classic, TBC and Wrath** from the updated local baselines, deploy the
 resulting binaries, then restart each realm. **No SQL, client patch, or installer

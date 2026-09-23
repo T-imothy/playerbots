@@ -6,6 +6,13 @@
 
 namespace ai
 {
+    class RazorgoreOrbTrigger : public Trigger
+    {
+    public:
+        RazorgoreOrbTrigger(PlayerbotAI* ai) : Trigger(ai, "razorgore orb", 1) {}
+        bool IsActive() override { RazorgoreOrbAction action(ai); return action.isUseful(); }
+    };
+
     class BlackwingLairFlankTrigger : public Trigger
     {
     public:

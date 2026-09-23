@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 #include "DungeonActions.h"
 #include "AttackAction.h"
 #include "ChangeStrategyAction.h"
@@ -10,6 +11,25 @@
 
 namespace ai
 {
+    // One action instance owns retry state for its bot; no shared mutable raid state.
+    class RazorgoreOrbAction : public MovementAction
+    {
+    public:
+        RazorgoreOrbAction(PlayerbotAI* ai) : MovementAction(ai, "razorgore orb") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        bool UpdateControl();
+    private:
+        GameObject* SelectOrb();
+        uint32 lastControlUpdate = 0;
+        ObjectGuid controlledGuid;
+        ObjectGuid movingToEgg;
+        uint32 eggMoveStarted = 0;
+        ObjectGuid castEgg;
+        unsigned castAttempts = 0;
+        std::map<ObjectGuid, uint32> failedEggs;
+    };
+
     class BlackwingLairSupportAction : public Action
     {
     public:
