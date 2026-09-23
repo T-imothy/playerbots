@@ -179,10 +179,14 @@ namespace
                 if (pending.bot == request.bot && pending.operation == request.operation &&
                     pending.id == request.id && pending.arguments == request.arguments)
                     return true;
-                ++count;
+                // Reserve a separate full-raid intake for summon bursts.
+                // Other recruitment requests retain their smaller bound.
+                if ((pending.operation == "summon") == (request.operation == "summon")) ++count;
             }
         }
-        if (count >= limits::MaxIncomingPerPlayer) return false;
+        const unsigned ownerLimit = request.operation == "summon" ?
+            limits::MaxPendingPerPlayer : limits::MaxIncomingPerPlayer;
+        if (count >= ownerLimit) return false;
         state.incoming.push_back(request);
         return true;
     }

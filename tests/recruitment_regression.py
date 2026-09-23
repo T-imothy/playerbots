@@ -217,6 +217,17 @@ int main(){
  reset();{Player p(1,true),b(2),leader(3);Group g;g.leader=leader.GetObjectGuid();g.assistant=p.GetObjectGuid();p.group=leader.group=&g;invite(p,b);assert(ai::BotRecruitment::HasPendingInvite(&b));tick();assert(b.group==&g&&b.ai.master==&p&&!ai::BotRecruitment::HasPendingInvite(&b));}
  reset();{std::vector<std::unique_ptr<Player>> owners,bots;for(unsigned n=1;n<=32;++n){owners.emplace_back(new Player(n,true));for(unsigned j=1;j<=16;++j){bots.emplace_back(new Player(100+n*16+j));ai::BotRecruitment::Queue(owners.back().get(),bots.back().get(),"who");}}assert(State().incoming.size()==256);tick();assert(State().incoming.size()==248);}
  reset();{Player p(1,true),b(2);command(p,"bad accept 2");assert(has("unsupported_operation")&&!b.group);}
+ // A complete raid summon must fit even with normal recruitment traffic queued.
+ for(bool dead : {false,true}) { reset(); Player p(1,true); std::vector<std::unique_ptr<Player>> bots;
+ for(unsigned i=2;i<42;++i){bots.emplace_back(new Player(i));bots.back()->ai.master=&p;bots.back()->alive=!dead;}
+ for(unsigned i=0;i<limits::MaxIncomingPerPlayer;++i) assert(ai::BotRecruitment::Queue(&p,bots[i].get(),"who"));
+ for(unsigned i=0;i<39;++i) assert(ai::BotRecruitment::Queue(&p,bots[i].get(),"summon"));
+ assert(State().incoming.size()==limits::MaxIncomingPerPlayer+39);
+ assert(ai::BotRecruitment::Queue(&p,bots[0].get(),"summon")); // duplicate stays coalesced
+ assert(State().incoming.size()==limits::MaxIncomingPerPlayer+39);
+ assert(ai::BotRecruitment::Queue(&p,bots[39].get(),"summon"));
+ Player extra(42);extra.ai.master=&p;assert(!ai::BotRecruitment::Queue(&p,&extra,"summon"));
+ }
  assert(!limits::Arrived(true,false,true,1,2,1,3,0,true));assert(!limits::HasVacancy(25,25,true));
 #if defined(MANGOSBOT_ZERO)
  const unsigned cap=60;
