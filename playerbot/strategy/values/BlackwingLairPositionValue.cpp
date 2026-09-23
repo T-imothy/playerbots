@@ -18,6 +18,26 @@ bool ai::BlackwingLairBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
         bot->HasCharmer() || bot->GetMapId() != 469 || !bot->GetGroup()) return false;
 
+    // Ranged damage and healers can remain outside Broodlord's native Blast
+    // Wave radius. The active tank and melee retain their normal positions.
+    if (!BurningAdrenalineAura(bot) && (ai->IsRanged(bot) || ai->IsHeal(bot)))
+        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
+        {
+            Unit* lord = ai->GetUnit(guid);
+            if (!lord || lord->GetEntry() != 12017 || !lord->IsInWorld() || !lord->IsAlive() ||
+                !lord->IsInCombat() || !bot->IsInMap(lord) || lord->HasCharmer() || lord->GetVictim() == bot ||
+                std::fabs(lord->GetPositionZ() - bot->GetPositionZ()) >= 8) continue;
+            const float radius = NativeEncounterSpellRadius(23331);
+            if (!std::isfinite(radius) || radius <= 0 || radius > 45) continue;
+            const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+            const encounter::Point center{lord->GetPositionX(), lord->GetPositionY(), lord->GetPositionZ()};
+            if (encounter::Distance2d(here, center) >= radius + 10) continue;
+            plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
+            plan.boss = lord->GetObjectGuid(); plan.spell = 23331;
+            threats.push_back({center, radius + 2});
+            return true;
+        }
+
     Unit* boss = nullptr;
     for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
     {

@@ -8,6 +8,8 @@ struct SpellEntry;
 namespace ai
 {
     // Decisions only: native spells, proc rules and aura lifetimes are unchanged.
+    bool BlackwingMeleeFlankAngle(PlayerbotAI* ai, Unit* target, float& angle);
+    bool IsProtectedBlackwingTarget(Player* bot, Unit* target);
     bool ShouldAvoidCorruptedHealing(Player* bot, const SpellEntry* spell, Unit* target);
     bool IsViscidusShatterTarget(Unit* target, Player* bot);
     bool NeedsFullHealingToRemoveAura(Unit* target);

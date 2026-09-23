@@ -70,7 +70,7 @@ bool ai::ShouldAvoidEncounterOffense(Player* bot, Unit* caster, const SpellEntry
 {
     if (!caster || !spell) return false;
     const bool positive = IsPositiveSpell(spell, caster, target);
-    if (!positive && HasEncounterDamagePause(bot)) return true;
+    if (!positive && (IsProtectedBlackwingTarget(bot, target) || HasEncounterDamagePause(bot))) return true;
     // Permeating Chill's native proc mask includes melee swings/abilities and
     // ranged auto attacks, but not ordinary spells or ranged special shots.
     if (caster == bot && !positive && HasEncounterWeaponPause(bot) &&
@@ -117,8 +117,9 @@ bool ai::HasEncounterSpellBomb(Player* bot)
 
 bool ai::HasUnsafeEncounterOffense(Player* bot)
 {
-    const bool stopAttacks = HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot);
-    if (!stopAttacks && !HasEncounterSpellBomb(bot)) return false;
+    const bool stopAttacks = IsProtectedBlackwingTarget(bot, bot ? bot->GetVictim() : nullptr) ||
+        HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot);
+    if (!stopAttacks && !HasEncounterSpellBomb(bot) && (!bot || bot->GetMapId() != 469)) return false;
     if (stopAttacks && bot->hasUnitState(UNIT_STAT_MELEE_ATTACKING)) return true;
     for (CurrentSpellTypes slot : {CURRENT_MELEE_SPELL, CURRENT_GENERIC_SPELL, CURRENT_AUTOREPEAT_SPELL, CURRENT_CHANNELED_SPELL})
     {
@@ -132,9 +133,9 @@ bool ai::HasUnsafeEncounterOffense(Player* bot)
 bool ai::StopUnsafeEncounterOffense(Player* bot, Unit* caster)
 {
     if (!caster || !caster->IsInWorld() || !bot || !bot->IsInMap(caster)) return false;
-    const bool stopAttacks = HasEncounterDamagePause(bot) ||
+    const bool stopAttacks = IsProtectedBlackwingTarget(bot, caster->GetVictim()) || HasEncounterDamagePause(bot) ||
         (caster == bot && (HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot)));
-    if (!stopAttacks && !(caster == bot && HasEncounterSpellBomb(bot))) return false;
+    if (!stopAttacks && !(caster == bot && HasEncounterSpellBomb(bot)) && bot->GetMapId() != 469) return false;
     bool stopped = false;
     if (stopAttacks && caster->hasUnitState(UNIT_STAT_MELEE_ATTACKING))
     {

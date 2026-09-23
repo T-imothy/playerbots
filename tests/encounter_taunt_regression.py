@@ -118,6 +118,7 @@ int main(){
   ai.real=true;assert(!ShouldSwapEncounterTank(&ai,&boss));ai.real=false;
   boss.victim=&bot;assert(!ShouldSwapEncounterTank(&ai,&boss)&&ShouldAvoidEncounterTaunt(&ai,&taunt,&boss));boss.victim=&tank;
  };
+ checkRule(469,11983,23341,5);
  checkRule(469,14601,23340,1);
  checkRule(509,15348,25646,3);checkRule(531,15510,25646,3);
 #ifdef MANGOSBOT_TWO
@@ -136,6 +137,7 @@ int main(){
 #else
  bot.mapId=568;boss.entry=23576;TankSwapRule noZa;assert(!EncounterTankRule(&bot,&boss,noZa));
 #endif
+ checkRule(469,11983,23341,5);
  checkRule(469,14601,23340,1);
  Player spare;PlayerbotAI spareAi{&spare,&boss};spare.ai=&spareAi;spare.map=&map;spare.group=&group;spare.guid=1;
  GroupReference spareRef{&spare,&botRef};group.first=&spareRef;

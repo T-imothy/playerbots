@@ -373,6 +373,9 @@ namespace ai
                 creators["corrupted healing cast"] = [](PlayerbotAI* ai) { return new CorruptedHealingCastTrigger(ai); };
                 creators["unsafe reflected cast"] = [](PlayerbotAI* ai) { return new UnsafeReflectedCastTrigger(ai); };
                 creators["unsafe encounter offense"] = [](PlayerbotAI* ai) { return new UnsafeEncounterOffenseTrigger(ai); };
+                creators["blackwing lair flank"] = [](PlayerbotAI* ai) { return new BlackwingLairFlankTrigger(ai); };
+                creators["blackwing lair support"] = [](PlayerbotAI* ai) { return new BlackwingLairSupportTrigger(ai); };
+                creators["blackwing lair priority target"] = [](PlayerbotAI* ai) { return new BlackwingLairPriorityTargetTrigger(ai); };
                 creators["blackwing lair safe position"] = [](PlayerbotAI* ai) { return new BlackwingLairPositionTrigger(ai); };
                 creators["use hourglass sand"] = [](PlayerbotAI* ai) { return new HourglassSandTrigger(ai); };
                 creators["naxxramas safe position"] = [](PlayerbotAI* ai) { return new NaxxramasPositionTrigger(ai); };

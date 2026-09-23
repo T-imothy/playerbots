@@ -6,6 +6,31 @@
 
 namespace ai
 {
+    class BlackwingLairFlankTrigger : public Trigger
+    {
+    public:
+        BlackwingLairFlankTrigger(PlayerbotAI* ai) : Trigger(ai, "blackwing lair flank", 1) {}
+        bool IsActive() override
+        {
+            Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
+            float angle = 0.0f;
+            return BlackwingMeleeFlankAngle(ai, target, angle) && bot->GetDistance(target, false) <= 15.0f &&
+                std::fabs(std::remainder(target->GetAngle(bot) - angle, float(2 * M_PI))) > 0.25f;
+        }
+    };
+
+    class BlackwingLairSupportTrigger : public Trigger
+    {
+    public:
+        BlackwingLairSupportTrigger(PlayerbotAI* ai) : Trigger(ai, "blackwing lair support", 1) {}
+        bool IsActive() override { BlackwingLairSupportAction action(ai); return action.isUseful(); }
+    };
+    class BlackwingLairPriorityTargetTrigger : public Trigger
+    {
+    public:
+        BlackwingLairPriorityTargetTrigger(PlayerbotAI* ai) : Trigger(ai, "blackwing lair priority target", 1) {}
+        bool IsActive() override { BlackwingLairPriorityTargetAction action(ai); return action.isUseful(); }
+    };
     class HourglassSandTrigger : public Trigger
     {
     public:

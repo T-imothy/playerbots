@@ -52,11 +52,12 @@ struct AttackerCache{std::list<ObjectGuid> value;std::list<ObjectGuid>& Get(){re
 struct Context{Cached cached;AttackerCache attackers;template<class T>auto* GetValue(const char*){
  if constexpr(std::is_same_v<T,EncounterPosition>)return &cached;else return &attackers;}};
 struct PlayerbotAI{Player* bot;Context context;std::list<ObjectGuid> attackers;std::map<unsigned,Unit*> units;
+ bool ranged=false,healer=false;bool IsRanged(Player*){return ranged;}bool IsHeal(Player*){return healer;}
  bool validPath=true,canMove=true;unsigned checked=0,moves=0;Player* GetBot(){return bot;}
  Context* GetAiObjectContext(){return &context;}bool CanMove(){return canMove;}void StopMoving(){}
  Unit* GetUnit(ObjectGuid guid){auto i=units.find(guid);return i==units.end()?nullptr:i->second;}};
 struct Event{};
-struct Action{virtual ~Action()=default;};
+struct Action{virtual ~Action()=default;std::string getName(){return "fixture";}};
 struct MovementAction:Action{};struct AttackAction:MovementAction{};struct MoveAwayFromHazard:MovementAction{};
 struct CastSpellAction:Action{bool movement=false;bool HasMovementEffect(){return movement;}};
 namespace ai{
@@ -72,6 +73,7 @@ namespace ai{
   bool IsReaction(){return true;}
   bool MoveTo(unsigned,float,float,float,bool idle,bool react,bool noPath,bool ignoreEnemies){
    assert(!idle&&react&&!noPath&&ignoreEnemies);++ai->moves;return true;}};
+ struct BlackwingLairPriorityTargetAction{BlackwingLairPriorityTargetAction(PlayerbotAI*){}Unit* GetTarget(){return nullptr;}};
  struct PreserveBlackwingLairPositionMultiplier{PlayerbotAI* ai;float GetValue(Action*);};
 }
 #define AI_VALUE(type,name) ai->attackers
@@ -108,10 +110,16 @@ int main(){
  radius=0;assert(!get());radius=46;assert(!get());radius=10;assert(get());
  PreserveBlackwingLairPositionMultiplier multiplier{&ai};MovementAction follow;AttackAction attack;MoveAwayFromHazard escape;
  CastSpellAction cast;Action ordinary;
- assert(multiplier.GetValue(&follow)==0&&multiplier.GetValue(&attack)==1&&multiplier.GetValue(&escape)==1);
+ assert(multiplier.GetValue(&follow)==0&&multiplier.GetValue(&attack)==0&&multiplier.GetValue(&escape)==1);
  assert(multiplier.GetValue(&action)==1&&multiplier.GetValue(&cast)==1&&multiplier.GetValue(&ordinary)==1);
  cast.movement=true;assert(multiplier.GetValue(&cast)==0);ally.auras.clear();
  assert(multiplier.GetValue(&cast)==1&&multiplier.GetValue(&follow)==1&&!get());
+ boss.entry=12017;boss.alive=true;boss.victim=nullptr;boss.combat=true;boss.map=&map;
+ ai.units[3]=&boss;ai.context.attackers.value={3};bot.auras.clear();ally.auras.clear();ai.ranged=true;radius=10;
+ assert(get()&&plan.spell==23331&&lastRadius==23331);
+ boss.victim=&bot;assert(!get());boss.victim=nullptr;
+ ai.ranged=false;assert(!get());ai.healer=true;assert(get());
+ ai.healer=false;
  std::cout<<"PASS: actual BWL aura/radius/paths, tank preservation, post-kill lifetime, phase/group and movement arbitration\n";
 }
 '''.replace('__GEOMETRY__', (root / 'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__METHODS__', methods)

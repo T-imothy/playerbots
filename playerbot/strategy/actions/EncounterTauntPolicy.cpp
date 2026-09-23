@@ -22,6 +22,7 @@ namespace
                 if (enemy->GetEntry() == 15510) { rule = {{25646}, 3}; return true; }
                 break;
             case 469:
+                if (enemy->GetEntry() == 11983) { rule = {{23341}, 5}; return true; }
                 if (enemy->GetEntry() == 14601) { rule = {{23340}, 1}; return true; }
                 break;
             case 533:

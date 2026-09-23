@@ -1,5 +1,6 @@
 #pragma once
 #include "DungeonActions.h"
+#include "AttackAction.h"
 #include "ChangeStrategyAction.h"
 #include "MovementActions.h"
 #include "UseItemAction.h"
@@ -9,6 +10,24 @@
 
 namespace ai
 {
+    class BlackwingLairSupportAction : public Action
+    {
+    public:
+        BlackwingLairSupportAction(PlayerbotAI* ai) : Action(ai, "blackwing lair support") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    private:
+        bool Select(std::string& spell, Unit*& target);
+    };
+
+    class BlackwingLairPriorityTargetAction : public AttackAction
+    {
+    public:
+        BlackwingLairPriorityTargetAction(PlayerbotAI* ai) : AttackAction(ai, "blackwing lair priority target") {}
+        Unit* GetTarget() override;
+        bool isUseful() override;
+    };
+
     const uint32 SPELL_DISARM_TRAP = 1842;
 
     class HourglassSandAction : public UseItemIdAction

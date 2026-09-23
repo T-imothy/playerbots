@@ -81,6 +81,7 @@ bool AttackRTITargetAction::isUseful()
 
 bool AttackAction::Attack(Player* requester, Unit* target)
 {
+    if (IsProtectedBlackwingTarget(bot, target)) return false;
     if (HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot))
     {
         StopUnsafeEncounterOffense(bot, bot);

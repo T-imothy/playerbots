@@ -61,6 +61,7 @@ struct Unit {
  bool world=true,alive=true,combat=true,charmed=false,melee=false,player=false,controlled=true,disabled=false;
  unsigned map=575,instance=1,phase=1,entry=0,stops=0,attacks=0,react=2;float z=0,dist=5;
  std::set<unsigned> auras;Spell* casts[4]{};Unit* master=nullptr;std::function<void()> onInterrupt;
+ Unit* GetVictim(){return nullptr;}
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
  bool IsInMap(Unit*u){return u&&world&&u->world&&map==u->map&&instance==u->instance&&phase==u->phase;}
  unsigned GetEntry(){return entry;}unsigned GetMapId(){return map;}float GetDistance(Unit*u){return u->dist;}
@@ -83,6 +84,7 @@ namespace MaNGOS {
 }
 namespace Cell {template<class T>void VisitAllObjects(Player*,MaNGOS::UnitListSearcher<T>&s,float){s.list=worldUnits;}}
 namespace ai {
+ bool IsProtectedBlackwingTarget(Player*,Unit*){return false;} // Separate BWL phase fixture.
  bool HasHakkarPoisonPreparation(Player*) { return false; } // actual coordination is exercised in hakkar_poison_regression.py
  bool HasEncounterDamagePause(Player*);bool HasEncounterThreatPause(Player*);bool HasEncounterSpellBomb(Player*);bool HasEncounterWeaponPause(Player*);bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*);
  bool HasUnsafeEncounterOffense(Player*);bool StopUnsafeEncounterOffense(Player*,Unit*);

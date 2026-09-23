@@ -435,6 +435,8 @@ namespace ai
                 creators["stop corrupted healing"] = [](PlayerbotAI* ai) { return new StopCorruptedHealingAction(ai); };
                 creators["stop unsafe reflected cast"] = [](PlayerbotAI* ai) { return new StopUnsafeReflectedCastAction(ai); };
                 creators["stop unsafe encounter offense"] = [](PlayerbotAI* ai) { return new StopUnsafeEncounterOffenseAction(ai); };
+                creators["blackwing lair support"] = [](PlayerbotAI* ai) { return new BlackwingLairSupportAction(ai); };
+                creators["blackwing lair priority target"] = [](PlayerbotAI* ai) { return new BlackwingLairPriorityTargetAction(ai); };
                 creators["blackwing lair safe position"] = [](PlayerbotAI* ai) { return new BlackwingLairPositionAction(ai); };
                 creators["use hourglass sand"] = [](PlayerbotAI* ai) { return new HourglassSandAction(ai); };
                 creators["naxxramas safe position"] = [](PlayerbotAI* ai) { return new NaxxramasPositionAction(ai); };

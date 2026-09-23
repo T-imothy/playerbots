@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "EncounterSpellPolicy.h"
 #include "MovementActions.h"
 #include "MovementPathSafety.h"
 #include "MotionGenerators/MotionMaster.h"
@@ -2736,7 +2737,16 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
 #endif
 
     if (ai->HasStrategy("behind", BotState::BOT_STATE_COMBAT))
+    {
         angle = GetFollowAngle() / 3 + obj->GetOrientation() + M_PI;
+        float flankAngle = 0.0f;
+        if (BlackwingMeleeFlankAngle(ai, dynamic_cast<Unit*>(obj), flankAngle))
+        {
+            // Native chase takes an angle relative to the target's facing.
+            angle = flankAngle - obj->GetOrientation();
+            if (angle < 0) angle += float(2 * M_PI);
+        }
+    }
 
     UpdateMovementState();
 
@@ -3467,10 +3477,12 @@ bool SetBehindTargetAction::Execute(Event& event)
         return false;
 
     float angle = GetFollowAngle() / 3 + target->GetOrientation() + M_PI / 2.0f;
+    const bool flank = BlackwingMeleeFlankAngle(ai, target, angle);
+    const float destinationAngle = flank ? angle : target->GetOrientation() + float(M_PI);
 
     float distance = bot->GetCombinedCombatReach(target, true) * 0.8f;
-    float x = target->GetPositionX() + cos(target->GetOrientation()) * -1.0f * distance,
-        y = target->GetPositionY() + sin(target->GetOrientation()) * -1.0f * distance,
+    float x = target->GetPositionX() + cos(destinationAngle) * distance,
+        y = target->GetPositionY() + sin(destinationAngle) * distance,
         z = target->GetPositionZ();
     bot->UpdateGroundPositionZ(x, y, z);
 
@@ -3485,7 +3497,7 @@ bool SetBehindTargetAction::Execute(Event& event)
 
     const bool isLos = target->IsWithinLOS(x, y, z + bot->GetCollisionHeight(), true);
     bool moved = MoveTo(bot->GetMapId(), x, y, z);
-    if (!moved && !isLos)
+    if (!moved && !isLos && !flank)
     {
         distance = sPlayerbotAIConfig.contactDistance;
         x = target->GetPositionX() + cos(angle) * distance;
@@ -3504,7 +3516,10 @@ bool SetBehindTargetAction::isUseful()
         return false;
 
     Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
-    if (target && !bot->IsFacingTargetsBack(target))
+    float flankAngle = 0.0f;
+    const bool flank = BlackwingMeleeFlankAngle(ai, target, flankAngle);
+    const bool needsFlank = flank && std::fabs(std::remainder(target->GetAngle(bot) - flankAngle, float(2 * M_PI))) > 0.25f;
+    if (target && (needsFlank || (!flank && !bot->IsFacingTargetsBack(target))))
     {
         // Don't move behind if the target is too far away
         const float distance = bot->GetDistance(target, false);
