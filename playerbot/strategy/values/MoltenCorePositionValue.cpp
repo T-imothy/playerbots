@@ -120,7 +120,11 @@ EncounterPosition MoltenCorePositionValue::Calculate()
 {
     EncounterPosition plan;
     std::vector<encounter::Circle> threats;
-    if (!MoltenCoreThreats(ai, plan, threats)) return plan;
+    if (!MoltenCoreThreats(ai, plan, threats))
+    {
+        PlanMoltenCoreTrash(ai, plan);
+        return plan;
+    }
     const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
     const auto candidates = encounter::EscapeCircles(here, threats);
     unsigned checked = 0;

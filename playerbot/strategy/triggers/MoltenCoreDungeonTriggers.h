@@ -5,6 +5,13 @@
 
 namespace ai
 {
+    class MoltenCoreImpTrigger : public Trigger
+    {
+    public:
+        MoltenCoreImpTrigger(PlayerbotAI* ai) : Trigger(ai, "molten core imp pack", 1) {}
+        bool IsActive() override { return MoltenCoreImpPack(ai); }
+    };
+
     class MoltenCoreSupportTrigger : public Trigger
     {
     public:

@@ -59,3 +59,13 @@ if args.cores_dir:
                 assert re.search(r'\b' + str(spell) + r'\b', text), (era, name, spell)
         print('PASS native MC spell contracts:', era)
 print('PASS MC source wiring, safety contracts and Python regression syntax (no compile/live test)')
+
+# Trash decisions must preserve boss hazards and use real role/class actions.
+assert 'MoltenCoreThreats(ai, current, threats) || !PlanMoltenCoreTrash(ai, current)' in actions
+assert 'selected->GetEntry() == 12101' in actions and 'unit->GetEntry() != 11673' in actions
+assert 'enemy->GetEntry() == 11669' in actions and 'return imps >= 3' in actions
+assert 'ai->IsTank(static_cast<Player*>(victim))' in actions
+assert 'PlanMoltenCoreTrash(ai, plan)' in position
+assert 'molten core imp pack' in read('playerbot/strategy/triggers/TriggerContext.h')
+assert 'MoltenCoreImpPack(ai)' in read('playerbot/strategy/mage/MageActions.h')
+print('PASS MC trash source wiring, tank-held pack admission and hazard precedence')

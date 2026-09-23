@@ -7,6 +7,27 @@ using namespace ai;
 
 void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    const char* area = nullptr;
+    switch (ai->GetBot()->getClass())
+    {
+        case CLASS_MAGE: area = "blizzard"; break;
+        case CLASS_HUNTER: area = "volley"; break;
+        case CLASS_WARRIOR: area = "whirlwind"; break;
+        case CLASS_ROGUE: area = "blade flurry"; break;
+        case CLASS_PALADIN: area = "consecration"; break;
+        case CLASS_SHAMAN: area = "chain lightning"; break;
+        case CLASS_DRUID: area = ai->IsRanged(ai->GetBot()) ? "hurricane" : "swipe"; break;
+#ifndef MANGOSBOT_ZERO
+        case CLASS_WARLOCK: area = "seed of corruption"; break;
+#endif
+#ifdef MANGOSBOT_TWO
+        case CLASS_PRIEST: area = "mind sear"; break;
+        case CLASS_DEATH_KNIGHT: area = "death and decay"; break;
+#endif
+        default: break;
+    }
+    if (area) triggers.push_back(new TriggerNode("molten core imp pack",
+        NextAction::array(0, new NextAction(area, 40.0f), NULL)));
     // Below emergency healing and hazard movement, above ordinary rotations.
     triggers.push_back(new TriggerNode("molten core support",
         NextAction::array(0, new NextAction("molten core support", ACTION_DISPEL + 5), NULL)));

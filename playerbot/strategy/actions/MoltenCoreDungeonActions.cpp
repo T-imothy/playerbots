@@ -10,6 +10,114 @@
 
 using namespace ai;
 
+bool ai::MoltenCoreImpPack(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsRealPlayer() || ai->IsHeal(bot)) return false;
+    Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
+    if (!target || !target->IsInWorld() || !bot->IsInMap(target) || !target->IsAlive() ||
+        !target->IsInCombat() || target->GetEntry() != 11669) return false;
+    unsigned imps = 0;
+    for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
+    {
+        Unit* enemy = ai->GetUnit(guid);
+        if (!enemy || !enemy->IsInWorld() || !bot->IsInMap(enemy) || !enemy->IsAlive() ||
+            sServerFacade.IsFriendlyTo(bot, enemy)) continue;
+        if (enemy->GetDistance(target) > 15 && enemy->GetDistance(bot) > 15) continue;
+        if (!enemy->IsInCombat() || enemy->HasCharmer() ||
+            PossibleAttackTargetsValue::HasBreakableCC(enemy, bot) ||
+            PossibleAttackTargetsValue::HasUnBreakableCC(enemy, bot)) return false;
+        if (enemy->GetEntry() == 11669 && enemy->GetDistance(target) <= 8)
+        {
+            Unit* victim = enemy->GetVictim();
+            if (!victim || !victim->IsPlayer() || !ai->IsTank(static_cast<Player*>(victim)) ||
+                static_cast<Player*>(victim)->GetGroup() != bot->GetGroup()) return false;
+            ++imps;
+        }
+    }
+    return imps >= 3 && ai->GetCombatStartTime() && time(0) - ai->GetCombatStartTime() >= 2;
+}
+
+bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
+{
+    plan = EncounterPosition();
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsRealPlayer()) return false;
+    Unit* selected = nullptr;
+    for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || !unit->IsInWorld() || !bot->IsInMap(unit) || !unit->IsAlive() ||
+            !unit->IsInCombat() || unit->HasCharmer() || sServerFacade.IsFriendlyTo(bot, unit) ||
+            (unit->GetEntry() != 12101 && unit->GetEntry() != 11673)) continue;
+        Unit* victim = unit->GetVictim();
+        if (!victim || !victim->IsPlayer() || !victim->IsAlive() ||
+            static_cast<Player*>(victim)->GetGroup() != bot->GetGroup()) continue;
+        // Keep the current victim's tank assignment. Choose one stable nearby
+        // source; do not alternate between multiple trash mobs every tick.
+        if (!selected || (unit->GetVictim() == bot && selected->GetVictim() != bot) ||
+            (unit->GetVictim() != bot && selected->GetVictim() != bot &&
+             unit->GetObjectGuid() < selected->GetObjectGuid())) selected = unit;
+    }
+    if (!selected) return false;
+    Unit* victim = selected->GetVictim();
+    plan.active = true; plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
+    plan.boss = selected->GetObjectGuid();
+    if (selected->GetEntry() == 12101)
+    {
+        // Hold the established tank in place; everyone else joins its position.
+        // This cannot prevent charges at human players who remain spread out.
+        if (victim == bot) { plan.active = false; return false; }
+        plan.spell = 19196;
+        plan.destination = {victim->GetPositionX(), victim->GetPositionY(), victim->GetPositionZ()};
+        if (bot->GetDistance(victim) <= 3)
+            plan.destination = {bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+    }
+    else
+    {
+        plan.spell = 19272;
+        float angle = selected->GetOrientation() + float(M_PI);
+        float distance = std::max(2.0f, selected->GetCombatReach() + bot->GetCombatReach() - 1.0f);
+        if (victim == bot)
+        {
+            // The hound faces its victim. Move the tank to the opposite side
+            // of the raid, rather than merely turning the player's model.
+            float x = 0, y = 0; unsigned count = 0;
+            for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+            {
+                Player* member = ref->getSource();
+                if (!member || member == bot || !member->IsInWorld() || !member->IsAlive() ||
+                    !bot->IsInMap(member) || member->IsBeingTeleported() || ai->IsTank(member) ||
+                    member->GetDistance(selected) > 40) continue;
+                x += member->GetPositionX(); y += member->GetPositionY(); ++count;
+            }
+            if (!count) { plan.active = false; return false; }
+            x = x / count - selected->GetPositionX(); y = y / count - selected->GetPositionY();
+            if (x*x + y*y < 4) { plan.active = false; return false; }
+            angle = std::atan2(y, x) + float(M_PI);
+            // A wide safe rear sector avoids rotating for tiny centroid shifts.
+            if (std::cos(selected->GetAngle(bot) - angle) > 0.86f)
+                plan.destination = {bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+            else plan.destination = {selected->GetPositionX() + std::cos(angle)*distance,
+                selected->GetPositionY() + std::sin(angle)*distance, selected->GetPositionZ()};
+        }
+        else
+        {
+            if (ai->IsTank(bot)) { plan.active = false; return false; }
+            if (ai->IsRanged(bot) || ai->IsHeal(bot)) distance = std::min(25.0f, std::max(distance, bot->GetDistance(selected)));
+            if (std::cos(selected->GetAngle(bot) - selected->GetOrientation()) < -0.25f)
+                plan.destination = {bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+            else plan.destination = {selected->GetPositionX() + std::cos(angle)*distance,
+                selected->GetPositionY() + std::sin(angle)*distance, selected->GetPositionZ()};
+        }
+    }
+    if (ValidateEncounterDestination(ai, plan)) return true;
+    plan.active = false;
+    return false;
+}
+
 namespace
 {
     bool RaidMember(Player* bot, Player* member)
@@ -194,7 +302,14 @@ bool MoltenCorePositionAction::Execute(Event& event)
 {
     EncounterPosition plan, current;
     std::vector<encounter::Circle> threats;
-    if (!GetPlan(ai, plan) || !ai->CanMove() || !MoltenCoreThreats(ai, current, threats) ||
+    if (!GetPlan(ai, plan) || !ai->CanMove()) return false;
+    if (plan.spell == 19196 || plan.spell == 19272)
+    {
+        if (MoltenCoreThreats(ai, current, threats) || !PlanMoltenCoreTrash(ai, current)) return false;
+        plan = current;
+    }
+    else if (!MoltenCoreThreats(ai, current, threats)) return false;
+    if (
         !ValidateEncounterDestination(ai, plan) || !encounter::OutsideCircles(plan.destination, threats)) return false;
     if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= 1.5f)
     {

@@ -74,6 +74,8 @@ namespace ai {
  bool ValidateEncounterDestination(PlayerbotAI* ai,EncounterPosition&){++ai->checked;return ai->validPath;}
  struct MoltenCorePositionValue {Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
  bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
+ // This fixture isolates the existing boss hazards; trash is checked separately.
+ bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&) { return false; }
  struct Event{};
  struct MoltenCorePositionAction {PlayerbotAI* ai;Player*bot=ai->bot;static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool Execute(Event&);
  void SetDuration(unsigned){}

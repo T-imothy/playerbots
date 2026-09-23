@@ -70,3 +70,33 @@ raid debuff recovery; Geddon bomb paths; Golemagg retreat/re-engagement; Ragnaro
 spacing on lava terrain, knockbacks, and both submerged/emerged transitions.
 Appropriate tank/healer roles, learned abilities, gear and raid composition are
 still necessary. This audit does not certify an unattended Molten Core clear.
+
+
+## Trash tactics added 2026-09-23
+
+Verified live creature IDs across all three databases: Flame Imp 11669,
+Core Hound 11671, Ancient Core Hound 11673 and Lava Surger 12101.
+Surge is 19196; the Ancient Core Hound frontal is Lava Breath 19272.
+
+- Three or more clustered, engaged, tank-held Flame Imps enable each class's
+  registered AoE action. Healers retain healing. Learned spells, cooldowns,
+  resource, threat and class-action checks still apply. Nearby unengaged/CC
+  targets inhibit the extra AoE priority. Mage Blizzard's ten-second wait has
+  a two-second exception only for this tank-held MC pack.
+- Surger: other bots stack within three yards of its current grouped player
+  victim; the tank remains free to establish position. Ordinary ranged/follow
+  movement cannot immediately undo the stack. Humans are not moved.
+- Ancient Core Hound: its current bot tank positions opposite the nearby
+  non-tank raid centroid, with angular tolerance to avoid constant rotation.
+  Non-tanks occupy the rear sector; ranged/healers retain up to 25 yards.
+  Other tanks retain their assignments. This does not alter the smaller hounds.
+- Native path/height/hazard validation applies. Existing boss hazard plans
+  take priority. Only map 409 is affected; no NPC script, spell or DB mutation.
+
+Limitations: multiple simultaneous trash types use a stable single source;
+this is not a joint geometric solution for every possible mixed pull. Full
+live testing of movement, tank turns, aggro changes and class AoE remains
+required. Classes without an available appropriate AoE retain normal actions.
+No core binaries were compiled for this change. Source checks and CMake
+configuration are not proof of runtime performance. Rebuild all three cores,
+deploy and restart to activate; no SQL/client patch needed.
