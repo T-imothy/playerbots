@@ -351,7 +351,12 @@ bool RazorgoreOrbAction::Execute(Event& event)
 {
     GameObject* orb = SelectOrb();
     if (!orb || !ai->CanMove()) return false;
-    if (!orb->IsAtInteractDistance(bot) || !bot->IsWithinLOSInMap(orb))
+#ifdef MANGOSBOT_ZERO
+    const bool inRange = orb->IsWithinDistInMap(bot, orb->GetInteractionDistance());
+#else
+    const bool inRange = orb->IsAtInteractDistance(bot);
+#endif
+    if (!inRange || !bot->IsWithinLOSInMap(orb))
         return MoveTo(bot->GetMapId(), orb->GetPositionX(), orb->GetPositionY(), orb->GetPositionZ(),
             false, false, false, true);
     ai->StopMoving();
@@ -368,7 +373,7 @@ bool RazorgoreOrbAction::UpdateControl()
     Unit* dragon = bot->IsInWorld() ? bot->GetCharm() : nullptr;
     if (!RazorgoreEggPhase(ai) || !dragon || dragon->GetEntry() != 12435 ||
         !dragon->IsInWorld() || !dragon->IsAlive() || !bot->IsInMap(dragon) ||
-        dragon->GetCharmerGuid() != bot->GetObjectGuid())
+        !dragon->HasCharmer(bot->GetObjectGuid()))
     {
         lastControlUpdate = 0; controlledGuid.Clear(); movingToEgg.Clear(); castEgg.Clear(); castAttempts = 0; failedEggs.clear();
         return false;
