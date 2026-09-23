@@ -226,7 +226,6 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
     // His live, engaged sons identify the add wave without bypassing the
     // native submerged flag, guessing a phase timer or scanning the world.
     const uint32 bossEntry = boss ? boss->GetEntry() : (ragSons ? 11502 : 0);
-    if (!bossEntry) return nullptr;
 
     auto valid = [this](Unit* unit)
     {
@@ -239,9 +238,40 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
     Unit* commanded = ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"));
     if (valid(commanded)) return nullptr;
     Unit* marked = ai->GetUnit(AI_VALUE(ObjectGuid, "rti target"));
-    if (valid(marked)) return nullptr;
+    if (valid(marked) && (bossEntry || marked->GetEntry() != 11671)) return nullptr;
 
     Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
+    if (!bossEntry)
+    {
+        // Balance the engaged small Core Hounds, not Ancient Core Hounds or
+        // Golemagg's Core Ragers. Raid marks on this pack are advisory; direct
+        // attack commands above remain an explicit human override.
+        std::vector<Unit*> hounds;
+        Unit* anchor = valid(current) && current->GetEntry() == 11671 ? current : nullptr;
+        for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (!valid(unit) || unit->GetEntry() != 11671) continue;
+            hounds.push_back(unit);
+        }
+        if (hounds.empty()) return nullptr;
+        if (!anchor) anchor = *std::min_element(hounds.begin(), hounds.end(), [this](Unit* a, Unit* b) {
+            return bot->GetDistance(a) < bot->GetDistance(b);
+        });
+        float highest = 0;
+        for (Unit* hound : hounds)
+            if (hound->GetDistance(anchor) <= 30) highest = std::max(highest, hound->GetHealthPercent());
+        // Five percentage points of tolerance avoids switching on every hit.
+        // Keep damage distributed amongst the highest-health band instead of
+        // sending the entire raid onto the same nearly-dead marked hound.
+        std::vector<Unit*> band;
+        for (Unit* hound : hounds)
+            if (hound->GetDistance(anchor) <= 30 && hound->GetHealthPercent() + 5.0f >= highest) band.push_back(hound);
+        if (band.empty()) return nullptr;
+        if (std::find(band.begin(), band.end(), current) != band.end()) return current;
+        std::sort(band.begin(), band.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+        return band[bot->GetGUIDLow() % band.size()];
+    }
     Unit* selected = nullptr;
     unsigned priority = 0;
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))

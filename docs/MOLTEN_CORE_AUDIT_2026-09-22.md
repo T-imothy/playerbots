@@ -100,3 +100,14 @@ required. Classes without an available appropriate AoE retain normal actions.
 No core binaries were compiled for this change. Source checks and CMake
 configuration are not proof of runtime performance. Rebuild all three cores,
 deploy and restart to activate; no SQL/client patch needed.
+
+
+Core Hound pack balancing: DPS targets the highest-health band (within five
+percentage points of the healthiest nearby engaged Core Hound 11671), retaining
+its current target while it remains in that band. GUID distribution spreads
+new assignments within the band. Tanks/healers retain their roles. Core Hound
+raid marks do not force a premature kill; explicit attack commands still override.
+Only nearby engaged, eligible, non-CC targets qualify. Remaining living hounds
+continue to be selected after the first death. No resurrection timer or creature
+health is changed. This reduces uneven kills but cannot guarantee simultaneous
+deaths against human burst damage, existing DoTs, or widely separated packs.

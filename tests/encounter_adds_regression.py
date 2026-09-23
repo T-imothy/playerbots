@@ -20,6 +20,8 @@ methods += [block(mc, 'unsigned MoltenCoreTargetPriority('),
 
 code = r'''
 #include <cassert>
+#include <algorithm>
+#include <vector>
 #include <cmath>
 #include <iostream>
 #include <list>
@@ -31,6 +33,7 @@ using uint32=unsigned;
 struct {float sightDistance=60.0f;} sPlayerbotAIConfig;
 struct Map {};
 struct Unit {
+ unsigned guid=0;float health=100;unsigned GetObjectGuid(){return guid;} unsigned GetGUIDLow(){return guid;} float GetHealthPercent(){return health;}
  unsigned entry=0;bool world=true,alive=true,combat=true,levitating=false,breakCC=false,hardCC=false;
  bool assignedCC=false,attackable=true;unsigned phase=1;
  Map* map=nullptr;Unit* victim=nullptr;float x=0,z=0;
@@ -50,7 +53,12 @@ struct PlayerbotAI {
  Unit* GetUnit(unsigned id){auto it=units.find(id);return it==units.end()?nullptr:it->second;}
  template<class T>T Value(const char* key){
   if constexpr(std::is_same_v<T,Unit*>)return std::string(key)=="rti target"?marked:current;
-  else if constexpr(std::is_same_v<T,ObjectGuid>)return commanded;
+  else if constexpr(std::is_same_v<T,ObjectGuid>){
+   if(std::string(key)=="attack target") return commanded;
+   Unit* wanted=std::string(key)=="rti target"?marked:current;
+   for(auto const& entry:units)if(entry.second==wanted)return entry.first;
+   return 0;
+  }
   else return std::string(key)=="attackers"?attackers:possible;
  }
 };
@@ -180,6 +188,17 @@ int main(){
  boss.entry=12118;assert(!mc.GetTarget()); // unrelated boss/son pull is ambiguous
  boss.entry=12118;add.entry=12119;second.entry=12098;ai.attackers={1,3};
  assert(!mc.GetTarget()); // ambiguous multi-boss combat retains ordinary handling
+ // Small Core Hounds: health balancing, mark tolerance, remaining survivors.
+ ai=PlayerbotAI{};bot.mapId=409;bot.guid=7;add=Unit{};second=Unit{};
+ add.map=second.map=&map;add.entry=second.entry=11671;add.guid=2;second.guid=3;
+ add.health=20;second.health=70;ai.units={{2,&add},{3,&second}};ai.possible={2,3};
+ ai.current=&add;ai.marked=&add;assert(mc.GetTarget()==&second);
+ second.health=23;assert(mc.GetTarget()==&add); // stay within five-point band
+ add.alive=false;assert(mc.GetTarget()==&second);
+ ai.commanded=3;assert(!mc.GetTarget());ai.commanded=0;
+ ai.tank=true;assert(!mc.GetTarget());ai.tank=false;
+ ai.healer=true;assert(!mc.GetTarget());ai.healer=false;
+ second.breakCC=true;assert(!mc.GetTarget());second.breakCC=false;
  std::cout<<"PASS: actual encounter add selection: CC, marks, roles, stable target, death, transition, instance, expansion\n";
 }
 '''.replace("__METHODS__", "\n".join(methods))
