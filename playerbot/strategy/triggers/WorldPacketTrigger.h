@@ -15,6 +15,9 @@ namespace ai
     public:
         WorldPacketTrigger(PlayerbotAI* ai, std::string command) : Trigger(ai, command), triggered(false) {}
 
+        bool IsExternalEvent() const override { return true; }
+        bool IsAlreadyTriggered() override { return triggered; }
+
         virtual void ExternalEvent(WorldPacket &packet, Player* owner = NULL) override
         {
             // Penqle's WorldPacket has a deleted copy operator=; copy-construct + move-assign instead.

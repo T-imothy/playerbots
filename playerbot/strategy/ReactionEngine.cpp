@@ -76,6 +76,7 @@ bool ReactionEngine::FindReaction(bool isStunned)
                 }
                 // Extract the reaction from the queue (removed)
                 ActionNode* reactionNode = queue.Pop(reactionItem);
+                ReleaseExternalEvent(reactionEvent.getSource());
                 if (reactionNode)
                 {
                     Action* reaction = InitializeAction(reactionNode);

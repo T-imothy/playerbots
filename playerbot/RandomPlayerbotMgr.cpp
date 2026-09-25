@@ -2850,7 +2850,7 @@ bool RandomPlayerbotMgr::RandomTeleport(Player* bot, std::vector<WorldLocation> 
                         ForEachPlayerbot([&](Player* otherBot)
                         {
                             // Only check the bots that are on the same zone
-                            if (otherBot && !otherBot->IsBeingTeleported() && zoneId == otherBot->GetZoneId())
+                            if (otherBot && otherBot->IsInWorld() && !otherBot->IsBeingTeleported() && otherBot->FindMap() && zoneId == otherBot->GetZoneId())
                             {
                                 if (l.fDist(WorldPosition(otherBot)) <= sPlayerbotAIConfig.randomBotTeleportNearPlayerMaxAmountRadius)
                                 {
@@ -4375,7 +4375,11 @@ RandomPlayerbotMgr::BotStats RandomPlayerbotMgr::GatherBotStats()
         if (GetBotStuck(bot))
             stats.stuck++;
 
-        stats.perZone[bot->GetZoneId()]++;
+        // A worldport can temporarily detach the bot from its map.
+        if (bot->IsInWorld() && bot->FindMap())
+            stats.perZone[bot->GetZoneId()]++;
+        else
+            stats.notInWorld++;
     });
 
     return stats;
@@ -4438,6 +4442,8 @@ std::list<std::string> RandomPlayerbotMgr::FormatBotStats(const BotStats& stats,
     }
 
     lines.push_back("  stuck:    " + std::to_string(stats.stuck));
+    if (stats.notInWorld)
+        lines.push_back("  not in world: " + std::to_string(stats.notInWorld) + " (excluded from zone counts)");
 
     // Level bands
     {
@@ -4641,8 +4647,11 @@ std::string RandomPlayerbotMgr::FormatBotLine(Player* bot)
     AiObjectContext* context = ai->GetAiObjectContext();
 
     std::string zone = "unknown";
-    if (AreaTableEntry const* area = GetAreaEntryByAreaID(bot->GetZoneId()))
-        zone = area->area_name;
+    if (bot->IsInWorld() && bot->FindMap())
+    {
+        if (AreaTableEntry const* area = GetAreaEntryByAreaID(bot->GetZoneId()))
+            zone = area->area_name;
+    }
 
     std::string lastExecuted = ai->GetLastExecutedActionName(state);
     if (lastExecuted.empty()) lastExecuted = "none";

@@ -4,6 +4,19 @@
 
 using namespace ai;
 
+namespace
+{
+    bool HasOwnedBlessing(PlayerbotAI* ai, Unit* target, const std::vector<std::string>& blessings)
+    {
+        for (const std::string& blessing : blessings)
+        {
+            if (ai->HasMyAura(blessing, target) || ai->HasMyAura("greater " + blessing, target))
+                return true;
+        }
+        return false;
+    }
+}
+
 std::string ai::SelectPaladinAura(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
@@ -96,6 +109,11 @@ std::string CastBlessingAction::GetBlessingForTarget(Unit* target)
     if (target)
     {
         std::vector<std::string> possibleBlessings = GetPossibleBlessingsForTarget(target);
+        // Recheck this caster's blessing at execution, including greater ranks.
+        // Other paladins may still contribute their own blessings.
+        if (HasOwnedBlessing(ai, target, possibleBlessings))
+            return chosenBlessing;
+
         for (const std::string& blessing : possibleBlessings)
         {
             const std::string greaterBlessing = "greater " + blessing;
@@ -299,6 +317,11 @@ std::string CastBlessingOnPartyAction::GetBlessingForTarget(Unit* target)
     if (target)
     {
         std::vector<std::string> possibleBlessings = GetPossibleBlessingsForTarget(target);
+        // Recheck this caster's blessing at execution, including greater ranks.
+        // Other paladins may still contribute their own blessings.
+        if (HasOwnedBlessing(ai, target, possibleBlessings))
+            return chosenBlessing;
+
         for (const std::string& blessing : possibleBlessings)
         {
             // Don't cast greater salvation on possible tank classes

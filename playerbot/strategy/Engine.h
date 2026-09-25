@@ -126,6 +126,8 @@ namespace ai
         ActionNode* CreateActionNode(const std::string& name);
         virtual Action* InitializeAction(ActionNode* actionNode);
         virtual bool ListenAndExecute(Action* action, Event& event);
+        void ReleaseExternalEvent(const std::string& source);
+        void PruneUnhandledExternalEvents();
 
     private:
         void LogAction(const char* format, ...);
@@ -158,6 +160,9 @@ namespace ai
         ActionExecutionListeners actionExecutionListeners;
         BotState state;
         Action* lastExecutedAction;
+        // Context-owned packet triggers, bounded by this engine's trigger names.
+        // Keep their events armed until dequeued on the action's owning thread.
+        std::map<std::string, Trigger*> unhandledExternalEvents;
         std::unordered_map<std::string, FailureState> actionFailures;
         uint32 lastActionFailurePrune = 0;
         static std::atomic<uint64> suppressedImpossibleActions;

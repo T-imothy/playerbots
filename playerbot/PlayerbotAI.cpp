@@ -264,7 +264,11 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
     botOutgoingPacketHandlers.AddHandler(BUY_ERR_REPUTATION_REQUIRE, "not enough reputation");
     botOutgoingPacketHandlers.AddHandler(SMSG_GROUP_SET_LEADER, "group set leader");
     botOutgoingPacketHandlers.AddHandler(SMSG_FORCE_RUN_SPEED_CHANGE, "check mount state");
-    botOutgoingPacketHandlers.AddHandler(SMSG_RESURRECT_REQUEST, "resurrect request");
+    // shouldDelay=true: ExternalEventHelper::HandlePacket() returns false when the 'resurrect request'
+    // trigger already holds an unconsumed event, and PacketHandlingHelper::Handle() only re-queues a
+    // packet on false when the opcode was registered with shouldDelay. Without it the request is
+    // dropped outright, so a corpse that is busy that tick never accepts and never gets resurrected.
+    botOutgoingPacketHandlers.AddHandler(SMSG_RESURRECT_REQUEST, "resurrect request", true);
     botOutgoingPacketHandlers.AddHandler(SMSG_INVENTORY_CHANGE_FAILURE, "cannot equip");
     botOutgoingPacketHandlers.AddHandler(SMSG_TRADE_STATUS, "trade status");
     botOutgoingPacketHandlers.AddHandler(SMSG_LOOT_RESPONSE, "loot response", true);
@@ -3144,6 +3148,11 @@ bool PlayerbotAI::PlaySound(uint32 emote)
 
 bool PlayerbotAI::PlayEmote(uint32 emote)
 {
+    // The native text-emote handler accesses the map; a worldport can leave
+    // the bot without one until its transfer completes.
+    if (!bot->IsInWorld() || bot->IsBeingTeleported() || !bot->FindMap())
+        return false;
+
     WorldPacket data(SMSG_TEXT_EMOTE);
     data << (TextEmotes)emote;
     data << urand(0, EmoteAction::GetNumberOfEmoteVariants((TextEmotes)emote, bot->getRace(), bot->getGender()) - 1);

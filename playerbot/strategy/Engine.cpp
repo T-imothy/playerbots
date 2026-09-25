@@ -334,6 +334,8 @@ void Engine::Init()
         MultiplyAndPush(strategy->getDefaultActions(state), 0.0f, false, Event(), "default");
     }
 
+    PruneUnhandledExternalEvents();
+
 	if (testMode)
 	{
         FILE* file = fopen("test.log", "w");
@@ -435,6 +437,9 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                 }
             }
             ActionNode* actionNode = queue.Pop();
+            // Do not release before the map/world ownership checks above:
+            // a deferred continuation has not consumed this request yet.
+            ReleaseExternalEvent(event.getSource());
             if (collectDiagnostics)
                 ++diagnosticSample.evaluations;
             Action* action = InitializeAction(actionNode);
@@ -696,6 +701,38 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
     if (!yieldedDecision)
         decisionPrepared = false;
     return actionExecuted;
+}
+
+void Engine::ReleaseExternalEvent(const std::string& source)
+{
+    auto it = unhandledExternalEvents.find(source);
+    if (it == unhandledExternalEvents.end())
+        return;
+    it->second->Reset();
+    unhandledExternalEvents.erase(it);
+}
+
+void Engine::PruneUnhandledExternalEvents()
+{
+    for (auto it = unhandledExternalEvents.begin(); it != unhandledExternalEvents.end();)
+    {
+        bool held = false;
+        for (TriggerNode* node : triggers)
+        {
+            if (node->getName() == it->first)
+            {
+                held = true;
+                break;
+            }
+        }
+        if (!held)
+        {
+            it->second->Reset();
+            it = unhandledExternalEvents.erase(it);
+        }
+        else
+            ++it;
+    }
 }
 
 ActionNode* Engine::CreateActionNode(const std::string& name)
@@ -979,7 +1016,8 @@ void Engine::ProcessTriggers(bool minimal)
             if (!event)
                 continue;
 
-            MultiplyAndPush(node->getHandlers(), 0.0f, false, event, "trigger");
+            if (MultiplyAndPush(node->getHandlers(), 0.0f, false, event, "trigger") && trigger->IsExternalEvent())
+                unhandledExternalEvents[trigger->getName()] = trigger;
             LogAction("T:%s - %f", trigger->getName().c_str(), node->getFirstRelevance());
         }
     }
@@ -987,7 +1025,8 @@ void Engine::ProcessTriggers(bool minimal)
     for (std::list<TriggerNode*>::iterator i = triggers.begin(); i != triggers.end(); i++)
     {
         Trigger* trigger = (*i)->getTrigger();
-        if (trigger) trigger->Reset();
+        if (trigger && unhandledExternalEvents.find(trigger->getName()) == unhandledExternalEvents.end())
+            trigger->Reset();
     }
 }
 
