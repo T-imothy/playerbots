@@ -38,6 +38,16 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan)
         bot->GetDistance(point.x, point.y, point.z) > 60) return false;
     const WorldPosition destination(plan.map, point.x, point.y, point.z);
     auto hazards = ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Get();
+    if (Unit* boss = ai->GetUnit(plan.boss))
+        if (bot->IsInMap(boss) && boss->IsAlive() && boss->IsInCombat() &&
+            CurrentBossPursuitSpell(bot, boss) == plan.spell && plan.spell)
+        {
+            const float clearance = BossEscapeDistance(bot, boss, plan.spell);
+            if (clearance <= 0) return false;
+            // A destination behind the pursuer can be clear yet have a path
+            // through its melee range. Require outward travel on every segment.
+            hazards.emplace_back(WorldPosition(boss), clearance - 2);
+        }
     if (plan.map == 531)
     {
         EncounterPosition current;

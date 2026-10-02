@@ -6,6 +6,7 @@ root=Path(__file__).resolve().parents[1]
 source=(root/'playerbot/strategy/actions/EncounterHealingPolicy.cpp').read_text()
 methods='\n'.join(block(source,s) for s in ('uint32 ai::UpcomingEncounterHealingWindow(', 'bool ai::CanPrecastEncounterHeal(', 'bool CastHealingSpellAction::isUseful(', 'bool CastHealingSpellAction::Execute('))
 methods+='\n'+block((root/'playerbot/strategy/actions/GenericSpellActions.cpp').read_text(),'bool CastAoeHealSpellAction::isUseful(')
+methods=block((root/'playerbot/strategy/actions/RaidHealingObjective.cpp').read_text(), 'bool ai::NeedsRaidObjectiveHealing(')+'\n'+methods
 code=r'''
 #include <cassert>
 #include <iostream>
@@ -16,6 +17,7 @@ struct Modifier{int m_amount=-100;};struct Aura{unsigned id=55593;Modifier modif
 struct Unit;
 struct SpellAuraHolder{Unit*caster;int duration=2000;Unit*GetCaster()const{return caster;}int GetAuraDuration()const{return duration;}};
 struct Unit{unsigned entry=16011,map=533,phase=1;bool world=true,alive=true,combat=true,charmed=false;int reduction=-100;SpellAuraHolder*holder=nullptr;std::vector<Aura*>modifiers;
+ unsigned hp=50,maxhp=100;unsigned GetMapId(){return map;}unsigned GetHealth(){return hp;}unsigned GetMaxHealth(){return maxhp;}
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}unsigned GetEntry(){return entry;}
  const SpellAuraHolder*GetSpellAuraHolder(unsigned id){return id==55593?holder:nullptr;}const std::vector<Aura*>&GetAurasByType(unsigned){return modifiers;}
  int GetMaxNegativeAuraModifier(unsigned){return reduction;}float GetHealthPercent(){return 100;}
@@ -30,6 +32,7 @@ struct Event{};
 struct CastSpellAction{Player*bot;Unit*target;unsigned casts=0;void RefreshSpellId(){}unsigned GetSpellID()const{return spellId;}Unit*GetTarget(){return target;}bool isUseful(){return true;}bool Execute(Event&){++casts;return true;}private:unsigned spellId=1;};
 struct CastAuraSpellAction:CastSpellAction{};
 namespace ai{
+ bool NeedsRaidObjectiveHealing(Unit*);
  unsigned UpcomingEncounterHealingWindow(Player*,Unit*);bool CanPrecastEncounterHeal(Player*,Unit*,const SpellEntry*);
  struct CastHealingSpellAction:CastAuraSpellAction{bool allowAuraRefresh=false;bool isUseful();bool Execute(Event&);};
  struct CastAoeHealSpellAction:CastHealingSpellAction{bool isUseful();};
@@ -55,6 +58,15 @@ int main(){Player bot;Unit target,boss;SpellAuraHolder holder{&boss};target.hold
  assert(!UpcomingEncounterHealingWindow(&bot,&target)&&!heal.isUseful()&&!heal.Execute(event)&&!aoe.isUseful());
 #endif
  target.reduction=0;target.holder=nullptr;assert(heal.isUseful()&&aoe.isUseful()&&heal.Execute(event));
+ target.map=631;target.entry=36789;
+#ifdef MANGOSBOT_TWO
+ assert(heal.isUseful()&&heal.Execute(event));target.combat=false;
+ assert(!heal.isUseful()&&!heal.Execute(event));target.combat=true;
+ target.hp=100;assert(!heal.isUseful()&&!heal.Execute(event));target.hp=99;
+ assert(heal.Execute(event));target.alive=false;assert(!heal.Execute(event));target.alive=true;
+#else
+ assert(!heal.isUseful()&&!heal.Execute(event));
+#endif
  std::cout<<"PASS: native aura expiry and haste-aware precast, no premature instant/channel casts, queued refresh and ordinary healing\n";
 }
 '''.replace('__METHODS__',methods)

@@ -129,6 +129,18 @@ ObjectGuid PartyMemberToHeal::Calculate()
         }
     }
 
+    if (Unit* objective = FindRaidHealingObjective(ai))
+    {
+        // A friendly encounter objective is not a party member. Use normal
+        // healing spells and admission, but do not sacrifice a low-health ally
+        // to its much larger missing-health number. Forecasts remain cached.
+        const bool urgent = std::any_of(needHeals.begin(), needHeals.end(), [&](Unit* target) {
+            return target != objective && (target->GetHealthPercent() < sPlayerbotAIConfig.lowHealth ||
+                double(forecast(target)) * 100.0 / target->GetMaxHealth() < sPlayerbotAIConfig.lowHealth);
+        });
+        if (!urgent && Check(objective)) return objective->GetObjectGuid();
+    }
+
     if (needHeals.empty() && tankTargets.empty())
     {
         return ObjectGuid();

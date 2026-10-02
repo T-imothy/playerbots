@@ -27,6 +27,7 @@ Unit* DungeonAddTargetAction::GetTarget()
         case 531: break; // Viscidus globs resolved as native summon objectives below.
         case 533: bossEntry = 15952; addEntry = 16486; rescueAura = 28622; break; // Maexxna Web Wrap.
 #ifndef MANGOSBOT_ZERO
+        case 532: break; // Romulo and Julianne's native fake-death sequence.
         case 564: bossEntry = 22917; addEntry = 23375; channelledPlayerAura = 41083; break; // Illidan's Shadow Demon paralyzing a group member.
         case 548: case 568: break; // Karathress/Tidalvess and Halazzi totem objectives below.
         case 545:
@@ -39,6 +40,7 @@ Unit* DungeonAddTargetAction::GetTarget()
         case 557: case 558: break; // Shaffar/Maladaar native summon objectives below.
         case 585: sourceBossEntry = 24723; sourceAddEntry = 24722; sourceAura = 44320; break; // Selin's active crystal.
 #ifdef MANGOSBOT_TWO
+        case 603: break; // Live Ulduar rescue/healing objectives below.
         case 574: bossEntry = 23953; addEntry = 23965; rescueAura = 48400; break; // Keleseth's Frost Tomb channel.
         case 575: bossEntry = 26668; addEntry = 27281; channelledPlayerAura = 48278; break; // Svala's active ritual channelers.
         case 576: bossEntry = 26763; addEntry = 26918; phaseAura = 47748; break; // Anomalus Rift Shield.
@@ -89,6 +91,9 @@ Unit* DungeonAddTargetAction::GetTarget()
     if (Unit* objective = GetSummonObjectiveTarget()) return objective;
     if (bot->GetMapId() == 230) return GetBlackrockDepthsTarget();
     if (Unit* totem = GetRaidTotemTarget()) return totem;
+    if (Unit* zulGurub = GetZulGurubTarget()) return zulGurub;
+    if (Unit* opera = GetOperaDuoTarget()) return opera;
+    if (Unit* ulduar = GetUlduarObjectiveTarget()) return ulduar;
     if (Unit* twin = GetTwinEmperorTarget()) return twin;
     if (Unit* icecrown = GetIcecrownAddTarget()) return icecrown;
     auto validBoss = [this](Unit* boss)

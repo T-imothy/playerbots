@@ -9,8 +9,9 @@ source=(root/'playerbot/strategy/values/PartyMemberToHeal.cpp').read_text()
 shared=(root/'playerbot/strategy/values/PartyMemberValue.cpp').read_text()
 methods='\n'.join([block(source,'class IsTargetOfHealingSpell')+';',
     block(source,'uint32 getIncomingdamage('),block(shared,'bool PartyMemberValue::IsTargetOfSpellCast(')] +
-    [block(source,key) for key in ('Unit* PartyMemberToHeal::Calculate(', 'bool PartyMemberToHeal::CanHealPet(',
+    [block(source,key) for key in ('ObjectGuid PartyMemberToHeal::Calculate(', 'bool PartyMemberToHeal::CanHealPet(',
      'bool PartyMemberToHeal::Check(', 'std::vector<Player*> PartyMemberToHeal::GetPartyMembers(')])
+methods=methods.replace('PartyMemberToHeal::Calculate(', 'PartyMemberToHeal::CalculateRaw(')
 code=r'''
 #include <algorithm>
 #include <cassert>
@@ -81,7 +82,8 @@ struct Facade{bool IsFriendlyTo(Unit*,Unit* u){return u&&u->friendly;}bool IsAli
 struct Config{unsigned almostFullHealth=95,lowMana=20,criticalHealth=20,lowHealth=50;}sPlayerbotAIConfig;
 struct SpellEntryPredicate{virtual bool Check(const SpellEntry*)=0;};
 struct PartyMemberValue{PlayerbotAI* ai;Player* bot;bool IsTargetOfSpellCast(Unit*,SpellEntryPredicate&);};
-struct PartyMemberToHeal:PartyMemberValue{Unit* Calculate();bool CanHealPet(Pet*);bool Check(Unit*);std::vector<Player*> GetPartyMembers();};
+Unit* raidObjective=nullptr;Unit* FindRaidHealingObjective(PlayerbotAI*){return raidObjective;}
+struct PartyMemberToHeal:PartyMemberValue{ObjectGuid CalculateRaw();Unit* Calculate(){return ai->GetUnit(CalculateRaw());}bool CanHealPet(Pet*);bool Check(Unit*);std::vector<Player*> GetPartyMembers();};
 #define AI_VALUE(type,key) ai->value<type>(key)
 __METHODS__
 int main(){
@@ -89,6 +91,12 @@ int main(){
  Pet pet;pet.guid=6;owner.pet=&pet;PlayerbotAI ai{&bot};Group group;group.Set({&bot,&owner});
  ai.units={{1,&bot},{2,&owner},{3,&healer},{4,&a},{5,&b},{6,&pet}};
  PartyMemberToHeal selector;selector.ai=&ai;selector.bot=&bot;
+ Unit dragon;dragon.guid=90;dragon.hp=50;ai.units[90]=&dragon;raidObjective=&dragon;
+ assert(selector.Calculate()==&dragon);dragon.hp=99;assert(selector.Calculate()==&dragon);
+ owner.hp=10;assert(selector.Calculate()==&owner);owner.hp=100;
+ owner.hp=70;Unit incoming;incoming.damage=50;owner.attackers={&incoming};ai.preheal=true;
+ assert(selector.Calculate()==&owner);ai.preheal=false;owner.attackers.clear();owner.hp=100;
+ dragon.phase=2;assert(selector.Calculate()==nullptr);dragon.phase=1;raidObjective=nullptr;
  assert(selector.Calculate()==nullptr); // full-health pet no longer fabricates work
  owner.hp=98;assert(selector.Calculate()==nullptr);owner.fullHealWound=true;
  assert(selector.Calculate()==&owner);owner.fullHealWound=false;owner.hp=100;
@@ -114,7 +122,7 @@ int main(){
  owner.hp=100;ai.rpg.unit=&pet;pet.hp=40;pet.instance=2;assert(selector.Calculate()==nullptr);pet.instance=1;assert(selector.Calculate()==&pet);ai.rpg.unit=nullptr;
  // Upstream pending loot suppresses only incidental RPG healing. Real party
  // healing, native Check validation and candidate deduplication remain intact.
- pet.hp=100;Unit npc;npc.guid=77;npc.hp=40;ai.rpg.unit=&npc;
+ pet.hp=100;Unit npc;npc.guid=77;npc.hp=40;ai.rpg.unit=&npc;ai.units[npc.guid]=&npc;
  ai.lootPossible=true;assert(selector.Calculate()==nullptr);
  owner.hp=20;assert(selector.Calculate()==&owner);owner.hp=100;
  ai.lootPossible=false;assert(selector.Calculate()==&npc);

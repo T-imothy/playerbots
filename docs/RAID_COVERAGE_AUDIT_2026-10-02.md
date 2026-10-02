@@ -25,6 +25,33 @@ These are normal bot actions. They retain native costs, cooldowns, range, immuni
 
 ## Reading the roster
 
+### Continued mechanic review and implementation
+
+The continuation starts from playerbots `2db61fcbb3e5481e2163d443998fd49daf74db90`. The following are additional implemented decisions, not certification of the entire raids. They were traced against the native encounter scripts in the applicable eras and the live world spell lists were queried read-only. Native raid scripts and databases remain unchanged.
+
+| Encounter | Native evidence and implemented decision | Still requires work / live verification |
+|---|---|---|
+| Jeklik, all three | `boss_jeklik.cpp` summons Bloodseeker Bats 14965 and unattackable bombers 14750. DPS now prioritize the actual boss-owned bats, preserving normal attackability/CC; bombers are excluded. Shared interrupts cover Great Heal 23954 and Mind Flay 23953 when native spell admission permits. | Flying/rooted bat movement and fire placement in the real room; see data defect below |
+| Mar'li, all three | Native entry is **14510**, not Venoxis 14507. Spider eggs are gameobjects, so spider 15041 selection requires an engaged same-group victim near active Mar'li rather than a fabricated boss summoner. Shared harmful-channel interrupts cover Drain Life 24300. | Tank/web/charge recovery; native phase-list defect below prevents claiming normal phase behavior |
+| Arlokk, all three | `boss_arlokk.cpp` activates panther triggers 15091. Target their engaged Prowlers 15101, prioritizing the group member with **Arlokk-owned** Mark 24210. Continue during native vanish when the boss has no victim. | Tank positioning, full vanish return and Whirlwind geometry |
+| Jin'do, all three | `zulgurubScripts.cpp` casts summon 24308 from Jin'do and applies shade invisibility 24307. A bot with Delusions 24306 targets native-owned shade 14986 only while actually visible. Shared attack admission also rejects a cached shade after the curse expires. Existing control/healing totems retain precedence. | Live shade/teleport recovery and role coverage when cursed players are healers/tanks |
+| Hazza'rah, all three | Spell list 1508301 uses 24728; native `SummonNightmareIllusion` additionally casts 24681/24729 from the boss. Prioritize boss-owned Nightmare Illusions 15163. | Sleep removal and live illusion pursuit |
+| Gri'lek, all three | Live EventAI uses Avatar 24646 and clears threat. Only the current pursued player retreats during Avatar. The melee-clearance margin uses native combat reach; bounded native paths may exit but cannot cross inward through the pursuer. | Real-room kiting and root-removal timing |
+| Big Bad Wolf, TBC/Wrath | Native `RedRidingHoodFixate` uses **30753**, separate from selection 30769 and appearance 30768. Only the actual boss-victim with the boss-owned fixation aura kites. Expiry, target change, reset and failed paths release the movement rule. | Stage walls and fear overlaps; this is local path-based kiting, not a certified perimeter route |
+| Romulo / Julianne, TBC/Wrath | `bosses_opera.cpp`: Julianne 17534 summons Romulo 17533; fake death leaves actors alive but unattackable, with a ten-second deadline. DPS balance the active pair, finish Julianne first below 10%, attack the remaining valid actor and recover after native resurrection. Role/command/CC rules remain in force. | Real damage/DoT/pet timing against the deadline; this does not guarantee simultaneous kills at every gear level |
+| Valithria, Wrath | Native `HealedBy` completes only on an actual heal to full health; `StartEncounter` marks the friendly boss in combat. Eligible bot healers now select her automatically during an active attempt. One available bot healer is reserved for the raid; native Dream-stack counts favor buffed healers for the boss. Low-health/forecast-danger party members override the objective. Medium-heal triggers continue through 99%, overheal cancellation preserves the finishing heal, and queued heals are rejected after reset/completion. | Dedicated portal/cloud navigation, 10/25 and heroic throughput, and actual full encounter completion |
+| Kologarn, Wrath | Native `boss_kologarn.cpp` summons right arm 32934 from boss 32930. Live Stone Grip 62056/63985 target that arm with vehicle control; bot DPS now rescue only while a living group member is actually boarded on that exact arm. Release/despawn/reset immediately removes the target override. | Eyebeam/arm geometry and native release damage threshold in 10/25; tank handoffs and rubble control |
+| Hodir, Wrath | `npc_flash_freezeAI` casts 61969/61990 from ice block 32926/32938 onto its own summoner. DPS now break blocks with that exact living prisoner/aura relationship during active group combat. Player rescue precedes friendly NPC rescue. Initial NPC blocks cannot authorize pulling Hodir. | Flash Freeze snowdrift routes, helper buffs and Biting Cold movement; real 10/25 rescue timing |
+| Freya, Wrath | Native boss 32906 summons Eonar's Gift 33228, whose AI attempts Lifebinder's Gift every ten seconds. DPS now prioritize the actual boss-owned tree, without requiring a threat victim on the passive summon. | Full wave/cohort logic, Conservator mushrooms, roots and bomb positions; this is not a complete Freya controller |
+
+Shared escape actions also no longer interrupt a cast for a move that native `CanMove()` rejects (roots, fear, stun, etc.). Release of that movement hold permits ordinary class recovery actions. No native speeds, auras, threat, health, damage, resurrection timers or spell costs are changed.
+
+**Separate native encounter defects discovered, not modified:** In all three cores, Mar'li's C++ phase lists are `1450701/1450702`, while the live world databases identify those as Venoxis's lists and Mar'li's as `1451001/1451002`. After transformation/reset she therefore selects the wrong lists. In all three live databases Jeklik's phase-one row labelled “Swoop” uses **24210 (Mark of Arlokk)**, while her native Swoop constant is **23919**. These are raid-script/data changes outside the requested playerbot-only scope; bot code must not pretend they are corrected.
+
+Additional native review: Buru's egg AI casts 19593 and performs the boss-health reduction itself; a safe bot implementation still needs egg preparation, lure geometry and damage holds together. Freya's native three-add check uses **12 seconds** and retains one current GUID per add entry; a generic all-add health-balancing rule is insufficient for overlapping waves. Neither encounter is marked complete by this continuation.
+
+XT-002's `ReceiveAIEvent(AI_EVENT_CUSTOM_B)` enables hard mode when the heart dies. Automatically selecting the exposed heart without a hard-mode policy can therefore make an unintended difficulty choice. This continuation does not add an unconditional heart override. Native vehicle/control and hard-mode policies remain explicit follow-up work.
+
 Every row remains **partial or unverified as a full encounter**. “Shared” means ordinary class targeting, healing, native interrupt admission and recognized ground hazards, not a dedicated strategy or proof that every named mechanic is handled. The right column is open implementation or live verification work; it must not be treated as completed by the correction batch. Shared interrupts are reactive; no raid-wide preassigned interrupt rotation was added. Untargetable/immune boss abilities must be handled by mechanics rather than forced interrupts.
 
 ## Molten Core (409; Classic, TBC, Wrath)
@@ -65,17 +92,17 @@ Every row remains **partial or unverified as a full encounter**. “Shared” me
 
 | Encounter | Implemented source behavior | Open mechanics / validation |
 |---|---|---|
-| Jeklik | Shared interrupt and dispel services | No dedicated phase/add assignments; verify heal admission and bat positioning |
+| Jeklik | Shared interrupts and native-owned bloodseeker-bat priority | Phase/tank positioning and live flight/fire recovery; native Swoop data issue above |
 | Venoxis | Shared native target/ground services | Poison phase positioning and add assignments |
-| Marli | Shared native target/interrupt services | Spider priority, tank changes and web recovery |
+| Marli | Engaged egg-spider priority and shared interrupts | Tank changes, web recovery and native phase-list defect above |
 | Thekal / Lor'Khan / Zath | Explicit balanced trio targeting | Live feign/resurrection timing and healer interruption |
-| Arlokk | Shared native target services | Marked-player panther control and vanish recovery |
+| Arlokk | Trigger-owned panther priority and marked-player rescue during vanish | Return positioning and Whirlwind recovery |
 | Mandokir | Threatening Gaze threat-generating action pause | Raptor order, charge spacing and tank recovery |
-| Jin'do | NEW brainwashing/healing-totem priority and Delusions curse preservation | Shade selection/visibility and teleport recovery still need dedicated validation |
+| Jin'do | Control/healing-totem priority, Delusions preservation and visible-shade targeting with expiry rejection | Live shade/teleport recovery |
 | Hakkar | Poison acquisition, engaged Son targeting and poison-cleansing suppression | Poison timing for the whole raid and priest-aspect variants |
 | Gahz'ranka | Shared native combat services | Summon/event start, knockback and tank recovery |
-| Gri'lek | Shared native combat services | Pursuit/fixation response |
-| Hazza'rah | Shared native combat services | Illusion priority and sleep response |
+| Gri'lek | Avatar pursuit escape with native combat-reach/path checks | Live kiting and root removal |
+| Hazza'rah | Native-owned Nightmare Illusion priority | Sleep response and live pursuit |
 | Renataki | Shared native combat services | Vanish/ambush recovery |
 | Wushoolay | Shared native combat services | Lightning positioning and event-specific response |
 
@@ -132,8 +159,8 @@ Every row remains **partial or unverified as a full encounter**. “Shared” me
 | Moroes | Shared native combat/CC services | Guest-specific CC/kill order, Garrote management and vanish recovery |
 | Maiden of Virtue | Shared native combat/dispel services | Repentance recovery and Holy Fire dispel priority |
 | Opera: Oz | Shared native combat services | Roar fear, Strawman fire response, Tito order and Crone cyclone positioning |
-| Opera: Big Bad Wolf | Shared native combat services | Red Riding Hood pursuit route |
-| Opera: Romulo and Julianne | Shared interrupts/healing services | Synchronized final deaths and phase-dependent targets |
+| Opera: Big Bad Wolf | Native-fixation pursuit escape | Live stage-wall route and fear overlaps |
+| Opera: Romulo and Julianne | Native-pair health balancing and fake-death target changes | Live synchronized finish and damage-over-time/pet overlaps |
 | Curator | Native-owned Astral Flare priorities | Evocation timing and raid spacing |
 | Shade of Aran | Flame Wreath movement hold and Arcane Explosion escape | Blizzard route, elemental control and planned interrupt schools |
 | Terestian Illhoof | Sacrifice-linked Demon Chains rescue | Imp AoE/tank assignments and Kil'rek timing |
@@ -252,11 +279,11 @@ Every row remains **partial or unverified as a full encounter**. “Shared” me
 | Razorscale | Devouring Flame actor avoidance | Harpoon election, add roles and final-phase tank swaps |
 | XT-002 | Shared native combat services | Bomb separation, scrapbot priorities, heart timing and explicit hard-mode choice |
 | Assembly of Iron | Shared interrupts/ground services | Chosen kill order, rune positioning and phase-dependent tank/interrupt rules |
-| Kologarn | Eye-beam avoidance and difficulty-specific tank swap | Right-arm rescue and rubble tank roles |
+| Kologarn | Eye-beam avoidance, difficulty-specific tank swap and actual boarded-player right-arm rescue | Live grip threshold/arm geometry, rubble tank roles and tank recovery |
 | Auriaya | Shared native combat services | Sonic Screech stack, pull/tank assignments and defender voids |
-| Hodir | Biting Cold movement and Flash Freeze jump suppression | Snowdrift positioning, frozen-NPC rescue and buff sharing |
+| Hodir | Biting Cold movement, Flash Freeze jump suppression and actual ice-prison targeting for players/friendly NPCs | Snowdrift positioning, buff sharing and live rescue timing |
 | Thorim | Unbalancing Strike tank swap | Arena/gauntlet groups, traps and Lightning Charge positioning |
-| Freya and elders | Shared native combat/interrupt services | Trio synchronized deaths, mushroom shelter, tree targets and wave-specific roles |
+| Freya and elders | Shared native combat/interrupt services plus native-owned Eonar's Gift target priority | Trio synchronized deaths, mushroom shelter, roots/bombs and wave-specific roles |
 | Mimiron | Leviathan Mk II Shock Blast escape | Mines/rockets/Laser Barrage, magnetic cores and synchronized final parts |
 | General Vezax | Shared native interrupts/healing services | Searing Flames rotation, Surge kiting, mana restrictions and Animus choice |
 | Yogg-Saron | Shared native targets/interrupts | Sanity, facing, portals/brain group, tentacle priorities and phase transitions |
@@ -287,7 +314,7 @@ Every row remains **partial or unverified as a full encounter**. “Shared” me
 | Putricide | Shared native combat/ground services | Abomination control, ooze/gas target roles and Mutated Plague tank rotation |
 | Blood Prince Council | Shared native combat services | Invocation targets, kinetic-bomb juggling, nuclei tank and Empowered Vortex |
 | Blood Queen | Swarming Shadows actor hazard | Vampire bite election/chains, Pact stack and air-phase spacing |
-| Valithria | NEW Blazing Skeleton/Suppresser/Archmage priorities | Dedicated friendly-boss healing target, healer portals/clouds and remaining add roles |
+| Valithria | Skeleton/Suppresser/Archmage priorities plus friendly-boss healing assignment, raid-healer reservation and full-health finish | Portal/cloud controller, remaining add roles and live throughput |
 | Sindragosa | Blistering Cold escape, Chilled weapon hold and grounded-tomb targeting | Ice Beacon spread, Unchained Magic, Mystic Buffet rotations and functional native ice-block LOS; cover-map remnants do not establish an active cover handler |
 | Lich King | NEW carried-player Val'kyr rescue and ranged Ice Sphere priority | Necrotic Plague positioning/dispel, Defile, transition roles, Soul Reaper, Vile Spirits and Frostmourne room |
 | Sister Svalna event | Shared native combat services | Impaling spear rescue and captain/event progression |
@@ -305,7 +332,7 @@ Every row remains **partial or unverified as a full encounter**. “Shared” me
 
 1. Native client-control encounters need dedicated ability/seat/possession controllers, not ordinary melee movement: Razuvious, Teron, Chess, Malygos, Leviathan and Gunship.
 2. Group assignment state needs deterministic ownership and re-election after deaths/disconnects: Horsemen, Kalecgos, Yogg, Halion, councils, soaking groups and healing rotations.
-3. A target override alone is insufficient for pickup/use objectives and friendly healing: Kael weapons, Valithria, Putricide abomination and Kil'jaeden drakes.
+3. A target override alone is insufficient for pickup/use objectives and portal progression: Kael weapons, Valithria's Dream portals, Putricide abomination and Kil'jaeden drakes. Valithria now has ordinary friendly-boss healing; that does not implement portal/cloud navigation.
 4. Spell/actor terrain safety requires actual room and collision tests. In particular Sindragosa's cover eligibility is currently inactive; residual map/GO constants are not coverage. Validate native Ice Block collision/LOS before enabling a bot cover claim. No native encounter repair was attempted here.
 5. Bot composition, learned abilities, role assignments, gear, hard-mode choices and explicit player marks affect outcomes. Live tests must use non-GM bots/players, native raid sizes/difficulties and actual phase transitions.
 
@@ -316,7 +343,8 @@ The above also means the experience is not yet a complete unattended “taxi” 
 - `playerbot/strategy/generic/DungeonStrategy.cpp`: common combat/reaction registration and movement holds.
 - `playerbot/strategy/values/EnemyHealerTargetValue.cpp`: shared off-target interrupt selector; class strategies register era-appropriate interrupt actions.
 - `playerbot/strategy/actions/DungeonAddTargetAction.cpp`: role/command/lifecycle gates and add dispatch.
-- `playerbot/strategy/actions/{RaidTotemTargetAction,IcecrownAddTargetAction,SummonObjectiveTargetAction,ThekalTargetAction,GluthTargetAction,TwinEmperorTargetAction}.cpp`: focused target policies.
+- `playerbot/strategy/actions/{RaidTotemTargetAction,IcecrownAddTargetAction,SummonObjectiveTargetAction,ThekalTargetAction,GluthTargetAction,TwinEmperorTargetAction,ZulGurubTargetAction,OperaDuoTargetAction,UlduarObjectiveTargetAction}.cpp`: focused target policies.
+- `playerbot/strategy/actions/RaidHealingObjective.cpp`: friendly-boss healing admission and raid-healer reservation.
 - `playerbot/strategy/actions/{MoltenCoreDungeonActions,BlackwingLairDungeonActions,KarazhanDungeonActions}.cpp`: raid-specific actions.
 - `playerbot/strategy/actions/Encounter{Damage,Dispel,Healing,Taunt,Spell}Policy.cpp`: shared action-admission rules.
 - `playerbot/strategy/values/*PositionValue.cpp` and `NativeEncounterActorHazards.cpp`: movement, cover, aura and actor hazards.
@@ -326,13 +354,15 @@ The above also means the experience is not yet a complete unattended “taxi” 
 
 | Check | Result |
 |---|---|
-| Nine executable regression runners, ZERO/ONE/TWO each | 27/27 configurations passed |
-| Illidan rescue dispatcher after its final change | 3/3 configurations passed |
-| MSVC `/Zs`, eight actual translation units per core using real build-project definitions/includes | Classic, TBC and Wrath passed (24 translation-unit checks) |
-| Live NPC script bindings and Delusions dispel type | Read-only verification passed for applicable eras |
+| Original nine executable regression runners, ZERO/ONE/TWO each | 27/27 configurations passed again during the continuation |
+| Continuation behavior runners, including actual dispatcher and Ulduar targets | 25/25 configurations passed; overlaps two original runners, so these totals are not additive |
+| Final MSVC `/Zs`, fourteen translation units per core with actual project definitions/includes | Classic, TBC and Wrath passed: 42 translation-unit checks, including all new C++ files and action contexts |
+| Live NPC script bindings, ZG phase/summon lists, Hodir prison auras and Kologarn vehicle targets | Read-only verification passed for applicable eras |
 | Full server link/build, deployment and live raid clears | Not performed |
 
 The nine runners are `raid_interrupt_regression.py`, `interrupt_effect_regression.py`, `pet_cast_admission_regression.py`, `encounter_dispel_regression.py`, `dungeon_add_priority_regression.py`, `icecrown_add_priority_regression.py`, `boss_cast_position_regression.py`, `encounter_movement_arbitration_regression.py`, and `encounter_safe_hold_regression.py`, under `tests/`. Run them with Python from an x64 MSVC developer environment, with the Classic/TBC/Wrath source checkouts next to the playerbots checkout. Existing fixture paths/GUID target types were brought up to date where necessary; their assertions were retained.
+
+Continuation runners: `dungeon_add_priority_regression.py`, `boss_cast_position_regression.py`, `encounter_destination_path_regression.py`, `zul_gurub_visibility_regression.py`, `healing_selection_regression.py`, `full_health_wound_regression.py`, `raid_healing_objective_regression.py`, `heal_interrupt_recheck_regression.py`, and `healing_window_regression.py`. All run ZERO/ONE/TWO except the shared route-geometry fixture, which runs once. The actual dispatcher fixture covers role and manual-target arbitration for ZG, Opera and Ulduar; the healing fixtures cover selection, urgent triage, final-heal cancellation and queued-action reset rejection.
 
 Validation results and exact commands are recorded in the accompanying local `raid-audit-20261002` work directory. Regression fixtures exercise actual function bodies with controlled native state; they do not simulate a live raid or prove a full clear. Native MSVC syntax checks use each real core's headers/configuration and do not link a server binary.
 

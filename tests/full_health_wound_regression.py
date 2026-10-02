@@ -8,6 +8,7 @@ repo=Path(__file__).resolve().parents[1]
 policy=(repo/'playerbot/strategy/actions/EncounterHealingPolicy.cpp').read_text()
 triggers=(repo/'playerbot/strategy/triggers/HealthTriggers.cpp').read_text()
 methods=block(policy,'uint32 ai::RemainingHealingAbsorb(')+'\n'+block(policy,'bool ai::NeedsFullHealingToRemoveAura(')+'\n'+block(triggers,'bool HealthInRangeTrigger::IsActive(')
+methods=block((repo/'playerbot/strategy/actions/RaidHealingObjective.cpp').read_text(), 'bool ai::NeedsRaidObjectiveHealing(')+'\n'+methods
 code=r'''
 #include <cassert>
 #include <string>
@@ -21,6 +22,8 @@ constexpr unsigned SPELL_AURA_HEAL_ABSORB=301;
 struct Modifier{int m_amount=0;};struct Aura{Modifier modifier;const Modifier* GetModifier()const{return &modifier;}};
 enum class BotState{BOT_STATE_COMBAT,BOT_STATE_NON_COMBAT};
 struct Unit{unsigned hp=98,maxhp=100;bool world=true,alive=true;std::set<unsigned> auras;std::vector<const Aura*> absorbs;
+ unsigned map=0,entry=0;bool combat=true,charmed=false;unsigned GetMapId(){return map;}unsigned GetEntry(){return entry;}
+ bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
  const std::vector<const Aura*>& GetAurasByType(unsigned){return absorbs;}
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}unsigned GetHealth(){return hp;}unsigned GetMaxHealth(){return maxhp;}
  bool HasAura(unsigned id){return auras.count(id);}bool IsPlayer(){return true;}};
@@ -29,7 +32,7 @@ struct PlayerbotAI{bool preheal=false;Unit* target;unsigned incoming=0;
  bool HasStrategy(std::string n,BotState){return n=="preheal"&&preheal;}
  bool IsTank(Player*,bool){return false;}void TellPlayerNoFacing(Player*,std::string){}
  template<class T>T value(std::string key){return T(key=="dead"?!target->alive:incoming);}};
-namespace ai{bool NeedsFullHealingToRemoveAura(Unit*);unsigned RemainingHealingAbsorb(Unit*);}
+namespace ai{bool NeedsFullHealingToRemoveAura(Unit*);unsigned RemainingHealingAbsorb(Unit*);bool NeedsRaidObjectiveHealing(Unit*);}
 using namespace ai;
 struct ValueInRangeTrigger{float maxValue=80,minValue=50;Unit* target;
  float GetValue(){return target?100.f*target->hp/target->maxhp:0;}
@@ -69,7 +72,17 @@ int main(){
 #else
  assert(RemainingHealingAbsorb(&patient)==0&&!t.IsActive());
 #endif
- std::cout<<"PASS: full-health wound finish, native IDs, trigger scope and ordinary health behavior\n";
+ patient.absorbs.clear();patient.map=631;patient.entry=36789;patient.hp=99;
+#ifdef MANGOSBOT_TWO
+ assert(NeedsRaidObjectiveHealing(&patient)&&t.IsActive());
+ patient.hp=100;assert(!t.IsActive());patient.hp=99;
+ patient.combat=false;assert(!t.IsActive());patient.combat=true;
+ patient.entry=36790;assert(!t.IsActive());patient.entry=36789;
+ t.name="party member critical health";assert(!t.IsActive());
+#else
+ assert(!NeedsRaidObjectiveHealing(&patient)&&!t.IsActive());
+#endif
+ std::cout<<"PASS: full-health wound/objective finish, native IDs, trigger scope and ordinary health behavior\n";
 }
 '''.replace('__METHODS__',methods)
 for era in ('ZERO','ONE','TWO'):
@@ -78,12 +91,13 @@ for era in ('ZERO','ONE','TWO'):
         subprocess.run(['cl','/nologo','/std:c++17','/EHsc',f'/DMANGOSBOT_{era}','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 for era in ('tbc','wotlk'):
-    native=(repo.parent/f'mangos-{era}-behavior/src/game/Spells/SpellAuras.cpp').read_text()
+    core=repo.parent/era
+    native=(core/'src/game/Spells/SpellAuras.cpp').read_text()
     marker=native.index('case 43093: case 31956: case 38801:')
     section=native[marker:marker+600]
     assert 'target->GetHealth() == target->GetMaxHealth()' in section
     assert 'target->RemoveAurasDueToSpell(GetId())' in section
 print('PASS: both native periodic-damage handlers confirm full-health removal')
-native=(repo.parent/'mangos-wotlk-behavior/src/game/Entities/Unit.cpp').read_text()
+native=(repo.parent/'wotlk/src/game/Entities/Unit.cpp').read_text()
 assert 'GetAurasByType(SPELL_AURA_HEAL_ABSORB)' in native
 assert 'AURA_REMOVE_BY_SHIELD_BREAK' in native

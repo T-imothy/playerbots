@@ -6,7 +6,7 @@ using namespace ai;
 
 bool ai::IsBossEscapeMap(uint32 map)
 {
-    if (map == 531 || map == 533) return true;
+    if (map == 309 || map == 531 || map == 533) return true;
 #ifndef MANGOSBOT_ZERO
     if (map == 532 || map == 542 || map == 550 || map == 552 || map == 553 || map == 555) return true;
 #endif
@@ -73,6 +73,7 @@ const Spell* ai::CurrentBossEscapeCast(Player* bot, Unit* boss)
 uint32 ai::CurrentBossEscapeSpell(Player* bot, Unit* boss)
 {
     if (!bot || !boss) return 0;
+    if (uint32 pursuit = CurrentBossPursuitSpell(bot, boss)) return pursuit;
     if (bot->GetMapId() == 533 && boss->GetEntry() == 15956)
     {
         if (boss->HasAura(28785)) return 28785;
@@ -97,6 +98,39 @@ uint32 ai::CurrentBossEscapeSpell(Player* bot, Unit* boss)
 #endif
     const Spell* spell = CurrentBossEscapeCast(bot, boss);
     return spell ? spell->m_spellInfo->Id : 0;
+}
+
+uint32 ai::CurrentBossPursuitSpell(Player* bot, Unit* boss)
+{
+    if (!bot || !boss || boss->GetVictim() != bot) return 0;
+    if (bot->GetMapId() == 309 && boss->GetEntry() == 15082 && boss->HasAura(24646)) return 24646;
+#ifndef MANGOSBOT_ZERO
+    // The native Opera aura script fixates through 30753, not the selection
+    // spell 30769 or appearance spell 30768. Observe the actual boss caster.
+    if (bot->GetMapId() == 532 && boss->GetEntry() == 17521 &&
+        bot->GetSpellAuraHolder(30753, boss->GetObjectGuid())) return 30753;
+#endif
+    return 0;
+}
+
+float ai::BossEscapeDistance(Player* bot, Unit* boss, uint32 spell)
+{
+    if (!bot || !boss || !spell) return 0;
+    if (spell == CurrentBossPursuitSpell(bot, boss))
+    {
+        // This is a melee kiting margin, not an invented spell damage radius.
+        // Recompute as the pursued target/boss moves, including scaled reach.
+        const float reach = boss->GetCombatReach() + bot->GetCombatReach();
+        return std::isfinite(reach) && reach >= 0 && reach <= 25 ? std::max(14.0f, reach + 8.0f) : 0;
+    }
+    bool regular = true;
+#ifndef MANGOSBOT_ZERO
+    regular = bot->GetMap()->IsRegularDifficulty();
+#endif
+    const uint32 damage = NativeBossEscapeSpell(bot->GetMapId(), boss->GetEntry(), spell, regular);
+    if (!damage) return 0;
+    const float radius = NativeEncounterSpellRadius(damage);
+    return std::isfinite(radius) && radius > 0 && radius <= 35 ? radius + 2 : 0;
 }
 
 EncounterPosition BossCastPositionValue::Calculate()
@@ -134,16 +168,10 @@ EncounterPosition BossCastPositionValue::Calculate()
             if (PlanLokenClosePosition(ai, boss, plan)) return plan;
             continue;
         }
-        bool regular = true;
-#ifndef MANGOSBOT_ZERO
-        regular = bot->GetMap()->IsRegularDifficulty();
-#endif
-        const uint32 damage = NativeBossEscapeSpell(bot->GetMapId(), boss->GetEntry(), spell, regular);
-        if (!damage) continue;
-        const float radius = NativeEncounterSpellRadius(damage);
-        if (!std::isfinite(radius) || radius <= 0 || radius > 35) continue;
+        const float clearance = BossEscapeDistance(bot, boss, spell);
+        if (clearance <= 0) continue;
         const std::vector<encounter::Circle> threats{{
-            {boss->GetPositionX(), boss->GetPositionY(), boss->GetPositionZ()}, radius + 2}};
+            {boss->GetPositionX(), boss->GetPositionY(), boss->GetPositionZ()}, clearance}};
         plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
         plan.boss = boss->GetObjectGuid(); plan.spell = spell;
         unsigned checked = 0;

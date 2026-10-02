@@ -17,8 +17,9 @@ using uint32=uint32_t;
 enum CurrentSpellTypes{CURRENT_MELEE_SPELL,CURRENT_GENERIC_SPELL,CURRENT_CHANNELED_SPELL};
 enum{SPELL_STATE_CASTING,SPELL_STATE_FINISHED};
 enum class BotState{BOT_STATE_NON_COMBAT};
-struct Unit{uint32 hp=100,maxhp=100,absorb=0;bool fullHealWound=false;uint32 GetHealth(){return hp;}uint32 GetMaxHealth(){return maxhp;}float GetHealthPercent(){return hp*100.f/maxhp;}};
+struct Unit{uint32 hp=100,maxhp=100,absorb=0;bool fullHealWound=false,raidObjective=false;uint32 GetHealth(){return hp;}uint32 GetMaxHealth(){return maxhp;}float GetHealthPercent(){return hp*100.f/maxhp;}};
 bool NeedsFullHealingToRemoveAura(Unit* u){return u && u->fullHealWound && u->hp < u->maxhp;}
+bool NeedsRaidObjectiveHealing(Unit*u){return u&&u->raidObjective&&u->hp<u->maxhp;}
 unsigned RemainingHealingAbsorb(Unit* u){return u?u->absorb:0;}
 struct SpellEntry{uint32 Id=10;bool heal=true;};
 struct Targets{Unit* target=nullptr;Unit* getUnitTarget(){return target;}};
@@ -53,6 +54,9 @@ int main(){
  spell.m_spellInfo=&heal;bot.spells[CURRENT_GENERIC_SPELL]=&spell;patient.fullHealWound=true;
  assert(!action.Execute(automatic));patient.hp=100;assert(action.Execute(automatic));
  patient.hp=95;patient.fullHealWound=false;
+ patient.raidObjective=true;spell.m_spellInfo=&heal;bot.spells[CURRENT_GENERIC_SPELL]=&spell;
+ assert(!action.Execute(automatic));patient.hp=100;assert(action.Execute(automatic));
+ patient.hp=95;patient.raidObjective=false;
  spell.m_spellInfo=&heal;bot.spells[CURRENT_GENERIC_SPELL]=&spell;spell.interruptible=false;assert(!action.Execute(automatic));
  spell.interruptible=true;spell.m_targets.target=nullptr;assert(!action.Execute(automatic));
  spell.m_targets.target=&patient;ai.context.trigger=nullptr;assert(!action.Execute(automatic));

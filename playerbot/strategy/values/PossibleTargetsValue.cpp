@@ -81,6 +81,12 @@ bool PossibleTargetsValue::IsFriendly(Unit* target, Player* player)
 
 bool PossibleTargetsValue::IsAttackable(Unit* target, Player* player)
 {
+    // Combat normally permits cached hostile targets without a visibility
+    // lookup. Jin'do's shades require Delusions continuously, including after
+    // a previously selected shade becomes invisible when the curse expires.
+    if (player->GetMapId() == 309 && target->GetEntry() == 14986 &&
+        (!player->HasAura(24306) || !target->IsVisibleForOrDetect(player, player->GetCamera().GetBody(), true)))
+        return false;
     const bool inVehicle = player->GetPlayerbotAI() && player->GetPlayerbotAI()->IsInVehicle();
     return !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_ATTACKABLE_1) &&
            !target->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_UNTARGETABLE) &&

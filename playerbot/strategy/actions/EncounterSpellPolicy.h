@@ -13,6 +13,8 @@ namespace ai
     bool ShouldAvoidCorruptedHealing(Player* bot, const SpellEntry* spell, Unit* target);
     bool IsViscidusShatterTarget(Unit* target, Player* bot);
     bool NeedsFullHealingToRemoveAura(Unit* target);
+    bool NeedsRaidObjectiveHealing(Unit* target);
+    Unit* FindRaidHealingObjective(PlayerbotAI* ai);
     uint32 RemainingHealingAbsorb(Unit* target);
     uint32 UpcomingEncounterHealingWindow(Player* bot, Unit* target);
     bool CanPrecastEncounterHeal(Player* bot, Unit* target, const SpellEntry* spell);

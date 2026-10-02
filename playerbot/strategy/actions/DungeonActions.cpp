@@ -66,7 +66,7 @@ bool BossCastPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 {
     Player* bot = ai->GetBot();
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
-        !bot->IsInCombat() || !IsBossEscapeMap(bot->GetMapId())) return false;
+        !bot->IsInCombat() || !IsBossEscapeMap(bot->GetMapId()) || !ai->CanMove()) return false;
     if (bot->GetMapId() == 532 && ai->GetAiObjectContext()->GetValue<bool>("aran flame wreath")->Get()) return false;
     plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("boss cast position")->Get();
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
@@ -81,13 +81,8 @@ bool BossCastPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
             encounter::Distance2d(plan.destination, {boss->GetPositionX(), boss->GetPositionY(), boss->GetPositionZ()}) <= 5;
     const uint32 spell = CurrentBossEscapeSpell(bot, boss);
     if (!spell || spell != plan.spell) return false;
-    bool regular = true;
-#ifndef MANGOSBOT_ZERO
-    regular = bot->GetMap()->IsRegularDifficulty();
-#endif
-    const uint32 damage = NativeBossEscapeSpell(plan.map, boss->GetEntry(), plan.spell, regular);
-    if (!damage) return false;
-    const float radius = NativeEncounterSpellRadius(damage);
+    const float clearance = BossEscapeDistance(bot, boss, plan.spell);
+    if (clearance <= 0) return false;
     const encounter::Point center{boss->GetPositionX(), boss->GetPositionY(), boss->GetPositionZ()};
     if (plan.map == 531)
     {
@@ -99,9 +94,8 @@ bool BossCastPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     }
     // A cached point must still clear the live caster. End the hold immediately
     // on cast completion/interruption, reset, map change or invalid spell data.
-    return std::isfinite(radius) && radius > 0 && radius <= 35 &&
-        std::isfinite(plan.destination.x) && std::isfinite(plan.destination.y) && std::isfinite(plan.destination.z) &&
-        encounter::Distance2d(plan.destination, center) >= radius + 2;
+    return std::isfinite(plan.destination.x) && std::isfinite(plan.destination.y) && std::isfinite(plan.destination.z) &&
+        encounter::Distance2d(plan.destination, center) >= clearance;
 }
 
 bool BossCastPositionAction::isUseful()

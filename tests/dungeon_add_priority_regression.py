@@ -9,6 +9,9 @@ source=(root/'playerbot/strategy/actions/DungeonAddTargetAction.cpp').read_text(
 multiplier=(root/'playerbot/strategy/generic/DungeonMultipliers.cpp').read_text()
 methods='\n'.join([block((root/'playerbot/strategy/values/InvalidTargetValue.cpp').read_text(),'bool InvalidTargetValue::Calculate('), block(source,'Unit* DungeonAddTargetAction::GetTarget('),
     block((root/'playerbot/strategy/actions/RaidTotemTargetAction.cpp').read_text(),'Unit* DungeonAddTargetAction::GetRaidTotemTarget('),
+    block((root/'playerbot/strategy/actions/ZulGurubTargetAction.cpp').read_text(),'Unit* DungeonAddTargetAction::GetZulGurubTarget('),
+    block((root/'playerbot/strategy/actions/OperaDuoTargetAction.cpp').read_text(),'Unit* DungeonAddTargetAction::GetOperaDuoTarget('),
+    block((root/'playerbot/strategy/actions/UlduarObjectiveTargetAction.cpp').read_text(),'Unit* DungeonAddTargetAction::GetUlduarObjectiveTarget('),
     block(source,'bool DungeonAddTargetAction::isUseful('),
     block(multiplier,'float PreserveDungeonAddTargetMultiplier::GetValue(')])
 code=r'''
@@ -25,9 +28,11 @@ code=r'''
 using uint32=unsigned;using ObjectGuid=unsigned;
 struct Unit {
  unsigned entry=0,map=545,instance=1,phase=1;ObjectGuid guid=0,spawner=0;
+ unsigned hp=100,maxhp=100;unsigned GetMaxHealth(){return maxhp;}float GetHealthPercent(){return maxhp?100.f*hp/maxhp:0;}
  bool world=true,alive=true,combat=true,charmed=false,friendly=false,attackable=true,freeAttack=true,player=false;
  bool IsPlayer(){return player;}
- bool immune=false,assignedCC=false,breakCC=false,hardCC=false;
+ bool immune=false,assignedCC=false,breakCC=false,hardCC=false,visible=true;
+ bool IsVisibleForOrDetect(Unit*,Unit*,bool){return visible;}
  float x=0;Unit* victim=nullptr;std::set<unsigned> auras;std::set<std::pair<unsigned,ObjectGuid>> sourceAuras;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
  unsigned GetEntry(){return entry;}ObjectGuid GetSpawnerGuid(){return spawner;}ObjectGuid GetObjectGuid(){return guid;}
@@ -39,7 +44,10 @@ struct Player;
 struct GroupReference{Player*player=nullptr;GroupReference*following=nullptr;Player*getSource(){return player;}GroupReference*next(){return following;}};
 struct Group{GroupReference*first=nullptr;GroupReference*GetFirstMember(){return first;}};
 struct Map {bool regular=true;bool IsRegularDifficulty(){return regular;}};
+struct TransportInfo {Unit* transport=nullptr;Unit* GetTransport(){return transport;}};
 struct Player:Unit {Player(){player=true;}bool teleport=false;Group*group=nullptr;ObjectGuid selection=0;ObjectGuid GetSelectionGuid(){return selection;}
+ bool boarded=false;TransportInfo transport;bool IsBoarded(){return boarded;}TransportInfo* GetTransportInfo(){return &transport;}
+ struct Camera{Unit*GetBody(){return nullptr;}}camera;Camera&GetCamera(){return camera;}
  Map nativeMap;Map*GetMap(){return &nativeMap;}
  bool IsBeingTeleported(){return teleport;}Group*GetGroup(){return group;}unsigned GetMapId(){return map;}
  bool IsInMap(Unit*u){return u&&world&&u->world&&map==u->map&&instance==u->instance&&phase==u->phase;}};
@@ -66,14 +74,148 @@ struct PossibleAttackTargetsValue {
 struct Action{std::string name;std::string getName(){return name;}};
 struct InnerDemonAction{static Unit* GetDemon(PlayerbotAI*){return nullptr;}};
 struct DungeonAddTargetAction {PlayerbotAI*ai;Player*bot;DungeonAddTargetAction(PlayerbotAI*a):ai(a),bot(a->bot){}
- Unit*GetTarget();bool isUseful();Unit*GetThekalTarget(){return nullptr;}Unit*GetGluthTarget(){return nullptr;}Unit*GetSummonObjectiveTarget(){return ai->objective;}Unit*GetRaidTotemTarget();Unit*GetTwinEmperorTarget(){return nullptr;}Unit*GetIcecrownAddTarget(){return nullptr;}Unit*GetBlackrockDepthsTarget(){return nullptr;}};
+ Unit*GetTarget();bool isUseful();Unit*GetThekalTarget(){return nullptr;}Unit*GetGluthTarget(){return nullptr;}Unit*GetSummonObjectiveTarget(){return ai->objective;}Unit*GetRaidTotemTarget();Unit*GetZulGurubTarget();Unit*GetOperaDuoTarget();Unit*GetUlduarObjectiveTarget();Unit*GetTwinEmperorTarget(){return nullptr;}Unit*GetIcecrownAddTarget(){return nullptr;}Unit*GetBlackrockDepthsTarget(){return nullptr;}};
 struct PreserveDungeonAddTargetMultiplier{PlayerbotAI*ai;float GetValue(Action*);};
 struct BotState{enum{BOT_STATE_COMBAT};};
 struct MeleeCcCheck{MeleeCcCheck(PlayerbotAI*){}bool Protected(Unit*u){return u->assignedCC;}};
 struct InvalidTargetValue{PlayerbotAI*ai;Player*bot;std::string qualifier="current target";bool Calculate();};
 #define AI_VALUE(type,key) ai->Value<type>(key)
+#define AI_VALUE2(type,key,qualifier) ai->Value<type>(key)
 __METHODS__
 int main(){
+ // Ulduar objectives exercise the actual dispatcher, including role/command
+ // arbitration and release of the target hold when a prisoner is freed.
+ for(unsigned kind:{0u,1u,2u,3u}) {
+  Group group,otherGroup;Player bot,tank,prisoner;bot.map=tank.map=prisoner.map=603;
+  bot.group=tank.group=prisoner.group=&group;prisoner.guid=3;prisoner.friendly=true;
+  GroupReference ref{&prisoner};group.first=&ref;
+  Unit boss,add,helper;boss.map=add.map=helper.map=603;boss.guid=1;boss.victim=&tank;
+  boss.entry=kind==0?32930:kind==1?32906:32845;
+  add.guid=2;add.entry=kind==0?32934:kind==1?33228:kind==2?32926:32938;
+  add.spawner=kind<2?1:kind==2?3:4;add.x=5;add.combat=false; // No add victim is required.
+  helper.guid=4;helper.friendly=true;helper.sourceAuras={{61990,2}};
+  prisoner.sourceAuras={{61969,2}};prisoner.boarded=true;prisoner.transport.transport=&add;
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&add},{3,&prisoner},{4,&helper}};ai.possible={1,2,3,4};
+  DungeonAddTargetAction action(&ai);PreserveDungeonAddTargetMultiplier multiplier{&ai};Action assist{"dps assist"};
+#ifndef MANGOSBOT_TWO
+  assert(!action.GetTarget());assert(!action.GetUlduarObjectiveTarget());
+#else
+  assert(action.GetTarget()==&add);ai.current=&add;assert(!action.isUseful());
+  auto none=[&](){assert(!action.GetTarget());assert(multiplier.GetValue(&assist)==1);};
+  ai.healer=true;none();ai.healer=false;ai.tank=true;none();ai.tank=false;ai.real=true;none();ai.real=false;
+  ai.command=1;none();ai.command=0;ai.marked=&boss;none();ai.marked=nullptr;
+  boss.combat=false;none();boss.combat=true;boss.alive=false;none();boss.alive=true;
+  boss.victim=&bot;none();boss.victim=&tank;tank.group=&otherGroup;none();tank.group=&group;
+  boss.phase=2;none();boss.phase=1;boss.instance=2;none();boss.instance=1;
+  bot.teleport=true;none();bot.teleport=false;bot.combat=false;none();bot.combat=true;
+  add.attackable=false;none();add.attackable=true;add.immune=true;none();add.immune=false;
+  add.breakCC=true;none();add.breakCC=false;add.hardCC=true;none();add.hardCC=false;
+  add.assignedCC=true;none();add.assignedCC=false;add.spawner=99;none();add.spawner=kind<2?1:kind==2?3:4;
+  if(kind==0) {
+   prisoner.boarded=false;none();prisoner.boarded=true; // Grip broke: stop overriding ordinary target selection.
+   prisoner.transport.transport=&boss;none();prisoner.transport.transport=&add;
+   prisoner.group=&otherGroup;none();prisoner.group=&group;prisoner.alive=false;none();prisoner.alive=true;
+   prisoner.teleport=true;none();prisoner.teleport=false;prisoner.charmed=true;none();prisoner.charmed=false;
+   add.entry=32933;none();add.entry=32934; // Left arm is not a rescue objective.
+  }
+  if(kind>=2) {
+   Unit* source=kind==2?static_cast<Unit*>(&prisoner):&helper;
+   unsigned aura=kind==2?61969:61990;
+   source->sourceAuras.clear();none();source->sourceAuras={{aura,99}};none();source->sourceAuras={{62469,2}};none();
+   source->sourceAuras={{aura,2}};source->alive=false;none();source->alive=true;
+   source->friendly=false;none();source->friendly=true;source->phase=2;none();source->phase=1;
+   source->x=30;none();source->x=0;
+   if(kind==2){prisoner.group=&otherGroup;none();prisoner.group=&group;}
+   else {
+    // Native helper blocks must not become an automatic encounter pull.
+    boss.combat=false;none();boss.combat=true;
+    Unit playerBlock=add;playerBlock.guid=5;playerBlock.entry=32926;playerBlock.spawner=3;playerBlock.x=10;
+    prisoner.sourceAuras={{61969,5}};ai.units[5]=&playerBlock;ai.possible.push_back(5);
+    assert(action.GetTarget()==&playerBlock); // Raid-member rescue wins over current NPC block.
+    prisoner.sourceAuras.clear();assert(action.GetTarget()==&add);ai.possible.pop_back();ai.units.erase(5);
+   }
+  }
+  assert(action.GetTarget()==&add);add.alive=false;none();add.alive=true;
+  ai.units.erase(2);none(); // A queued choice must not survive despawn.
+#endif
+ }
+ {
+  Group group,other;Player bot,tank;bot.group=tank.group=&group;bot.map=tank.map=532;
+  Unit julianne,romulo;julianne.guid=1;julianne.entry=17534;julianne.map=532;julianne.victim=&tank;
+  romulo=julianne;romulo.guid=2;romulo.entry=17533;romulo.spawner=1;
+  PlayerbotAI ai{&bot};ai.units={{1,&julianne},{2,&romulo}};ai.possible={1,2};DungeonAddTargetAction action(&ai);
+#ifdef MANGOSBOT_ZERO
+  assert(!action.GetTarget());
+#else
+  assert(action.GetTarget()==&julianne);
+  julianne.hp=40;assert(action.GetTarget()==&romulo);
+  ai.current=&romulo;romulo.hp=37;assert(action.GetTarget()==&romulo);romulo.hp=30;assert(action.GetTarget()==&julianne);
+  julianne.hp=7;romulo.hp=10;assert(action.GetTarget()==&julianne); // Finish healer once balanced.
+  julianne.attackable=false;assert(action.GetTarget()==&romulo); // Phase two or final fake death.
+  romulo.attackable=false;assert(!action.GetTarget());romulo.attackable=true;julianne.attackable=true;
+  romulo.hp=100;assert(action.GetTarget()==&romulo); // Recover after a missed native deadline.
+  ai.command=1;assert(!action.GetTarget());ai.command=0;ai.marked=&julianne;assert(!action.GetTarget());ai.marked=nullptr;
+  ai.tank=true;assert(!action.GetTarget());ai.tank=false;ai.healer=true;assert(!action.GetTarget());ai.healer=false;
+  romulo.spawner=9;assert(!action.GetTarget());romulo.spawner=1;
+  tank.group=&other;assert(!action.GetTarget());tank.group=&group;
+  julianne.victim=&bot;assert(!action.GetTarget());julianne.victim=&tank;
+  bot.teleport=true;assert(!action.GetTarget());bot.teleport=false;
+  romulo.phase=2;assert(!action.GetTarget());romulo.phase=1;
+  romulo.breakCC=true;assert(action.GetTarget()==&julianne);romulo.breakCC=false;
+  julianne.combat=romulo.combat=false;assert(!action.GetTarget());
+#endif
+ }
+ // Actual dispatcher: all five ZG add mechanics, including non-boss summoners.
+ for(auto row:std::vector<std::pair<unsigned,unsigned>>{{14517,14965},{14510,15041},{14515,15101},{11380,14986},{15083,15163}}){
+  Group group,other;Player bot,tank,marked;bot.group=tank.group=marked.group=&group;
+  bot.map=tank.map=marked.map=309;bot.auras.insert(24306);
+  Unit boss,add,second,trigger;boss.guid=1;boss.entry=row.first;boss.map=309;boss.victim=&tank;
+  add.guid=2;add.entry=row.second;add.map=309;add.spawner=1;add.victim=&tank;add.x=10;
+  trigger.guid=4;trigger.entry=15091;trigger.map=309;
+  if(row.second==15041)add.spawner=0; // Gameobject eggs need not resolve to a Unit.
+  if(row.second==15101)add.spawner=4;
+  second=add;second.guid=3;second.x=20;
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&add},{3,&second},{4,&trigger}};ai.possible={1,2,4};
+  DungeonAddTargetAction action(&ai);assert(action.GetTarget()==&add);
+  ai.current=&add;ai.possible.push_back(3);assert(action.GetTarget()==&add);ai.possible.pop_back();
+  ai.command=1;assert(!action.GetTarget());ai.command=0;
+  ai.marked=&boss;assert(!action.GetTarget());ai.marked=nullptr;
+  ai.healer=true;assert(!action.GetTarget());ai.healer=false;
+  ai.tank=true;assert(!action.GetTarget());ai.tank=false;
+  bot.teleport=true;assert(!action.GetTarget());bot.teleport=false;
+  bot.alive=false;assert(!action.GetTarget());bot.alive=true;
+  boss.combat=false;assert(!action.GetTarget());boss.combat=true;
+  boss.victim=&bot;assert(!action.GetTarget());boss.victim=&tank;
+  tank.group=&other;assert(!action.GetTarget());tank.group=&group;
+  add.alive=false;assert(!action.GetTarget());add.alive=true;
+  add.instance=2;assert(!action.GetTarget());add.instance=1;
+  add.immune=true;assert(!action.GetTarget());add.immune=false;
+  add.assignedCC=true;assert(!action.GetTarget());add.assignedCC=false;
+  add.breakCC=true;assert(!action.GetTarget());add.breakCC=false;
+  add.attackable=false;assert(!action.GetTarget());add.attackable=true;
+  add.x=61;assert(!action.GetTarget());add.x=10;
+  if(row.second==15041||row.second==15101){
+   add.combat=false;assert(!action.GetTarget());add.combat=true;
+   add.victim=nullptr;assert(!action.GetTarget());add.victim=&tank;
+  }else{
+   add.spawner=99;assert(!action.GetTarget());add.spawner=1;
+  }
+  if(row.second==14965){add.entry=14750;assert(!action.GetTarget());add.entry=14965;}
+  if(row.second==14986){
+   bot.auras.clear();assert(!action.GetTarget());bot.auras.insert(24306);
+   add.visible=false;assert(!action.GetTarget());add.visible=true;
+  }
+  if(row.second==15101){
+   trigger.entry=15092;assert(!action.GetTarget());trigger.entry=15091;
+   trigger.alive=false;assert(!action.GetTarget());trigger.alive=true;
+   boss.victim=nullptr;assert(action.GetTarget()==&add); // Vanished Arlokk.
+   marked.sourceAuras.insert({24210,boss.guid});second.victim=&marked;ai.possible.push_back(3);
+   assert(action.GetTarget()==&second); // Rescue outranks a nearer current panther.
+   marked.sourceAuras.clear();assert(action.GetTarget()==&add);
+   ai.possible.pop_back();boss.victim=&tank;
+  }
+  assert(action.GetTarget()==&add);
+ }
  {
   Group group;Player bot;bot.group=&group;bot.map=230;
   Unit spirit,boss;spirit.map=boss.map=230;boss.guid=1;

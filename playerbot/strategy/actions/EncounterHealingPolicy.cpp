@@ -68,6 +68,8 @@ bool CastHealingSpellAction::isUseful()
 {
     RefreshSpellId();
     Unit* target = GetTarget();
+    if (target && target->GetMapId() == 631 && target->GetEntry() == 36789 &&
+        !NeedsRaidObjectiveHealing(target)) return false;
     if (target && target->GetMaxNegativeAuraModifier(SPELL_AURA_MOD_HEALING_PCT) <= -100 &&
         !CanPrecastEncounterHeal(bot, target, sServerFacade.LookupSpellInfo(GetSpellID()))) return false;
     // Regrowth and Riptide also heal immediately. Their existing HoT must not
@@ -84,6 +86,10 @@ bool CastHealingSpellAction::Execute(Event& event)
 {
     RefreshSpellId();
     Unit* target = GetTarget();
+    // A cached friendly target can survive a wipe/reset or completion. Do not
+    // restart Valithria's event with a heal queued during the previous attempt.
+    if (target && target->GetMapId() == 631 && target->GetEntry() == 36789 &&
+        !NeedsRaidObjectiveHealing(target)) return false;
     // A queued heal can outlive the opening or its original target. Preserve
     // ordinary native cast execution only while the landing is still useful.
     if (target && target->GetMaxNegativeAuraModifier(SPELL_AURA_MOD_HEALING_PCT) <= -100 &&

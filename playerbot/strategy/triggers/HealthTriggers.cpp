@@ -46,7 +46,8 @@ bool HealthInRangeTrigger::IsActive()
     // Reuse each class's existing medium-heal action, without presenting fake
     // health to other decisions or enabling low-health emergency cooldowns.
     if (!healthCheck && (getName() == "medium health" || getName() == "party member medium health") &&
-        GetValue() >= minValue && (NeedsFullHealingToRemoveAura(GetTarget()) || RemainingHealingAbsorb(GetTarget())))
+        GetValue() >= minValue && (NeedsFullHealingToRemoveAura(GetTarget()) || RemainingHealingAbsorb(GetTarget()) ||
+            NeedsRaidObjectiveHealing(GetTarget())))
         healthCheck = true;
 
     return healthCheck
@@ -82,7 +83,8 @@ bool HealTargetFullHealthTrigger::IsActive()
             {
                 if (RemainingHealingAbsorb(pTarget)) return false;
                 bool hpFull = pTarget->GetHealth() == pTarget->GetMaxHealth();
-                if (!hpFull && !NeedsFullHealingToRemoveAura(pTarget) && (pTarget->GetHealthPercent() > 90.f))
+                if (!hpFull && !NeedsFullHealingToRemoveAura(pTarget) && !NeedsRaidObjectiveHealing(pTarget) &&
+                    (pTarget->GetHealthPercent() > 90.f))
                 {
                     uint32 healValue = currentSpell->GetDamage();
                     uint32 needHeal = pTarget->GetMaxHealth() - pTarget->GetHealth();

@@ -13,6 +13,7 @@ base = root / "playerbot/strategy"
 extract = (
     ("values/BossCastPositionValue.cpp", ("bool ai::IsBossEscapeMap(",
         "uint32 ai::NativeBossEscapeSpell(", "const Spell* ai::CurrentBossEscapeCast(",
+        "uint32 ai::CurrentBossPursuitSpell(", "float ai::BossEscapeDistance(",
         "EncounterPosition BossCastPositionValue::Calculate(")),
     ("actions/DungeonActions.cpp", ("bool BossCastPositionAction::GetPlan(",
         "bool BossCastPositionAction::isUseful(", "bool BossCastPositionAction::ShouldReactionInterruptCast(",
@@ -58,6 +59,7 @@ struct Unit {unsigned entry=0,guid=1,phase=1;bool world=true,alive=true,combat=t
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}
  bool HasCharmer(){return charmed;}unsigned GetEntry(){return entry;}Map* GetMap(){return map;}
  Unit* GetVictim(){return victim;}
+ float reach=1.5f;float GetCombatReach(){return reach;}
  unsigned GetObjectGuid(){return guid;}Spell* GetCurrentSpell(int slot){return slot==CURRENT_GENERIC_SPELL?current:channel;}
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}
  float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c));}
@@ -75,6 +77,8 @@ namespace ai {
  bool IsLokenClosePhase(Player*,Unit*);
  bool PlanLokenClosePosition(PlayerbotAI*,Unit*,EncounterPosition&);
  unsigned CurrentBossEscapeSpell(Player*,Unit*);
+ unsigned CurrentBossPursuitSpell(Player*,Unit*);
+ float BossEscapeDistance(Player*,Unit*,unsigned);
  const Spell* CurrentBossEscapeCast(Player*,Unit*);
  std::map<unsigned,float> radii{{30852,30},{28785,30},{54021,30},{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15},{34164,18},
  {34660,15},{39132,15},{55081,15},{59842,15},{33775,20},{37371,20},{36142,8},{64216,20},{65279,100},{70123,25},{71047,25},{71048,25},{71049,25},{26084,10},{26686,10}};
@@ -228,6 +232,33 @@ int main(){
  assert(load().active);boss.victim=&bot;assert(!load().active);boss.victim=nullptr;
  cast.state=SPELL_STATE_FINISHED;assert(!load().active);cast.state=0;boss.current=nullptr;
 #endif
+ // Pursuit is a melee danger, not a spell-radius escape. Only the pursued
+ // player kites; a safe bot holds instead of chasing back into the boss.
+ bot.mapId=309;bot.x=3;bot.y=0;boss.x=boss.y=0;boss.entry=15082;boss.aura=24646;
+ boss.current=boss.channel=nullptr;boss.victim=&bot;
+ assert(load().active&&action.Execute(event));
+ assert(multiplier.GetValue(&chase)==0&&multiplier.GetValue(&charge)==0&&multiplier.GetValue(&heal)==1);
+ ai.canMove=false;
+ assert(!action.isUseful()&&!action.ShouldReactionInterruptCast()&&!action.Execute(event));
+ assert(multiplier.GetValue(&charge)==1);ai.canMove=true;
+ boss.victim=nullptr;assert(!action.Execute(event)&&!load().active);boss.victim=&bot;
+ load();boss.aura=0;assert(!action.Execute(event)&&!load().active);boss.aura=24646;
+ bot.x=30;auto kite=load();assert(kite.active&&kite.destination.x==30);
+ bot.motion.kind=1;assert(action.Execute(event)&&ai.stops>0);bot.motion.kind=0;
+ boss.x=29;assert(!action.Execute(event));boss.x=0;bot.x=3;
+ ai.validPath=false;assert(!load().active);ai.validPath=true;
+ boss.reach=std::numeric_limits<float>::quiet_NaN();assert(!load().active);boss.reach=1.5f;
+ bot.mapId=532;boss.entry=17521;boss.aura=0;bot.aura=30753;bot.auraOwner=true;
+#ifdef MANGOSBOT_ZERO
+ assert(!load().active);
+#else
+ assert(load().active&&action.Execute(event));
+ bot.auraOwner=false;assert(!action.Execute(event)&&!load().active);bot.auraOwner=true;
+ load();bot.aura=30768;assert(!action.Execute(event)&&!load().active);bot.aura=30753;
+ boss.victim=nullptr;assert(!load().active);boss.victim=&bot;
+ assert(load().active);boss.alive=false;assert(!action.Execute(event));boss.alive=true;
+#endif
+ bot.aura=0;boss.victim=nullptr;
  // Swarm continues after the cast completes. Both the aura and cast paths
  // release safely on expiry, wipe, map mismatch, and missing safe paths.
  bot.mapId=533;bot.x=bot.y=0;boss.entry=15956;boss.aura=28785;boss.current=boss.channel=nullptr;

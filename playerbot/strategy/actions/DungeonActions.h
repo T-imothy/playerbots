@@ -165,6 +165,9 @@ namespace ai
         Unit* GetTarget() override;
         bool isUseful() override;
         Unit* GetThekalTarget();
+        Unit* GetZulGurubTarget();
+        Unit* GetOperaDuoTarget();
+        Unit* GetUlduarObjectiveTarget();
         Unit* GetGluthTarget();
         Unit* GetSummonObjectiveTarget();
         Unit* GetBlackrockDepthsTarget();
