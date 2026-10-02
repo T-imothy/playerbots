@@ -73,6 +73,11 @@ namespace
 
 bool ai::IsProtectedEncounterDispel(Unit* target, uint32 dispelType)
 {
+    if (!target || !target->IsInWorld() || dispelType > DISPEL_ZG_TICKET) return false;
+    // Delusions grants the visibility needed to kill Jin'do's shades. Removing
+    // it automatically prevents the affected player from doing that mechanic.
+    if (target->GetMapId() == 309 && target->HasAura(24306) &&
+        (GetDispellMask(DispelType(dispelType)) & (1u << DISPEL_CURSE))) return true;
     // The native Grobbulus OnApply(false) explicitly detonates on dispel. The
     // normal core dispel pool is random, so another disease does not make a
     // disease-removal spell safe while this aura remains on the same target.
@@ -86,7 +91,14 @@ bool ai::ShouldAvoidEncounterDispel(PlayerbotAI* ai, const SpellEntry* spell, Un
     if (ShouldPreserveHakkarPoison(ai, spell, target)) return true;
     Player* bot = ai->GetBot();
     if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
-        bot->GetMapId() != 533 || !spell) return false;
+        !spell) return false;
+    // Recheck at dispatch as well as target selection: the protected aura can
+    // arrive after a queued cleanse was selected for a different debuff.
+    if (target && target->IsInWorld() && bot->IsInMap(target) && sServerFacade.IsFriendlyTo(bot, target))
+        for (unsigned effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+            if (spell->Effect[effect] == SPELL_EFFECT_DISPEL && spell->EffectMiscValue[effect] >= 0 &&
+                IsProtectedEncounterDispel(target, uint32(spell->EffectMiscValue[effect]))) return true;
+    if (bot->GetMapId() != 533) return false;
     const bool direct = HasDiseaseDispel(spell);
     const bool periodic = HasPeriodicDiseaseDispel(spell);
     // Native 8170 summons entry 5924 in all three eras. In Wrath it also cleanses

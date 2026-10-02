@@ -19,7 +19,7 @@ code=r'''
 #include <iostream>
 constexpr int IDLE_MOTION_TYPE=0;
 struct Point{float x=0,y=0,z=0;};
-struct EncounterPosition{bool active=true,exclusive=true;unsigned map=1,boss=7;Point destination;};
+struct EncounterPosition{bool active=true,exclusive=true;unsigned map=1,boss=7,spell=0;Point destination;};
 struct Motion{int type=1;int GetCurrentMovementGeneratorType(){return type;}};
 struct Player{float x=0;bool stopped=true;Motion motion;
  float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+b*b+c*c);}
@@ -33,6 +33,7 @@ bool MechanarThreats(PlayerbotAI* ai,EncounterPosition& p,std::vector<encounter:
 bool BlackwingLairBurstThreats(PlayerbotAI* ai,EncounterPosition&,std::vector<encounter::Circle>&){return ai->fresh;}
 bool NaxxramasBurstThreats(PlayerbotAI* ai,EncounterPosition&,std::vector<encounter::Circle>&){return ai->fresh;}
 bool MoltenCoreThreats(PlayerbotAI* ai,EncounterPosition&,std::vector<encounter::Circle>&){return ai->fresh;}
+bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&){return false;}
 struct Base{PlayerbotAI* ai;Player* bot;Base(PlayerbotAI* a):ai(a),bot(&a->bot){}
  static bool GetPlan(PlayerbotAI* ai,EncounterPosition& p){p=ai->plan;return p.active;}
  bool MoveTo(unsigned,float,float,float,bool,bool,bool,bool){++ai->moves;return true;}

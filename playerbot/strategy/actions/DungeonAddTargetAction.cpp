@@ -27,6 +27,7 @@ Unit* DungeonAddTargetAction::GetTarget()
         case 531: break; // Viscidus globs resolved as native summon objectives below.
         case 533: bossEntry = 15952; addEntry = 16486; rescueAura = 28622; break; // Maexxna Web Wrap.
 #ifndef MANGOSBOT_ZERO
+        case 564: bossEntry = 22917; addEntry = 23375; channelledPlayerAura = 41083; break; // Illidan's Shadow Demon paralyzing a group member.
         case 548: case 568: break; // Karathress/Tidalvess and Halazzi totem objectives below.
         case 545:
             bossEntry = 17796; addEntry = 17951; // Steamrigger repair mechanics.

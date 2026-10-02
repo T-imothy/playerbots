@@ -434,6 +434,17 @@ namespace ai
     {
     public:
         CastSpellOnEnemyHealerAction(PlayerbotAI* ai, std::string spell) : CastSpellAction(ai, spell) {}
+
+        bool isUseful() override
+        {
+            return ai->IsInterruptableSpellCasting(GetTarget(), GetSpellName()) && CastSpellAction::isUseful();
+        }
+
+        bool Execute(Event& event) override
+        {
+            // Another bot can interrupt between trigger evaluation and dispatch.
+            return ai->IsInterruptableSpellCasting(GetTarget(), GetSpellName()) && CastSpellAction::Execute(event);
+        }
         
     protected:
         virtual std::string GetReachActionName() override { return "reach spell"; }

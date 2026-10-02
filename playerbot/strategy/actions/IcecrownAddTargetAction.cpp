@@ -3,6 +3,9 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#ifdef MANGOSBOT_TWO
+#include "Maps/TransportSystem.h"
+#endif
 
 using namespace ai;
 
@@ -26,6 +29,41 @@ Unit* DungeonAddTargetAction::GetIcecrownAddTarget()
         unsigned rank = 1;
         switch (add->GetEntry())
         {
+            case 36609: // A Val'kyr actually carrying a raid member takes rescue priority.
+            {
+                bool carryingMember = false;
+                for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+                {
+                    Player* member = ref->getSource();
+                    if (member && member->IsInWorld() && member->IsAlive() && bot->IsInMap(member) &&
+                        member->GetGroup() == bot->GetGroup() && member->IsBoarded() &&
+                        member->GetTransportInfo() && member->GetTransportInfo()->GetTransport() == add)
+                    {
+                        carryingMember = true;
+                        break;
+                    }
+                }
+                if (!carryingMember) continue;
+                bossEntry = 36597;
+                rank = 0;
+                break;
+            }
+            case 36633: // Ranged kill pursuing Ice Spheres; melee must not chase their contact explosion.
+                if (!ranged) continue;
+                bossEntry = 36597;
+                rank = 0;
+                break;
+            case 36791: // Valithria: Blazing Skeletons' Lay Waste damages the whole raid.
+                bossEntry = 36789;
+                rank = 0;
+                break;
+            case 37863: // Suppressers reduce healing received by the encounter objective.
+                bossEntry = 36789;
+                break;
+            case 37868: // Risen Archmages, after skeletons and suppressers.
+                bossEntry = 36789;
+                rank = 2;
+                break;
             case 36980: // Release native Ice Tomb prisoners once air-phase cover is no longer required.
                 bossEntry = 36853;
                 rank = 0;

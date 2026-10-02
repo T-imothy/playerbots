@@ -48,7 +48,7 @@ struct PlayerbotAI {Player*bot;bool real=false,healer=false,tank=false,dungeon=t
  bool IsRealPlayer(){return real;}bool IsHeal(Player*){return healer;}bool IsTank(Player*){return tank;}
  Unit* GetUnit(ObjectGuid id){auto i=units.find(id);return i==units.end()?nullptr:i->second;}
  template<class T>T Value(std::string key){
-  if constexpr(std::is_same_v<T,ObjectGuid>){assert(key=="attack target");return command;}
+  if constexpr(std::is_same_v<T,ObjectGuid>){if(key=="duel target")return 0;if(key=="current target")return current?current->guid:0;if(key=="rti target")return marked?marked->guid:0;assert(key=="attack target");return command;}
   else if constexpr(std::is_same_v<T,Unit*>){assert(key=="rti target"||key=="current target"||key=="duel target");return key=="duel target"?nullptr:key=="rti target"?marked:current;}
   else {assert(key=="possible targets"||key=="possible attack targets");return key=="possible targets"?possible:std::list<ObjectGuid>{};}}
 };
@@ -66,7 +66,7 @@ struct PossibleAttackTargetsValue {
 struct Action{std::string name;std::string getName(){return name;}};
 struct InnerDemonAction{static Unit* GetDemon(PlayerbotAI*){return nullptr;}};
 struct DungeonAddTargetAction {PlayerbotAI*ai;Player*bot;DungeonAddTargetAction(PlayerbotAI*a):ai(a),bot(a->bot){}
- Unit*GetTarget();bool isUseful();Unit*GetThekalTarget(){return nullptr;}Unit*GetGluthTarget(){return nullptr;}Unit*GetSummonObjectiveTarget(){return ai->objective;}Unit*GetRaidTotemTarget();Unit*GetTwinEmperorTarget(){return nullptr;}Unit*GetIcecrownAddTarget(){return nullptr;}};
+ Unit*GetTarget();bool isUseful();Unit*GetThekalTarget(){return nullptr;}Unit*GetGluthTarget(){return nullptr;}Unit*GetSummonObjectiveTarget(){return ai->objective;}Unit*GetRaidTotemTarget();Unit*GetTwinEmperorTarget(){return nullptr;}Unit*GetIcecrownAddTarget(){return nullptr;}Unit*GetBlackrockDepthsTarget(){return nullptr;}};
 struct PreserveDungeonAddTargetMultiplier{PlayerbotAI*ai;float GetValue(Action*);};
 struct BotState{enum{BOT_STATE_COMBAT};};
 struct MeleeCcCheck{MeleeCcCheck(PlayerbotAI*){}bool Protected(Unit*u){return u->assignedCC;}};
@@ -88,6 +88,21 @@ int main(){
   ai.objective=nullptr;assert(!action.GetTarget());
  }
 
+ // Jin'do's control totem outranks healing wards, independent of distance/current target.
+ {
+  Group group;Player bot,tank;bot.group=tank.group=&group;bot.map=tank.map=309;
+  Unit boss,ward,control;boss.guid=1;boss.entry=11380;boss.map=309;boss.victim=&tank;
+  ward.guid=2;ward.entry=14987;ward.map=309;ward.spawner=1;ward.combat=false;ward.x=3;
+  control=ward;control.guid=3;control.entry=15112;control.x=10;
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&ward},{3,&control}};ai.possible={1,2,3};ai.current=&ward;
+  DungeonAddTargetAction action(&ai);assert(action.GetTarget()==&control);
+  control.alive=false;assert(action.GetTarget()==&ward);control.alive=true;
+  control.spawner=99;assert(action.GetTarget()==&ward);control.spawner=1;
+  boss.entry=11381;assert(!action.GetTarget());boss.entry=11380;
+  boss.combat=false;assert(!action.GetTarget());boss.combat=true;
+  ai.tank=true;assert(!action.GetTarget());ai.tank=false;ai.healer=true;assert(!action.GetTarget());ai.healer=false;
+  ai.command=1;assert(!action.GetTarget());ai.command=0;
+ }
  // Passive ZF and Uldaman wards remain valid across the next AI tick.
  struct WardCase{unsigned map,owner,entry;};
  for(WardCase row:{WardCase{209,5650,8179},WardCase{70,4852,3560},WardCase{70,2894,3560}}){
@@ -266,16 +281,21 @@ int main(){
   assert(action.GetTarget()==&add);ai.units.erase(2);none(); // Despawn before Execute reselects.
 #endif
  }
- // Vorpil travelers belong to his passive summoner, not directly to the boss.
- for(bool ritual:{false,true}) {
+ // Native group-member rescue: Ayamiss, Svala and Illidan's Shadow Demons.
+ for(unsigned rescue:{0u,1u,2u}) {
+  const bool ritual=rescue==1;
 #ifndef MANGOSBOT_TWO
   if(ritual)continue;
 #endif
   Group group,other;Player bot,member;GroupReference ref{&member};group.first=&ref;bot.group=member.group=&group;
-  bot.map=member.map=ritual?575:509;Unit boss,add;boss.map=add.map=bot.map;
-  boss.guid=1;boss.entry=ritual?26668:15369;add.guid=2;add.entry=ritual?27281:15555;add.spawner=1;add.victim=&member;
-  unsigned aura=ritual?48278:25725;unsigned caster=ritual?2:1;member.sourceAuras={{aura,caster}};
+  bot.map=member.map=rescue==2?564:ritual?575:509;Unit boss,add;boss.map=add.map=bot.map;
+  boss.guid=1;boss.entry=rescue==2?22917:ritual?26668:15369;add.guid=2;add.entry=rescue==2?23375:ritual?27281:15555;add.spawner=1;add.victim=&member;
+  unsigned aura=rescue==2?41083:ritual?48278:25725;unsigned caster=rescue?2:1;member.sourceAuras={{aura,caster}};
   PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&add}};ai.possible={2};DungeonAddTargetAction action(&ai);
+#ifdef MANGOSBOT_ZERO
+  if(rescue==2){assert(!action.GetTarget());continue;}
+#endif
+  if(rescue==2)add.victim=nullptr; // Native Shadow Demon uses its own target GUID, not a threat victim.
   assert(action.GetTarget()==&add);auto none=[&](){assert(!action.GetTarget());};
   member.sourceAuras={{aura,99}};none();member.sourceAuras={{aura,caster}};
   member.group=&other;none();member.group=&group;member.alive=false;none();member.alive=true;
@@ -283,7 +303,7 @@ int main(){
   member.teleport=true;none();member.teleport=false;member.charmed=true;none();member.charmed=false;
   add.spawner=99;none();add.spawner=1;boss.combat=false;none();boss.combat=true;
   ai.command=1;none();ai.command=0;ai.healer=true;none();ai.healer=false;
-  if(!ritual){add.victim=nullptr;none();add.victim=&member;}
+  if(!rescue){add.victim=nullptr;none();add.victim=&member;}
   assert(action.GetTarget()==&add);
  }
  {
@@ -362,6 +382,7 @@ for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
         if not (native_root/'src/game').is_dir():native_root=root.parent/f'mangos-{realm}-behavior'
         scripts=native_root/'src/game/AI/ScriptDevAI/scripts'
         expected={
+            'boss_illidan.cpp':['23375','41083','m_creature->GetSpawner()', 'RemoveAurasByCasterSpell(SPELL_PARALYZE'],
             'boss_high_botanist_freywinn.cpp':['19953','34551','SummonedCreatureJustDied','InterruptTreeForm()'],
             'boss_mekgineer_steamrigger.cpp':['17951','31532','37936','MoveFollow(m_creature'],
             'boss_anzu.cpp':['42354','SummonedCreatureJustDied','SummonCreature(NPC_BROOD_OF_ANZU'],

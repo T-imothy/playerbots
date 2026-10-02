@@ -8,7 +8,12 @@ using namespace ai;
 
 ObjectGuid EnemyHealerTargetValue::Calculate()
 {
-    std::string spell = qualifier;
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer())
+        return ObjectGuid();
+
+    const std::string interrupt = qualifier;
+    const bool raid = bot->GetMap()->IsRaid();
+    ObjectGuid offensiveCaster;
 
     std::list<ObjectGuid> attackers = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
     Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
@@ -21,17 +26,29 @@ ObjectGuid EnemyHealerTargetValue::Calculate()
         if (sServerFacade.GetDistance2d(bot, unit) > ai->GetRange("spell"))
             continue;
 
-        if (!ai->IsInterruptableSpellCasting(unit, spell))
+        if (!ai->IsInterruptableSpellCasting(unit, interrupt))
             continue;
 
-        Spell* spell = unit->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        if (spell && IsPositiveSpell(spell->m_spellInfo))
-            return unit->GetObjectGuid();
+        // Raid interrupts also cover dangerous casts by an engaged off-target
+        // enemy. Require native cast admission here: do not leave an assigned
+        // position chasing a caster, or let an unavailable interrupt mask a
+        // reachable one. This includes the pet's own range/cooldown checks.
+        if (raid && !ai->CanCastSpell(interrupt, unit, 0))
+            continue;
 
-        spell = unit->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
-        if (spell && IsPositiveSpell(spell->m_spellInfo))
-            return unit->GetObjectGuid();
+        for (auto slot : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL})
+        {
+            const Spell* cast = unit->GetCurrentSpell(slot);
+            if (!cast || !cast->m_spellInfo || cast->getState() == SPELL_STATE_FINISHED)
+                continue;
+            if (IsPositiveSpell(cast->m_spellInfo))
+                return unit->GetObjectGuid();
+            if (raid && offensiveCaster.IsEmpty())
+                offensiveCaster = unit->GetObjectGuid();
+        }
     }
 
-    return ObjectGuid();
+    // Keep healing/buff casts ahead of the additional damaging-cast fallback.
+    // Outside raids, retain the existing enemy-healer selection policy.
+    return offensiveCaster;
 }

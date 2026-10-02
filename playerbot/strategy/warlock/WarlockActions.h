@@ -300,6 +300,14 @@ namespace ai
     {
     public:
         CastSpellLockOnEnemyHealerAction(PlayerbotAI* ai) : CastPetSpellAction(ai, "spell lock") {}
+        bool isUseful() override
+        {
+            return ai->IsInterruptableSpellCasting(GetTarget(), GetSpellName()) && CastPetSpellAction::isUseful();
+        }
+        bool Execute(Event& event) override
+        {
+            return ai->IsInterruptableSpellCasting(GetTarget(), GetSpellName()) && CastPetSpellAction::Execute(event);
+        }
         virtual std::string GetTargetName() override { return "enemy healer target"; }
         virtual std::string GetTargetQualifier() override { return GetSpellName(); }
         virtual std::string getName() override { return GetSpellName() + " on enemy healer"; }

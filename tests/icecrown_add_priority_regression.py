@@ -11,6 +11,7 @@ fixture=r'''
 #include <map>
 #include <string>
 #include <iostream>
+#include <type_traits>
 using uint32=unsigned;using ObjectGuid=unsigned;constexpr unsigned CLASS_HUNTER=3;
 struct Unit{unsigned guid=0,entry=0,spawner=0,phase=1;bool world=true,alive=true,combat=true,charm=false,valid=true,cc=false;
  bool flying=false;bool IsFlying(){return flying;}float x=0;Unit*victim=nullptr;std::map<unsigned,unsigned>auras;
@@ -18,14 +19,17 @@ struct Unit{unsigned guid=0,entry=0,spawner=0,phase=1;bool world=true,alive=true
  unsigned GetEntry(){return entry;}unsigned GetObjectGuid(){return guid;}unsigned GetSpawnerGuid(){return spawner;}
  Unit*GetVictim(){return victim;}float GetDistance(Unit*u){return std::abs(x-u->x);}
  void*GetSpellAuraHolder(unsigned id,unsigned owner){return auras.count(id)&&auras[id]==owner?this:nullptr;}};
-struct Group{};
+struct GroupReference{struct Player*member=nullptr;GroupReference*following=nullptr;Player*getSource(){return member;}GroupReference*next(){return following;}};
+struct Group{GroupReference*first=nullptr;GroupReference*GetFirstMember(){return first;}};
+struct TransportInfo{Unit*transport=nullptr;Unit*GetTransport(){return transport;}};
 struct Player:Unit{unsigned map=631,cls=8;bool teleport=false;Group*group=nullptr;
+ bool boarded=false;TransportInfo transport;bool IsBoarded(){return boarded;}TransportInfo*GetTransportInfo(){return &transport;}
  unsigned GetMapId(){return map;}unsigned getClass(){return cls;}Group*GetGroup(){return group;}
  bool IsBeingTeleported(){return teleport;}bool IsInMap(Unit*u){return u&&u->phase==phase;}};
 struct PlayerbotAI{Player*bot;bool real=false,ranged=true;Unit*current=nullptr;std::map<unsigned,Unit*>units;std::list<unsigned>near;
  bool IsRealPlayer(){return real;}bool IsRanged(Player*){return ranged;}
  Unit*GetUnit(unsigned id){auto i=units.find(id);return i==units.end()?nullptr:i->second;}
- template<class T>T value(std::string){return current;}template<class T>T qualified(std::string,std::string){return near;}};
+ template<class T>T value(std::string){if constexpr(std::is_same_v<T,ObjectGuid>)return current?current->guid:0;else return current;}template<class T>T qualified(std::string,std::string){return near;}};
 struct Config{float sightDistance=60;}sPlayerbotAIConfig;
 struct PossibleTargetsValue{static bool IsValid(Unit*u,Player*,bool){return u->valid;}};
 struct PossibleAttackTargetsValue{static bool IsPossibleTarget(Unit*u,Player*b,float range,bool ignore){assert(!ignore);return !u->cc&&b->GetDistance(u)<=range;}};
@@ -58,6 +62,19 @@ int main(){
  ai.real=true;assert(!action.GetIcecrownAddTarget());ai.real=false;bot.map=0;assert(!action.GetIcecrownAddTarget());bot.map=631;
  boss.entry=36853;add.entry=36980;assert(action.GetIcecrownAddTarget()==&add);
  boss.flying=true;assert(!action.GetIcecrownAddTarget());boss.flying=false;assert(action.GetIcecrownAddTarget()==&add);
+ boss.entry=37813;add.entry=38508;
+ // New raid objectives use native ownership and preserve healer/tank dispatch gates.
+ boss.entry=36789;ai.ranged=true;
+ for(unsigned entry:{36791u,37863u,37868u}){add.entry=entry;assert(action.GetIcecrownAddTarget()==&add);}
+ boss.entry=36597;add.entry=36633;assert(action.GetIcecrownAddTarget()==&add);
+ ai.ranged=false;assert(!action.GetIcecrownAddTarget());ai.ranged=true;
+ add.entry=36609;assert(!action.GetIcecrownAddTarget());
+ GroupReference passenger{&tank};group.first=&passenger;tank.group=&group;tank.boarded=true;tank.transport.transport=&add;
+ assert(action.GetIcecrownAddTarget()==&add);
+ tank.transport.transport=&other;assert(!action.GetIcecrownAddTarget());tank.transport.transport=&add;
+ tank.alive=false;assert(!action.GetIcecrownAddTarget());tank.alive=true;
+ tank.boarded=false;assert(!action.GetIcecrownAddTarget());tank.boarded=true;
+ boss.combat=false;assert(!action.GetIcecrownAddTarget());boss.combat=true;
  boss.entry=37813;add.entry=38508;
  // One live boss cannot authorize another boss's adds.
  Unit secondBoss;secondBoss.guid=4;secondBoss.entry=36855;secondBoss.victim=&tank;

@@ -122,7 +122,8 @@ int main(){
 '''.replace('__METHODS__', methods)
 
 for era, realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
-    core = root.parent / f'mangos-{realm}-behavior/src/game'
+    core = root.parent / realm / 'src/game'
+    if not core.is_dir(): core = root.parent / f'mangos-{realm}-behavior/src/game'
     handler_source = (core/'Entities/PetHandler.cpp').read_text()
     handler = block(handler_source, 'void WorldSession::HandlePetAction(')
     if realm == 'wotlk':

@@ -6,7 +6,7 @@ using namespace ai;
 
 bool ai::IsBossEscapeMap(uint32 map)
 {
-    if (map == 531) return true;
+    if (map == 531 || map == 533) return true;
 #ifndef MANGOSBOT_ZERO
     if (map == 532 || map == 542 || map == 550 || map == 552 || map == 553 || map == 555) return true;
 #endif
@@ -20,10 +20,15 @@ uint32 ai::NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast, bool reg
 {
     if (map == 531 && entry == 15516 && cast == 26083) return 26084;
     if (map == 531 && entry == 15984 && cast == 26038) return 26686;
+    if (map == 533 && entry == 15956 && cast == 28785) return cast; // Anub'Rekhan's Locust Swarm, including its periodic damage payload.
+#ifdef MANGOSBOT_TWO
+    if (map == 533 && entry == 15956 && cast == 54021) return cast; // Wrath 25-player swarm.
+#endif
     // These are verified caster-centred escape mechanics, not an assumption
     // that every damaging AoE should be fled. All other casts retain normal AI.
 #ifndef MANGOSBOT_ZERO
     if (map == 532 && entry == 16524 && cast == 29973) return cast; // Aran
+    if (map == 532 && entry == 15690 && cast == 30852) return cast; // Prince Malchezaar: Shadow Nova, especially during Enfeeble.
     if (map == 542 && entry == 17377 && cast == 30940) return regular ? 33775 : 37371; // Keli'dan warning aura
     if (map == 552 && entry == 20885 && cast == 36142) return cast; // Dalliah: native periodic trigger carries radius.
     if (map == 550 && entry == 19516 && cast == 34162) return 34164; // Void Reaver Pounding channel
@@ -55,6 +60,7 @@ const Spell* ai::CurrentBossEscapeCast(Player* bot, Unit* boss)
     // Keep the active tank planted during Pounding; other melee can leave its
     // native radius without dragging the boss or synthesizing a taunt.
     if (bot->GetMapId() == 550 && boss->GetEntry() == 19516 && boss->GetVictim() == bot) return nullptr;
+    if (bot->GetMapId() == 532 && boss->GetEntry() == 15690 && boss->GetVictim() == bot) return nullptr;
     for (auto slot : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL})
     {
         const Spell* spell = boss->GetCurrentSpell(slot);
@@ -67,12 +73,23 @@ const Spell* ai::CurrentBossEscapeCast(Player* bot, Unit* boss)
 uint32 ai::CurrentBossEscapeSpell(Player* bot, Unit* boss)
 {
     if (!bot || !boss) return 0;
+    if (bot->GetMapId() == 533 && boss->GetEntry() == 15956)
+    {
+        if (boss->HasAura(28785)) return 28785;
+#ifdef MANGOSBOT_TWO
+        if (boss->HasAura(54021)) return 54021;
+#endif
+    }
     if (bot->GetMapId() == 531)
     {
         const uint32 aura = boss->GetEntry() == 15516 ? 26083 : boss->GetEntry() == 15984 ? 26038 : 0;
         return aura && boss->GetSpellAuraHolder(aura, boss->GetObjectGuid()) ? aura : 0;
     }
 #ifndef MANGOSBOT_ZERO
+    // Enfeeble precedes Shadow Nova. Waiting until the short Nova cast starts
+    // leaves a one-health melee bot too little time to clear the blast radius.
+    if (bot->GetMapId() == 532 && boss->GetEntry() == 15690 &&
+        bot->GetSpellAuraHolder(30843, boss->GetObjectGuid())) return 30852;
     // Burning Nova is triggered instantly. Its warning aura gates the native
     // Fire Nova action, so watching only an active spell misses the escape window.
     if (bot->GetMapId() == 542 && boss->GetEntry() == 17377 && boss->HasAura(30940)) return 30940;

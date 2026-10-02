@@ -76,7 +76,7 @@ namespace ai {
  bool PlanLokenClosePosition(PlayerbotAI*,Unit*,EncounterPosition&);
  unsigned CurrentBossEscapeSpell(Player*,Unit*);
  const Spell* CurrentBossEscapeCast(Player*,Unit*);
- std::map<unsigned,float> radii{{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15},{34164,18},
+ std::map<unsigned,float> radii{{30852,30},{28785,30},{54021,30},{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15},{34164,18},
  {34660,15},{39132,15},{55081,15},{59842,15},{33775,20},{37371,20},{36142,8},{64216,20},{65279,100},{70123,25},{71047,25},{71048,25},{71049,25},{26084,10},{26686,10}};
  float NativeEncounterSpellRadius(unsigned id){return radii[id];}
 }
@@ -218,6 +218,31 @@ int main(){
  boss.aura=0;entry.Id=36144;boss.current=&cast;
  assert(!action.Execute(event)&&!load().active&&multiplier.GetValue(&chase)==1);
 #endif
+ // Prince: start the escape during Enfeeble, retain it during Nova, and
+ // release on expiry/cancellation. Never move the current tank for Nova alone.
+#ifndef MANGOSBOT_ZERO
+ bot.mapId=532;bot.x=bot.y=0;boss.entry=15690;boss.aura=0;boss.current=boss.channel=nullptr;boss.victim=nullptr;
+ bot.aura=30843;bot.auraOwner=true;assert(load().active&&action.Execute(event));
+ bot.auraOwner=false;assert(!load().active);bot.auraOwner=true;
+ bot.aura=0;assert(!load().active);entry.Id=30852;boss.current=&cast;
+ assert(load().active);boss.victim=&bot;assert(!load().active);boss.victim=nullptr;
+ cast.state=SPELL_STATE_FINISHED;assert(!load().active);cast.state=0;boss.current=nullptr;
+#endif
+ // Swarm continues after the cast completes. Both the aura and cast paths
+ // release safely on expiry, wipe, map mismatch, and missing safe paths.
+ bot.mapId=533;bot.x=bot.y=0;boss.entry=15956;boss.aura=28785;boss.current=boss.channel=nullptr;
+ assert(IsBossEscapeMap(533)&&load().active&&action.Execute(event));
+ boss.aura=0;assert(!action.Execute(event)&&!load().active);
+ entry.Id=28785;boss.current=&cast;assert(load().active);boss.current=nullptr;
+ boss.aura=54021;
+#ifdef MANGOSBOT_TWO
+ assert(load().active);
+#else
+ assert(!load().active);
+#endif
+ boss.aura=28785;boss.combat=false;assert(!load().active);boss.combat=true;
+ boss.entry=15957;assert(!load().active);boss.entry=15956;
+ ai.validPath=false;assert(!load().active);ai.validPath=true;
  // Sartura and her guards are simultaneous moving hazards. Clear every active
  // whirlwind, and reject a cached point if another guard moves into it.
  bot.mapId=531;bot.x=bot.y=0;boss.x=boss.y=boss.z=0;boss.entry=15516;boss.aura=26083;

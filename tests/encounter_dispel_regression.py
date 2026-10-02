@@ -13,9 +13,9 @@ policy='\n'.join(line for line in policy.splitlines() if not line.startswith('#i
 selector=(root/'playerbot/strategy/values/PartyMemberToDispel.cpp').read_text()
 trigger=(root/'playerbot/strategy/triggers/CureTriggers.cpp').read_text()
 methods='\n'.join((block(selector,'class PartyMemberToDispelPredicate')+';',
-                   block(selector,'Unit* PartyMemberToDispel::Calculate('),
+                   block(selector,'ObjectGuid PartyMemberToDispel::Calculate('),
                    block(trigger,'bool NeedCureTrigger::IsActive('),
-                   block(trigger,'Value<Unit*>* PartyMemberNeedCureTrigger::GetTargetValue(')))
+                   block(trigger,'Value<ObjectGuid>* PartyMemberNeedCureTrigger::GetTargetValue(')))
 generic=(root/'playerbot/strategy/actions/GenericSpellActions.cpp').read_text()
 assert 'ShouldAvoidEncounterDispel' in block(generic,'bool CastSpellAction::isUseful(')
 execute=block(generic,'bool CastSpellAction::Execute(')
@@ -37,7 +37,7 @@ constexpr unsigned DISPEL_ALL_MASK=0x1e,MAX_EFFECT_INDEX=3,SPELL_EFFECT_DISPEL=3
  SPELL_AURA_PERIODIC_TRIGGER_SPELL=23,MINI_PET=1,SUMMON_PET=2;
 __NATIVE_MASK__
 struct SpellEntry{unsigned Id=0,Effect[3]{},EffectApplyAuraName[3]{},EffectTriggerSpell[3]{};int EffectMiscValue[3]{};};
-struct Unit{virtual ~Unit()=default;unsigned map=533,phase=1,entry=0;bool world=true,alive=true,charmed=false,combat=true,friendly=true;
+struct Unit{static inline unsigned nextGuid=0;unsigned guid=++nextGuid;unsigned GetObjectGuid(){return guid;}virtual ~Unit()=default;unsigned map=533,phase=1,entry=0;bool world=true,alive=true,charmed=false,combat=true,friendly=true;
  float distance=0;std::set<unsigned> auras,cures;bool IsInWorld(){return world;}bool IsAlive(){return alive;}
  bool HasCharmer(){return charmed;}bool IsInCombat(){return combat;}bool HasAura(unsigned id){return auras.count(id);}
  unsigned GetMapId(){return map;}unsigned GetEntry(){return entry;}};
@@ -48,7 +48,7 @@ struct Pet:Unit{unsigned type=0;unsigned getPetType(){return type;}};
 struct GroupReference{Player* source;GroupReference* following=nullptr;Player* getSource(){return source;}GroupReference* next(){return following;}};
 struct Group{GroupReference* first;GroupReference* GetFirstMember(){return first;}};
 template<class T>struct Value{T value{};T Get(){return value;}};
-struct Context{Value<std::list<ObjectGuid>> attackers;Value<Unit*> party;std::string lastQualifier;
+struct Context{Value<std::list<ObjectGuid>> attackers;Value<ObjectGuid> party;std::string lastQualifier;
  template<class T>Value<T>* GetValue(const char*,std::string q=""){
   if constexpr(std::is_same_v<T,std::list<ObjectGuid>>)return &attackers;else{lastQualifier=q;return &party;}}};
 struct PlayerbotAI{Player* bot;Context context;std::map<ObjectGuid,Unit*> units;std::map<std::string,unsigned> spellIds;
@@ -63,14 +63,27 @@ __POLICY__
 using namespace ai;
 bool PlayerbotAI::HasAuraToDispel(Unit* u,unsigned type){return u&&u->world&&bot->IsInMap(u)&&u->cures.count(type)&&!IsProtectedEncounterDispel(u,type);}
 struct FindPlayerPredicate{virtual bool Check(Unit*)=0;};struct PlayerbotAIAware{PlayerbotAI* ai;PlayerbotAIAware(PlayerbotAI* a):ai(a){}};
-struct PartyMemberToDispel{PlayerbotAI* ai;std::string qualifier;std::vector<Unit*> members;Unit* Calculate();
+struct PartyMemberToDispel{PlayerbotAI* ai;std::string qualifier;std::vector<Unit*> members;ObjectGuid Calculate();
  Unit* FindPartyMember(FindPlayerPredicate& predicate){for(Unit* member:members)if(predicate.Check(member))return member;return nullptr;}};
 struct NeedCureTrigger{PlayerbotAI* ai;Unit* target;std::string spell;unsigned dispelType=DISPEL_MAGIC;
  Unit* GetTarget(){return target;}bool IsActive();};
-struct PartyMemberNeedCureTrigger:NeedCureTrigger{Context* context;Value<Unit*>* GetTargetValue();};
+struct PartyMemberNeedCureTrigger:NeedCureTrigger{Context* context;Value<ObjectGuid>* GetTargetValue();};
 #define AI_VALUE2(type,key,value) ai->spellIds[value]
 __METHODS__
 int main(){
+ { Unit target;target.map=309;target.auras.insert(24306);
+   Player caster;caster.map=309;PlayerbotAI healer{&caster};
+   SpellEntry decurse;decurse.Effect[0]=SPELL_EFFECT_DISPEL;decurse.EffectMiscValue[0]=DISPEL_CURSE;
+   assert(ai::ShouldAvoidEncounterDispel(&healer,&decurse,&target));
+   target.friendly=false;assert(!ai::ShouldAvoidEncounterDispel(&healer,&decurse,&target));target.friendly=true;
+   assert(ai::IsProtectedEncounterDispel(&target,DISPEL_CURSE));
+   assert(ai::IsProtectedEncounterDispel(&target,DISPEL_ALL));
+   assert(!ai::IsProtectedEncounterDispel(&target,DISPEL_MAGIC));
+   target.map=533;assert(!ai::IsProtectedEncounterDispel(&target,DISPEL_CURSE));
+   target.map=309;target.auras.clear();assert(!ai::IsProtectedEncounterDispel(&target,DISPEL_CURSE));
+   assert(!ai::ShouldAvoidEncounterDispel(&healer,&decurse,&target));
+ }
+
  Player bot,infected,healthy;PlayerbotAI ai{&bot};Unit boss;boss.entry=15931;boss.friendly=false;ai.units[1]=&boss;
  GroupReference ref{&infected};Group group{&ref};bot.group=infected.group=healthy.group=&group;
  SpellEntry cure;cure.Id=528;cure.Effect[0]=SPELL_EFFECT_DISPEL;cure.EffectMiscValue[0]=DISPEL_DISEASE;
@@ -89,10 +102,10 @@ int main(){
  assert(!ShouldAvoidEncounterDispel(&ai,&magic,&infected)&&!ShouldAvoidEncounterDispel(&ai,&cure,&healthy));
  assert(!ShouldAvoidEncounterDispel(&ai,&other,&infected));
  PartyMemberToDispel selector{&ai,"1,cleanse",{&infected,&healthy}};
- assert(selector.Calculate()==&healthy); // Do not loop on the first unsafe Cleanse recipient.
- selector.qualifier="1,dispel magic";assert(selector.Calculate()==&infected); // Magic-only cure remains allowed.
- selector.qualifier="1";assert(selector.Calculate()==&infected); // Legacy type-only value callers remain compatible.
- selector.qualifier="3";assert(selector.Calculate()==&healthy);
+ assert(selector.Calculate()==healthy.GetObjectGuid()); // Do not loop on the first unsafe Cleanse recipient.
+ selector.qualifier="1,dispel magic";assert(selector.Calculate()==infected.GetObjectGuid()); // Magic-only cure remains allowed.
+ selector.qualifier="1";assert(selector.Calculate()==infected.GetObjectGuid()); // Legacy type-only value callers remain compatible.
+ selector.qualifier="3";assert(selector.Calculate()==healthy.GetObjectGuid());
  NeedCureTrigger trigger{&ai,&infected,"cleanse",DISPEL_MAGIC};assert(!trigger.IsActive());
  trigger.spell="dispel magic";assert(trigger.IsActive());
  PartyMemberNeedCureTrigger party;party.ai=&ai;party.context=&ai.context;party.spell="cleanse";party.dispelType=DISPEL_MAGIC;
@@ -119,7 +132,7 @@ int main(){
  assert(ShouldAvoidEncounterDispel(&ai,&poison,&infected)&&ShouldAvoidEncounterDispel(&ai,&cleanse,&infected));
  assert(!ShouldAvoidEncounterDispel(&ai,&cure,&infected)&&!ShouldAvoidEncounterDispel(&ai,&magic,&infected));
  assert(!ShouldAvoidEncounterDispel(&ai,&poison,&healthy));
- selector.qualifier="4,cleanse";assert(selector.Calculate()==&healthy);
+ selector.qualifier="4,cleanse";assert(selector.Calculate()==healthy.GetObjectGuid());
  SpellEntry periodicPoison;periodicPoison.Id=2893;periodicPoison.Effect[0]=SPELL_EFFECT_APPLY_AURA;
  periodicPoison.EffectApplyAuraName[0]=SPELL_AURA_PERIODIC_TRIGGER_SPELL;periodicPoison.EffectTriggerSpell[0]=526;
  sServerFacade.spells[526]=poison;
@@ -139,7 +152,9 @@ int main(){
 }
 '''.replace('__POLICY__',policy).replace('__METHODS__',methods)
 for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
-    native=(root.parent/f'mangos-{realm}-behavior/src/game/Spells/SpellMgr.h').read_text()
+    core=root.parent/realm/'src/game'
+    if not core.is_dir():core=root.parent/f'mangos-{realm}-behavior/src/game'
+    native=(core/'Spells/SpellMgr.h').read_text()
     fixture=code.replace('__NATIVE_MASK__',block(native,'inline uint32 GetDispellMask('))
     with tempfile.TemporaryDirectory(prefix='mantech-encounter-dispel-') as folder:
         tmp=Path(folder);(tmp/'test.cpp').write_text(fixture)
