@@ -45,6 +45,8 @@ namespace ai {struct Point {float x=0,y=0,z=0;};struct EncounterPosition {bool a
 unsigned CurrentBossPursuitSpell(Player*,Unit*b){return b->pursuit?24646:0;}
 float BossEscapeDistance(Player*,Unit*,unsigned){return 14;}
 namespace encounter {struct Circle {Point center;float radius;};}
+std::list<HazardPosition> ground;
+void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>& out){out.insert(out.end(),ground.begin(),ground.end());}
 std::vector<encounter::Circle> whirlwinds;
 bool AQWhirlwindThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>& out){out=whirlwinds;return !out.empty();}
 bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&);
@@ -72,6 +74,11 @@ int main(){
  ai.bot.adjust=0;plan.destination={10,0,0};ai.bot.teleport=true;assert(!ValidateEncounterDestination(&ai,plan));ai.bot.teleport=false;
  plan.instance=2;assert(!ValidateEncounterDestination(&ai,plan));plan.instance=1;
  plan.destination={0,0,0};path.clear();assert(ValidateEncounterDestination(&ai,plan));
+ // Newly spawned MC fire participates before the cached general hazards refresh.
+ ai.bot.map=plan.map=409;plan.destination={10,0,0};ground={{{409,5,0,0},2}};
+ path={{409,0,0,0},{409,10,0,0}};assert(!ValidateEncounterDestination(&ai,plan));
+ path={{409,0,0,0},{409,0,5,0},{409,10,5,0},{409,10,0,0}};assert(ValidateEncounterDestination(&ai,plan));
+ ground.clear();path={{409,0,0,0},{409,10,0,0}};assert(ValidateEncounterDestination(&ai,plan));
  // Uncached Sartura/guard auras must constrain the whole route as well.
  ai.bot.map=plan.map=531;plan.destination={30,0,0};
  whirlwinds={{{-1,0,0},12},{{15,0,0},12}};

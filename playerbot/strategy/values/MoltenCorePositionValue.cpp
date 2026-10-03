@@ -3,6 +3,12 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "Spells/SpellMgr.h"
+#include "HazardsValue.h"
+#include "Entities/DynamicObject.h"
+#include "Entities/GameObject.h"
+#include "Grids/GridNotifiers.h"
+#include "Grids/GridNotifiersImpl.h"
+#include "Grids/CellImpl.h"
 
 using namespace ai;
 
@@ -19,6 +25,58 @@ namespace
     }
 }
 
+// Read live native objects, not a remembered target position or guessed timer.
+// This is also appended to general movement hazards so chasing cannot re-enter fire.
+void ai::AppendMoltenCoreGroundHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId() != 409 ||
+        bot->IsBeingTeleported() || bot->HasCharmer()) return;
+    struct FireCheck
+    {
+        Player* bot;
+        WorldObject const& GetFocusObject() const { return *bot; }
+        bool operator()(WorldObject* object) const
+        {
+            if (!object || !object->IsInWorld() || !bot->IsInMap(object) ||
+                std::fabs(object->GetPositionZ() - bot->GetPositionZ()) > 8) return false;
+            if (object->GetTypeId() == TYPEID_DYNAMICOBJECT)
+            {
+                DynamicObject* fire = static_cast<DynamicObject*>(object);
+                Unit* caster = fire->GetCaster();
+                return fire->GetSpellId() == 19717 && fire->GetType() == DYNAMIC_OBJECT_AREA_SPELL &&
+                    fire->GetDuration() > 0 && std::isfinite(fire->GetRadius()) &&
+                    fire->GetRadius() > 0 && fire->GetRadius() <= 25 && caster &&
+                    caster->GetEntry() == 12259 && !caster->HasCharmer() && bot->IsInMap(caster) &&
+                    fire->IsEnemy(bot) && fire->CanAttackSpell(bot, sServerFacade.LookupSpellInfo(19717), true);
+            }
+            if (object->GetTypeId() == TYPEID_GAMEOBJECT)
+            {
+                GameObject* bomb = static_cast<GameObject*>(object);
+                return bomb->GetEntry() == 177704 && bomb->IsSpawned() &&
+                    bomb->GetGoType() == GAMEOBJECT_TYPE_TRAP && bomb->GetGOInfo()->trap.spellId == 19428;
+            }
+            return false;
+        }
+    } check{bot};
+    WorldObjectList objects;
+    MaNGOS::WorldObjectListSearcher<FireCheck> searcher(objects, check);
+    Cell::VisitAllObjects(bot, searcher, 60.0f);
+    for (WorldObject* object : objects)
+    {
+        float radius = 0;
+        if (object->GetTypeId() == TYPEID_DYNAMICOBJECT)
+            radius = static_cast<DynamicObject*>(object)->GetRadius();
+        else
+        {
+            GameObject* bomb = static_cast<GameObject*>(object);
+            radius = std::max(float(bomb->GetGOInfo()->trap.diameter) * 0.5f, NativeEncounterSpellRadius(19428));
+        }
+        if (std::isfinite(radius) && radius > 0 && radius <= 25)
+            hazards.emplace_back(WorldPosition(object), radius + 1.0f);
+    }
+}
+
 bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
     std::vector<encounter::Circle>& threats)
 {
@@ -26,20 +84,24 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         bot->GetMapId() != 409) return false;
     Unit* boss = nullptr;
-    for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
+    for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
     {
         Unit* unit = ai->GetUnit(guid);
         if (unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->IsAlive() && unit->IsInCombat() &&
             (unit->GetEntry() == 12056 || unit->GetEntry() == 12264 || unit->GetEntry() == 12057 ||
              unit->GetEntry() == 11988 || unit->GetEntry() == 11502))
         {
-            if (boss && boss != unit) return false;
+            if (boss && boss != unit) { boss = nullptr; break; } // Fire remains real on ambiguous pulls.
             boss = unit;
         }
     }
     plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
     if (boss) plan.boss = boss->GetObjectGuid();
     const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+    std::list<HazardPosition> ground;
+    AppendMoltenCoreGroundHazards(ai, ground);
+    for (const auto& hazard : ground)
+        threats.push_back({{hazard.first.getX(), hazard.first.getY(), hazard.first.getZ()}, hazard.second + 1.0f});
     const auto add = [&](Unit* center, float radius) {
         if (radius > 0 && radius <= 45 && std::fabs(center->GetPositionZ() - here.z) < 8)
             threats.push_back({{center->GetPositionX(), center->GetPositionY(), center->GetPositionZ()}, radius + 2});
@@ -62,10 +124,10 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
         if (splash && (splash->GetStackAmount() >= 5 || bot->GetDistance(boss) > 8.0f))
             add(boss, boss->GetCombatReach() + bot->GetCombatReach() + 5.0f);
     }
-    if (boss && boss->GetEntry() == 11502 && boss->GetVictim() != bot &&
+    if (boss && boss->GetEntry() == 11502 && !boss->HasAura(21107) && !boss->HasAura(21859) && boss->GetVictim() != bot &&
         (ai->IsRanged(bot) || ai->IsHeal(bot) || Casting(boss, 20566)))
         add(boss, NativeEncounterSpellRadius(20566)); // Preserve the tank in melee; avoid Wrath knockback.
-    if (boss && boss->GetEntry() == 11502 && bot->GetGroup() && (ai->IsRanged(bot) || ai->IsHeal(bot)))
+    if (boss && boss->GetEntry() == 11502 && !boss->HasAura(21107) && !boss->HasAura(21859) && boss->GetVictim() != bot && bot->GetGroup() && (ai->IsRanged(bot) || ai->IsHeal(bot)))
         for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->getSource();
@@ -84,7 +146,7 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
             Unit* firesworn = ai->GetUnit(guid);
             if (!firesworn || firesworn->GetEntry() != 12099 || !firesworn->IsInWorld() ||
                 !firesworn->IsAlive() || !firesworn->IsInCombat() || !bot->IsInMap(firesworn) ||
-                firesworn->HasCharmer() || firesworn->GetVictim() == bot ||
+                firesworn->HasCharmer() ||
                 firesworn->HasAura(710) || firesworn->HasAura(18647)) continue;
             if (Casting(firesworn, 20483)) add(firesworn, NativeEncounterSpellRadius(20483));
             else if (Casting(firesworn, 19497) || firesworn->GetHealthPercent() <= 10.0f)

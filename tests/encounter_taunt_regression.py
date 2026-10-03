@@ -11,7 +11,7 @@ root=Path(__file__).resolve().parents[1]
 policy=(root/'playerbot/strategy/actions/EncounterTauntPolicy.cpp').read_text()
 policy='\n'.join(line for line in policy.splitlines() if not line.startswith('#include'))
 trigger=block((root/'playerbot/strategy/triggers/GenericTriggers.cpp').read_text(),'bool LoseAggroTrigger::IsActive(')
-target=block((root/'playerbot/strategy/values/RighteousDefenseTargetValue.cpp').read_text(),'Unit* RighteousDefenseTargetValue::Calculate(')
+target=block((root/'playerbot/strategy/values/RighteousDefenseTargetValue.cpp').read_text(),'ObjectGuid RighteousDefenseTargetValue::Calculate(')
 code=r'''
 #include <cassert>
 #include <iostream>
@@ -41,17 +41,17 @@ struct Player:Unit{Group* group=nullptr;bool teleport=false,tank=true,assist=tru
  Player(){player=true;}bool IsBeingTeleported(){return teleport;}Group* GetGroup(){return group;}
  bool HasSpell(unsigned id){return spells.count(id);}bool IsSpellReady(unsigned){return ready;}PlayerbotAI*GetPlayerbotAI(){return ai;}bool CanReachWithMeleeAttack(Unit*){return melee;}
  Session* GetSession(){return hasSession?&session:nullptr;}bool CanAssistSpell(Unit*,const SpellEntry*){return assist;}};
-struct PlayerbotAI{Player* bot;Unit* target=nullptr;bool aggro=false,real=false;Player* GetBot(){return bot;}bool IsTank(Player* p){return p->tank;}bool IsRealPlayer(){return real;}};
+struct PlayerbotAI{Player* bot;Unit* target=nullptr;bool aggro=false,real=false;Player* GetBot(){return bot;}bool IsTank(Player* p){return p->tank;}bool IsRealPlayer(){return real;}Unit*GetUnit(ObjectGuid guid){return target&&target->guid==guid?target:nullptr;}};
 struct Facade{SpellEntry spell;bool found=true;const SpellEntry* LookupSpellInfo(unsigned id){assert(id==31789);return found?&spell:nullptr;}}sServerFacade;
 namespace ai{
  bool ShouldSwapEncounterTank(PlayerbotAI*,Unit*);bool ShouldAvoidEncounterTaunt(PlayerbotAI*,const SpellEntry*,Unit*);
  struct LoseAggroTrigger{PlayerbotAI* ai;Player* bot;bool IsActive();};
- struct RighteousDefenseTargetValue{PlayerbotAI* ai;Player* bot;Unit* Calculate();};
+ struct RighteousDefenseTargetValue{PlayerbotAI* ai;Player* bot;ObjectGuid Calculate();};
 }
 using namespace ai;
 __POLICY__
 #define AI_VALUE2(type,key,qualifier) ai->aggro
-#define AI_VALUE(type,key) ai->target
+#define AI_VALUE(type,key) (ai->target ? ai->target->GetObjectGuid() : ObjectGuid())
 __TRIGGER__
 __TARGET__
 int main(){
@@ -83,7 +83,7 @@ int main(){
 #ifdef MANGOSBOT_ZERO
  assert(!target.Calculate());
 #else
- assert(target.Calculate()==&healer&&target.Calculate()!=&boss);
+ assert(target.Calculate()==healer.guid&&target.Calculate()!=boss.guid);
  healer.attackers.clear();assert(!target.Calculate());healer.attackers.insert(&boss);
  healer.group=&otherGroup;assert(!target.Calculate());healer.group=&group;
  healer.teleport=true;assert(!target.Calculate());healer.teleport=false;
@@ -94,7 +94,7 @@ int main(){
  bot.assist=false;assert(!target.Calculate());bot.assist=true;
  sServerFacade.found=false;assert(!target.Calculate());sServerFacade.found=true;
  boss.victim=&bot;assert(!target.Calculate());boss.victim=&tank;tank.attackers.insert(&boss);
- assert(target.Calculate()==&tank);tank.auras.clear();assert(!target.Calculate()); // healthy tank not stolen
+ assert(target.Calculate()==tank.guid);tank.auras.clear();assert(!target.Calculate()); // healthy tank not stolen
  boss.victim=&healer;bot.tank=false;assert(!target.Calculate());bot.tank=true;
  boss.alive=false;assert(!target.Calculate());boss.alive=true;
  ai.target=nullptr;assert(!target.Calculate());ai.target=&boss;boss.map=&otherMap;assert(!target.Calculate());boss.map=&map;
@@ -157,7 +157,7 @@ for era in ('ZERO','ONE','TWO'):
         subprocess.run(['cl','/nologo','/std:c++17','/EHsc',f'/DMANGOSBOT_{era}','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 for era in ('classic','tbc','wotlk'):
-    core=root.parent/f'mangos-{era}-behavior'
+    core=root.parent/era
     native=(core/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/blackwing_lair/boss_ebonroc.cpp').read_text()
     assert 'SPELL_SHADOW_OF_EBONROC' in native and '23340' in native and 'm_creature->GetVictim()' in native
     if era!='classic':

@@ -15,28 +15,37 @@ code = r'''
 #include <string>
 using uint32=unsigned;
 constexpr int ATTACK_DISTANCE=5,SPELL_AURA_DAMAGE_SHIELD=1;
+enum {CLASS_HUNTER=3,CLASS_MAGE=8,CLASS_WARLOCK=9,CLASS_PRIEST=5,CLASS_DRUID=11,CLASS_SHAMAN=7};
+enum class ActionThreatType {ACTION_THREAT_NONE};
 struct SpellEntry {bool passive=false,reflectable=true;unsigned school=4;};
 bool IsPassiveSpell(const SpellEntry* s){return s->passive;}
 bool IsReflectableSpell(const SpellEntry* s){return s->reflectable;}
 unsigned GetSpellSchoolMask(const SpellEntry* s){return s->school;}
 struct Aura {struct Modifier {int m_amount=100;}modifier;Modifier* GetModifier(){return &modifier;}};
 struct Unit {using AuraList=std::list<Aura*>;AuraList shields;bool world=true;unsigned phase=1;int map=1;
+ bool HasBreakableByDamageCrowdControlAura(){return false;}
  float reflect=0;unsigned reflectedSchool=4,queriedSchool=0;
  bool IsInWorld(){return world;}int GetMap(){return map;}
  const AuraList& GetAurasByType(int){return shields;}
  float GetReflectChance(unsigned school){queriedSchool=school;return school==reflectedSchool?reflect:0;}};
-struct Player:Unit {bool teleport=false;unsigned stops=0;
+struct Player:Unit {unsigned getClass(){return 1;}bool CanAttack(Unit*){return true;}bool teleport=false;unsigned stops=0;
  bool IsBeingTeleported(){return teleport;}bool IsInMap(Unit* u){return map==u->map&&phase==u->phase;}
  unsigned GetMaxHealth(){return 1000;}void AttackStop(){++stops;}};
 struct PlayerbotAI {bool learned=true;bool HasSpell(unsigned){return learned;}
  bool IsInVehicle(bool=false,bool=false,bool=false){return false;}};
+// Orthogonal caster/CC policies are admitted: this fixture isolates reflection.
+bool CasterSpellAreaSafe(PlayerbotAI*,const std::string&,Unit*){return true;}
+bool CasterHealthCostSafe(PlayerbotAI*,const std::string&){return true;}
+bool CasterDamageSpell(const SpellEntry*){return false;}
+struct MeleeCcCheck{MeleeCcCheck(PlayerbotAI*){}bool Protected(Unit*){return false;}};
 bool ShouldAvoidCorruptedHealing(Player*,const SpellEntry*,Unit*){return false;}
 bool ShouldAvoidEncounterDispel(PlayerbotAI*,const SpellEntry*,Unit*){return false;}
 bool ShouldAvoidEncounterTaunt(PlayerbotAI*,const SpellEntry*,Unit*){return false;}
 bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*){return false;}
 struct Facade {SpellEntry spell;bool found=true;const SpellEntry* LookupSpellInfo(unsigned id){return id&&found?&spell:nullptr;}}sServerFacade;
 struct CastSpellAction {Player* bot;PlayerbotAI* ai;Unit* target;unsigned spellId=1;float range=30;
- std::string spellName="spell";bool useful=true;void RefreshSpellId(){}Unit* GetTarget(){return target;}bool isUseful();};
+ std::string spellName="spell";std::string GetSpellName(){return spellName;}ActionThreatType getThreatType(){return ActionThreatType::ACTION_THREAT_NONE;}
+ bool useful=true;void RefreshSpellId(){}Unit* GetTarget(){return target;}bool isUseful();};
 #define AI_VALUE2(type,key,value) useful
 __METHOD__
 int main(){

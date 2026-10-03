@@ -55,6 +55,8 @@ struct Group {GroupReference* first=nullptr;GroupReference* GetFirstMember(){ret
 namespace ai {
  struct EncounterPosition {bool active=false;unsigned map=0,instance=0,spell=0;ObjectGuid boss,source;encounter::Point destination;};
 }
+struct WorldPosition {float x,y,z; float getX()const{return x;} float getY()const{return y;} float getZ()const{return z;}};
+using HazardPosition=std::pair<WorldPosition,float>;
 using namespace ai;
 template<class T>struct Cached {T value;T Get(){return value;}};
 struct Context {Cached<EncounterPosition> cached;Cached<std::list<ObjectGuid>> attackers;
@@ -69,6 +71,8 @@ struct PlayerbotAI {Player* bot=nullptr;Context context;std::list<ObjectGuid> at
  Unit* GetUnit(ObjectGuid guid){auto it=units.find(guid);return it==units.end()?nullptr:it->second;}
 };
 namespace ai {
+ std::list<HazardPosition> ground;
+ void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>& hazards){hazards.insert(hazards.end(),ground.begin(),ground.end());}
  std::map<unsigned,float> radii{{20475,10.0f},{19698,10.0f},{20478,20.0f},{19712,10.0f},{20566,25.0f},{21154,5.0f},{19497,15.0f},{20483,15.0f}};
  float NativeEncounterSpellRadius(unsigned id){return radii[id];} // controlled fixture, not replacement data
  bool ValidateEncounterDestination(PlayerbotAI* ai,EncounterPosition&){++ai->checked;return ai->validPath;}
@@ -135,10 +139,25 @@ int main(){
  // Ragnaros: ranged stay outside knockback, the current tank stays in melee.
  boss.entry=11502;ai.ranged=true;assert(get());boss.victim=&bot;assert(!get());boss.victim=nullptr;
  ai.ranged=false;assert(!get());info.Id=20566;cast.m_spellInfo=&info;boss.cast=&cast;assert(get());boss.cast=nullptr;
- // Firesworn: avoid a dying add, but not our own tanked add or a banished add.
+ // Firesworn: avoid a dying add, including our own tanked add, excluding a banished add.
  boss.entry=12057;Unit add;add.entry=12099;add.guid=4;add.map=&map;add.health=9;ai.units[4]=&add;ai.attackers={1,4};
- assert(get());add.victim=&bot;assert(!get());add.victim=nullptr;add.auras={710};assert(!get());
+ assert(get());add.victim=&bot;assert(get());add.victim=nullptr;add.auras={710};assert(!get());
  add.auras.clear();add.health=100;assert(!get());
+ // The native submerged/immune phase must not send sons-phase melee away.
+ boss.entry=11502;ai.attackers={1};ai.ranged=true;boss.auras={21107};assert(!get());
+ boss.auras={21859};assert(!get());boss.auras.clear();assert(get());ai.ranged=false;
+ // Actual ground areas, not the caster's location. No attacker/target dependency.
+ boss.entry=12259;boss.x=40;ground={{{0,0,0},9}};assert(get());
+ assert(encounter::Distance2d(resolved.destination,{0,0,0})>=10);
+ ground.push_back({{resolved.destination.x,resolved.destination.y,0},9});
+ assert(!movement.Execute(event)); // newly overlapping fire invalidates the queued endpoint
+ assert(get());for(const auto& h:ground)assert(encounter::Distance2d(resolved.destination,{h.first.x,h.first.y,0})>=10);
+ ai.tank=true;assert(get());ai.tank=false;ai.healer=true;assert(get());ai.healer=false;
+ ai.attackers.clear();boss.alive=false;bot.combat=false;assert(get()&&resolved.boss.IsEmpty());
+ ground.clear();assert(!MoltenCorePositionAction::GetPlan(&ai,resolved)&&!movement.Execute(event));
+ assert(!get()); // no stale movement hold after the native area expires
+ ground={{{0,0,0},9}};assert(get());ai.canMove=false;assert(!movement.Execute(event));ai.canMove=true;
+ ai.validPath=false;ai.checked=0;assert(!get()&&ai.checked<=8);ai.validPath=true;ground.clear();
  std::cout<<"PASS: actual MC bomb lifetime after boss death, friendly carriers, phase/map/role, native radius and bounded paths\n";
 }
 '''.replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__METHODS__',methods)

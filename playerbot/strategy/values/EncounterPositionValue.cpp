@@ -48,6 +48,7 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan)
             // through its melee range. Require outward travel on every segment.
             hazards.emplace_back(WorldPosition(boss), clearance - 2);
         }
+    if (plan.map == 409) AppendMoltenCoreGroundHazards(ai, hazards);
     if (plan.map == 531)
     {
         EncounterPosition current;

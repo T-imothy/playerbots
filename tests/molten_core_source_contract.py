@@ -69,3 +69,16 @@ assert 'PlanMoltenCoreTrash(ai, plan)' in position
 assert 'molten core imp pack' in read('playerbot/strategy/triggers/TriggerContext.h')
 assert 'MoltenCoreImpPack(ai)' in read('playerbot/strategy/mage/MageActions.h')
 print('PASS MC trash source wiring, tank-held pack admission and hazard precedence')
+
+# Direct MC fire cannot depend on a class target or the caster staying alive.
+assert 'void ai::AppendMoltenCoreGroundHazards(' in position
+assert 'fire->GetSpellId() == 19717' in position
+assert 'fire->GetDuration() > 0' in position and 'fire->GetRadius()' in position
+assert 'bomb->GetEntry() == 177704' in position and 'trap.diameter) * 0.5f' in position
+assert 'AppendMoltenCoreGroundHazards(ai, hazards)' in read('playerbot/strategy/values/HazardsValue.cpp')
+assert 'if (plan.map == 409) AppendMoltenCoreGroundHazards' in read('playerbot/strategy/values/EncounterPositionValue.cpp')
+assert position.count('!boss->HasAura(21107) && !boss->HasAura(21859)') == 2
+assert '20294u, 19776u' in actions
+assert 'selected->GetEntry() == 11982' in actions
+assert read('playerbot/strategy/generic/MoltenCoreDungeonStrategies.cpp').count('new NextAction("molten core safe position", 111.0f)') == 3
+print('PASS MC direct ground hazards, fresh path checks, submerge and support wiring')

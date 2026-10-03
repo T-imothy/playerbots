@@ -34,7 +34,7 @@ void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     triggers.push_back(new TriggerNode("molten core priority target",
         NextAction::array(0, new NextAction("molten core priority target", 90.0f), NULL)));
     triggers.push_back(new TriggerNode("molten core safe position",
-        NextAction::array(0, new NextAction("molten core safe position", 105.0f), NULL)));
+        NextAction::array(0, new NextAction("molten core safe position", 111.0f), NULL)));
     triggers.push_back(new TriggerNode(
         "start magmadar fight",
         NextAction::array(0, new NextAction("enable magmadar fight strategy", 100.0f), NULL)));
@@ -43,7 +43,7 @@ void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
 void MoltenCoreDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode("molten core safe position",
-        NextAction::array(0, new NextAction("molten core safe position", 105.0f), NULL)));
+        NextAction::array(0, new NextAction("molten core safe position", 111.0f), NULL)));
 }
 
 void MoltenCoreDungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
@@ -59,7 +59,7 @@ void MoltenCoreDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& mu
 void MoltenCoreDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode("molten core safe position",
-        NextAction::array(0, new NextAction("molten core safe position", 105.0f), NULL)));
+        NextAction::array(0, new NextAction("molten core safe position", 111.0f), NULL)));
     /*
     triggers.push_back(new TriggerNode(
         "val::and::{"

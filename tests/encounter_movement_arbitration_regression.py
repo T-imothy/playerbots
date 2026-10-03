@@ -7,7 +7,7 @@ from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
 base=root/'playerbot/strategy/generic'
 methods='\n'.join(block((base/'DungeonMultipliers.cpp').read_text(),sig) for sig in (
- 'float PreserveMechanarPositionMultiplier::GetValue(', 'float PreserveOnyxiaPositionMultiplier::GetValue('))
+ 'float PreserveMoltenCorePositionMultiplier::GetValue(', 'float PreserveMechanarPositionMultiplier::GetValue(', 'float PreserveOnyxiaPositionMultiplier::GetValue('))
 code=r'''
 #include <cassert>
 #include <string>
@@ -17,15 +17,19 @@ struct Action{virtual ~Action()=default;virtual std::string getName(){return "ac
 struct MovementAction:Action{};struct AttackAction:MovementAction{};struct MoveAwayFromHazard:MovementAction{};struct SetBehindTargetAction:MovementAction{};
 struct CastSpellAction:Action{bool moves=false;bool HasMovementEffect(){return moves;}};
 struct EncounterPosition{bool exclusive=true;};
+struct MoltenCorePositionAction:MovementAction{static bool GetPlan(PlayerbotAI* ai,EncounterPosition&){return ai->active;}};
 struct MechanarPositionAction:MovementAction{static bool GetPlan(PlayerbotAI* ai,EncounterPosition&){return ai->active;}};
 struct OnyxiaPositionAction:MovementAction{static bool GetPlan(PlayerbotAI* ai,EncounterPosition& p){p.exclusive=ai->exclusive;return ai->active;}};
+struct MoltenCorePriorityTargetAction{MoltenCorePriorityTargetAction(PlayerbotAI*){}void* GetTarget(){return nullptr;}};
 struct PathaleonAddsAction{PathaleonAddsAction(PlayerbotAI*){}void* GetTarget(){return nullptr;}};
 struct OnyxiaAddsAction{OnyxiaAddsAction(PlayerbotAI*){}void* GetTarget(){return nullptr;}};
+struct PreserveMoltenCorePositionMultiplier{PlayerbotAI* ai;float GetValue(Action*);};
 struct PreserveMechanarPositionMultiplier{PlayerbotAI* ai;float GetValue(Action*);};
 struct PreserveOnyxiaPositionMultiplier{PlayerbotAI* ai;float GetValue(Action*);};
 __METHODS__
 int main(){
  PlayerbotAI ai;PreserveMechanarPositionMultiplier mechanar{&ai};PreserveOnyxiaPositionMultiplier onyxia{&ai};
+ PreserveMoltenCorePositionMultiplier mc{&ai};
  CastSpellAction blink,heal;blink.moves=true;MovementAction chase;AttackAction attack;MoveAwayFromHazard escape;
  MechanarPositionAction reposition;OnyxiaPositionAction onyxiaReposition;SetBehindTargetAction behind;
  assert(mechanar.GetValue(&blink)==0&&onyxia.GetValue(&blink)==0);
@@ -34,6 +38,9 @@ int main(){
  assert(mechanar.GetValue(&attack)==1&&onyxia.GetValue(&attack)==1);
  assert(mechanar.GetValue(&escape)==1&&onyxia.GetValue(&escape)==1);
  assert(mechanar.GetValue(&reposition)==1&&onyxia.GetValue(&onyxiaReposition)==1);
+ assert(mc.GetValue(&attack)==1&&mc.GetValue(&heal)==1&&mc.GetValue(&chase)==0&&mc.GetValue(&blink)==0);
+ assert(mc.GetValue(&escape)==1);MoltenCorePositionAction mcReposition;assert(mc.GetValue(&mcReposition)==1);
+ ai.active=false;assert(mc.GetValue(&chase)==1&&mc.GetValue(&blink)==1);ai.active=true;
  ai.exclusive=false;assert(onyxia.GetValue(&blink)==1&&onyxia.GetValue(&chase)==1&&onyxia.GetValue(&behind)==0);
  ai.active=false;assert(mechanar.GetValue(&blink)==1&&onyxia.GetValue(&blink)==1);
  assert(mechanar.GetValue(nullptr)==1&&onyxia.GetValue(nullptr)==1);

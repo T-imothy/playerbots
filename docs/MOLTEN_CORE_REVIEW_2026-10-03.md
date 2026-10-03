@@ -1,0 +1,44 @@
+# Molten Core playerbot review — 2026-10-03
+
+## Scope and evidence
+
+All ten Molten Core encounters were rechecked against the native Classic, TBC and Wrath boss scripts, the shared bot movement/targeting/support routines, crowd-control allocation, reflection safeguards, and current live world database spell/add/trap definitions. All ten boss scripts have identical executable logic across these checkouts; differences are comments. The bot patch applies to all three. This batch changes playerbots only: no native raid scripts, world database rows, class DPS rotation priorities, server configuration, or live binaries.
+
+Read-only evidence and validation receipts are in the task workspace `work/mc-review-20261003/`: native-boss-contracts.json, per-era spell/add/dispel TSVs, test-results.json, and validation/native-syntax-results.json. Database reads were performed on all three live realms. No database update is required.
+
+## Confirmed corrections
+
+- **Gehennas Rain of Fire (19717):** the explicit MC planner previously did not collect the native fire areas. The generic routine selects one closest hazard and has no MC safe-position hold. The new collector reads each live Gehennas-owned hostile DynamicObject's actual location, radius and remaining lifetime, includes overlapping patches, and remains effective when fighting adds or after combat/caster death while the native area remains. Friendly/player Rain of Fire, other instances/phases, expired areas and unrelated objects are excluded. There is no guessed fire timer or use of the boss's position as the fire's center.
+- **Ground-fire movement:** Magmadar's native Lava Bomb trap 177704 / Conflagration 19428 joins the same planner. Trap activation *diameter* is converted to radius and compared with the native damage-spell radius. All movement sees these hazards; encounter route validation also reads fresh areas to catch fire appearing after the general hazard cache was calculated. Candidate destinations clear all collected circles, and complete native paths must escape existing hazards without crossing another. The MC reaction has priority 111, above the generic one-circle escape at 110. Path attempts remain bounded at eight per cached plan.
+- **Target switching while holding position:** AttackAction inherits MovementAction but selects an attack target without moving the player along a chase path. The MC multiplier previously suppressed these actions, including priority adds, whenever a safe-position plan was active. It now permits target selection and ordinary stationary attacks/heals while separate chase, follow and movement-spell actions still respect the hold.
+- **Expired plans:** queued boss/ground plans recheck current threats before holding position. A missing/dead boss does not invalidate still-existing ground fire. A disappeared fire or ended Inferno no longer sustains the old hold. A movement reaction does not cancel a cast when native movement is unavailable.
+- **Magmadar:** the established tank faces his frontal Lava Breath away from the raid; melee move behind him. Ranged/healers maintain native Panic spacing when taking a rear position, including bots already behind him but too close. The existing Ancient Core Hound distance policy is preserved.
+- **Garr:** native explosion avoidance no longer excludes the Firesworn's tank. Banished adds remain excluded; low-health adds and active Eruption/Massive Eruption supply the danger, rather than an invented death timer.
+- **Sulfuron:** explicit magic dispels cover the priests' Immolate (20294) and Shadow Word: Pain (19776), in addition to the existing off-target Dark Mending (19775) interrupts. Native spellbook/resource/range/stance/cooldown rules remain authoritative. Inspire (19779) has Dispel=0 in all three live databases and is intentionally not purged.
+- **Ragnaros:** knockback/spread positioning is disabled during native submerge/immune auras 21107/21859 so it does not obstruct the Sons phase. The actual current tank is excluded from ranged spread as well as knockback separation, preserving a melee victim.
+
+## All-boss review
+
+| Boss | Reviewed bot behavior and native mechanics | Live verification still needed |
+|---|---|---|
+| Lucifron | Protector priority/off-tanks; actual Doom 19702 and curse 19703 dispels; offensive dispel of Dominate Mind 20604 on a raid member. | Tank death/reassignment and simultaneous dispel load. |
+| Magmadar | Actual Frenzy 19451 Tranquilizing Shot; learned Fear Ward; Panic 19408 range; native Lava Bomb objects; frontal breath facing. | Fear recovery and terrain during overlapping bombs. |
+| Gehennas | Flamewaker priority/off-tanks; curse 19716 removal; all real Rain of Fire areas with safe movement/hold and expiry. | Full raid containing melee, ranged, healers and tanks; overlapping patches; target changes while fire persists. |
+| Garr | Stable warlock Banish allocations; unbanished add targets; off-tanks; native death Eruption 19497 and Massive Eruption 20483. | Multiple nearly simultaneous deaths, renewed banishes and tank survival. The low-health escape threshold remains a tactical choice. |
+| Baron Geddon | Inferno 19695 uses damage radius 19698; Armageddon 20478; Living Bomb 20475 separation persists independently of the boss; Ignite Mana 19659 removal. | Bomb carriers/Inferno overlapping terrain or other hazards. |
+| Shazzrah | Native explosion 19712 ranged/healer spacing; curse 19713 dispels; removable grounding buff 19714; live boss coordinates and fresh queued checks after blink. | Threat-reset tank reacquisition and blink recovery. No invented pre-blink timer. |
+| Sulfuron | Priest priority/off-tanks; active interruptible Dark Mending on an off-target priest; native era-specific interrupts; both priest magic DoTs dispelled. | Multiple concurrent priest casts and recovery when interrupters die. |
+| Golemagg | Boss DPS rather than immortal Core Ragers; off-tanks; native Magma Splash 13880 stack retreat/recovery for melee DPS. | Rager separation and tank recovery in actual geometry. The five-stack retreat policy is tactical, not a native mandatory threshold. |
+| Majordomo | Healer/elite priorities rather than killing the death-protected boss; stable sheep allocation preserving a kill target; native 21087 immunity after four add deaths; learned casts; native reflection/damage-shield admission and queued reflection cancellation. | Full four-add immunity transition, teleport/threat reset, last-add phase and tank losses. |
+| Ragnaros | Native Sons targeting during submerge; attackability/CC checks; current tank in melee; ranged separation outside native knockback; spread for Might 21154; normal tank reacquisition after knockback. | Wave-wide tank distribution, re-emerge, lava paths and knockback recovery. Wrath 20566 is instant in the live spell data; observing a cast cannot guarantee predictive melee dodging, and no speculative timer was introduced. |
+
+The raid remains native. Bots need suitable learned abilities and a viable raid composition; these checks do not manufacture interrupts/dispels, disable native immunities, or control human players. The table records implemented behavior and the limits of offline verification, not an autonomous-clear certification.
+
+## Validation and rollout
+
+- New production-body C++ regressions exercise the actual MC collector, planner, support selector, tank allocator and Magmadar positioning with controlled core interfaces for MANGOSBOT_ZERO, ONE and TWO.
+- Tests cover overlapping/spawned/expired fire, native ownership/hostility/radii, same-map/instance/phase, post-combat lifetime, fresh whole-route hazards, blocked/limited paths, role gates, tank exclusion where appropriate, aura expiry, rooted movement, off-target interrupt dispatch and era abilities, dispels, sheep immunity/assignments, established main-tank ownership, and attacks/heals continuing during movement holds.
+- Related actual-body tests cover target selection, hazard lifecycle/escape/chase, reflection admission/reaction, dispel and taunt policies. Legacy fixtures were refreshed for the current ObjectGuid API and sibling core layout; no production taunt/reflection policy was changed.
+- Seventeen regression scripts pass. Native MSVC syntax checks against each matching core's headers pass for the six touched implementation units and both registration contexts (eight translation units per era). These are syntax/behavior checks, not production server builds.
+
+Rebuild **Classic, TBC and Wrath** from their updated baselines, deploy the new mangosd binaries, then restart those worlds. **No SQL or database migration is needed.** No new server binaries were built or deployed by this MC task. The three core FetchContent pins must select the tested playerbots commit. Live full-raid testing remains required after deployment, starting with Gehennas's overlapping fire and target switching, then the boss-specific cases above.

@@ -37,6 +37,7 @@ namespace ai
 
     // Hazard position, Hazard radius
     typedef std::pair<WorldPosition, float> HazardPosition;
+    void AppendMoltenCoreGroundHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
     void AppendVashjStriderHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
     void AppendNativeEncounterActorHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
 

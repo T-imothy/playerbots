@@ -259,7 +259,8 @@ float PreserveMoltenCorePositionMultiplier::GetValue(Action* action)
         MoltenCorePriorityTargetAction priority(ai);
         if (priority.GetTarget()) return 0.0f;
     }
-    const bool movement = dynamic_cast<MovementAction*>(action) &&
+    // AttackAction selects a target; separate reach/chase actions still obey the hold.
+    const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
         !dynamic_cast<MoltenCorePositionAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);
     CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
     if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;

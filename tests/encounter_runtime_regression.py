@@ -154,7 +154,7 @@ for era in ('ZERO','ONE','TWO'):
         subprocess.run([str(tmp / 'test.exe')],cwd=tmp,check=True)
 
 for era in ('tbc','wotlk'):
-    native=(root.parents[2]/f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts/outland/hellfire_citadel/magtheridons_lair/boss_magtheridon.cpp').read_text()
+    native=(root.parents[2]/f'{era}/src/game/AI/ScriptDevAI/scripts/outland/hellfire_citadel/magtheridons_lair/boss_magtheridon.cpp').read_text()
     debris=block(native,'struct DebrisMagtheridon')
     assert 'OnPersistentAreaAuraEnd' in debris and '30631' in debris and 'dynGo->GetObjectGuid()' in debris
 

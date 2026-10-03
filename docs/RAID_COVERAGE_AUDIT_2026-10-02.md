@@ -56,6 +56,8 @@ Every row remains **partial or unverified as a full encounter**. “Shared” me
 
 ## Molten Core (409; Classic, TBC, Wrath)
 
+The [2026-10-03 MC follow-up](MOLTEN_CORE_REVIEW_2026-10-03.md) rechecks all ten native encounters and adds direct fire tracking, fresh route checks, target-switch arbitration, Magmadar facing, tank eruption escape, Sulfuron dispels and submerge gating. Full live raid validation remains open.
+
 | Encounter | Implemented source behavior | Open mechanics / validation |
 |---|---|---|
 | Lucifron | Protector targeting, off-tanks, curse/Doom removal and friendly mind-control dispel | Live add/tank reassignment and dispel load |

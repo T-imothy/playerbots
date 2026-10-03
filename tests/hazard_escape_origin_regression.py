@@ -12,7 +12,7 @@ code=r'''
 #include <list>
 #include <vector>
 #include <iostream>
-using uint8=uint8_t;using int8=int8_t;
+using uint8=uint8_t;using int8=int8_t;using ObjectGuid=unsigned;
 constexpr float M_PI=3.14159265358979323846f,M_PI_F=M_PI;constexpr int TEMPSPAWN_TIMED_DESPAWN=0;
 float frand(float a,float b){return (a+b)/2;}unsigned urand(unsigned a,unsigned){return a;}
 struct Unit{float x=0,y=0,z=0;};
@@ -37,7 +37,8 @@ using HazardPosition=std::pair<WorldPosition,float>;
 enum class BotState{BOT_STATE_COMBAT};
 struct PlayerbotAI{Player*bot;std::list<HazardPosition>hazards;bool canMove=true;
  bool HasStrategy(const char*,BotState){return false;}bool CanMove(){return canMove;}
- template<class T>T Value(const char*){if constexpr(std::is_same_v<T,Unit*>)return nullptr;else return hazards;}
+ Unit*GetUnit(ObjectGuid){return nullptr;}
+ template<class T>T Value(const char*){if constexpr(std::is_same_v<T,ObjectGuid>)return 0;else return hazards;}
 };
 struct Event{};struct MoveAwayFromHazard{PlayerbotAI*ai;Player*bot;unsigned moves=0;float waited=0;
  bool Execute(Event&);bool IsHazardNearby(const WorldPosition&,const std::list<HazardPosition>&)const;

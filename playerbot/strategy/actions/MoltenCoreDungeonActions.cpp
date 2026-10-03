@@ -51,7 +51,7 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
         Unit* unit = ai->GetUnit(guid);
         if (!unit || !unit->IsInWorld() || !bot->IsInMap(unit) || !unit->IsAlive() ||
             !unit->IsInCombat() || unit->HasCharmer() || sServerFacade.IsFriendlyTo(bot, unit) ||
-            (unit->GetEntry() != 12101 && unit->GetEntry() != 11673)) continue;
+            (unit->GetEntry() != 12101 && unit->GetEntry() != 11673 && unit->GetEntry() != 11982)) continue;
         Unit* victim = unit->GetVictim();
         if (!victim || !victim->IsPlayer() || !victim->IsAlive() ||
             static_cast<Player*>(victim)->GetGroup() != bot->GetGroup()) continue;
@@ -106,8 +106,15 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
         else
         {
             if (ai->IsTank(bot)) { plan.active = false; return false; }
-            if (ai->IsRanged(bot) || ai->IsHeal(bot)) distance = std::min(25.0f, std::max(distance, bot->GetDistance(selected)));
-            if (std::cos(selected->GetAngle(bot) - selected->GetOrientation()) < -0.25f)
+            if (ai->IsRanged(bot) || ai->IsHeal(bot))
+            {
+                distance = std::min(selected->GetEntry() == 11982 ? 40.0f : 25.0f, std::max(distance, bot->GetDistance(selected)));
+                if (selected->GetEntry() == 11982)
+                    distance = std::max(distance, NativeEncounterSpellRadius(19408) + 2.0f);
+            }
+            if (std::cos(selected->GetAngle(bot) - selected->GetOrientation()) < -0.25f &&
+                !(selected->GetEntry() == 11982 && (ai->IsRanged(bot) || ai->IsHeal(bot)) &&
+                  bot->GetDistance(selected) < NativeEncounterSpellRadius(19408) + 2.0f))
                 plan.destination = {bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
             else plan.destination = {selected->GetPositionX() + std::cos(angle)*distance,
                 selected->GetPositionY() + std::sin(angle)*distance, selected->GetPositionZ()};
@@ -311,6 +318,12 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         Player* member = static_cast<Player*>(carrier);
         return !member->IsBeingTeleported() && member->GetGroup() && member->GetGroup() == bot->GetGroup();
     }
+    if (plan.spell != 19196 && plan.spell != 19272)
+    {
+        EncounterPosition current;
+        std::vector<encounter::Circle> threats;
+        return MoltenCoreThreats(ai, current, threats);
+    }
     Unit* boss = ai->GetUnit(plan.boss);
     return boss && boss->IsInWorld() && bot->IsInMap(boss) && boss->IsAlive() && boss->IsInCombat();
 }
@@ -325,7 +338,7 @@ bool MoltenCorePositionAction::isUseful()
 bool MoltenCorePositionAction::ShouldReactionInterruptCast() const
 {
     EncounterPosition plan;
-    return GetPlan(ai, plan) && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
+    return ai->CanMove() && GetPlan(ai, plan) && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
 }
 
 bool MoltenCorePositionAction::Execute(Event& event)
@@ -440,7 +453,7 @@ bool MoltenCoreSupportAction::Select(std::string& spell, Unit*& target)
         }
     // Dispel priority is tied to actual live auras, not guesses about boss timers.
     // No blanket dispels of beneficial/other encounter effects.
-    for (uint32 aura : {19702u, 19716u, 19659u, 19703u, 19713u})
+    for (uint32 aura : {19702u, 19716u, 19659u, 19703u, 19713u, 20294u, 19776u})
     {
         std::vector<Player*> afflicted;
         for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
@@ -455,7 +468,7 @@ bool MoltenCoreSupportAction::Select(std::string& spell, Unit*& target)
         });
         for (Player* member : afflicted)
         {
-            if (aura == 19702 || aura == 19659)
+            if (aura == 19702 || aura == 19659 || aura == 20294 || aura == 19776)
             {
                 for (const char* name : {"dispel magic", "cleanse"}) if (ready(name, member)) return true;
             }
