@@ -46,11 +46,23 @@ struct ObjectMgr {Player* GetPlayer(ObjectGuid g){auto it=players.find(g.value);
 struct WorldPacket {std::string name; WorldPacket& operator<<(std::string const& s){name=s;return *this;} WorldPacket& operator<<(uint32){return *this;}};
 struct Social {bool ignored=false;bool HasIgnore(ObjectGuid){return ignored;}};
 struct Security {bool allow=true;int LevelFor(Player*,void*,bool,bool ignoreQueues){assert(ignoreQueues);return allow?1:-1;}bool CheckLevelFor(int,bool,Player*){return allow;}};
-struct AI {Player* master=nullptr; Security security; int changes=0;
- void CompleteSummonRevival(){}
+struct AI {Player* master=nullptr; Security security; int changes=0,revivalChecks=0;
+ void CompleteSummonRevival(){++revivalChecks;}
  Player* GetMaster(){return master;} void SetMaster(Player* p){master=p;} Security* GetSecurity(){return &security;}
  void ChangeStrategy(std::string const&,int){++changes;} std::string GetDefaultMovementStrategy(){return "follow";}};
-struct Map{bool instanced=true;bool Instanceable(){return instanced;}};
+using Difficulty=int;
+struct PersistentState{};
+struct InstanceGroupBind{PersistentState* state=nullptr;};
+struct InstanceData{bool active=false;bool IsEncounterInProgress(){return active;}};
+struct Map{bool instanced=true,raid=false;PersistentState state;
+ bool Instanceable(){return instanced;}bool IsRaid(){return raid;}
+ int GetDifficulty(){return 0;}PersistentState* GetPersistentState(){return &state;}};
+struct DungeonMap:Map{unsigned count=1,max=40;InstanceData data;
+ unsigned GetPlayersCountExceptGMs(){return count;}unsigned GetMaxPlayers(){return max;}
+ InstanceData* GetInstanceData(){return &data;}};
+struct MapEntry{bool instanced=false;bool Instanceable()const{return instanced;}};
+struct MapStore{MapEntry entry;bool missing=false;MapEntry const* LookupEntry(uint32){return missing?nullptr:&entry;}}sMapStore;
+struct Log{template<class... T>void outString(const char*,T...){}}sLog;
 struct WorldLocation{float coord_x=0,coord_y=0,coord_z=0;};
 struct LfgData {int state=LFG_STATE_NONE;int GetState(){return state;}};
 class PlayerbotHolder {public:std::string ProcessBotCommand(std::string,ObjectGuid,ObjectGuid,bool,uint32,uint32);};
@@ -59,6 +71,9 @@ struct WorldSession {Player* player=nullptr;uint32 account=1;bool logout=false;s
  void HandleGroupAcceptOpcode(WorldPacket&);void HandleGroupInviteOpcode(WorldPacket&);
 };
 struct Group {ObjectGuid leader,assistant;unsigned count=1;bool raid=false,bg=false;
+ InstanceGroupBind binding;bool bound=true;
+ InstanceGroupBind* GetBoundInstance(uint32){return bound?&binding:nullptr;}
+ InstanceGroupBind* GetBoundInstance(Map*,Difficulty){return bound?&binding:nullptr;}
  bool IsBattleGroup(){return bg;}ObjectGuid GetLeaderGuid(){return leader;}bool IsLeader(ObjectGuid g){return leader==g;}
  bool IsAssistant(ObjectGuid guid){return assistant==guid;}unsigned GetMembersCount(){return count;}bool IsRaidGroup(){return raid;}};
 std::vector<std::unique_ptr<Group>> groups;
@@ -68,7 +83,13 @@ struct Player {
  std::string name,talents="0-0-10";WorldSession session;AI ai;Social social;Group* group=nullptr;Group* invite=nullptr;
  float landingDistance=0;unsigned summons=0,queueCancellations=0,raidPreparations=0;WorldLocation destination;
  bool IsWithinDist3d(float,float,float,float r){return landingDistance<=r;}WorldLocation const& GetTeleportDest(){return destination;}
- Map map;LfgData lfg;PlayerbotHolder holder;unsigned gear=0;int health=50,maxHealth=100,mana=5,maxMana=100,otherPower=23;
+ DungeonMap map;LfgData lfg;PlayerbotHolder holder;unsigned gear=0;int health=50,maxHealth=100,mana=5,maxMana=100,otherPower=23;
+ uint32 homeMap=0;unsigned departures=0;bool homeAccepted=true;
+ void GetHomebindLocation(float& x,float& y,float& z,uint32& m){x=y=z=0;m=homeMap;}
+ bool TeleportToHomebind(){if(!homeAccepted)return false;transfer=true;++departures;return true;}
+ void BreakCharmIncoming(){charm=false;}void BreakCharmOutgoing(){}
+ bool TaxiFlightInterrupt(){taxi=false;return true;}void OnTaxiFlightEject(){taxi=false;}
+ void InterruptNonMeleeSpells(bool){}
  uint32 GetMaxHealth(){return maxHealth;}void SetHealth(uint32 value){health=value;}
  uint32 GetMaxPower(int power){assert(power==POWER_MANA);return maxMana;}
  void SetPower(int power,uint32 value){assert(power==POWER_MANA);mana=value;}
@@ -125,7 +146,7 @@ std::string PlayerbotHolder::ProcessBotCommand(std::string cmd,ObjectGuid bg,Obj
  return ai::BotRecruitment::Prepare(o,b,cmd,"",[&](){++b->gear;return "random gear equipped";});
 }
 void reset(){players.clear();groups.clear();messages.clear();fakeNow+=100;sWorld.defer=false;sWorld.callbacks.clear();
- auto& s=State();s.incoming.clear();s.invites.clear();s.managedInvites.clear();s.summons.clear();s.reservations.clear();s.receipts.clear();s.preparation.clear();s.discoveryTime.clear();s.nextDiscovery=0;s.elapsed=0;sPlayerbotAIConfig.allowGuildBots=false;sPlayerbotAIConfig.recruitmentRevive=true;sWorld.cross=false;}
+ auto& s=State();s.incoming.clear();s.invites.clear();s.managedInvites.clear();s.summons.clear();s.reservations.clear();s.receipts.clear();s.preparation.clear();s.discoveryTime.clear();s.nextDiscovery=0;s.elapsed=0;sPlayerbotAIConfig.allowGuildBots=false;sPlayerbotAIConfig.recruitmentRevive=true;sWorld.cross=false;sMapStore.missing=false;sMapStore.entry.instanced=false;}
 void tick(unsigned seconds=0){fakeNow+=seconds;ai::BotRecruitment::Update(250);}
 void invite(Player& p,Player& b){WorldPacket packet;packet<<b.name;p.session.HandleGroupInviteOpcode(packet);}
 void command(Player& p,std::string args){assert(ai::BotRecruitment::HandleCommand(&p,"recruit v1 "+args));tick();}
@@ -204,6 +225,67 @@ int main(){
 
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=100;p.combat=true;command(p,"combat summon 2");assert(b.transfer&&has("teleport_started"));command(p,"combat summon 2");assert(b.transfer);b.transfer=false;b.distance=0;b.combat=true;tick();assert(has("arrived"));command(p,"prep prepare 2 gear");assert(b.gear==1&&b.combat&&p.combat);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.instance=1;ai::BotRecruitment::Queue(&p,&b,"summon");tick();assert(!b.transfer&&has("different_instance"));}
+ // Same-map public companions must leave the old raid before the final summon.
+ // Exercise the actual coordinator and departure helper for each core API.
+ for(bool dead:{false,true}) {reset();Player p(1,true),b(2);Group g;
+ g.leader=p.GetObjectGuid();g.raid=true;p.group=b.group=&g;b.ai.master=&p;
+ p.mapId=b.mapId=409;p.instance=29;b.instance=27;p.map.raid=b.map.raid=true;
+ g.binding.state=p.map.GetPersistentState();b.alive=!dead;
+ ai::BotRecruitment::Queue(&p,&b,"summon");tick();
+ assert(b.departures==1&&b.transfer&&b.summons==0&&b.health==50&&b.mana==5);
+ assert(!State().summons.at(b.id).started&&has("leaving_previous_instance")&&!has("arrived"));
+ tick();assert(b.departures==1&&b.summons==0&&b.ai.revivalChecks==0);
+ b.transfer=false;b.mapId=0;b.instance=0;tick();assert(b.summons==1&&b.transfer&&!has("arrived"));
+ assert(b.health==50&&b.mana==5&&b.alive==!dead);
+ b.transfer=false;b.mapId=409;b.instance=29;b.alive=true;tick();
+ assert(has("arrived")&&State().summons.empty()&&b.health==100&&b.mana==100&&b.departures==1);}
+ // Genuine entry/ownership denials must not move the bot out of its old raid.
+ for(unsigned denied=0;denied<8;++denied){reset();Player p(1,true),b(2);Group g;
+ g.leader=p.GetObjectGuid();g.raid=true;p.group=b.group=&g;b.ai.master=&p;
+ p.mapId=b.mapId=409;p.instance=29;b.instance=27;p.map.raid=b.map.raid=true;
+ g.binding.state=p.map.GetPersistentState();
+ if(denied==0){b.session.account=p.session.account;}
+ if(denied==1)g.bound=false;
+ if(denied==2)g.binding.state=b.map.GetPersistentState();
+ if(denied==3)p.map.count=p.map.max;
+ if(denied==4)p.map.data.active=true;
+ if(denied==5)sMapStore.entry.instanced=true;
+ if(denied==6)sMapStore.missing=true;
+ if(denied==7)b.homeAccepted=false;
+ ai::BotRecruitment::Queue(&p,&b,"summon");tick();
+ assert(!b.departures&&!b.summons&&!b.transfer&&has("different_instance")&&b.health==50);}
+ // A departure worldport fallback is bounded; it cannot repeatedly eject a bot.
+ reset();{Player p(1,true),b(2);Group g;g.leader=p.GetObjectGuid();g.raid=true;
+ p.group=b.group=&g;b.ai.master=&p;p.mapId=b.mapId=409;p.instance=29;b.instance=27;
+ p.map.raid=b.map.raid=true;g.binding.state=p.map.GetPersistentState();
+ ai::BotRecruitment::Queue(&p,&b,"summon");tick();b.transfer=false;tick();
+ assert(b.departures==1&&!b.summons&&has("different_instance")&&State().summons.empty());}
+ // Session/group changes cancel a staged request after departure as well.
+ reset();{Player p(1,true),b(2);Group g;g.leader=p.GetObjectGuid();g.raid=true;
+ p.group=b.group=&g;b.ai.master=&p;p.mapId=b.mapId=409;p.instance=29;b.instance=27;
+ p.map.raid=b.map.raid=true;g.binding.state=p.map.GetPersistentState();
+ ai::BotRecruitment::Queue(&p,&b,"summon");tick();b.transfer=false;b.mapId=0;b.group=nullptr;tick();
+ assert(b.departures==1&&!b.summons&&has("membership_changed")&&b.health==50);}
+ reset();{Player p(1,true),b(2);Group g;g.leader=p.GetObjectGuid();g.raid=true;
+ p.group=b.group=&g;b.ai.master=&p;p.mapId=b.mapId=409;p.instance=29;b.instance=27;
+ p.map.raid=b.map.raid=true;g.binding.state=p.map.GetPersistentState();
+ ai::BotRecruitment::Queue(&p,&b,"summon");tick();tick(41);
+ assert(b.departures==1&&!b.summons&&has("timed_out")&&State().summons.empty()&&b.health==50);}
+ // Mixed 40-person raids retain the two-native-transfers-per-tick work bound.
+ reset();{Player p(1,true);Group g;g.leader=p.GetObjectGuid();g.raid=true;g.count=40;
+ p.group=&g;p.mapId=409;p.instance=29;p.map.raid=true;g.binding.state=p.map.GetPersistentState();
+ std::vector<std::unique_ptr<Player>> bots;unsigned arrived=0;
+ for(unsigned i=2;i<41;++i){bots.emplace_back(new Player(i));auto& b=*bots.back();
+ b.group=&g;b.ai.master=&p;b.mapId=i%3?409:0;b.instance=i%3?27:0;b.map.raid=true;b.alive=i%2;
+ assert(ai::BotRecruitment::Queue(&p,&b,"summon"));}
+ for(unsigned n=0;n<80;++n){unsigned before=0;for(auto& b:bots)before+=b->departures+b->summons;
+ tick();unsigned after=0;for(auto& b:bots){after+=b->departures+b->summons;
+ if(b->transfer){b->transfer=false;b->mapId=b->summons?409:0;b->instance=b->summons?29:0;
+ if(b->summons)b->alive=true;}}
+ assert(after-before<=2);}
+ for(auto& b:bots){assert(b->mapId==409&&b->instance==29&&b->summons==1&&b->departures<=1);
+ assert(b->alive&&b->health==100&&b->mana==100);++arrived;}
+ assert(arrived==39&&State().summons.empty()&&!has("refused")&&!has("timed_out"));}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.alive=false;sPlayerbotAIConfig.recruitmentRevive=false;command(p,"s summon 2");assert(b.transfer&&has("teleport_started"));}
  reset();{Player p(1,true),b(2);b.ai.master=&p;command(p,"g prepare 2 gear");assert(b.gear==1);command(p,"g prepare 2 gear");assert(b.gear==1);command(p,"g summon 2");assert(has("id_conflict"));}
  reset();{Player p(1,true),b(2);b.ai.master=&p;unsigned count=0;auto apply=[&](){++count;return std::string("random gear equipped");};assert(ai::BotRecruitment::Prepare(&p,&b,"gear","",apply)=="random gear equipped");ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(count==1);b.talents="10-0-0";tick(1);ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(count==2);b.real=true;ai::BotRecruitment::Prepare(&p,&b,"gear","",apply);assert(count==2);}

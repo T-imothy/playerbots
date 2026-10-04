@@ -35,6 +35,39 @@ revival remain in use. A released bind is recorded as `PLAYERBOT_SUMMON` in the
 server log. This does not bypass genuine capacity, combat or access failures and
 does not transfer bots between two already occupied copies of the same raid.
 
+## Follow-up: companion already inside another copy
+
+After deploying and restarting the first revision, read-only live checks found
+Oriano (129047) online in Molten Core with permanent save 27. Vanillacoke (21464)
+led group 11, with 40 members and group save 29; the other members' MC saves
+matched 29. Restarting does not remove a character's persisted raid bind.
+
+The first revision deliberately excluded bots already on the destination map.
+That left a real gap: the coordinator rejected this case as `different_instance`
+before any bind reconciliation could run. Native same-map `TeleportTo` uses the
+near-teleport path and cannot move a bot between instances; clearing a bind while
+still attached to the previous instance is not a safe substitute for departure.
+The available evidence does not identify when Oriano originally acquired save 27.
+
+The coordinator now stages an authorized public raid companion's departure to
+its existing non-instanced homebind, retaining its original bind during that
+worldport. It waits for the native transfer to complete, then performs the normal
+explicit summon; the existing reconciliation clears the conflicting destination
+bind immediately before entry. Final arrival, resurrection and resource refill
+are confirmed in the requested instance, never at the intermediate homebind.
+Private characters and dungeon mismatches remain excluded. The destination must
+match the shared raid group's save and pass capacity/encounter preflight checks.
+There is at most one departure per request, within the existing deadline and
+two-transfer-per-tick budget. Membership/session changes cancel the request;
+a rejected departure or fallback cannot loop or report arrival.
+
+The production coordinator regression now covers this staged path for all three
+core APIs, alive/dead companions, ACK waiting, membership cancellation, rejected
+homebinds, full/active raids, mismatched saves, private accounts and fallback.
+A mixed one-human/39-bot raid exercises the two-transfer budget and final arrival
+with companions both outside MC and inside the wrong MC copy. These controlled
+tests do not replace a live 40-person raid test after deployment.
+
 Validation: six regression scripts pass, including the production reconciliation
 body for Classic/TBC/Wrath APIs and a one-human/39-bot roster with nine initially
 matching saves. Tests also cover private/human saves, another current instance,

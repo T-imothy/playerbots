@@ -39,6 +39,7 @@ namespace
         unsigned size = 40;
         uint32 map = 0, instance = 0;
         bool started = false;
+        bool leftPreviousInstance = false;
         unsigned attempts = 0;
         uint64 nextAttempt = 0;
         float x = 0, y = 0, z = 0;
@@ -229,6 +230,53 @@ namespace
         // Bot combat, death, control, flights and queues are cancelled by the
         // explicit summon action. Never wait for autonomous activity to finish.
         return "";
+    }
+
+    bool LeavePreviousRaid(Player* owner, Player* bot)
+    {
+        // A native same-map teleport is a near teleport, even when the two
+        // players occupy different raid copies. Leave the old map first and
+        // retain its bind until the worldport has finished.
+        Group* group = Party(owner);
+        Map* destination = owner->GetMap();
+        if (!owner->isRealPlayer() || bot->isRealPlayer() ||
+            !sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()) ||
+            !group || group != Party(bot) || group != owner->GetGroup() ||
+            group != bot->GetGroup() || !group->IsRaidGroup() ||
+            !destination || !destination->IsRaid() || !bot->GetMap()->IsRaid() ||
+            owner->GetMapId() != bot->GetMapId() ||
+            owner->GetInstanceId() == bot->GetInstanceId())
+            return false;
+#ifdef MANGOSBOT_ZERO
+        InstanceGroupBind* groupBind = group->GetBoundInstance(owner->GetMapId());
+#else
+        InstanceGroupBind* groupBind = group->GetBoundInstance(destination, destination->GetDifficulty());
+#endif
+        if (!groupBind || groupBind->state != destination->GetPersistentState())
+            return false;
+        DungeonMap* raid = static_cast<DungeonMap*>(destination);
+        if (raid->GetPlayersCountExceptGMs() >= raid->GetMaxPlayers() ||
+            (raid->GetInstanceData() && raid->GetInstanceData()->IsEncounterInProgress()))
+            return false;
+
+        float x, y, z;
+        uint32 homeMap;
+        bot->GetHomebindLocation(x, y, z, homeMap);
+        MapEntry const* home = sMapStore.LookupEntry(homeMap);
+        if (!home || home->Instanceable() || homeMap == bot->GetMapId())
+            return false;
+        bot->BreakCharmIncoming();
+        bot->BreakCharmOutgoing();
+        if (bot->HasCharmer()) return false;
+        if (!bot->TaxiFlightInterrupt() && bot->IsTaxiFlying())
+            bot->OnTaxiFlightEject();
+        bot->InterruptNonMeleeSpells(false);
+        if (!bot->TeleportToHomebind()) return false;
+        SummonAction::CancelAutonomousQueues(bot);
+        bot->GetPlayerbotAI()->ChangeStrategy("-lfg,-bg", BotState::BOT_STATE_NON_COMBAT);
+        sLog.outString("PLAYERBOT_SUMMON: public bot %u leaving previous raid instance for group map %u instance %u requester %u",
+            bot->GetGUIDLow(), owner->GetMapId(), owner->GetInstanceId(), owner->GetGUIDLow());
+        return true;
     }
     bool Arrived(Player* owner, Player* bot)
     {
@@ -658,7 +706,16 @@ void BotRecruitment::Update(uint32 diff)
             ++teleports;
             if (owner->GetMapId() == bot->GetMapId() && owner->GetInstanceId() != bot->GetInstanceId() &&
                 owner->GetMap()->Instanceable())
-            { Report(request,"refused","different_instance"); it = state.summons.erase(it); continue; }
+            {
+                // Only one departure per request. A failed/fallback worldport
+                // must not become a loop between two copies of the same raid.
+                if (request.started || request.leftPreviousInstance || !LeavePreviousRaid(owner, bot))
+                { Report(request,"refused","different_instance"); it = state.summons.erase(it); continue; }
+                request.leftPreviousInstance = true;
+                request.waitReason = "leaving_previous_instance";
+                Report(request,"summon_pending",request.waitReason);
+                ++it; continue;
+            }
             SummonAction action(bot->GetPlayerbotAI());
             Event event("summon", "", owner);
             request.map = owner->GetMapId(); request.instance = owner->GetInstanceId();
