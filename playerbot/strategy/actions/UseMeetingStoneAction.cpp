@@ -208,6 +208,52 @@ void SummonAction::CancelAutonomousQueues(Player* bot)
     }
 }
 
+void SummonAction::PrepareRaidBinding(Player* requester, Player* player)
+{
+    if (!requester || !player || !requester->isRealPlayer() || player->isRealPlayer() ||
+        !player->GetPlayerbotAI() || !player->GetSession() ||
+        !sPlayerbotAIConfig.IsInRandomAccountList(player->GetSession()->GetAccountId()) ||
+        !requester->IsInWorld() || !player->IsInWorld() ||
+        requester->IsBeingTeleported() || player->IsBeingTeleported())
+        return;
+
+    Group* group = requester->GetGroup();
+    Map* destination = requester->GetMap();
+    if (!group || group != player->GetGroup() || !group->IsRaidGroup() ||
+        !destination || !destination->IsRaid() ||
+        player->GetMapId() == requester->GetMapId())
+        return;
+
+    // Never discard a bot's current instance or change a human/private alt's
+    // lockout. Only reconcile a public companion outside the destination raid,
+    // and only with the already established save of its own group.
+#ifdef MANGOSBOT_ZERO
+    InstanceGroupBind* groupBind = group->GetBoundInstance(requester->GetMapId());
+    InstancePlayerBind* playerBind = player->GetBoundInstance(requester->GetMapId());
+#else
+    Difficulty const difficulty = destination->GetDifficulty();
+    InstanceGroupBind* groupBind = group->GetBoundInstance(destination, difficulty);
+    InstancePlayerBind* playerBind = player->GetBoundInstance(requester->GetMapId(), difficulty);
+#endif
+    if (!groupBind || groupBind->state != destination->GetPersistentState() ||
+        !playerBind || !playerBind->state || playerBind->state == groupBind->state)
+        return;
+
+    DungeonMap* raid = static_cast<DungeonMap*>(destination);
+    if (raid->GetPlayersCountExceptGMs() >= raid->GetMaxPlayers() ||
+        (raid->GetInstanceData() && raid->GetInstanceData()->IsEncounterInProgress()))
+        return;
+
+    uint32 const oldInstance = playerBind->state->GetInstanceId();
+#ifdef MANGOSBOT_ZERO
+    player->UnbindInstance(requester->GetMapId());
+#else
+    player->UnbindInstance(requester->GetMapId(), difficulty);
+#endif
+    sLog.outString("PLAYERBOT_SUMMON: public bot %u released old raid save %u; group destination map %u instance %u requester %u",
+        player->GetGUIDLow(), oldInstance, requester->GetMapId(), requester->GetInstanceId(), requester->GetGUIDLow());
+}
+
 bool SummonAction::TeleportForMaster(Player* requester, Player *summoner, Player *player)
 {
     if (!requester || !summoner || !player || player != bot || player->isRealPlayer() ||
@@ -272,6 +318,8 @@ bool SummonAction::TeleportForMaster(Player* requester, Player *summoner, Player
                 // teleport stops the summoned bot's combat; the requester stays in combat.
                 // TeleportTo owns access checks, pets and transfer state. True
                 // means accepted (possibly delayed), not a completed worldport.
+                if (requester == summoner)
+                    PrepareRaidBinding(requester, player);
                 if (!player->TeleportTo(mapId, x, y, z, summoner->GetOrientation()))
                 {
                     ai->TellPlayerNoFacing(requester, "The server refused the summon destination.");

@@ -66,7 +66,7 @@ struct Player {
  uint32 id,level=43,cls=1,guild=0,team=0,mapId=1,instance=0;bool real=false,world=true,transfer=false,alive=true,combat=false,
  taxi=false,transport=false,charm=false,bg=false,bgQueue=false,afk=false,los=true;float distance=0;
  std::string name,talents="0-0-10";WorldSession session;AI ai;Social social;Group* group=nullptr;Group* invite=nullptr;
- float landingDistance=0;unsigned summons=0,queueCancellations=0;WorldLocation destination;
+ float landingDistance=0;unsigned summons=0,queueCancellations=0,raidPreparations=0;WorldLocation destination;
  bool IsWithinDist3d(float,float,float,float r){return landingDistance<=r;}WorldLocation const& GetTeleportDest(){return destination;}
  Map map;LfgData lfg;PlayerbotHolder holder;unsigned gear=0;int health=50,maxHealth=100,mana=5,maxMana=100,otherPower=23;
  uint32 GetMaxHealth(){return maxHealth;}void SetHealth(uint32 value){health=value;}
@@ -104,7 +104,7 @@ struct EventOwner {Player* p=nullptr;ObjectGuid guid;EventOwner(Player* b=nullpt
  Player* Get()const{auto it=players.find(guid.value);return it!=players.end()&&it->second==p?p:nullptr;}};
 struct Event {Player* owner;Event(std::string,std::string,Player* p):owner(p){}};
 struct WhoAction{explicit WhoAction(AI*){}std::string QuerySpec(std::string){return "Warrior (43 lvl), 100 GS (green)";}};
-struct SummonAction{static void CancelAutonomousQueues(Player* p){++p->queueCancellations;p->bgQueue=false;p->session.m_lfgInfo.queued=false;p->lfg.state=0;}AI* ai;explicit SummonAction(AI* a):ai(a){}bool ExecuteImmediate(Event&){for(auto& x:players)if(&x.second->ai==ai){x.second->transfer=true;++x.second->summons;return true;}return false;}};
+struct SummonAction{static void PrepareRaidBinding(Player* owner,Player* p){assert(owner->group&&p->group==owner->group);++p->raidPreparations;}static void CancelAutonomousQueues(Player* p){++p->queueCancellations;p->bgQueue=false;p->session.m_lfgInfo.queued=false;p->lfg.state=0;}AI* ai;explicit SummonAction(AI* a):ai(a){}bool ExecuteImmediate(Event&){for(auto& x:players)if(&x.second->ai==ai){x.second->transfer=true;++x.second->summons;return true;}return false;}};
 }
 '''
 tests=r'''
@@ -173,7 +173,7 @@ int main(){
  reset();{Player p(1,true),b(2);b.team=1;assert(ai::BotRecruitment::Eligibility(&p,&b)=="wrong_faction");sWorld.cross=true;assert(ai::BotRecruitment::Eligibility(&p,&b).empty());b.bgQueue=true;assert(ai::BotRecruitment::Eligibility(&p,&b).empty());}
  reset();{Player p(1,true),b(2);sWorld.defer=true;b.bgQueue=true;invite(p,b);tick();
  assert(!b.group&&b.invite&&b.queueCancellations==1);tick();assert(!b.group&&b.queueCancellations==1);
- sWorld.Drain();tick();assert(b.group&&b.ai.master==&p);}
+ sWorld.Drain();tick();assert(b.group&&b.ai.master==&p&&b.raidPreparations==1);}
  reset();{Player p(1,true),other(3,true),b(2);sWorld.defer=true;invite(p,b);tick();
  Group external;external.leader=other.GetObjectGuid();b.group=&external;sWorld.Drain();tick();
  assert(b.group==&external&&b.ai.master!=&p&&!b.invite);}

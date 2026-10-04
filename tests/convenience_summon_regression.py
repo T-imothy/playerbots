@@ -59,7 +59,8 @@ struct PlayerbotAI {
 };
 struct Config {bool recruitmentRevive=true;} sPlayerbotAIConfig;
 struct Facade {bool UnitIsDead(Player* p){return !p->alive;}bool IsAlive(Player* p){return p->alive;}} sServerFacade;
-struct SummonAction {Player* bot;PlayerbotAI* ai;float GetFollowAngle(){return 0;}bool Teleport(Player*,Player*,Player*);static void CancelAutonomousQueues(Player*){};};
+int bindingPreparations=0;
+struct SummonAction {Player* bot;PlayerbotAI* ai;float GetFollowAngle(){return 0;}bool Teleport(Player*,Player*,Player*);static void CancelAutonomousQueues(Player*){};static void PrepareRaidBinding(Player*,Player*){++bindingPreparations;};};
 __TELEPORT__
 __QUEUE__
 __COMPLETE__
@@ -67,7 +68,7 @@ int main(){
  Map from,to;Player bot,leader;PlayerbotAI ai{&bot};SummonAction action{&bot,&ai};
  auto reset=[&](){from={};to={};bot=Player{};leader=Player{};bot.map=&from;leader.map=&to;leader.mapId=1;leader.real=true;ai.safe=true;ai.pendingSummonRevival={};positionWrites=0;sPlayerbotAIConfig.recruitmentRevive=true;};
  auto reject=[&](){assert(!action.Teleport(&leader,&leader,&bot));assert(bot.motion.clears==0 && positionWrites==0 && bot.resurrections==0);};
- reset();assert(action.Teleport(&leader,&leader,&bot));assert(bot.teleports==1 && bot.motion.clears==0 && positionWrites==2);
+ reset();assert(action.Teleport(&leader,&leader,&bot));assert(bot.teleports==1 && bot.motion.clears==0 && positionWrites==2 && bindingPreparations==1);
  // Far teleport accepted with no world attachment must not reset follow.
  reset();bot.detachOnTeleport=true;assert(action.Teleport(&leader,&leader,&bot));
  assert(!bot.IsInWorld() && bot.IsBeingTeleported() && bot.motion.clears==0);

@@ -594,6 +594,10 @@ void BotRecruitment::Update(uint32 diff)
             {
                 // Preserve health, death state, equipment, talents and combat.
                 bot->GetPlayerbotAI()->SetMaster(owner);
+                // The legacy invitation action reset off-map bot raid binds.
+                // Managed human invites must also prepare public companions for
+                // the requester's established raid save, without resetting players.
+                SummonAction::PrepareRaidBinding(owner, bot);
                 bot->GetPlayerbotAI()->ChangeStrategy("-lfg,-bg,+" + bot->GetPlayerbotAI()->GetDefaultMovementStrategy(),BotState::BOT_STATE_NON_COMBAT);
                 Report(request,"joined","ok");
             }

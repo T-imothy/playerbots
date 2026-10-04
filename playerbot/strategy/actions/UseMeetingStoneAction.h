@@ -13,6 +13,8 @@ namespace ai
         virtual bool Execute(Event& event) override;
         bool ExecuteImmediate(Event& event);
         static void CancelAutonomousQueues(Player* bot);
+        // World-thread only: public companions follow their human raid's save.
+        static void PrepareRaidBinding(Player* requester, Player* bot);
 
     protected:
         bool Teleport(Player* requester, Player *summoner, Player *player);
