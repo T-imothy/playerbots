@@ -38,6 +38,7 @@ namespace
         uint64 expires = 0;
         unsigned size = 40;
         uint32 map = 0, instance = 0;
+        uint32 entryMap = 0, entrySourceMap = 0, entrySourceInstance = 0;
         bool started = false;
         bool leftPreviousInstance = false;
         unsigned attempts = 0;
@@ -307,6 +308,10 @@ namespace
         if (!Connected(owner) || request.ownerIdentity.Get() != owner) return;
         if (request.bot && request.botIdentity.Get() != bot)
         { Report(request,"refused","bot_session_changed"); return; }
+        if (request.entryMap && (Party(owner) != request.membership ||
+            Party(bot) != request.membership || !request.membership ||
+            request.membership->GetLeaderGuid() != request.leader))
+        { Report(request,"refused","membership_changed"); return; }
         if (limits::Expired(Now(), request.expires))
         {
             if (request.operation == "accept") ClearInvite(request);
@@ -557,6 +562,50 @@ bool BotRecruitment::Queue(Player* owner, Player* bot, const std::string& operat
     return false;
 }
 
+void BotRecruitment::FollowMoltenCoreEntry(Player* owner, const WorldPacket& packet)
+{
+    if (!Connected(owner) || !owner->isRealPlayer() ||
+        !owner->IsBeingTeleportedFar() || owner->GetMapId() != 0 ||
+        owner->GetTeleportDest().mapid != 409 || packet.size() < 8)
+        return;
+    WorldPacket copy(packet);
+    copy.rpos(0);
+    ObjectGuid npc;
+    copy >> npc;
+    // Lothos Riftwaker is the same creature entry in all three client eras.
+    if (!npc.IsCreature() || npc.GetEntry() != 14387)
+        return;
+    Group* group = Party(owner);
+    if (!group || !group->IsRaidGroup())
+        return;
+
+    unsigned queued = 0;
+    for (GroupReference* member = group->GetFirstMember(); member; member = member->next())
+    {
+        Player* follower = member->getSource();
+        if (!IsBot(follower) || !Control(owner, follower).empty() ||
+            !follower->IsInWorld() || follower->IsBeingTeleported() ||
+            !follower->IsAlive() || follower->IsInCombat() || follower->HasCharmer() ||
+            follower->IsTaxiFlying() || follower->GetTransport() ||
+            follower->GetMapId() != owner->GetMapId() ||
+            follower->GetInstanceId() != owner->GetInstanceId() ||
+            follower->GetDistance(owner) > sPlayerbotAIConfig.sightDistance ||
+            !follower->GetPlayerbotAI()->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT))
+            continue;
+        Request request;
+        request.owner = owner->GetObjectGuid(); request.bot = follower->GetObjectGuid();
+        request.ownerIdentity = EventOwner(owner); request.botIdentity = EventOwner(follower);
+        request.operation = "summon"; request.expires = Now() + limits::SummonSeconds;
+        request.entryMap = 409; request.entrySourceMap = owner->GetMapId();
+        request.entrySourceInstance = owner->GetInstanceId();
+        request.membership = group; request.leader = group->GetLeaderGuid();
+        if (Enqueue(request)) ++queued;
+        else Report(request, "refused", "busy");
+    }
+    sLog.outString("PLAYERBOT_RAID_ENTRY: requester %u Lothos transfer accepted; queued %u nearby raid followers",
+        owner->GetGUIDLow(), queued);
+}
+
 bool BotRecruitment::HandleCommand(Player* owner, const std::string& command)
 {
     if (command.compare(0,8,"recruit ") != 0) return false;
@@ -675,6 +724,23 @@ void BotRecruitment::Update(uint32 diff)
         }
         if (!reason.empty())
         { Report(request,reason == "deadline" ? "timed_out" : "refused",reason); it = state.summons.erase(it); continue; }
+        if (request.entryMap && owner->IsInWorld() && !owner->IsBeingTeleported())
+        {
+            if (owner->GetMapId() != request.entryMap)
+            { Report(request,"refused","raid_entry_failed"); it = state.summons.erase(it); continue; }
+            if (!request.started && bot->IsInWorld() && !bot->IsBeingTeleported())
+            {
+                // An independently completed NPC/portal entry needs no second
+                // teleport or refill. Never drag a follower from a new location.
+                if (bot->GetMapId() == request.entryMap && bot->GetInstanceId() == owner->GetInstanceId())
+                { Report(request,"arrived","already_inside"); it = state.summons.erase(it); continue; }
+                if (bot->GetMapId() != request.entrySourceMap || bot->GetInstanceId() != request.entrySourceInstance ||
+                    !bot->IsAlive() || bot->IsInCombat() || owner->IsInCombat() || bot->HasCharmer() ||
+                    bot->IsTaxiFlying() || bot->GetTransport() ||
+                    !bot->GetPlayerbotAI()->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT))
+                { Report(request,"refused","raid_follow_cancelled"); it = state.summons.erase(it); continue; }
+            }
+        }
         if (request.started) bot->GetPlayerbotAI()->CompleteSummonRevival();
         // Confirm the accepted landing point, not the requester's later position.
         // A moving leader must not turn a successful teleport into a timeout.

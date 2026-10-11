@@ -1011,6 +1011,11 @@ void PlayerbotMgr::HandleCommand(uint32 type, const std::string& text, uint32 la
 
 void PlayerbotMgr::HandleMasterIncomingPacket(const WorldPacket& packet)
 {
+    // The native gossip handler has already run. Capture nearby followers only
+    // when Lothos actually accepted an MC transfer, then wait for worldport ACK.
+    if (packet.GetOpcode() == CMSG_GOSSIP_SELECT_OPTION)
+        BotRecruitment::FollowMoltenCoreEntry(GetMaster(), packet);
+
     ForEachPlayerbot([&](Player* bot)
     {
         bot->GetPlayerbotAI()->HandleMasterIncomingPacket(packet);

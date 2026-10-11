@@ -199,6 +199,23 @@ int main(){
  ai.tank=true;assert(!mc.GetTarget());ai.tank=false;
  ai.healer=true;assert(!mc.GetTarget());ai.healer=false;
  second.breakCC=true;assert(!mc.GetTarget());second.breakCC=false;
+ // Firelord trash: a marked parent must not suppress live spawn cleanup.
+ ai=PlayerbotAI{};bot=Player{};boss=Unit{};add=Unit{};second=Unit{};
+ bot.map=&map;bot.mapId=409;boss.map=add.map=second.map=&map;
+ boss.entry=11668;boss.guid=10;add.entry=second.entry=12265;add.guid=20;second.guid=21;
+ ai.units={{1,&boss},{2,&add},{3,&second}};ai.attackers={1};ai.possible={1,2,3};ai.current=&boss;ai.marked=&boss;
+ assert(mc.GetTarget()==&add); // equal health: stable GUID focus
+ add.health=70;second.health=20;assert(mc.GetTarget()==&second);
+ ai.current=&add;assert(mc.GetTarget()==&second); // focus the wounded spawn
+ ai.commanded=1;assert(!mc.GetTarget());ai.commanded=0;
+ second.breakCC=true;assert(mc.GetTarget()==&add);second.breakCC=false;
+ second.phase=2;assert(mc.GetTarget()==&add);second.phase=1;
+ second.combat=false;assert(mc.GetTarget()==&add);second.combat=true;
+ second.alive=add.alive=false;assert(mc.GetTarget()==&boss); // resume the Firelord
+ boss.alive=false;assert(!mc.GetTarget());add.alive=true;assert(mc.GetTarget()==&add); // clean up surviving children
+ ai.healer=true;assert(!mc.GetTarget());ai.healer=false;ai.tank=true;assert(!mc.GetTarget());ai.tank=false;
+ bot.teleport=true;assert(!mc.GetTarget());bot.teleport=false;
+ add.attackable=false;assert(!mc.GetTarget());add.attackable=true;
  std::cout<<"PASS: actual encounter add selection: CC, marks, roles, stable target, death, transition, instance, expansion\n";
 }
 '''.replace("__METHODS__", "\n".join(methods))

@@ -5,6 +5,7 @@
 #include <string>
 
 class Player;
+class WorldPacket;
 
 namespace ai
 {
@@ -13,6 +14,7 @@ namespace ai
     public:
         // Queue only GUIDs. Update is called on the world thread, outside map workers.
         static bool Queue(Player* requester, Player* bot, const std::string& operation);
+        static void FollowMoltenCoreEntry(Player* requester, const WorldPacket& packet);
         static bool HandleCommand(Player* requester, const std::string& command);
         static bool CanInvite(Player* requester, Player* bot);
         static void OnInvite(Player* requester, Player* bot);

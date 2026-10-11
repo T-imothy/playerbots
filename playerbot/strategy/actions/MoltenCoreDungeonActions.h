@@ -75,21 +75,39 @@ namespace ai
         MagmadarMoveAwayAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "move away from magmadar", 11982, 31.0f) {}
     };
 
-    class MoveToMCRuneAction : public MoveToAction
+    bool MoltenCoreDouseItemAvailable(PlayerbotAI* ai, uint32 itemId = 0);
+    GameObject* MoltenCoreRuneTarget(PlayerbotAI* ai, bool close);
+
+    class MoveToMCRuneAction : public MovementAction
     {
     public:
-        MoveToMCRuneAction(PlayerbotAI* ai) : MoveToAction(ai, "move to mc rune") { qualifier = "entry filter::{gos in sight,mc runes}"; }
+        MoveToMCRuneAction(PlayerbotAI* ai) : MovementAction(ai, "move to mc rune") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
     };
 
-    class DouseMCRuneActionAqual : public UseItemIdAction
+    class DouseMCRuneAction : public UseItemIdAction
     {
     public:
-        DouseMCRuneActionAqual(PlayerbotAI* ai) : UseItemIdAction(ai, "douse mc rune aqual") { qualifier = "{17333,entry filter::{gos close,mc runes}}"; }
+        DouseMCRuneAction(PlayerbotAI* ai, const char* name, uint32 item) : UseItemIdAction(ai, name), itemId(item) { Qualify(int32(item)); }
+        bool isPossible() override;
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    protected:
+        uint32 GetItemId() override { return itemId; }
+    private:
+        uint32 itemId;
     };
 
-    class DouseMCRuneActionEternal : public UseItemIdAction
+    class DouseMCRuneActionAqual : public DouseMCRuneAction
     {
     public:
-        DouseMCRuneActionEternal(PlayerbotAI* ai) : UseItemIdAction(ai, "douse mc rune eternal") { qualifier = "{22754,entry filter::{gos close,mc runes}}"; }
+        DouseMCRuneActionAqual(PlayerbotAI* ai) : DouseMCRuneAction(ai, "douse mc rune aqual", 17333) {}
+    };
+
+    class DouseMCRuneActionEternal : public DouseMCRuneAction
+    {
+    public:
+        DouseMCRuneActionEternal(PlayerbotAI* ai) : DouseMCRuneAction(ai, "douse mc rune eternal", 22754) {}
     };
 }

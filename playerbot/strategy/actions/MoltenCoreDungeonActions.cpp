@@ -7,6 +7,7 @@
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
+#include "AI/ScriptDevAI/include/sc_instance.h"
 
 using namespace ai;
 
@@ -244,10 +245,37 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
     // Manual attack commands and configured raid marks remain authoritative.
     Unit* commanded = ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"));
     if (valid(commanded)) return nullptr;
-    Unit* marked = ai->GetUnit(AI_VALUE(ObjectGuid, "rti target"));
-    if (valid(marked) && (bossEntry || marked->GetEntry() != 11671)) return nullptr;
-
     Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
+    Unit* marked = ai->GetUnit(AI_VALUE(ObjectGuid, "rti target"));
+    if (!bossEntry)
+    {
+        // Firelords repeatedly summon; living Lava Spawns split. Clean up the
+        // engaged spawns first, then focus a Firelord. A skull on the parent
+        // must not pin DPS there while its children multiply. Direct attack
+        // commands above remain an explicit override; tanks retain their mob.
+        Unit* fireTarget = nullptr;
+        unsigned firePriority = 0;
+        for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (!valid(unit)) continue;
+            unsigned candidate = unit->GetEntry() == 12265 ? 2 : (unit->GetEntry() == 11668 ? 1 : 0);
+            if (!candidate) continue;
+            if (!fireTarget || candidate > firePriority || (candidate == firePriority &&
+                (unit->GetHealthPercent() < fireTarget->GetHealthPercent() ||
+                 (unit->GetHealthPercent() == fireTarget->GetHealthPercent() &&
+                  unit->GetObjectGuid() < fireTarget->GetObjectGuid()))))
+            {
+                fireTarget = unit; firePriority = candidate;
+            }
+        }
+        if (fireTarget)
+        {
+            if (valid(marked) && marked->GetEntry() == fireTarget->GetEntry()) return marked;
+            return fireTarget;
+        }
+    }
+    if (valid(marked) && (bossEntry || marked->GetEntry() != 11671)) return nullptr;
     if (!bossEntry)
     {
         // Balance the engaged small Core Hounds, not Ancient Core Hounds or
@@ -417,11 +445,20 @@ bool MoltenCoreSupportAction::Select(std::string& spell, Unit*& target)
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsRealPlayer()) return false;
     Unit* boss = RaidBoss(ai);
-    if (!boss) return false;
     const auto ready = [&](const char* name, Unit* unit) {
         if (!unit || !ai->CanCastSpell(name, unit, 0)) return false;
         spell = name; target = unit; return true;
     };
+    // Soul Burn silences damage dealers, allowing spawns to multiply. This
+    // trash dispel must not depend on a raid boss being in the target list.
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (!RaidMember(bot, member) || !member->HasAura(19393)) continue;
+        for (const char* name : {"dispel magic", "cleanse"})
+            if (ready(name, member)) return true;
+    }
+    if (!boss) return false;
     // Dominate Mind makes the raid member hostile: ordinary friendly-party
     // dispel selection deliberately excludes that player. Offensive Dispel
     // Magic can remove the verified aura; native eligibility still decides.
@@ -534,4 +571,99 @@ bool MoltenCoreSupportAction::Execute(Event& event)
     if (!ai->CastSpell(spell, target, nullptr, false, &duration)) return false;
     SetDuration(duration);
     return true;
+}
+
+bool ai::MoltenCoreDouseItemAvailable(PlayerbotAI* ai, uint32 itemId)
+{
+#ifdef MANGOSBOT_TWO
+    // Native Wrath extinguishes runes on boss death; no player dousing.
+    return false;
+#else
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->GetMapId() != 409 || bot->IsInCombat() || !bot->GetGroup() || ai->IsRealPlayer() ||
+        bot->IsNonMeleeSpellCasted(false, false, true)) return false;
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (member && member->IsInWorld() && bot->IsInMap(member) && member->IsInCombat()) return false;
+    }
+    for (uint32 item : {22754u, 17333u})
+    {
+        // Real inventory is required even when generic bot item cheats are on.
+        if ((itemId && itemId != item) || !bot->HasItemCount(item, 1)) continue;
+        UseItemIdAction use(ai);
+        use.Qualify(int32(item));
+        if (use.isPossible() && use.isUseful()) return true;
+    }
+    return false;
+#endif
+}
+
+GameObject* ai::MoltenCoreRuneTarget(PlayerbotAI* ai, bool close)
+{
+    if (!MoltenCoreDouseItemAvailable(ai)) return nullptr;
+    Player* bot = ai->GetBot();
+    InstanceData* instance = bot->GetMap()->GetInstanceData();
+    if (!instance) return nullptr;
+    GameObject* selected = nullptr;
+    for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest game objects")->Get())
+    {
+        GameObject* rune = ai->GetGameObject(guid);
+        if (!rune || !rune->IsInWorld() || !bot->IsInMap(rune) || !sServerFacade.isSpawned(rune) ||
+            rune->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE) || rune->GetGoState() != GO_STATE_READY ||
+            rune->GetLootState() != GO_READY) continue;
+        GameObject* flames = rune->GetLinkedTrap();
+        if (flames && sServerFacade.isSpawned(flames) && flames->GetLootState() == GO_READY) continue;
+        uint32 encounter;
+        // Same rune-to-encounter mapping as native Classic/TBC molten_core.h.
+        switch (rune->GetEntry())
+        {
+            case 176956: encounter = 1; break;
+            case 176957: encounter = 2; break;
+            case 176955: encounter = 3; break;
+            case 176953: encounter = 4; break;
+            case 176952: encounter = 5; break;
+            case 176954: encounter = 6; break;
+            case 176951: encounter = 7; break;
+            default: continue;
+        }
+        if (instance->GetData(encounter) != DONE || bot->GetDistance(rune) > sPlayerbotAIConfig.sightDistance ||
+            (close && bot->GetDistance(rune) > INTERACTION_DISTANCE)) continue;
+        if (!selected || bot->GetDistance(rune) < bot->GetDistance(selected) ||
+            (bot->GetDistance(rune) == bot->GetDistance(selected) && rune->GetObjectGuid() < selected->GetObjectGuid())) selected = rune;
+    }
+    return selected;
+}
+
+bool MoveToMCRuneAction::isUseful()
+{
+    GameObject* rune = MoltenCoreRuneTarget(ai, false);
+    return rune && ai->CanMove() && bot->GetDistance(rune) > INTERACTION_DISTANCE;
+}
+
+bool MoveToMCRuneAction::Execute(Event& event)
+{
+    GameObject* rune = MoltenCoreRuneTarget(ai, false);
+    if (!rune || !ai->CanMove() || bot->GetDistance(rune) <= INTERACTION_DISTANCE) return false;
+    return MoveTo(bot->GetMapId(), rune->GetPositionX(), rune->GetPositionY(), rune->GetPositionZ());
+}
+
+bool DouseMCRuneAction::isPossible()
+{
+    return MoltenCoreDouseItemAvailable(ai, GetItemId()) && UseItemIdAction::isPossible();
+}
+
+bool DouseMCRuneAction::isUseful()
+{
+    return isPossible() && MoltenCoreRuneTarget(ai, true) && UseItemIdAction::isUseful();
+}
+
+bool DouseMCRuneAction::Execute(Event& event)
+{
+    // Re-resolve the object and recheck possession/cooldown at execution time.
+    // The native item spell handles the rune, consumption and cooldown.
+    if (!isPossible() || !UseItemIdAction::isUseful()) return false;
+    GameObject* rune = MoltenCoreRuneTarget(ai, true);
+    return rune && UseItem(event.getOwner(), GetItemId(), rune);
 }

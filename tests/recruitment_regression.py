@@ -35,7 +35,8 @@ enum {HIGHGUID_PLAYER, CHAT_MSG_WHISPER, LANG_UNIVERSAL, CHAT_TAG_NONE,
 struct PlayerbotSecurityLevel {static constexpr int PLAYERBOT_SECURITY_ALLOW_ALL=0,PLAYERBOT_SECURITY_INVITE=1;};
 struct BotState {static constexpr int BOT_STATE_NON_COMBAT=0;};
 struct ObjectGuid {
- uint32 value=0; ObjectGuid()=default; ObjectGuid(int,uint32 n):value(n){}
+ uint32 value=0; int kind=0; ObjectGuid()=default; ObjectGuid(int k,uint32 n):value(n),kind(k){}
+ bool IsCreature()const{return kind==1;} uint32 GetEntry()const{return value;}
  uint32 GetCounter()const{return value;} explicit operator bool()const{return value!=0;}
  bool operator==(ObjectGuid x)const{return value==x.value;} bool operator!=(ObjectGuid x)const{return value!=x.value;}
 };
@@ -43,10 +44,13 @@ struct Player; struct Group; struct WorldSession;
 std::map<uint32,Player*> players;
 std::vector<std::string> messages;
 struct ObjectMgr {Player* GetPlayer(ObjectGuid g){auto it=players.find(g.value);return it==players.end()?nullptr:it->second;}} sObjectMgr;
-struct WorldPacket {std::string name; WorldPacket& operator<<(std::string const& s){name=s;return *this;} WorldPacket& operator<<(uint32){return *this;}};
+struct WorldPacket {std::string name;ObjectGuid npc{1,14387};unsigned bytes=8;
+ unsigned size()const{return bytes;}void rpos(unsigned){}WorldPacket&operator>>(ObjectGuid&g){g=npc;return *this;}
+ WorldPacket& operator<<(std::string const& s){name=s;return *this;} WorldPacket& operator<<(uint32){return *this;}};
 struct Social {bool ignored=false;bool HasIgnore(ObjectGuid){return ignored;}};
 struct Security {bool allow=true;int LevelFor(Player*,void*,bool,bool ignoreQueues){assert(ignoreQueues);return allow?1:-1;}bool CheckLevelFor(int,bool,Player*){return allow;}};
-struct AI {Player* master=nullptr; Security security; int changes=0,revivalChecks=0;
+struct AI {Player* master=nullptr; Security security; bool following=true; int changes=0,revivalChecks=0;
+ bool HasStrategy(std::string,int){return following;}
  void CompleteSummonRevival(){++revivalChecks;}
  Player* GetMaster(){return master;} void SetMaster(Player* p){master=p;} Security* GetSecurity(){return &security;}
  void ChangeStrategy(std::string const&,int){++changes;} std::string GetDefaultMovementStrategy(){return "follow";}};
@@ -63,14 +67,17 @@ struct DungeonMap:Map{unsigned count=1,max=40;InstanceData data;
 struct MapEntry{bool instanced=false;bool Instanceable()const{return instanced;}};
 struct MapStore{MapEntry entry;bool missing=false;MapEntry const* LookupEntry(uint32){return missing?nullptr:&entry;}}sMapStore;
 struct Log{template<class... T>void outString(const char*,T...){}}sLog;
-struct WorldLocation{float coord_x=0,coord_y=0,coord_z=0;};
+struct WorldLocation{uint32 mapid=409;float coord_x=0,coord_y=0,coord_z=0;};
 struct LfgData {int state=LFG_STATE_NONE;int GetState(){return state;}};
 class PlayerbotHolder {public:std::string ProcessBotCommand(std::string,ObjectGuid,ObjectGuid,bool,uint32,uint32);};
 struct WorldSession {Player* player=nullptr;uint32 account=1;bool logout=false;struct {bool queued=false;} m_lfgInfo;
  bool isLogingOut(){return logout;} uint32 GetAccountId(){return account;}void SendPacket(WorldPacket const& p){messages.push_back(p.name);}
  void HandleGroupAcceptOpcode(WorldPacket&);void HandleGroupInviteOpcode(WorldPacket&);
 };
+struct GroupReference{Player*player=nullptr;GroupReference*following=nullptr;
+ Player*getSource(){return player;}GroupReference*next(){return following;}};
 struct Group {ObjectGuid leader,assistant;unsigned count=1;bool raid=false,bg=false;
+ std::vector<GroupReference> members;GroupReference*GetFirstMember(){return members.empty()?nullptr:&members[0];}
  InstanceGroupBind binding;bool bound=true;
  InstanceGroupBind* GetBoundInstance(uint32){return bound?&binding:nullptr;}
  InstanceGroupBind* GetBoundInstance(Map*,Difficulty){return bound?&binding:nullptr;}
@@ -99,7 +106,7 @@ struct Player {
  bool IsGameMaster(){return false;}uint32 GetTeam(){return team;}Social* GetSocial(){return &social;}
  Group* GetGroup(){return group;}Group* GetOriginalGroup(){return nullptr;}Group* GetGroupInvite(){return invite;}
  bool InBattleGround(){return bg;}bool InBattleGroundQueue(){return bgQueue;}LfgData& GetLfgData(){return lfg;}
- bool IsInWorld(){return world;}bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}
+ bool IsInWorld(){return world;}bool IsBeingTeleported(){return transfer;}bool IsBeingTeleportedFar(){return transfer;}bool HasCharmer(){return charm;}
  uint32 GetMapId(){return mapId;}uint32 GetInstanceId(){return instance;}void* GetTransport(){return transport?this:nullptr;}
  bool IsTaxiFlying(){return taxi;}bool IsInCombat(){return combat;}bool IsAlive(){return alive;}
  Map* GetMap(){static Map same;return mapId==1?&same:&map;}float GetDistance(Player*){return distance;}
@@ -107,7 +114,7 @@ struct Player {
  uint32 GetLevel(){return level;}bool isAFK(){return afk;}void ToggleAFK(){afk=!afk;}
  void UninviteFromGroup(){invite=nullptr;}PlayerbotHolder* GetPlayerbotMgr(){return &holder;}
 };
-struct Config {bool allowGuildBots=false,recruitmentRevive=true;bool IsInRandomAccountList(uint32 n){return n==1000;}
+struct Config {float sightDistance=100;bool allowGuildBots=false,recruitmentRevive=true;bool IsInRandomAccountList(uint32 n){return n==1000;}
  bool IsFreeAltBot(Player*){return false;}} sPlayerbotAIConfig;
 struct LFGQueue {bool IsPlayerInQueue(ObjectGuid){return false;}LFGQueue& GetMessager(){return *this;}template<class F>void AddMessage(F f){f(this);}};
 struct World {bool cross=false;using Queue=LFGQueue;Queue queue;
@@ -152,6 +159,36 @@ void invite(Player& p,Player& b){WorldPacket packet;packet<<b.name;p.session.Han
 void command(Player& p,std::string args){assert(ai::BotRecruitment::HandleCommand(&p,"recruit v1 "+args));tick();}
 bool has(std::string t){for(auto const& m:messages)if(m.find(t)!=std::string::npos)return true;return false;}
 int main(){
+ // Actual Lothos entry captures all 39 nearby followers after native acceptance,
+ // waits for the human's landing, then uses the existing bounded coordinator.
+ reset();{Player p(1,true);Group g;g.raid=true;g.leader=p.GetObjectGuid();p.group=&g;
+ p.mapId=0;p.transfer=true;p.world=false;WorldPacket packet;
+ std::vector<std::unique_ptr<Player>> bots;g.members.resize(39);
+ for(unsigned i=0;i<39;++i){bots.emplace_back(new Player(i+2));auto*b=bots.back().get();
+ b->group=&g;b->ai.master=&p;b->mapId=0;g.members[i]={b,i+1<39?&g.members[i+1]:nullptr};}
+ ai::BotRecruitment::FollowMoltenCoreEntry(&p,packet);assert(State().incoming.size()==39);
+ for(int i=0;i<6;++i)tick();for(auto&b:bots)assert(!b->summons);
+ p.world=true;p.transfer=false;p.mapId=409;p.instance=55;
+ for(int i=0;i<25;++i){tick();for(auto&b:bots)if(b->transfer){b->transfer=false;b->mapId=409;b->instance=55;}}
+ tick();for(auto&b:bots)assert(b->summons==1&&b->mapId==409&&b->instance==55);
+ assert(State().summons.empty());}
+ for(unsigned fault=0;fault<13;++fault){reset();Player p(1,true),b(2),other(99,true);Group g;
+ g.raid=true;g.leader=p.GetObjectGuid();g.members={{&b,nullptr}};p.group=b.group=&g;
+ p.mapId=b.mapId=0;p.transfer=true;p.world=false;b.ai.master=&p;WorldPacket packet;
+ if(fault==0)packet.npc={1,123};if(fault==1)packet.bytes=0;if(fault==2)p.destination.mapid=469;
+ if(fault==3)b.distance=101;if(fault==4)b.combat=true;if(fault==5)b.ai.following=false;
+ if(fault==6)b.real=true;if(fault==7)b.ai.master=&other;if(fault==8)b.alive=false;
+ if(fault==9)b.mapId=1;if(fault==10)b.transfer=true;if(fault==11)b.charm=true;
+ if(fault==12)g.raid=false;
+ ai::BotRecruitment::FollowMoltenCoreEntry(&p,packet);assert(State().incoming.empty());}
+ for(unsigned fault=0;fault<5;++fault){reset();Player p(1,true),b(2);Group g;
+ g.raid=true;g.leader=p.GetObjectGuid();g.members={{&b,nullptr}};p.group=b.group=&g;
+ p.mapId=b.mapId=0;p.transfer=true;p.world=false;b.ai.master=&p;WorldPacket packet;
+ ai::BotRecruitment::FollowMoltenCoreEntry(&p,packet);tick();assert(!b.summons);
+ p.world=true;p.transfer=false;p.mapId=409;
+ if(fault==0)p.mapId=0;if(fault==1)b.group=nullptr;if(fault==2)b.ai.following=false;
+ if(fault==3)b.mapId=1;if(fault==4){b.mapId=409;b.instance=p.instance;}
+ tick();assert(!b.summons&&State().summons.empty());}
  // Successful legacy gear requests refill current post-equipment maxima,
  // including cached repeats, without rerolling gear or touching other powers.
  reset();{Player p(1,true),b(2);b.ai.master=&p;unsigned calls=0;

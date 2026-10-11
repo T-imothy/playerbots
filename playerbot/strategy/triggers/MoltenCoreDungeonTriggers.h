@@ -75,22 +75,17 @@ namespace ai
         FireProtectionPotionReadyTrigger(PlayerbotAI* ai) : ItemBuffReadyTrigger(ai, "fire protection potion ready", 13457, 17543) {}
     };
 
-    class MCRuneInSightTrigger : public ValueTrigger
+    class MCRuneInSightTrigger : public Trigger
     {
     public:
-        MCRuneInSightTrigger(PlayerbotAI* ai) : ValueTrigger(ai, "mc rune in sight", 1)
-        {
-            qualifier = "and::{"
-                "action possible::use id::17333,"
-                "has object::go usable filter::go trapped filter::entry filter::{gos in sight,mc runes},"
-                "not::has object::entry filter::{gos close,mc runes}"
-                "}";
-        }
+        MCRuneInSightTrigger(PlayerbotAI* ai) : Trigger(ai, "mc rune in sight", 1) {}
+        bool IsActive() override { MoveToMCRuneAction action(ai); return action.isUseful(); }
     };
 
-    class MCRuneCloseTrigger : public ValueTrigger
+    class MCRuneCloseTrigger : public Trigger
     {
     public:
-        MCRuneCloseTrigger(PlayerbotAI* ai) : ValueTrigger(ai, "mc rune close", 1) { qualifier = "has object::go usable filter::entry filter::{gos close,mc runes}"; }
+        MCRuneCloseTrigger(PlayerbotAI* ai) : Trigger(ai, "mc rune close", 1) {}
+        bool IsActive() override { return MoltenCoreRuneTarget(ai, true) != nullptr; }
     };
 }

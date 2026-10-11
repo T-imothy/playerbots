@@ -80,6 +80,9 @@ int main(){
  add.cast=nullptr;ai.learned={"cleanse"};other.auras={20294};assert(pick()&&target==&other);other.auras={19776};assert(pick()&&target==&other);other.auras.clear();
  add.auras={19779};ai.learned={"purge"};assert(!pick());add.auras.clear();assert(!pick()); // Native Inspire has Dispel=0.
  boss.entry=12264;boss.auras={19714};assert(pick()&&target==&boss);boss.auras.clear();assert(!pick());
+ // Firelord Soul Burn: remove silence without requiring a raid boss.
+ boss.entry=11668;ai.learned={"dispel magic"};other.auras={19393};assert(pick()&&target==&other);
+ other.instance=2;assert(!pick());other.instance=1;other.auras.clear();assert(!pick());
  // Stable sheep assignments, skip marked kill target, stop at native immunity.
  boss.entry=12018;add.entry=second.entry=third.entry=fourth.entry=11663;bot.cls=other.cls=CLASS_MAGE;ai.learned=otherAI.learned={"polymorph"};
  assert(pick()&&target==&second);second.cc=true;assert(!pick());second.cc=false;second.auras={21087};assert(!pick());second.auras.clear();
