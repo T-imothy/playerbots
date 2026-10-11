@@ -73,14 +73,17 @@ struct PlayerbotAI {Player* bot=nullptr;Context context;std::list<ObjectGuid> at
 namespace ai {
  std::list<HazardPosition> ground;
  void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>& hazards){hazards.insert(hazards.end(),ground.begin(),ground.end());}
- std::map<unsigned,float> radii{{20475,10.0f},{19698,10.0f},{20478,20.0f},{19712,10.0f},{20566,25.0f},{21154,5.0f},{19497,15.0f},{20483,15.0f}};
+ std::map<unsigned,float> radii{{20475,10.0f},{19698,10.0f},{20478,20.0f},{19712,10.0f},{20566,25.0f},{21154,1.0f},{21155,20.0f},{19497,15.0f},{20483,15.0f}};
  float NativeEncounterSpellRadius(unsigned id){return radii[id];} // controlled fixture, not replacement data
- bool ValidateEncounterDestination(PlayerbotAI* ai,EncounterPosition&){++ai->checked;return ai->validPath;}
+ bool ValidateEncounterDestination(PlayerbotAI* ai,EncounterPosition&,bool walking=true){++ai->checked;return ai->validPath;}
  struct MoltenCorePositionValue {Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
  bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
  // This fixture isolates the existing boss hazards; trash is checked separately.
  bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&) { return false; }
+ bool RagnarosSameCluster(PlayerbotAI*,Player*){return false;}
+ bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&){return false;}
  struct Event{};
+ struct JumpAction {JumpAction(PlayerbotAI*){} void Qualify(const char*){} bool Execute(Event&){return false;}};
  struct MoltenCorePositionAction {PlayerbotAI* ai;Player*bot=ai->bot;static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool Execute(Event&);
  void SetDuration(unsigned){}
  bool IsReaction(){return true;}

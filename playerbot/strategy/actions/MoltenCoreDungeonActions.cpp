@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/MoltenCoreTrashPolicy.h"
 #include "MoltenCoreDungeonActions.h"
 #include "MoltenCoreGarrActions.h"
 #include "playerbot/strategy/values/GeddonControlValue.h"
@@ -347,6 +348,9 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsRealPlayer()) return false;
     if (PlanGarrPosition(ai, plan)) return true;
+    if (PlanRagnarosFormation(ai, plan)) return true;
+    if (PlanGolemaggFormation(ai, plan)) return true;
+    if (PlanMajordomoFormation(ai, plan)) return true;
     if (PlanMoltenCorePack(ai, plan)) return true;
     Unit* selected = nullptr;
     for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
@@ -568,6 +572,108 @@ namespace
         return result;
     }
 
+    Unit* MajordomoFocus(PlayerbotAI* ai, Unit* boss)
+    {
+        auto elites = RaidAdds(ai, boss, 11664);
+        auto healers = RaidAdds(ai, boss, 11663);
+        auto& targets = elites.empty() ? healers : elites;
+        if (targets.empty()) return nullptr;
+        // Every bot uses the same boss-centred GUID order, including CC units.
+        // A skull may choose an elite, but cannot release a healer early.
+        ObjectGuid skull = ai->GetBot()->GetGroup()->GetTargetIcon(7);
+        for (Unit* target : targets)
+            if (target->GetObjectGuid() == skull &&
+                !PossibleAttackTargetsValue::HasBreakableCC(target, ai->GetBot())) return target;
+        for (Unit* target : targets)
+            if (!PossibleAttackTargetsValue::HasBreakableCC(target, ai->GetBot()) &&
+                !PossibleAttackTargetsValue::HasUnBreakableCC(target, ai->GetBot())) return target;
+        return targets.front(); // Release exactly one surviving sheep when tanks are ready.
+    }
+
+    Unit* MajordomoAssignedHealer(PlayerbotAI* ai, Unit* boss)
+    {
+        Player* bot=ai->GetBot();
+        if (bot->getClass()!=CLASS_MAGE) return nullptr;
+        std::vector<Player*> mages;
+        for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+        {
+            Player* mage=ref->getSource();
+            if (RaidMember(bot,mage) && mage->getClass()==CLASS_MAGE && mage->GetDistance(boss)<=100 &&
+                mage->GetPlayerbotAI() && !mage->GetPlayerbotAI()->IsRealPlayer() &&
+                mage->GetPlayerbotAI()->HasSpell("polymorph")) mages.push_back(mage);
+        }
+        std::sort(mages.begin(),mages.end(),[](Player* a,Player* b){return a->GetObjectGuid()<b->GetObjectGuid();});
+        auto own=std::find(mages.begin(),mages.end(),bot);
+        auto healers=RaidAdds(ai,boss,11663);
+        const size_t slot=std::distance(mages.begin(),own);
+        return own!=mages.end() && slot<healers.size()?healers[slot]:nullptr;
+    }
+
+    bool MajordomoSupport(PlayerbotAI* ai, Unit* boss, std::string& spell, Unit*& target)
+    {
+        Player* bot = ai->GetBot();
+        const auto ready = [&](const char* name, Unit* unit) {
+            // Central native spell admission applies reflection per spell;
+            // physical interrupts remain available during Magic Reflection.
+            if (!unit || !ai->CanCastSpell(name, unit, 0)) return false;
+            spell=name;target=unit;return true;
+        };
+        auto elites = RaidAdds(ai, boss, 11664);
+        auto healers = RaidAdds(ai, boss, 11663);
+        Unit* focus = MajordomoFocus(ai, boss);
+        if (bot->getClass() == CLASS_MAGE)
+        {
+            std::vector<Player*> mages;
+            for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+            {
+                Player* mage=ref->getSource();
+                if (RaidMember(bot,mage) && mage->getClass()==CLASS_MAGE && mage->GetDistance(boss)<=100 &&
+                    mage->GetPlayerbotAI() && !mage->GetPlayerbotAI()->IsRealPlayer() &&
+                    mage->GetPlayerbotAI()->HasSpell("polymorph")) mages.push_back(mage);
+            }
+            std::sort(mages.begin(),mages.end(),[](Player* a,Player* b){return a->GetObjectGuid()<b->GetObjectGuid();});
+            auto own=std::find(mages.begin(),mages.end(),bot);
+            if (own!=mages.end())
+            {
+                const size_t slot=std::distance(mages.begin(),own);
+                if (slot<healers.size())
+                {
+                    Unit* healer=healers[slot];
+                    // Native immunity starts at four add deaths. Never remove
+                    // it or keep retrying an impossible Polymorph.
+                    if ((!elites.empty() || healer!=focus) && healer==MajordomoAssignedHealer(ai,boss) && !healer->HasAura(21087) &&
+                        !PossibleAttackTargetsValue::HasBreakableCC(healer,bot) &&
+                        !PossibleAttackTargetsValue::HasUnBreakableCC(healer,bot) && ready("polymorph",healer)) return true;
+                }
+                if (elites.empty() && focus && PossibleAttackTargetsValue::HasBreakableCC(focus,bot) && own==mages.begin())
+                    for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+                    {
+                        Player* tank=ref->getSource();
+                        if (RaidMember(bot,tank) && ai->IsTank(tank) && tank->GetDistance(focus)<=8)
+                            for (const char* name : {"frostbolt","fireball"})
+                                if (ready(name,focus)) return true; // Real damage breaks only the selected sheep.
+                    }
+            }
+        }
+        // Native Flamewaker Healers cast Shadow Bolt, not Rejuvenation.
+        // Keep off-target interrupts active when Polymorph immunity starts.
+        for (Unit* healer : healers)
+        {
+            if (PossibleAttackTargetsValue::HasBreakableCC(healer,bot)) continue;
+            Spell* cast=healer->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+            if (!cast || !cast->m_spellInfo || cast->getState()!=SPELL_STATE_CASTING ||
+                cast->m_spellInfo->Id!=21077 || !cast->CanBeInterrupted()) continue;
+            for (const char* name : {"pummel","shield bash","kick","counterspell","silence",
+#ifdef MANGOSBOT_TWO
+                "wind shear","mind freeze"
+#else
+                "earth shock"
+#endif
+            }) if (ready(name,healer)) return true;
+        }
+        return false;
+    }
+
     unsigned MoltenCoreTargetPriority(uint32 boss, uint32 target)
     {
         // These entries and native mechanics match all three CMaNGOS scripts.
@@ -578,7 +684,7 @@ namespace
             case 12057: return target == 12099 ? 1 : 0; // Uncontrolled Firesworn; banishes are filtered below.
             case 12098: return target == 11662 ? 1 : 0; // Sulfuron's healing priests
             case 12018: // Majordomo ends on add deaths; the boss has death prevention.
-                return target == 11663 ? 2 : (target == 11664 ? 1 : 0);
+                return target == 11664 ? 2 : (target == 11663 ? 1 : 0);
             case 11988: return target == 11988 ? 1 : 0; // Core Ragers cannot die while Golemagg lives.
             case 11502: return target == 12143 ? 1 : 0; // Ragnaros's native Sons of Flame.
             default: return 0;
@@ -590,7 +696,7 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
 {
     if (Unit* assigned = MoltenCoreAssignedTankTarget(ai)) return assigned;
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
-        bot->GetMapId() != 409 || !bot->IsInCombat() || ai->IsHeal(bot) || ai->IsTank(bot)) return nullptr;
+        bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsHeal(bot) || ai->IsTank(bot)) return nullptr;
 
     Unit* boss = nullptr;
     bool ragSons = false;
@@ -652,6 +758,14 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
             return fireTarget;
         }
     }
+    if (!bossEntry)
+        if (Unit* nuke = MoltenCoreNukeTarget(ai)) return nuke;
+    if (bossEntry == 12018)
+    {
+        Unit* focus = MajordomoFocus(ai, boss);
+        return valid(focus) ? focus : nullptr;
+    }
+    if (bossEntry == 11988 && valid(boss)) return boss; // Core Ragers cannot be killed while their master lives.
     if (valid(marked) && (bossEntry || marked->GetEntry() != 11671)) return nullptr;
     if (!bossEntry)
     {
@@ -736,7 +850,7 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         Player* member = static_cast<Player*>(carrier);
         return !member->IsBeingTeleported() && member->GetGroup() && member->GetGroup() == bot->GetGroup();
     }
-    if (plan.spell != 19196 && plan.spell != 19272 && plan.spell != 19630 && plan.spell != 19771)
+    if (plan.spell != 19196 && plan.spell != 19272 && plan.spell != 19630 && plan.spell != 19771 && plan.spell != 21155)
     {
         EncounterPosition current;
         std::vector<encounter::Circle> threats;
@@ -764,7 +878,19 @@ bool MoltenCorePositionAction::Execute(Event& event)
     EncounterPosition plan, current;
     std::vector<encounter::Circle> threats;
     if (!GetPlan(ai, plan) || !ai->CanMove()) return false;
-    if (plan.spell == 19196 || plan.spell == 19272 || plan.spell == 19630 || plan.spell == 19771)
+    if (plan.spell == 21155)
+    {
+        if (!PlanRagnarosFormation(ai, current)) return false;
+        plan = current;
+        if (!ValidateEncounterDestination(ai, plan, false)) return false;
+        if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 3 &&
+            !ai->IsRanged(bot) && !ai->IsHeal(bot))
+        {
+            JumpAction jump(ai); jump.Qualify("ragnaros");
+            if (jump.Execute(event)) return true;
+        }
+    }
+    else if (plan.spell == 19196 || plan.spell == 19272 || plan.spell == 19630 || plan.spell == 19771)
     {
         if (MoltenCoreThreats(ai, current, threats) || !PlanMoltenCoreTrash(ai, current)) return false;
         plan = current;
@@ -869,10 +995,61 @@ bool MoltenCoreSupportAction::Select(std::string& spell, Unit*& target)
     if (Unit* add = GarrBanishTarget(ai))
         if (ready("banish", add)) return true;
     if (!boss) return false;
+    if (boss->GetEntry() == 11502 && boss->GetVictim() == bot && ai->IsTank(bot) && bot->GetHealthPercent() < 50)
+        for (const char* name : {"shield wall", "last stand", "frenzied regeneration", "barkskin",
+#ifndef MANGOSBOT_ZERO
+            "divine protection",
+#endif
+#ifdef MANGOSBOT_TWO
+            "icebound fortitude", "vampiric blood", "anti-magic shell",
+#endif
+        }) if (ready(name,bot)) return true;
+    if (boss->GetEntry() == 11502 && !boss->HasAura(21859) && !boss->HasAura(21107) &&
+        ai->IsHeal(bot) && boss->GetVictim() && boss->GetVictim()->IsPlayer() &&
+        boss->GetVictim()->GetHealthPercent() < 80)
+        for (const char* name : {"flash heal", "flash of light", "healing wave", "healing touch", "penance"})
+            if (ready(name,boss->GetVictim())) return true;
     if (boss->GetEntry() == 12056 && boss->HasAura(19695) && ai->IsHeal(bot) && boss->GetVictim() &&
         boss->GetVictim()->IsPlayer() && boss->GetVictim()->GetHealthPercent() < 80)
         for (const char* name : {"flash heal", "flash of light", "healing wave", "healing touch", "penance"})
             if (ready(name,boss->GetVictim())) return true;
+    if (boss->GetEntry() == 11988)
+    {
+        auto dogs = RaidAdds(ai, boss, 11672);
+        const bool holding = boss->GetVictim() == bot || std::any_of(dogs.begin(), dogs.end(),
+            [bot = bot](Unit* dog) { return dog->GetVictim() == bot; });
+        Aura* splash = ai->GetAura(13880, bot);
+        if (ai->IsTank(bot) && holding && (bot->GetHealthPercent() < 50 ||
+            (boss->GetVictim() == bot && splash && splash->GetStackAmount() >= 5)))
+            for (const char* name : {"shield wall", "last stand", "frenzied regeneration", "barkskin",
+#ifndef MANGOSBOT_ZERO
+                "divine protection",
+#endif
+#ifdef MANGOSBOT_TWO
+                "icebound fortitude", "vampiric blood", "anti-magic shell",
+#endif
+                })
+                if (ready(name, bot)) return true;
+        if (ai->IsHeal(bot))
+        {
+            std::vector<Player*> patients;
+            const auto addPatient = [&](Unit* unit) {
+                if (!unit || !unit->IsPlayer()) return;
+                Player* tank = static_cast<Player*>(unit);
+                if (RaidMember(bot, tank) && ai->IsTank(tank) && tank->GetHealthPercent() < 80 &&
+                    std::find(patients.begin(), patients.end(), tank) == patients.end()) patients.push_back(tank);
+            };
+            addPatient(boss->GetVictim());
+            for (Unit* dog : dogs) addPatient(dog->GetVictim());
+            std::sort(patients.begin(), patients.end(), [](Player* a, Player* b) {
+                return a->GetHealthPercent() != b->GetHealthPercent() ? a->GetHealthPercent() < b->GetHealthPercent() :
+                    a->GetObjectGuid() < b->GetObjectGuid();
+            });
+            for (Player* patient : patients)
+                for (const char* name : {"penance", "flash heal", "flash of light", "healing wave", "healing touch"})
+                    if (ready(name, patient)) return true;
+        }
+    }
     // Dominate Mind makes the raid member hostile: ordinary friendly-party
     // dispel selection deliberately excludes that player. Offensive Dispel
     // Magic can remove the verified aura; native eligibility still decides.
@@ -935,39 +1112,8 @@ bool MoltenCoreSupportAction::Select(std::string& spell, Unit*& target)
     }
     if (boss->GetEntry() == 12264 && boss->HasAura(19714))
         for (const char* name : {"purge", "dispel magic", "spellsteal"}) if (ready(name, boss)) return true;
-    if (boss->GetEntry() == 12018 && bot->getClass() == CLASS_MAGE)
-    {
-        std::vector<Player*> mages;
-        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
-        {
-            Player* member = ref->getSource();
-            if (RaidMember(bot, member) && member->getClass() == CLASS_MAGE && member->GetDistance(boss) <= 100 &&
-                member->GetPlayerbotAI() && !member->GetPlayerbotAI()->IsRealPlayer() &&
-                member->GetPlayerbotAI()->HasSpell("polymorph")) mages.push_back(member);
-        }
-        std::sort(mages.begin(), mages.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
-        auto own = std::find(mages.begin(), mages.end(), bot);
-        auto healers = RaidAdds(ai, boss, 11663);
-        const ObjectGuid skull = bot->GetGroup()->GetTargetIcon(7);
-        const bool markedHealer = std::any_of(healers.begin(), healers.end(), [skull](Unit* unit) {
-            return unit->GetObjectGuid() == skull;
-        });
-        healers.erase(std::remove_if(healers.begin(), healers.end(), [skull](Unit* unit) {
-            return unit->GetObjectGuid() == skull;
-        }), healers.end());
-        // Keep one unmarked healer available to kill. Stable boss-centred lists
-        // retain sheeped units, so successful CC does not shuffle assignments.
-        if (own != mages.end())
-        {
-            const size_t slot = std::distance(mages.begin(), own) + (markedHealer ? 0 : 1);
-            if (slot < healers.size())
-            {
-                Unit* healer = healers[slot];
-                if (!healer->HasAura(21087) && !PossibleAttackTargetsValue::HasBreakableCC(healer, bot) &&
-                    !PossibleAttackTargetsValue::HasUnBreakableCC(healer, bot) && ready("polymorph", healer)) return true;
-            }
-        }
-    }
+    if (boss->GetEntry() == 12018 && MajordomoSupport(ai, boss, spell, target)) return true;
+
     return false;
 }
 
@@ -1080,4 +1226,316 @@ bool DouseMCRuneAction::Execute(Event& event)
     if (!isPossible() || !UseItemIdAction::isUseful()) return false;
     GameObject* rune = MoltenCoreRuneTarget(ai, true);
     return rune && UseItem(event.getOwner(), GetItemId(), rune);
+}
+
+bool ai::PlanGolemaggFormation(PlayerbotAI* ai, EncounterPosition& plan)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsRealPlayer()) return false;
+    Unit* boss = RaidBoss(ai);
+    if (!boss || boss->GetEntry() != 11988) return false;
+    const float facing = boss->GetVictim() && boss->GetVictim()->IsInWorld() ? boss->GetAngle(boss->GetVictim()) : boss->GetOrientation();
+    float angle = facing + float(M_PI);
+    float distance = 0;
+    Unit* centre = boss;
+    if (ai->IsTank(bot))
+    {
+        Unit* assigned = MoltenCoreAssignedTankTarget(ai);
+        if (!assigned || assigned->GetEntry() != 11672 || assigned->GetVictim() != bot) return false;
+        // Move the holding tank beyond the native boss->dog buff radius,
+        // including both reaches and the dog's melee approach to its tank.
+        const float trust = NativeEncounterSpellRadius(20556);
+        if (trust <= 0) return false;
+        distance = trust + boss->GetCombatReach() + assigned->GetCombatReach() +
+            assigned->GetCombatReach() + bot->GetCombatReach() + 5;
+        if (distance > 85) return false; // Retain the native encounter's 100-yard range.
+        auto dogs = RaidAdds(ai, boss, 11672);
+        auto own = std::find(dogs.begin(), dogs.end(), assigned);
+        if (own == dogs.end()) return false;
+        // Distinct side stations keep both dogs away from the ranged rear lane.
+        angle = facing + (std::distance(dogs.begin(), own) % 2 ? -1.0f : 1.0f) * float(M_PI)/2;
+    }
+    else if (ai->IsRanged(bot) || ai->IsHeal(bot))
+    {
+        const bool healer = ai->IsHeal(bot);
+        const char* spell = healer ?
+            (bot->getClass()==CLASS_PALADIN?"flash of light":bot->getClass()==CLASS_SHAMAN?"healing wave":
+             bot->getClass()==CLASS_DRUID?"healing touch":"flash heal") :
+            (bot->getClass()==CLASS_HUNTER?"auto shot":bot->getClass()==CLASS_WARLOCK?"shadow bolt":
+             bot->getClass()==CLASS_PRIEST?"mind blast":bot->getClass()==CLASS_SHAMAN?"lightning bolt":
+             bot->getClass()==CLASS_DRUID?"wrath":"frostbolt");
+        if (!healer && bot->getClass()==CLASS_MAGE)
+        {
+            if (ai->HasStrategy("fire raid", BotState::BOT_STATE_COMBAT)) spell="fireball";
+            else if (ai->HasStrategy("arcane raid", BotState::BOT_STATE_COMBAT)) spell="arcane missiles";
+        }
+        if (healer)
+        {
+            Unit* patient = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("party member to heal")->Get());
+            if (patient && patient->IsPlayer() && RaidMember(bot, static_cast<Player*>(patient))) centre = patient;
+            else if (boss->GetVictim() && boss->GetVictim()->IsPlayer() && RaidMember(bot, static_cast<Player*>(boss->GetVictim()))) centre = boss->GetVictim();
+            // Healers may move to support either isolated dog tank; use the
+            // actual patient's legal healing range, rather than boss distance.
+            angle = centre->GetAngle(bot);
+        }
+        float range = 0;
+        if (!ai->GetSpellRange(spell, &range) || range <= 5) return false;
+        distance = range + centre->GetCombatReach() + bot->GetCombatReach() - 2;
+        if (!healer) angle += (float(bot->GetGUIDLow() % 5)-2)*0.08f;
+    }
+    else return false; // Existing native Magma Splash withdrawal handles melee DPS.
+    plan.active=true;plan.map=bot->GetMapId();plan.instance=bot->GetInstanceId();
+    plan.boss=boss->GetObjectGuid();plan.spell=19771;
+    for (float offset : {0.0f, 0.10f, -0.10f, 0.20f, -0.20f, 0.60f, -0.60f, 1.0f, -1.0f})
+    {
+        plan.destination={centre->GetPositionX()+std::cos(angle+offset)*distance,
+            centre->GetPositionY()+std::sin(angle+offset)*distance,centre->GetPositionZ()};
+        if (ai->IsHeal(bot) && std::hypot(plan.destination.x-boss->GetPositionX(), plan.destination.y-boss->GetPositionY()) <
+            NativeEncounterSpellRadius(19798)+boss->GetCombatReach()+bot->GetCombatReach()+2) continue;
+        if (ValidateEncounterDestination(ai,plan)) return true;
+    }
+    plan.active=false;return false;
+}
+
+bool ai::PlanMajordomoFormation(PlayerbotAI* ai, EncounterPosition& plan)
+{
+    Player* bot=ai->GetBot();
+    if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->GetMapId()!=409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsRealPlayer()) return false;
+    Unit* boss=RaidBoss(ai);
+    if (!boss || boss->GetEntry()!=12018) return false;
+    if (Unit* healer=MajordomoAssignedHealer(ai,boss))
+    {
+        if (healer->HasAura(21087) || healer->GetReflectChance(SPELL_SCHOOL_MASK_ALL)>=50 ||
+            PossibleAttackTargetsValue::HasBreakableCC(healer,bot) || PossibleAttackTargetsValue::HasUnBreakableCC(healer,bot) ||
+            (RaidAdds(ai,boss,11664).empty() && healer==MajordomoFocus(ai,boss))) return false;
+        float range=0;
+        if (!ai->GetSpellRange("polymorph",&range) || range<=5) return false;
+        const float distance=range+healer->GetCombatReach()+bot->GetCombatReach()-3;
+        const float angle=healer->GetAngle(bot);
+        plan.active=true;plan.map=bot->GetMapId();plan.instance=bot->GetInstanceId();plan.boss=boss->GetObjectGuid();plan.spell=19771;
+        for (float offset : {0.0f,0.2f,-0.2f,0.4f,-0.4f})
+        {
+            plan.destination={healer->GetPositionX()+std::cos(angle+offset)*distance,
+                healer->GetPositionY()+std::sin(angle+offset)*distance,healer->GetPositionZ()};
+            if (ValidateEncounterDestination(ai,plan)) return true;
+        }
+        plan.active=false;return false;
+    }
+    if (!ai->IsTank(bot)) return false;
+    Unit* assigned=MoltenCoreAssignedTankTarget(ai);
+    if (!assigned && RaidAdds(ai,boss,11664).empty())
+    {
+        Unit* focus=MajordomoFocus(ai,boss);
+        Player* pickup=nullptr;
+        for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+        {
+            Player* tank=ref->getSource();
+            if (RaidMember(bot,tank) && ai->IsTank(tank) && tank!=boss->GetVictim() &&
+                (!pickup || tank->GetObjectGuid()<pickup->GetObjectGuid())) pickup=tank;
+        }
+        if (pickup!=bot || !focus || !PossibleAttackTargetsValue::HasBreakableCC(focus,bot)) return false;
+        const float angle=focus->GetAngle(bot);
+        plan.active=true;plan.map=bot->GetMapId();plan.instance=bot->GetInstanceId();plan.boss=boss->GetObjectGuid();plan.spell=19771;
+        plan.destination={focus->GetPositionX()+std::cos(angle)*4,focus->GetPositionY()+std::sin(angle)*4,focus->GetPositionZ()};
+        if (ValidateEncounterDestination(ai,plan)) return true;
+        plan.active=false;return false;
+    }
+    if (!assigned || assigned==boss || assigned->GetVictim()!=bot) return false;
+    auto healers=RaidAdds(ai,boss,11663);
+    if (healers.empty()) return false;
+    const float base=boss->GetVictim()?boss->GetAngle(boss->GetVictim()):boss->GetOrientation();
+    // Park controlled adds away from the sheep. Native terrain/path/hazard
+    // admission chooses a legal station; keep the entire fight inside 100yd.
+    plan.active=true;plan.map=bot->GetMapId();plan.instance=bot->GetInstanceId();plan.boss=boss->GetObjectGuid();plan.spell=19771;
+    for (float distance : {24.0f,32.0f,40.0f})
+        for (float offset : {0.0f,0.6f,-0.6f,1.2f,-1.2f,1.8f,-1.8f,2.4f,-2.4f,3.14f})
+        {
+            plan.destination={boss->GetPositionX()+std::cos(base+offset)*distance,
+                boss->GetPositionY()+std::sin(base+offset)*distance,boss->GetPositionZ()};
+            bool safe=true;
+            for (Unit* healer : healers)
+                if (healer!=assigned && !healer->HasAura(21087) &&
+                    std::hypot(plan.destination.x-healer->GetPositionX(),plan.destination.y-healer->GetPositionY())<
+                    15+assigned->GetCombatReach()+healer->GetCombatReach()+bot->GetCombatReach()) {safe=false;break;}
+            if (safe && ValidateEncounterDestination(ai,plan)) return true;
+        }
+    plan.active=false;return false;
+}
+
+Unit* ai::MoltenCoreRagnaros(PlayerbotAI* ai)
+{
+    Player* bot=ai->GetBot();
+    if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->GetMapId()!=409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsRealPlayer()) return nullptr;
+    // Attackable target values omit submerged Ragnaros. Native grid lookup
+    // preserves phase awareness without targeting an immune creature.
+    std::list<Unit*> nearby;
+    MaNGOS::AllCreaturesOfEntryInRangeCheck check(bot,11502,120.0f);
+    MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(nearby,check);
+    Cell::VisitAllObjects(bot,searcher,120.0f);
+    for (Unit* boss : nearby) if (RaidEnemy(bot,boss)) return boss;
+    return nullptr;
+}
+
+namespace
+{
+    std::vector<Player*> RagnarosRanged(PlayerbotAI* ai)
+    {
+        Player* bot=ai->GetBot(); std::vector<Player*> result;
+        if (!bot->GetGroup()) return result;
+        for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+        {
+            Player* member=ref->getSource();
+            if (RaidMember(bot,member) && !ai->IsTank(member) && (ai->IsRanged(member)||ai->IsHeal(member))) result.push_back(member);
+        }
+        std::sort(result.begin(),result.end(),[ai](Player* a,Player* b){
+            if (ai->IsHeal(a)!=ai->IsHeal(b)) return ai->IsHeal(a);
+            return a->GetObjectGuid()<b->GetObjectGuid();
+        });
+        return result;
+    }
+
+    const char* RagnarosRangeSpell(PlayerbotAI* ai, Player* member)
+    {
+        if (ai->IsHeal(member)) return member->getClass()==CLASS_PALADIN?"flash of light":
+            member->getClass()==CLASS_SHAMAN?"healing wave":member->getClass()==CLASS_DRUID?"healing touch":"flash heal";
+        switch (member->getClass())
+        {
+            case CLASS_HUNTER:return "auto shot";
+            case CLASS_WARLOCK:return "shadow bolt";
+            case CLASS_PRIEST:return "mind blast";
+            case CLASS_SHAMAN:return "lightning bolt";
+            case CLASS_DRUID:return "wrath";
+            default:return "frostbolt"; // Fire-immune boss; use the learned frost option.
+        }
+    }
+}
+
+bool ai::RagnarosSameCluster(PlayerbotAI* ai, Player* member)
+{
+    auto members=RagnarosRanged(ai);
+    auto own=std::find(members.begin(),members.end(),ai->GetBot()),other=std::find(members.begin(),members.end(),member);
+    return own!=members.end() && other!=members.end() && std::distance(members.begin(),own)/3==std::distance(members.begin(),other)/3;
+}
+
+bool ai::PlanRagnarosFormation(PlayerbotAI* ai, EncounterPosition& plan)
+{
+    Unit* boss=MoltenCoreRagnaros(ai); if (!boss) return false;
+    Player* bot=ai->GetBot(); std::vector<Player*> tanks;
+    for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+    {
+        Player* member=ref->getSource();
+        if (RaidMember(bot,member) && ai->IsTank(member) && member->GetDistance(boss)<=120) tanks.push_back(member);
+    }
+    if (tanks.empty()) return false;
+    std::sort(tanks.begin(),tanks.end(),[](Player*a,Player*b){return a->GetObjectGuid()<b->GetObjectGuid();});
+    PreserveMoltenCoreTank(ai,boss,tanks);
+    Player* tank=tanks.front();
+    auto* saved=ai->GetAiObjectContext()->GetValue<GeddonControl>("ragnaros control");
+    auto state=saved->Get();
+    if (state.boss!=boss->GetObjectGuid() || state.tank!=tank->GetObjectGuid())
+    {
+        state.boss=boss->GetObjectGuid();state.tank=tank->GetObjectGuid();
+        const float angle=boss->GetAngle(tank);
+        const float reach=std::max(2.0f,boss->GetCombatReach()+tank->GetCombatReach()-1);
+        state.tankPosition={boss->GetPositionX()+std::cos(angle)*reach,boss->GetPositionY()+std::sin(angle)*reach,boss->GetPositionZ()};
+        saved->Set(state);
+    }
+    const float base=std::atan2(state.tankPosition.y-boss->GetPositionY(),state.tankPosition.x-boss->GetPositionX());
+    const bool submerged=boss->HasAura(21107)||boss->HasAura(21859)||boss->HasAura(20567);
+    float angle=base,distance=std::max(2.0f,boss->GetCombatReach()+bot->GetCombatReach()-1);
+    auto ranged=RagnarosRanged(ai);
+    auto own=std::find(ranged.begin(),ranged.end(),bot);
+    size_t slot=own==ranged.end()?0:std::distance(ranged.begin(),own);
+    if (submerged)
+    {
+        angle=base+float(M_PI);
+        // Tanks gather Sons at the established tank station. Mana users stay
+        // behind them rather than stacking inside the Sons' mana-burn aura.
+        distance=(own!=ranged.end()?15.0f:3.0f);
+        if (ai->IsTank(bot) && bot==tank) {plan.destination=state.tankPosition;}
+        else {plan.destination={state.tankPosition.x+std::cos(angle)*distance,state.tankPosition.y+std::sin(angle)*distance,state.tankPosition.z};}
+    }
+    else if (own!=ranged.end())
+    {
+        float range=0;
+        if (!ai->GetSpellRange(RagnarosRangeSpell(ai,bot),&range) || range<=5) return false;
+        distance=range+boss->GetCombatReach()+bot->GetCombatReach()-3;
+        // All members of a triple use its shortest learned cast/heal range.
+        // Healing needs reach to the actual tank, not merely to the boss.
+        for (size_t i=slot/3*3;i<std::min(ranged.size(),slot/3*3+3);++i)
+        {
+            Player* member=ranged[i];PlayerbotAI* brain=member->GetPlayerbotAI();float memberRange=0;
+            if (brain && !brain->IsRealPlayer() && brain->GetSpellRange(RagnarosRangeSpell(ai,member),&memberRange) && memberRange>5)
+                distance=std::min(distance,memberRange+boss->GetCombatReach()+member->GetCombatReach()-3);
+        }
+        const size_t groups=(ranged.size()+2)/3;
+        const size_t station=slot/3;
+        const float lane=station==0?0.0f:(station%2?1.0f:-1.0f)*float((station+1)/2);
+        angle=base+lane/float(groups)*2*float(M_PI); // healer triples nearest the tank
+        for (size_t i=slot/3*3;i<std::min(ranged.size(),slot/3*3+3);++i)
+        {
+            Player* member=ranged[i];PlayerbotAI* brain=member->GetPlayerbotAI();float healRange=0;
+            if (!brain || !ai->IsHeal(member) || !brain->GetSpellRange(RagnarosRangeSpell(ai,member),&healRange)) continue;
+            const float dx=tank->GetPositionX()-boss->GetPositionX(),dy=tank->GetPositionY()-boss->GetPositionY();
+            const float projection=dx*std::cos(angle)+dy*std::sin(angle);
+            const float legal=healRange+tank->GetCombatReach()+member->GetCombatReach()-3;
+            const float remainder=legal*legal-(dx*dx+dy*dy-projection*projection);
+            if (remainder<0) return false;
+            distance=std::min(distance,projection+std::sqrt(remainder));
+        }
+        if (distance<NativeEncounterSpellRadius(20566)+3) return false;
+        const float spread=NativeEncounterSpellRadius(21155)+4;
+        if (groups>1 && 2*distance*std::sin(float(M_PI)/float(groups))<spread) return false;
+        const float offset=(float(slot%3)-1)*0.8f;
+        plan.destination={boss->GetPositionX()+std::cos(angle)*distance-std::sin(angle)*offset,
+            boss->GetPositionY()+std::sin(angle)*distance+std::cos(angle)*offset,boss->GetPositionZ()};
+        for (size_t i=slot/3*3;i<std::min(ranged.size(),slot/3*3+3);++i)
+        {
+            Player* member=ranged[i];PlayerbotAI* brain=member->GetPlayerbotAI();float healRange=0;
+            if (brain && ai->IsHeal(member) && brain->GetSpellRange(RagnarosRangeSpell(ai,member),&healRange))
+                if (std::hypot(plan.destination.x-tank->GetPositionX(),plan.destination.y-tank->GetPositionY())>
+                    healRange+tank->GetCombatReach()+member->GetCombatReach()-2) return false;
+        }
+        for (Player* member : ranged)
+            if (!RagnarosSameCluster(ai,member) && std::hypot(plan.destination.x-member->GetPositionX(),plan.destination.y-member->GetPositionY())<spread-2) return false;
+    }
+    else
+    {
+        if (ai->IsTank(bot) && boss->GetVictim()!=bot && boss->GetVictim() &&
+            boss->GetVictim()->IsPlayer() && ai->IsTank(static_cast<Player*>(boss->GetVictim())))
+        {
+            // Only the holding tank is inside Wrath. Backups remain available
+            // outside its native radius instead of being knocked away together.
+            distance=std::max(distance,NativeEncounterSpellRadius(20566)+5);
+            angle+=(float(bot->GetGUIDLow()%3)-1)*0.15f;
+        }
+        if (!ai->IsTank(bot)) angle+=float(M_PI); // rear melee station, tank stays anchored
+        plan.destination={boss->GetPositionX()+std::cos(angle)*distance,boss->GetPositionY()+std::sin(angle)*distance,boss->GetPositionZ()};
+    }
+    plan.active=true;plan.map=bot->GetMapId();plan.instance=bot->GetInstanceId();plan.boss=boss->GetObjectGuid();plan.spell=21155;
+    const auto proposed=plan.destination;
+    EncounterPosition landing; bool hasLanding=false;
+    for (float offset : {0.0f,0.025f,-0.025f,0.05f,-0.05f})
+    {
+        plan.destination=proposed;
+        if (offset)
+        {
+            const float dx=proposed.x-boss->GetPositionX(),dy=proposed.y-boss->GetPositionY();
+            plan.destination.x=boss->GetPositionX()+dx*std::cos(offset)-dy*std::sin(offset);
+            plan.destination.y=boss->GetPositionY()+dx*std::sin(offset)+dy*std::cos(offset);
+        }
+        const auto unadjusted=plan.destination;
+        if (ValidateEncounterDestination(ai,plan)) return true;
+        // Validation projects to the native floor. Restore the unadjusted
+        // candidate before retrying, so a failed height check cannot admit it.
+        plan.destination=unadjusted;
+        if (!hasLanding && !submerged && own==ranged.end() && ValidateEncounterDestination(ai,plan,false))
+        {landing=plan;hasLanding=true;}
+    }
+    // Only the separate trajectory solver can use an endpoint without a walk.
+    if (hasLanding) {plan=landing;return true;}
+    plan.active=false;return false;
 }

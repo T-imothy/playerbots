@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "AoeValues.h"
+#include "playerbot/strategy/MoltenCoreTrashPolicy.h"
 
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -25,6 +26,7 @@ bool ai::ControlledRaidAoe(PlayerbotAI* ai)
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         !bot->IsInCombat() || !bot->GetGroup() || !bot->GetMap()->IsRaid() || ai->IsRealPlayer() ||
         ai->IsHeal(bot) || !ai->GetCombatStartTime() || time(0) - ai->GetCombatStartTime() < 2) return false;
+    if (!ai->IsTank(bot) && (MoltenCoreNukeTarget(ai) || MoltenCoreBossBurn(ai))) return false;
     const WorldLocation center = ai->GetAiObjectContext()->GetValue<WorldLocation>("aoe position")->Get();
     // Validate the same centre the ground-targeted action will cast at. A
     // separate density scan can select a different, farther cluster.

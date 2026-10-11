@@ -26,9 +26,10 @@ struct Player {unsigned map=542,instance=1;float x=0,y=0,z=0,adjust=0;bool world
  void UpdateAllowedPositionZ(float,float,float& z){z+=adjust;}
  float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c));}};
 using Unit=Player;
-struct WorldPosition {unsigned map=542;float x=0,y=0,z=0;static std::vector<WorldPosition> path;static bool legacyPath;
+struct WorldPosition {unsigned map=542;float x=0,y=0,z=0;static std::vector<WorldPosition> path;static bool legacyPath,liquid;
  WorldPosition()=default;WorldPosition(unsigned m,float a,float b,float c):map(m),x(a),y(b),z(c){}
  WorldPosition(Player* b):map(b->map),x(b->x),y(b->y),z(b->z){}
+ bool isInWater()const{return liquid;}bool isUnderWater()const{return false;}
  unsigned getMapId()const{return map;}float getX()const{return x;}float getY()const{return y;}float getZ()const{return z;}
  float distance(const WorldPosition& p)const{return std::sqrt((x-p.x)*(x-p.x)+(y-p.y)*(y-p.y)+(z-p.z)*(z-p.z));}
  bool canPathTo(const WorldPosition&,Player*)const{return legacyPath;}
@@ -36,7 +37,7 @@ struct WorldPosition {unsigned map=542;float x=0,y=0,z=0;static std::vector<Worl
  bool isPathTo(const std::vector<WorldPosition>& p,float xy,float zz)const{
   if(p.empty())return false;const auto& q=p.back();return q.map==map&&std::hypot(q.x-x,q.y-y)<xy&&std::fabs(q.z-z)<zz;}
 };
-std::vector<WorldPosition> WorldPosition::path;bool WorldPosition::legacyPath=true;
+std::vector<WorldPosition> WorldPosition::path;bool WorldPosition::legacyPath=true;bool WorldPosition::liquid=false;
 using HazardPosition=std::pair<WorldPosition,float>;
 struct Stored {std::list<HazardPosition> hazards;std::list<HazardPosition> Get(){return hazards;}};
 struct Context {Stored stored;template<class T>Stored* GetValue(const char*){return &stored;}};
@@ -49,7 +50,7 @@ std::list<HazardPosition> ground;
 void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>& out){out.insert(out.end(),ground.begin(),ground.end());}
 std::vector<encounter::Circle> whirlwinds;
 bool AQWhirlwindThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>& out){out=whirlwinds;return !out.empty();}
-bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&);
+bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&,bool requireWalkingPath=true);
 __HELPERS__
 }
 using namespace ai;
@@ -64,6 +65,8 @@ int main(){
  hazards={{{542,-1,0,0},3}};path={{542,0,0,0},{542,10,0,0}};assert(ValidateEncounterDestination(&ai,plan));
  path={{542,0,0,0},{542,-2,0,0},{542,10,0,0}};assert(!ValidateEncounterDestination(&ai,plan));
  hazards.clear();path.clear();assert(!ValidateEncounterDestination(&ai,plan));
+ assert(ValidateEncounterDestination(&ai,plan,false)); // landing admission does not imply a legal walk
+ hazards={{{542,10,0,0},2}};assert(!ValidateEncounterDestination(&ai,plan,false));hazards.clear();
  path={{542,0,0,0}};assert(!ValidateEncounterDestination(&ai,plan));
  path={{542,0,0,0},{542,8,0,0}};assert(!ValidateEncounterDestination(&ai,plan));
  path={{542,0,0,0},{543,10,0,0}};assert(!ValidateEncounterDestination(&ai,plan));
@@ -79,6 +82,8 @@ int main(){
  path={{409,0,0,0},{409,10,0,0}};assert(!ValidateEncounterDestination(&ai,plan));
  path={{409,0,0,0},{409,0,5,0},{409,10,5,0},{409,10,0,0}};assert(ValidateEncounterDestination(&ai,plan));
  ground.clear();path={{409,0,0,0},{409,10,0,0}};assert(ValidateEncounterDestination(&ai,plan));
+ plan.spell=21155;WorldPosition::liquid=true;assert(!ValidateEncounterDestination(&ai,plan,false));
+ WorldPosition::liquid=false;assert(ValidateEncounterDestination(&ai,plan,false));plan.spell=0;
  // Uncached Sartura/guard auras must constrain the whole route as well.
  ai.bot.map=plan.map=531;plan.destination={30,0,0};
  whirlwinds={{{-1,0,0},12},{{15,0,0},12}};

@@ -82,6 +82,13 @@ bool AttackRTITargetAction::isUseful()
 bool AttackAction::Attack(Player* requester, Unit* target)
 {
     if (IsProtectedBlackwingTarget(bot, target)) return false;
+    if (HasMajordomoDamageShield(bot,target))
+    {
+        StopUnsafeEncounterOffense(bot,bot);
+        if (bot->GetPet()) StopUnsafeEncounterOffense(bot,bot->GetPet());
+        // Keep caster/ranged target selection available while melee waits.
+        if (!ai->IsRanged(bot)) return false;
+    }
     if (HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot))
     {
         StopUnsafeEncounterOffense(bot, bot);
@@ -225,6 +232,7 @@ bool AttackAction::Attack(Player* requester, Unit* target)
 
 bool AttackAction::PetAttack(Player* requester, Unit* target)
 {
+    if (HasMajordomoDamageShield(bot,target)) return false;
     // If we're done waiting to attack and there's mobs to cc, we can't use defensive/aggressive
     // because non passive pets will ignore our cc
     // Therefore, we'll keep passive so we can only attack the current target specifically

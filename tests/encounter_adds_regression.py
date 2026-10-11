@@ -46,7 +46,7 @@ struct Unit {
 };
 struct Player:Unit {bool charmed=false,teleport=false;unsigned mapId=554;
  bool IsInMap(Unit* unit){return map==unit->map&&phase==unit->phase;}
- bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}};
+ void* GetGroup(){return this;}bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}};
 struct PlayerbotAI {
  bool healer=false,tank=false,ranged=false;bool IsRanged(Player*){return ranged;}std::list<ObjectGuid> attackers,possible;std::map<unsigned,Unit*> units;
  Unit* current=nullptr;Unit* marked=nullptr;
@@ -65,6 +65,7 @@ struct PlayerbotAI {
  }
 };
 namespace ai {
+ Unit* MoltenCoreNukeTarget(PlayerbotAI*) { return nullptr; }
  struct PossibleAttackTargetsValue {
   static bool HasBreakableCC(Unit* unit,Player*){return unit->breakCC;}
   static bool HasUnBreakableCC(Unit* unit,Player*){return unit->hardCC;}
@@ -76,6 +77,9 @@ namespace ai {
  struct PathaleonAddsAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
  struct OnyxiaAddsAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
  Unit* MoltenCoreAssignedTankTarget(PlayerbotAI*) { return nullptr; } // DPS selection fixture; tank allocation is separate.
+ Unit* MajordomoFocus(PlayerbotAI* a,Unit*) {
+  for(unsigned entry:{11664u,11663u})for(auto g:a->possible){auto* u=a->GetUnit(g);if(u&&u->entry==entry)return u;}return nullptr;
+ }
  Unit* GarrFocusTarget(PlayerbotAI*) { return nullptr; } // Dedicated Garr fixture exercises its native controller.
  struct MoltenCorePriorityTargetAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
 }
@@ -139,7 +143,7 @@ int main(){
  bot.map=&map;bot.mapId=409;boss.map=add.map=second.map=&map;
  ai.units={{1,&boss},{2,&add},{3,&second}};ai.attackers={1};ai.possible={2,3};
  MoltenCorePriorityTargetAction mc{&bot,&ai};
- for(auto pair : {std::pair<unsigned,unsigned>{12118,12119},{12259,11661},{12057,12099},{12098,11662},{12018,11663}}){
+ for(auto pair : {std::pair<unsigned,unsigned>{12118,12119},{12259,11661},{12057,12099},{12098,11662}}){
   boss.entry=pair.first;add.entry=second.entry=pair.second;add.x=1;second.x=20;
   assert(mc.GetTarget()==&add&&mc.isUseful());
   ai.current=&second;assert(mc.GetTarget()==&second&&!mc.isUseful());ai.current=nullptr;
@@ -165,13 +169,13 @@ int main(){
   bot.mapId=0;assert(!mc.GetTarget());bot.mapId=409;
   ai.possible={2,3};
  }
- // Majordomo: a free healer takes priority over an elite; a sheeped healer does not.
+ // Majordomo: elites first, regardless of a free healer.
  boss.entry=12018;add.entry=11663;second.entry=11664;ai.current=&second;
- assert(mc.GetTarget()==&add);add.breakCC=true;assert(mc.GetTarget()==&second);add.breakCC=false;
+ assert(mc.GetTarget()==&second);add.breakCC=true;assert(mc.GetTarget()==&second);add.breakCC=false;
  // Golemagg DPS fixture: ignore Core Ragers; tank allocation is tested separately.
  boss.entry=11988;add.entry=second.entry=11672;ai.possible={1,2,3};ai.current=&add;
  assert(mc.GetTarget()==&boss);ai.tank=true;assert(!mc.GetTarget());ai.tank=false;
- ai.marked=&add;assert(!mc.GetTarget());ai.marked=nullptr;
+ ai.marked=&add;assert(mc.GetTarget()==&boss);ai.marked=nullptr;
  boss.attackable=false;assert(!mc.GetTarget());boss.attackable=true;
  // No unrelated Core Rager target is selected during Garr or Ragnaros.
  boss.entry=12057;assert(!mc.GetTarget());boss.entry=11502;assert(!mc.GetTarget());

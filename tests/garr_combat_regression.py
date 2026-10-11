@@ -18,7 +18,7 @@ code=code.replace('struct Context{', '''#include "playerbot/strategy/GarrCombatP
 namespace ai{struct GarrControl{ObjectGuid boss;GarrAllocation allocation;float laneAngle=0;};}
 struct Context{Cached<ai::GarrControl>garr;''')
 code=code.replace('if constexpr(std::is_same_v<T,ObjectGuid>)', 'if constexpr(std::is_same_v<T,ai::GarrControl>)return &garr;else if constexpr(std::is_same_v<T,ObjectGuid>)')
-code=code.replace('assert(id==19408||id==20602);return id==19408?45.0f:10.0f;', 'return id==19497?15.0f:10.0f;')
+code=re.sub(r'assert\(id==19408.*?;return id==20566.*?;', 'return id==19497?15.0f:10.0f;', code)
 code+='''
 namespace ai {
 enum class CasterArea{None,Ground};

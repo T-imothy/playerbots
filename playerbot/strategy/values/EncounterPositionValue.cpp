@@ -25,7 +25,7 @@ float ai::NativeEncounterSpellRadius(uint32 id, unsigned depth)
     return radius;
 }
 
-bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan)
+bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan, bool requireWalkingPath)
 {
     Player* bot = ai->GetBot();
     auto& point = plan.destination;
@@ -37,6 +37,8 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan)
     if (!std::isfinite(point.z) || std::fabs(point.z - originalZ) > 8.0f ||
         bot->GetDistance(point.x, point.y, point.z) > 60) return false;
     const WorldPosition destination(plan.map, point.x, point.y, point.z);
+    if (plan.map == 409 && plan.spell == 21155 &&
+        (destination.isInWater() || destination.isUnderWater())) return false;
     auto hazards = ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Get();
     if (Unit* boss = ai->GetUnit(plan.boss))
         if (bot->IsInMap(boss) && boss->IsAlive() && boss->IsInCombat() &&
@@ -61,7 +63,7 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan)
     }
     for (const auto& hazard : hazards)
         if (destination.distance(hazard.first) < hazard.second + 1) return false;
-    if (bot->GetDistance(point.x, point.y, point.z) <= 1.0f) return true;
+    if (!requireWalkingPath || bot->GetDistance(point.x, point.y, point.z) <= 1.0f) return true;
     // A safe endpoint can still require crossing a void zone. Check one bounded
     // native normal route; incomplete/shortcut paths cannot establish safety.
     const auto path = destination.getPathStepFrom(WorldPosition(bot), bot, true);

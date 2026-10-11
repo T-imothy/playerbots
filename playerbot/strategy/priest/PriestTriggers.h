@@ -1,4 +1,5 @@
 #pragma once
+#include "PowerInfusionTarget.h"
 
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 
@@ -119,7 +120,8 @@ namespace ai
     {
     public:
         PowerInfusionTrigger(PlayerbotAI* ai) : SpellTargetTrigger(ai, "power infusion", "boost targets", true, true) {}
-        std::string GetTargetName() override { return "self target"; }
+        Unit* GetTarget() override { return SelectPowerInfusionTarget(ai); }
+        bool IsActive() override { return IsSpellReady() && GetTarget(); }
     };
 
     class FearWardTrigger : public SpellTargetTrigger

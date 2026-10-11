@@ -4,6 +4,15 @@
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
 
+bool ai::HasMajordomoDamageShield(Player* bot, Unit* target)
+{
+    return bot && bot->IsInWorld() && bot->IsAlive() && bot->IsInCombat() &&
+        !bot->IsBeingTeleported() && !bot->HasCharmer() && bot->GetMapId()==409 &&
+        bot->GetPlayerbotAI() && !bot->GetPlayerbotAI()->IsRealPlayer() &&
+        target && target->IsInWorld() && target->IsAlive() && bot->IsInMap(target) &&
+        (target->GetEntry()==11663 || target->GetEntry()==11664) && target->HasAura(21075);
+}
+
 bool ai::HasEncounterDamagePause(Player* bot)
 {
     if (HasHakkarPoisonPreparation(bot)) return true;
@@ -70,6 +79,11 @@ bool ai::ShouldAvoidEncounterOffense(Player* bot, Unit* caster, const SpellEntry
 {
     if (!caster || !spell) return false;
     const bool positive = IsPositiveSpell(spell, caster, target);
+    if (!positive && HasMajordomoDamageShield(bot,target) && spell->DmgClass==SPELL_DAMAGE_CLASS_MELEE) return true;
+    if (!positive && target && target->IsInWorld() && bot && bot->IsInMap(target) &&
+        bot->GetMapId()==409 && bot->GetPlayerbotAI() && !bot->GetPlayerbotAI()->IsRealPlayer() &&
+        (target->GetEntry()==11663 || target->GetEntry()==11664) &&
+        IsReflectableSpell(spell) && target->GetReflectChance(GetSpellSchoolMask(spell))>=50) return true;
     if (!positive && (IsProtectedBlackwingTarget(bot, target) || HasEncounterDamagePause(bot))) return true;
     // Permeating Chill's native proc mask includes melee swings/abilities and
     // ranged auto attacks, but not ordinary spells or ranged special shots.
@@ -118,8 +132,9 @@ bool ai::HasEncounterSpellBomb(Player* bot)
 bool ai::HasUnsafeEncounterOffense(Player* bot)
 {
     const bool stopAttacks = IsProtectedBlackwingTarget(bot, bot ? bot->GetVictim() : nullptr) ||
+        HasMajordomoDamageShield(bot, bot ? bot->GetVictim() : nullptr) ||
         HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot);
-    if (!stopAttacks && !HasEncounterSpellBomb(bot) && (!bot || bot->GetMapId() != 469)) return false;
+    if (!stopAttacks && !HasEncounterSpellBomb(bot) && (!bot || bot->GetMapId() != 469 && bot->GetMapId() != 409)) return false;
     if (stopAttacks && bot->hasUnitState(UNIT_STAT_MELEE_ATTACKING)) return true;
     for (CurrentSpellTypes slot : {CURRENT_MELEE_SPELL, CURRENT_GENERIC_SPELL, CURRENT_AUTOREPEAT_SPELL, CURRENT_CHANNELED_SPELL})
     {
@@ -133,9 +148,9 @@ bool ai::HasUnsafeEncounterOffense(Player* bot)
 bool ai::StopUnsafeEncounterOffense(Player* bot, Unit* caster)
 {
     if (!caster || !caster->IsInWorld() || !bot || !bot->IsInMap(caster)) return false;
-    const bool stopAttacks = IsProtectedBlackwingTarget(bot, caster->GetVictim()) || HasEncounterDamagePause(bot) ||
+    const bool stopAttacks = IsProtectedBlackwingTarget(bot, caster->GetVictim()) || HasMajordomoDamageShield(bot,caster->GetVictim()) || HasEncounterDamagePause(bot) ||
         (caster == bot && (HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot)));
-    if (!stopAttacks && !(caster == bot && HasEncounterSpellBomb(bot)) && bot->GetMapId() != 469) return false;
+    if (!stopAttacks && !(caster == bot && HasEncounterSpellBomb(bot)) && bot->GetMapId() != 469 && bot->GetMapId() != 409) return false;
     bool stopped = false;
     if (stopAttacks && caster->hasUnitState(UNIT_STAT_MELEE_ATTACKING))
     {

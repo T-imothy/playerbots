@@ -8,6 +8,11 @@ namespace ai
         ObjectGuid boss, tank;
         encounter::Point tankPosition, rangedPosition;
     };
+    class RagnarosControlValue : public ManualSetValue<GeddonControl>
+    {
+    public:
+        RagnarosControlValue(PlayerbotAI* ai) : ManualSetValue<GeddonControl>(ai, GeddonControl(), "ragnaros control") {}
+    };
     class GeddonControlValue : public ManualSetValue<GeddonControl>
     {
     public:

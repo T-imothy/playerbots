@@ -10,9 +10,9 @@ from behavior_regression import block
 root = Path(__file__).resolve().parents[1]
 source = (root/'playerbot/strategy/actions/EncounterDamagePolicy.cpp').read_text()
 methods = '\n'.join(block(source, name) for name in (
-    'bool ai::HasEncounterDamagePause(', 'bool ai::HasEncounterThreatPause(', 'bool ai::HasEncounterSpellBomb(', 'bool ai::HasEncounterWeaponPause(', 'bool ai::ShouldAvoidEncounterOffense(',
+    'bool ai::HasMajordomoDamageShield(', 'bool ai::HasEncounterDamagePause(', 'bool ai::HasEncounterThreatPause(', 'bool ai::HasEncounterSpellBomb(', 'bool ai::HasEncounterWeaponPause(', 'bool ai::ShouldAvoidEncounterOffense(',
     'bool ai::HasUnsafeEncounterOffense(', 'bool ai::StopUnsafeEncounterOffense('))
-pet = (root.parent/'mangos-wotlk-behavior/src/game/AI/BaseAI/PetAI.cpp').read_text()
+pet = (root.parent/'wotlk/src/game/AI/BaseAI/PetAI.cpp').read_text()
 pet_methods = '\n'.join(block(pet, name) for name in (
     'Player* EncounterBotOwner(', 'void PetAI::AttackStart(', 'bool PetAI::Cast('))
 update = block(pet, 'void PetAI::UpdateAI(')
@@ -61,7 +61,7 @@ struct Unit {
  bool world=true,alive=true,combat=true,charmed=false,melee=false,player=false,controlled=true,disabled=false;
  unsigned map=575,instance=1,phase=1,entry=0,stops=0,attacks=0,react=2;float z=0,dist=5;
  std::set<unsigned> auras;Spell* casts[4]{};Unit* master=nullptr;std::function<void()> onInterrupt;
- Unit* GetVictim(){return nullptr;}
+ Unit* victim=nullptr;float reflection=0;Unit* GetVictim(){return victim;}float GetReflectChance(unsigned){return reflection;}
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
  bool IsInMap(Unit*u){return u&&world&&u->world&&map==u->map&&instance==u->instance&&phase==u->phase;}
  unsigned GetEntry(){return entry;}unsigned GetMapId(){return map;}float GetDistance(Unit*u){return u->dist;}
@@ -76,6 +76,7 @@ struct Unit {
 struct Player:Unit {bool teleport=false;BotAI* ai=nullptr;SpellAuraHolder* gaze=nullptr;SpellAuraHolder* bomb=nullptr;SpellAuraHolder* brand=nullptr;SpellAuraHolder* chilled=nullptr;SpellAuraHolder* chill=nullptr;SpellAuraHolder* instability=nullptr;SpellAuraHolder* unchained=nullptr;Player(){player=true;}
  bool IsBeingTeleported(){return teleport;}BotAI* GetPlayerbotAI(){return ai;}
  SpellAuraHolder* GetSpellAuraHolder(unsigned id){assert(id==24314||id==40303||id==69172||id==69762||id==69766||id==70106||id==70107);return id==70106?chilled:id==70107?chill:id==24314?gaze:id==40303?bomb:id==69762?unchained:id==69766?instability:brand;}};
+bool IsReflectableSpell(const SpellEntry*s){return s->DmgClass==SPELL_DAMAGE_CLASS_MAGIC;}unsigned GetSpellSchoolMask(const SpellEntry*){return 4;}
 bool IsPositiveSpell(const SpellEntry*s,Unit*,Unit*){return s->positive;}
 std::list<Unit*> worldUnits;
 namespace MaNGOS {
@@ -86,7 +87,7 @@ namespace Cell {template<class T>void VisitAllObjects(Player*,MaNGOS::UnitListSe
 namespace ai {
  bool IsProtectedBlackwingTarget(Player*,Unit*){return false;} // Separate BWL phase fixture.
  bool HasHakkarPoisonPreparation(Player*) { return false; } // actual coordination is exercised in hakkar_poison_regression.py
- bool HasEncounterDamagePause(Player*);bool HasEncounterThreatPause(Player*);bool HasEncounterSpellBomb(Player*);bool HasEncounterWeaponPause(Player*);bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*);
+ bool HasMajordomoDamageShield(Player*,Unit*);bool HasEncounterDamagePause(Player*);bool HasEncounterThreatPause(Player*);bool HasEncounterSpellBomb(Player*);bool HasEncounterWeaponPause(Player*);bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*);
  bool HasUnsafeEncounterOffense(Player*);bool StopUnsafeEncounterOffense(Player*,Unit*);
 }
 __METHODS__
@@ -100,7 +101,23 @@ __PET_METHODS__
 int main(){
  BotAI botAI;Player bot;bot.ai=&botAI;Unit boss;boss.entry=26861;boss.auras={48294};worldUnits={&boss};
  SpellEntry damage{17,false},heal{18,true};Spell harmful(&bot,&damage,0),helpful(&bot,&heal,0);
- // Removed native Instability handler must not cause healing/casting holds.
+ // MC shield admission uses each live target, preserves healing and ranged attacks.
+ bot.map=boss.map=409;boss.entry=11664;boss.auras={21075};bot.victim=&boss;bot.melee=true;
+ damage.DmgClass=SPELL_DAMAGE_CLASS_MELEE;assert(ai::HasMajordomoDamageShield(&bot,&boss));
+ assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss)&&ai::HasUnsafeEncounterOffense(&bot));
+ assert(ai::StopUnsafeEncounterOffense(&bot,&bot)&&!bot.melee);
+ damage.DmgClass=SPELL_DAMAGE_CLASS_RANGED;assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ damage.DmgClass=SPELL_DAMAGE_CLASS_MAGIC;assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ botAI.real=true;assert(!ai::HasMajordomoDamageShield(&bot,&boss));botAI.real=false;
+ Unit shieldPet;shieldPet.map=409;shieldPet.master=&bot;shieldPet.victim=&boss;shieldPet.melee=true;PetAI shieldAI{&shieldPet,&shieldPet,&shieldPet};
+ shieldAI.AttackStart(&boss);assert(shieldPet.attacks==0);assert(ai::StopUnsafeEncounterOffense(&bot,&shieldPet)&&!shieldPet.melee);
+ boss.auras.clear();shieldAI.AttackStart(&boss);assert(shieldPet.attacks==1);
+ boss.reflection=50;assert(!shieldAI.Cast({&damage,&boss,false}));assert(ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));
+ assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&heal,&bot));
+ bot.casts[CURRENT_GENERIC_SPELL]=&harmful;harmful.m_targets.target=&boss;assert(ai::HasUnsafeEncounterOffense(&bot));
+ assert(ai::StopUnsafeEncounterOffense(&bot,&bot)&&!bot.casts[CURRENT_GENERIC_SPELL]);
+ boss.reflection=0;assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));bot.victim=nullptr;bot.stops=0;boss.auras={48294};botAI.interrupted.clear();
+  // Removed native Instability handler must not cause healing/casting holds.
  bot.map=boss.map=631;boss.entry=36853;SpellAuraHolder instability{&bot,3},unchained{&boss};bot.instability=&instability;bot.unchained=&unchained;
  assert(!ai::HasEncounterSpellBomb(&bot));
  assert(!ai::ShouldAvoidEncounterOffense(&bot,&bot,&damage,&boss));

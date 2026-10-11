@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "EncounterSpellPolicy.h"
 #include "MovementActions.h"
+#include "MoltenCoreDungeonActions.h"
 #include "MovementPathSafety.h"
 #include "MotionGenerators/MotionMaster.h"
 #include "MotionGenerators/MovementGenerator.h"
@@ -3785,6 +3786,17 @@ bool JumpAction::Execute(ai::Event &event)
             distanceFrom = 40.f;
         }
 
+        if (options == "ragnaros")
+        {
+            Unit* boss = MoltenCoreRagnaros(ai);
+            EncounterPosition plan;
+            if (!boss || boss->HasAura(21107) || boss->HasAura(21859) || boss->HasAura(20567) ||
+                ai->IsRanged(bot) || ai->IsHeal(bot) || !PlanRagnarosFormation(ai, plan) ||
+                !ValidateEncounterDestination(ai, plan, false)) return false;
+            dest = WorldPosition(plan.map, plan.destination.x, plan.destination.y, plan.destination.z);
+            distanceTo = 8.0f; distanceFrom = 3.0f;
+        }
+
         if (options == "chase")
         {
             // Player-led dungeon groups must not use jumps to pursue enemies.
@@ -3828,8 +3840,15 @@ bool JumpAction::Execute(ai::Event &event)
             jumpPoint = GetPossibleJumpStartFor(src, dest, possibleLanding, bot, requiredSpeed, distanceTo, distanceFrom);
         if (jumpPoint && requiredSpeed > 0.f)
         {
+            if (options == "ragnaros")
+            {
+                if (!possibleLanding || !IsJumpSafe(jumpPoint, possibleLanding, bot) ||
+                    !IsNotMagmaSlime(possibleLanding, bot)) return false;
+                std::list<HazardPosition> hazards; AppendMoltenCoreGroundHazards(ai, hazards);
+                if (!IsHazardSafeSegment(jumpPoint, possibleLanding, hazards)) return false;
+            }
             // check if jumping is much faster
-            if (options == "follow" || options == "chase" || toPosition)
+            if (options == "follow" || options == "chase" || options == "ragnaros" || toPosition)
             {
                 if (!IsJumpFasterThanWalking(src, dest, possibleLanding, bot))
                     return false;

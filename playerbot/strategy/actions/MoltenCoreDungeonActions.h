@@ -22,6 +22,11 @@ namespace ai
     Unit* MoltenCoreAssignedTankTarget(PlayerbotAI* ai);
     Unit* MoltenCorePackTankTarget(PlayerbotAI* ai);
     bool PlanGeddonFormation(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan);
+    bool PlanMajordomoFormation(PlayerbotAI* ai, EncounterPosition& plan);
+    bool PlanGolemaggFormation(PlayerbotAI* ai, EncounterPosition& plan);
+    Unit* MoltenCoreRagnaros(PlayerbotAI* ai);
+    bool RagnarosSameCluster(PlayerbotAI* ai, Player* member);
+    bool PlanRagnarosFormation(PlayerbotAI* ai, EncounterPosition& plan);
     bool PlanMoltenCorePack(PlayerbotAI* ai, EncounterPosition& plan);
 
     class MoltenCorePriorityTargetAction : public AttackAction

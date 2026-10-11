@@ -1,4 +1,5 @@
 #pragma once
+#include "PowerInfusionTarget.h"
 #include "playerbot/strategy/actions/HealerSupportActions.h"
 #include "playerbot/strategy/actions/GenericActions.h"
 
@@ -142,7 +143,7 @@ namespace ai
     {
     public:
         CastPowerInfusionAction(PlayerbotAI* ai) : CastSpellTargetAction(ai, "power infusion", "boost targets", true, true) {}
-        std::string GetTargetName() override { return "self target"; }
+        Unit* GetTarget() override { return SelectPowerInfusionTarget(ai); }
     };
 
     class CastFearWardAction : public CastSpellTargetAction

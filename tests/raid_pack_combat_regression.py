@@ -57,7 +57,7 @@ struct PlayerbotAI{Player*bot;Context context;bool real=false;unsigned stops=0;t
  Unit*GetUnit(ObjectGuid id){return units.count(id)?units[id]:nullptr;}void StopMoving(){++stops;}void UpdateRaidPetThreat();};
 struct Facade{std::map<unsigned,SpellEntry>spells;bool IsFriendlyTo(Player*,Unit*u){return u->friendly;}
  const SpellEntry*LookupSpellInfo(unsigned id){auto i=spells.find(id);return i==spells.end()?nullptr:&i->second;}}sServerFacade;
-namespace ai{
+namespace ai{ Unit* MoltenCoreNukeTarget(PlayerbotAI*){return nullptr;} bool MoltenCoreBossBurn(PlayerbotAI*){return false;}
  struct PossibleAttackTargetsValue{static bool HasBreakableCC(Unit*u,Player*){return u->cc;}static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}};
  struct EncounterPosition{};
  bool ControlledRaidAoe(PlayerbotAI*);bool StopMoltenCoreUnsafeTravel(PlayerbotAI*);

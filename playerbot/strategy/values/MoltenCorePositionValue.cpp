@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -157,11 +158,11 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
             Player* member = ref->getSource();
             if (!member || member == bot || !member->IsInWorld() || !member->IsAlive() ||
                 !bot->IsInMap(member) || member->IsBeingTeleported() || member->HasCharmer() ||
-                member->GetGroup() != bot->GetGroup()) continue;
-            // Deterministic yielding avoids two bots perpetually mirroring one
-            // another. Human players have right of way regardless of GUID.
-            if (!member->GetPlayerbotAI() || member->GetPlayerbotAI()->IsRealPlayer() ||
-                member->GetObjectGuid() < bot->GetObjectGuid()) add(member, NativeEncounterSpellRadius(21154));
+                member->GetGroup() != bot->GetGroup() || ai->IsTank(member) ||
+                (!ai->IsRanged(member) && !ai->IsHeal(member))) continue;
+            // Separate triples using Intense Heat's actual explosion radius,
+            // rather than Might's one-yard creature-summon radius.
+            if (!RagnarosSameCluster(ai, member)) add(member, NativeEncounterSpellRadius(21155));
         }
 
     // Native death eruptions remain dangerous after Garr has died.

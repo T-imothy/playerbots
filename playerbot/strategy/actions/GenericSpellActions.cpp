@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/strategy/MoltenCoreTrashPolicy.h"
 #include "GenericActions.h"
 #include "MoltenCoreGarrActions.h"
 #include "UseItemAction.h"
@@ -57,6 +58,7 @@ bool CastSpellAction::HasMovementEffect()
 bool CastSpellAction::Execute(Event& event)
 {
     RefreshSpellId();
+    if (!MoltenCoreTrashSpellAllowed(ai, GetSpellName())) return false;
     if (!CasterSpellAreaSafe(ai, GetSpellName(), GetTarget()) || !CasterHealthCostSafe(ai, GetSpellName())) return false;
     bool executed = false;
     uint32 observedSpellId = spellId;
@@ -290,6 +292,7 @@ bool CastSpellAction::isUseful()
         spellTarget->HasBreakableByDamageCrowdControlAura() && bot->CanAttack(spellTarget)) return false;
 
     if (!GarrSpellAllowed(ai, GetSpellName(), spellTarget, sServerFacade.LookupSpellInfo(spellId))) return false;
+    if (!MoltenCoreTrashSpellAllowed(ai, GetSpellName())) return false;
     if (!CasterSpellAreaSafe(ai, GetSpellName(), spellTarget) || !CasterHealthCostSafe(ai, GetSpellName())) return false;
 
     if ((bot->getClass() == CLASS_MAGE || bot->getClass() == CLASS_WARLOCK || bot->getClass() == CLASS_PRIEST ||
@@ -307,6 +310,7 @@ bool CastSpellAction::isUseful()
         return false;
     if (pSpellInfo)
     {
+        if (ShouldAvoidEncounterOffense(bot,bot,pSpellInfo,spellTarget)) return false;
         // check if the damage we'd take from damage shields is too harmful, only for melee spells
         if (range == ATTACK_DISTANCE)
         {
