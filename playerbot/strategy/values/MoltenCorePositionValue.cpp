@@ -9,6 +9,8 @@
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
+#include "Movement/MoveSpline.h"
+#include "playerbot/strategy/actions/MovementPathSafety.h"
 
 using namespace ai;
 
@@ -77,6 +79,26 @@ void ai::AppendMoltenCoreGroundHazards(PlayerbotAI* ai, std::list<HazardPosition
     }
 }
 
+bool ai::StopMoltenCoreUnsafeTravel(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId() != 409 || bot->IsBeingTeleported() ||
+        bot->HasCharmer() || ai->IsRealPlayer() || bot->GetTransport() || bot->IsFreeFlying() ||
+        !bot->movespline || bot->movespline->Finalized()) return false;
+    std::list<HazardPosition> fire;
+    AppendMoltenCoreGroundHazards(ai, fire);
+    if (fire.empty()) return false;
+    // Fire can spawn after a native chase/path was admitted. Validate the
+    // current native spline segment again, rather than waiting to reach the trap.
+    const auto next = bot->movespline->CurrentDestination();
+    const WorldPosition destination(bot->GetMapId(), next.x, next.y, next.z);
+    if (IsHazardSafeSegment(WorldPosition(bot), destination, fire)) return false;
+    ai->StopMoving();
+    ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Reset();
+    ai->GetAiObjectContext()->GetValue<EncounterPosition>("molten core position")->Reset();
+    return true;
+}
+
 bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
     std::vector<encounter::Circle>& threats)
 {
@@ -110,7 +132,9 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
     {
         // Inferno's damage is a native script-triggered spell (19698), not the
         // radius-zero channel. Living Bomb's explosion comes from its DBC trigger.
-        if (boss->HasAura(19695) || Casting(boss, 19695)) add(boss, NativeEncounterSpellRadius(19698));
+        // Holding tank keeps the encounter anchored; healers sustain it while
+        // everyone else avoids native Inferno damage. Bombs still override this.
+        if (boss->GetVictim() != bot && (boss->HasAura(19695) || Casting(boss, 19695))) add(boss, NativeEncounterSpellRadius(19698));
         if (boss->HasAura(20478) || Casting(boss, 20478)) add(boss, NativeEncounterSpellRadius(20478));
     }
     else if (boss && boss->GetEntry() == 12264 && (ai->IsRanged(bot) || ai->IsHeal(bot)) && boss->GetVictim() != bot)
@@ -140,8 +164,8 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
                 member->GetObjectGuid() < bot->GetObjectGuid()) add(member, NativeEncounterSpellRadius(21154));
         }
 
-    if (boss && boss->GetEntry() == 12057)
-        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
+    // Native death eruptions remain dangerous after Garr has died.
+    for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
         {
             Unit* firesworn = ai->GetUnit(guid);
             if (!firesworn || firesworn->GetEntry() != 12099 || !firesworn->IsInWorld() ||
@@ -149,7 +173,7 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
                 firesworn->HasCharmer() ||
                 firesworn->HasAura(710) || firesworn->HasAura(18647)) continue;
             if (Casting(firesworn, 20483)) add(firesworn, NativeEncounterSpellRadius(20483));
-            else if (Casting(firesworn, 19497) || firesworn->GetHealthPercent() <= 10.0f)
+            else if (Casting(firesworn, 19497) || firesworn->GetHealthPercent() <= 25.0f)
                 add(firesworn, NativeEncounterSpellRadius(19497));
         }
 

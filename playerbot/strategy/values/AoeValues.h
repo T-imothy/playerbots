@@ -3,6 +3,9 @@
 
 namespace ai
 {
+    // Engaged, clustered enemies held by living group tanks. Does not bypass
+    // native spell admission, threat limits, CC or encounter damage pauses.
+    bool ControlledRaidAoe(PlayerbotAI* ai);
     class AoePositionValue : public CalculatedValue<WorldLocation>
 	{
 	public:

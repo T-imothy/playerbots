@@ -32,6 +32,7 @@
 #include "PlayerbotSecurity.h"
 #include "Groups/Group.h"
 #include "Entities/Pet.h"
+#include "RaidPetPolicy.h"
 #include "AI/BaseAI/CreatureAI.h"
 #include "Spells/SpellAuras.h"
 #include "Spells/SpellMgr.h"
@@ -304,6 +305,37 @@ PlayerbotAI::~PlayerbotAI()
         delete aiObjectContext;
 }
 
+void PlayerbotAI::UpdateRaidPetThreat()
+{
+    if (IsRealPlayer() || !bot->IsInWorld() || bot->IsBeingTeleported() || bot->HasCharmer()) return;
+    Pet* pet = bot->GetPet();
+    if (!pet || !pet->IsInWorld() || !bot->IsInMap(pet) || pet->GetMasterGuid() != bot->GetObjectGuid()) return;
+    if (raidPetGuid != pet->GetObjectGuid())
+    {
+        const uint32 number = pet->GetCharmInfo() ? pet->GetCharmInfo()->GetPetNumber() : 0;
+        if (!number || number != raidPetNumber) raidPetSuppressedSpells.clear();
+        raidPetGuid = pet->GetObjectGuid();
+        raidPetNumber = number;
+    }
+    const bool raid = bot->GetMap()->IsRaid() || (bot->GetGroup() && bot->GetGroup()->IsRaidGroup());
+    if (!raid)
+    {
+        for (uint32 id : raidPetSuppressedSpells)
+            if (pet->HasSpell(id)) pet->ToggleAutocast(id, true);
+        raidPetSuppressedSpells.clear();
+        return;
+    }
+    // Snapshot before ToggleAutocast mutates the native list. This also handles
+    // existing pets, newly summoned pets, learned ranks and manual re-enabling.
+    const auto autocasts = pet->m_autospells;
+    for (uint32 id : autocasts)
+        if (ai::RaidPetThreatSpell(sServerFacade.LookupSpellInfo(id)))
+        {
+            pet->ToggleAutocast(id, false);
+            raidPetSuppressedSpells.insert(id);
+        }
+}
+
 void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanced)
 {
     MANTECH_DIAG_SCOPE(BotAI,32,nullptr);
@@ -313,6 +345,13 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
     std::unique_lock<std::mutex> updateLock(updateExecutionMutex, std::try_to_lock);
     if (!updateLock.owns_lock())
         return;
+
+    UpdateRaidPetThreat(); // Do not wait behind food, casts or ordinary action delays.
+    if (ai::StopMoltenCoreUnsafeTravel(this))
+    {
+        aiInternalUpdateDelay = 0;
+        isWaiting = false;
+    }
 
     // A real map transfer outranks ordinary action duration. Without this,
     // food, drink, crafting, fishing, or a channel can leave the master's
@@ -5765,6 +5804,8 @@ bool PlayerbotAI::CanCastPetSpell(uint32 spellId, Unit* target, SpellCastResult*
     Pet* pet = bot->GetPet();
     if (!spellInfo || !pet || !pet->HasSpell(spellId) || IsPassiveSpell(spellInfo))
         return fail(SPELL_FAILED_NOT_KNOWN);
+    if (ai::RaidPetThreatBlocked(this, spellInfo))
+        return fail(SPELL_FAILED_NOT_READY);
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
         !pet->IsInWorld() || !pet->IsAlive())
         return fail(SPELL_FAILED_CASTER_DEAD);

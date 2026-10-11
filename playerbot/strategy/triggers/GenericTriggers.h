@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/CasterCombatPolicy.h"
+#include "playerbot/strategy/values/AoeValues.h"
 #include "playerbot/strategy/Trigger.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
@@ -8,6 +9,12 @@
 
 namespace ai
 {
+    class ControlledRaidAoeTrigger : public Trigger
+    {
+    public:
+        ControlledRaidAoeTrigger(PlayerbotAI* ai) : Trigger(ai, "controlled raid aoe", 1) {}
+        bool IsActive() override { return ControlledRaidAoe(ai); }
+    };
 	class StatAvailable : public Trigger
 	{
 	public:

@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "GenericActions.h"
+#include "MoltenCoreGarrActions.h"
 #include "UseItemAction.h"
 #include "playerbot/CombatDiagnostics.h"
 #include "EncounterSpellPolicy.h"
@@ -119,6 +120,7 @@ bool CastSpellAction::Execute(Event& event)
             return false;
         if (ShouldAvoidEncounterTaunt(ai, sServerFacade.LookupSpellInfo(spellId), GetTarget()))
             return false;
+        if (!GarrSpellAllowed(ai, GetSpellName(), GetTarget(), sServerFacade.LookupSpellInfo(spellId))) return false;
         if (ShouldAvoidEncounterOffense(bot, bot, sServerFacade.LookupSpellInfo(spellId), GetTarget()))
             return false;
 
@@ -287,6 +289,7 @@ bool CastSpellAction::isUseful()
         getThreatType() != ActionThreatType::ACTION_THREAT_NONE &&
         spellTarget->HasBreakableByDamageCrowdControlAura() && bot->CanAttack(spellTarget)) return false;
 
+    if (!GarrSpellAllowed(ai, GetSpellName(), spellTarget, sServerFacade.LookupSpellInfo(spellId))) return false;
     if (!CasterSpellAreaSafe(ai, GetSpellName(), spellTarget) || !CasterHealthCostSafe(ai, GetSpellName())) return false;
 
     if ((bot->getClass() == CLASS_MAGE || bot->getClass() == CLASS_WARLOCK || bot->getClass() == CLASS_PRIEST ||

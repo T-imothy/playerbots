@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "ThreatValues.h"
+#include "AoeValues.h"
 
 #include "playerbot/ServerFacade.h"
 #include "Combat/ThreatManager.h"
@@ -60,7 +61,9 @@ uint8 ThreatValue::Calculate()
     if (qualifier == "aoe")
     {
         uint8 maxThreat = 0;
-        std::list<ObjectGuid> attackers = context->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+        // Evaluate the same cluster used by ground AoE, rather than an unrelated
+        // distant add with no tank threat vetoing damage on the stacked pack.
+        std::list<ObjectGuid> attackers = AoeCountValue::FindMaxDensity(bot);
         for (std::list<ObjectGuid>::iterator i = attackers.begin(); i != attackers.end(); i++)
         {
             Unit* unit = ai->GetUnit(*i);

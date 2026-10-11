@@ -19,6 +19,7 @@ namespace ai
 
     bool PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan);
     bool MoltenCoreImpPack(PlayerbotAI* ai);
+    bool StopMoltenCoreUnsafeTravel(PlayerbotAI* ai);
     bool ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan);
     bool ReadRotatingBeam(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan, encounter::RotatingBeam& beam);
     bool ValidateRotatingBeamDestination(PlayerbotAI* ai, EncounterPosition& plan, const encounter::RotatingBeam& beam);

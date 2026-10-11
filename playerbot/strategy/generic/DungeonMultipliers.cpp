@@ -259,6 +259,9 @@ float PreserveMoltenCorePositionMultiplier::GetValue(Action* action)
         MoltenCorePriorityTargetAction priority(ai);
         if (priority.GetTarget()) return 0.0f;
     }
+    // Friendly healing/ward reach remains available; the common movement
+    // admission still rejects every route through live encounter fire.
+    if (action->getName() == "reach party member to heal" || action->getName() == "reach party member to dispel") return 1.0f;
     // AttackAction selects a target; separate reach/chase actions still obey the hold.
     const bool movement = dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
         !dynamic_cast<MoltenCorePositionAction*>(action) && !dynamic_cast<MoveAwayFromHazard*>(action);

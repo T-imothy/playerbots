@@ -20,6 +20,9 @@ namespace ai
     };
 
     Unit* MoltenCoreAssignedTankTarget(PlayerbotAI* ai);
+    Unit* MoltenCorePackTankTarget(PlayerbotAI* ai);
+    bool PlanGeddonFormation(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan);
+    bool PlanMoltenCorePack(PlayerbotAI* ai, EncounterPosition& plan);
 
     class MoltenCorePriorityTargetAction : public AttackAction
     {

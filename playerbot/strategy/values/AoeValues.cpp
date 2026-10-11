@@ -4,6 +4,7 @@
 
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include <algorithm>
 using namespace ai;
 
@@ -16,6 +17,46 @@ namespace
         return bot && bot->IsInWorld() && unit && unit->IsInWorld() &&
             unit->IsAlive() && bot->IsInMap(unit);
     }
+}
+
+bool ai::ControlledRaidAoe(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        !bot->IsInCombat() || !bot->GetGroup() || !bot->GetMap()->IsRaid() || ai->IsRealPlayer() ||
+        ai->IsHeal(bot) || !ai->GetCombatStartTime() || time(0) - ai->GetCombatStartTime() < 2) return false;
+    const WorldLocation center = ai->GetAiObjectContext()->GetValue<WorldLocation>("aoe position")->Get();
+    // Validate the same centre the ground-targeted action will cast at. A
+    // separate density scan can select a different, farther cluster.
+    const float range = std::min(40.0f, ai->GetRange("spell"));
+    if (!std::isfinite(center.coord_x) || !std::isfinite(center.coord_y) || !std::isfinite(center.coord_z) ||
+        std::hypot(center.coord_x - bot->GetPositionX(), center.coord_y - bot->GetPositionY()) > range) return false;
+    unsigned controlled = 0;
+    for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
+    {
+        Unit* enemy = ai->GetUnit(guid);
+        if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || !bot->IsInMap(enemy) ||
+            sServerFacade.IsFriendlyTo(bot, enemy)) continue;
+        const float dx = enemy->GetPositionX() - center.coord_x;
+        const float dy = enemy->GetPositionY() - center.coord_y;
+        const float dz = enemy->GetPositionZ() - center.coord_z;
+        const float clearance = 12.0f + enemy->GetCombatReach();
+        if (dx*dx + dy*dy + dz*dz > clearance*clearance) continue;
+        // Inspect the unfiltered neighbours too: sheeped or unpulled mobs must
+        // not disappear from the safety decision merely because they cannot be selected.
+        if (!enemy->IsInCombat() || enemy->HasCharmer() ||
+            PossibleAttackTargetsValue::HasBreakableCC(enemy, bot) ||
+            PossibleAttackTargetsValue::HasUnBreakableCC(enemy, bot)) return false;
+        if (dx*dx + dy*dy > 8.0f*8.0f || std::fabs(dz) > 5.0f) continue;
+        Unit* victim = enemy->GetVictim();
+        if (!victim || !victim->IsPlayer() || !victim->IsInWorld() || !victim->IsAlive() ||
+            !bot->IsInMap(victim)) return false;
+        Player* tank = static_cast<Player*>(victim);
+        if (tank->IsBeingTeleported() || tank->HasCharmer() || tank->GetGroup() != bot->GetGroup() ||
+            !ai->IsTank(tank)) return false;
+        ++controlled;
+    }
+    return controlled >= 3;
 }
 
 std::list<ObjectGuid> AoeCountValue::FindMaxDensity(Player* bot, float range)

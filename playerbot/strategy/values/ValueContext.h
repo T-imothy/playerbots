@@ -3,6 +3,8 @@
 #include "ActiveSpellValue.h"
 #include "BotReliabilityValue.h"
 #include "EncounterPositionValue.h"
+#include "GarrControlValue.h"
+#include "GeddonControlValue.h"
 #include "VashjCoreValue.h"
 #include "RitualSummonValue.h"
 #include "UldamanAltarValue.h"
@@ -426,6 +428,8 @@ namespace ai
                 creators["not"] = [](PlayerbotAI* ai) { return new NotValue(ai); };
                 creators["gt32"] = [](PlayerbotAI* ai) { return new GT32Value(ai); };
                 creators["manual bool"] = [](PlayerbotAI* ai) { return new BoolManualSetValue(ai); };
+                creators["geddon control"] = [](PlayerbotAI* ai) { return new GeddonControlValue(ai); };
+                creators["garr control"] = [](PlayerbotAI* ai) { return new GarrControlValue(ai); };
                 creators["manual int"] = [](PlayerbotAI* ai) { return new IntManualSetValue(ai); };
                 creators["manual saved int"] = [](PlayerbotAI* ai) { return new IntManualSetSavedValue(ai); };
                 creators["manual string"] = [](PlayerbotAI* ai) { return new StringManualSetValue(ai); };

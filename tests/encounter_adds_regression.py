@@ -27,6 +27,7 @@ code = r'''
 #include <list>
 #include <map>
 #include <string>
+#include <set>
 #include <type_traits>
 using ObjectGuid=unsigned;
 using uint32=unsigned;
@@ -40,13 +41,14 @@ struct Unit {
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}
  bool IsLevitating(){return levitating;}Map* GetMap(){return map;}unsigned GetEntry(){return entry;}
  Unit* GetVictim(){return victim;}float GetPositionZ(){return z;}
+ std::set<unsigned>auras;bool HasAura(unsigned id){return auras.count(id);}
  float GetDistance(Unit* other){return std::fabs(x-other->x);}
 };
 struct Player:Unit {bool charmed=false,teleport=false;unsigned mapId=554;
  bool IsInMap(Unit* unit){return map==unit->map&&phase==unit->phase;}
  bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}};
 struct PlayerbotAI {
- bool healer=false,tank=false;std::list<ObjectGuid> attackers,possible;std::map<unsigned,Unit*> units;
+ bool healer=false,tank=false,ranged=false;bool IsRanged(Player*){return ranged;}std::list<ObjectGuid> attackers,possible;std::map<unsigned,Unit*> units;
  Unit* current=nullptr;Unit* marked=nullptr;
  ObjectGuid commanded=0;
  bool IsHeal(Player*){return healer;}bool IsTank(Player*){return tank;}
@@ -74,6 +76,7 @@ namespace ai {
  struct PathaleonAddsAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
  struct OnyxiaAddsAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
  Unit* MoltenCoreAssignedTankTarget(PlayerbotAI*) { return nullptr; } // DPS selection fixture; tank allocation is separate.
+ Unit* GarrFocusTarget(PlayerbotAI*) { return nullptr; } // Dedicated Garr fixture exercises its native controller.
  struct MoltenCorePriorityTargetAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
 }
 using namespace ai;
@@ -216,7 +219,13 @@ int main(){
  ai.healer=true;assert(!mc.GetTarget());ai.healer=false;ai.tank=true;assert(!mc.GetTarget());ai.tank=false;
  bot.teleport=true;assert(!mc.GetTarget());bot.teleport=false;
  add.attackable=false;assert(!mc.GetTarget());add.attackable=true;
- std::cout<<"PASS: actual encounter add selection: CC, marks, roles, stable target, death, transition, instance, expansion\n";
+ // Mixed patrol pack: ranged focus the hound, melee the separate mob; respect commands/CC.
+ boss=Unit{};add=Unit{};bot=Player{};bot.map=&map;bot.mapId=409;
+ boss.map=add.map=&map;boss.entry=11673;add.entry=11661;boss.guid=10;add.guid=20;
+ ai=PlayerbotAI{};ai.units={{1,&boss},{2,&add}};ai.possible={1,2};ai.attackers={1,2};
+ ai.ranged=true;assert(mc.GetTarget()==&boss);ai.ranged=false;assert(mc.GetTarget()==&add);
+ add.breakCC=true;assert(!mc.GetTarget());add.breakCC=false;ai.commanded=2;assert(!mc.GetTarget());ai.commanded=0;
+ std::cout<<"PASS: actual encounter add selection: CC, marks, roles, mixed hounds, stable target, death, transition, instance, expansion\n";
 }
 '''.replace("__METHODS__", "\n".join(methods))
 for expansion in ("ZERO", "ONE", "TWO"):

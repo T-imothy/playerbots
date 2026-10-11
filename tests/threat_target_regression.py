@@ -69,6 +69,8 @@ struct PlayerbotAI {
   else return T{};
  }
 };
+std::list<ObjectGuid>aoeCluster;
+struct AoeCountValue{static std::list<ObjectGuid>FindMaxDensity(Player*){return aoeCluster;}};
 struct AiNamedObject {std::string getName(){return "fixture";}};
 struct UntypedValue:AiNamedObject {
  PlayerbotAI* ai;Player* bot;Context* context;
@@ -97,6 +99,8 @@ int main(){
  Relative relative(&ai);relative.qualifier="aoe";
  assert(relative.Calculate(&enemy)==255); // BEFORE FIX: uint8 overflow hides extreme threat
  enemy.threat.values[&bot]=79;assert(relative.Calculate(&enemy)==79);
+ ai.selected=&enemy;aoeCluster={enemy.guid};assert(relative.Calculate()==79);
+ aoeCluster.clear();assert(relative.Calculate()==0);ai.selected=nullptr;
  enemy.threat.values[&tank]=0;assert(relative.Calculate(&enemy)==100);
  enemy.combat=false;assert(relative.Calculate(&enemy)==0);enemy.combat=true;
  enemy.motion.kind=FLEEING_MOTION_TYPE;assert(relative.Calculate(&enemy)==0);

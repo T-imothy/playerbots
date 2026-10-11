@@ -1,5 +1,6 @@
 #pragma once
 #include "playerbot/strategy/values/EncounterPositionValue.h"
+#include "playerbot/strategy/values/AoeValues.h"
 
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/actions/GenericActions.h"
@@ -78,7 +79,7 @@ namespace ai
 	public:
 		CastBlizzardAction(PlayerbotAI* ai) : CastSpellAction(ai, "blizzard") {}
         virtual ActionThreatType getThreatType() { return ActionThreatType::ACTION_THREAT_AOE; }
-        virtual bool isUseful() override { return CastSpellAction::isUseful() && ai->GetCombatStartTime() && ((time(0) - ai->GetCombatStartTime()) > 10 || MoltenCoreImpPack(ai)); }
+        virtual bool isUseful() override { return CastSpellAction::isUseful() && ai->GetCombatStartTime() && ((time(0) - ai->GetCombatStartTime()) > 10 || ControlledRaidAoe(ai) || MoltenCoreImpPack(ai)); }
 	};
 
 	class CastArcaneIntellectAction : public CastBuffSpellAction

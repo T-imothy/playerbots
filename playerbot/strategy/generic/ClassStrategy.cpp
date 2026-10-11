@@ -4,10 +4,54 @@
 
 using namespace ai;
 
+namespace
+{
+    void AddControlledRaidAoe(PlayerbotAI* ai, std::list<TriggerNode*>& triggers)
+    {
+        // Use the class's existing actions and learned ranks in each expansion.
+        // Emergency healing, interrupts, target allocation and escape still outrank this.
+        const char* primary = nullptr;
+        const char* fallback = nullptr;
+        Player* bot = ai->GetBot();
+        switch (bot->getClass())
+        {
+            case CLASS_MAGE: primary = "blizzard"; fallback = "flamestrike"; break;
+            case CLASS_HUNTER: primary = "volley"; fallback = "multi-shot"; break;
+            case CLASS_WARLOCK:
+#ifdef MANGOSBOT_ZERO
+                primary = "rain of fire";
+#else
+                primary = "seed of corruption"; fallback = "rain of fire";
+#endif
+                break;
+            case CLASS_DRUID: primary = ai->IsRanged(bot) ? "hurricane" : "swipe"; break;
+            case CLASS_SHAMAN: primary = "chain lightning"; break;
+            case CLASS_PALADIN: primary = "consecration"; break;
+            case CLASS_WARRIOR:
+                primary = ai->IsTank(bot) ? "cleave" : "whirlwind";
+                if (ai->IsTank(bot)) fallback = "thunder clap";
+                break;
+            case CLASS_ROGUE: primary = "blade flurry"; break;
+#ifdef MANGOSBOT_TWO
+            case CLASS_PRIEST: primary = "mind sear"; break;
+            case CLASS_DEATH_KNIGHT: primary = "death and decay"; break;
+#endif
+            default: break;
+        }
+        if (!primary) return;
+        if (fallback) triggers.push_back(new TriggerNode("controlled raid aoe",
+            NextAction::array(0, new NextAction(primary, ACTION_HIGH + 5),
+                new NextAction(fallback, ACTION_HIGH + 4), NULL)));
+        else triggers.push_back(new TriggerNode("controlled raid aoe",
+            NextAction::array(0, new NextAction(primary, ACTION_HIGH + 5), NULL)));
+    }
+}
+
 #ifdef MANGOSBOT_ZERO // Vanilla
 
 void ClassStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    AddControlledRaidAoe(ai, triggers);
     triggers.push_back(new TriggerNode(
         "invalid target",
         NextAction::array(0, new NextAction("select new target", ACTION_EMERGENCY), NULL)));
@@ -478,6 +522,7 @@ void OffdpsRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
 
 void ClassStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    AddControlledRaidAoe(ai, triggers);
     if (ai->GetBot()->getClass() == CLASS_HUNTER)
         triggers.push_back(new TriggerNode("tank threat transfer",
             NextAction::array(0, new NextAction("misdirection on party tank", ACTION_HIGH + 2), NULL)));
@@ -948,6 +993,7 @@ void OffdpsRaidStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers
 
 void ClassStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    AddControlledRaidAoe(ai, triggers);
     if (ai->GetBot()->getClass() == CLASS_HUNTER)
         triggers.push_back(new TriggerNode("tank threat transfer",
             NextAction::array(0, new NextAction("misdirection on party tank", ACTION_HIGH + 2), NULL)));

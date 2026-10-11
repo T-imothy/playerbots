@@ -802,6 +802,10 @@ protected:
     // queues without touching mutable AI state.
     std::atomic<uint32> transitionGeneration{1};
     std::atomic<bool> urgentTransitionPending{false};
+    ObjectGuid raidPetGuid;
+    uint32 raidPetNumber = 0;
+    std::set<uint32> raidPetSuppressedSpells;
+    void UpdateRaidPetThreat();
     struct PendingSummonRevival
     {
         bool active = false;

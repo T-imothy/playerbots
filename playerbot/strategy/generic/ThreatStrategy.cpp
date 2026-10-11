@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "ThreatStrategy.h"
+#include "playerbot/strategy/values/AoeValues.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 
@@ -27,7 +28,9 @@ float ThreatMultiplier::GetValue(Action* action)
     if (action->getThreatType() == ActionThreatType::ACTION_THREAT_AOE)
     {
         uint8 threat = AI_VALUE2(uint8, "threat", "aoe");
-        if (threat >= 50)
+        // A controlled raid pack has a tank on every clustered enemy.
+        // Keep a real threat margin without suppressing AoE at half the tank threat.
+        if (threat >= (ControlledRaidAoe(ai) ? 90 : 50))
             return 0.0f;
     }    
     

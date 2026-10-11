@@ -26,7 +26,7 @@ namespace ai
     enum class CasterArea { None, Ground, Self, Target, Chain };
     inline CasterArea CasterSpellArea(const std::string& name)
     {
-        for (const char* spell : {"blizzard", "flamestrike", "rain of fire", "hurricane", "shadowfury", "force of nature"})
+        for (const char* spell : {"blizzard", "flamestrike", "rain of fire", "hurricane", "shadowfury", "force of nature", "volley", "death and decay"})
             if (name == spell) return CasterArea::Ground;
         for (const char* spell : {"starfall", "arcane explosion", "frost nova", "cone of cold", "dragon's breath",
             "blast wave", "howl of terror", "hellfire", "immolation aura", "shadow cleave", "shadowflame", "typhoon", "thunderstorm"})
