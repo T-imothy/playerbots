@@ -44,7 +44,7 @@ namespace ai
     class ShadeOfAranFightStrategy : public Strategy
     {
     public:
-        ShadeOfAranFightStrategy(PlayerbotAI* ai) : Strategy(ai) {}
+        ShadeOfAranFightStrategy(PlayerbotAI* ai) : Strategy(ai), currentPhase(AranPhase::PHASE_NONE), rangedBot(false), elementalsOut(false) {}
         static ShadeOfAranFightStrategy* Get(PlayerbotAI* ai);
         void SetPhase(AranPhase phase) { currentPhase = phase; }
         AranPhase GetPhase() { return currentPhase; }
@@ -76,7 +76,6 @@ namespace ai
         void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
         void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
         void InitDeadTriggers(std::list<TriggerNode*>& triggers) override;
-        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
     };
 
     class PrinceMalchezaarFightStrategy : public Strategy

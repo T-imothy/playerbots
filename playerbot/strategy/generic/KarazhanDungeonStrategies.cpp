@@ -139,7 +139,7 @@ void ShadeOfAranFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& tri
 
 void ShadeOfAranFightStrategy::OnStrategyAdded(BotState state)
 {
-    if (!Get(ai)->GetBossGuid())
+    if (!GetBossGuid())
     {
         // Find Shade of aran and store him
         std::list<Unit*> creatures;
@@ -192,4 +192,51 @@ void BigBadWolfFightStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "end big bad wolf fight",
         NextAction::array(0, new NextAction("disable big bad wolf fight strategy", 100.0f), NULL)));
+}
+
+
+NetherspiteFightStrategy* NetherspiteFightStrategy::Get(PlayerbotAI* ai)
+{
+    return ai ? ai->GetStrategy<NetherspiteFightStrategy>("netherspite", BotState::BOT_STATE_COMBAT) : nullptr;
+}
+
+
+void NetherspiteFightStrategy::OnStrategyAdded(BotState state)
+{
+    if (!GetBossGuid())
+    {
+        // Find Netherspite and store him
+        std::list<Unit*> creatures;
+        MaNGOS::AllCreaturesOfEntryInRangeCheck u_check(ai->GetBot(), 15689, 100);
+        MaNGOS::UnitListSearcher<MaNGOS::AllCreaturesOfEntryInRangeCheck> searcher(creatures, u_check);
+        Cell::VisitAllObjects(ai->GetBot(), searcher, 100);
+
+        if (creatures.empty())
+            return;
+
+        Unit* target = creatures.front();
+
+        NetherspiteFightStrategy* strategy = NetherspiteFightStrategy::Get(ai);
+        if (strategy)
+        {
+            if (target && target->GetEntry() == 15689)
+            {
+                strategy->SetBossGuid(target->GetObjectGuid());
+            }
+        }
+    }
+}
+
+
+ShadeOfAranFightStrategy* ShadeOfAranFightStrategy::Get(PlayerbotAI* ai)
+{
+    return ai ? ai->GetStrategy<ShadeOfAranFightStrategy>("shade of aran", BotState::BOT_STATE_COMBAT) : nullptr;
+}
+
+
+void PrinceMalchezaarFightStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
+{
+    triggers.push_back(new TriggerNode(
+        "prince malchezaar too close",
+        NextAction::array(0, new NextAction("move away from prince malchezaar", 100.0f), NULL)));
 }
