@@ -3,6 +3,7 @@
 #include "CombatStrategy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
+#include "playerbot/strategy/actions/BotCommandAccess.h"
 
 using namespace ai;
 
@@ -122,6 +123,33 @@ WaitForAttackStrategy* WaitForAttackStrategy::Get(PlayerbotAI* ai)
     return ai ? ai->GetStrategy<WaitForAttackStrategy>("wait for attack", BotState::BOT_STATE_COMBAT) : nullptr;
 }
 
+void WaitForAttackStrategy::AllowExplicitAttack(PlayerbotAI* ai, Player* requester, Unit* target)
+{
+    Player* bot=ai->GetBot();
+    if (ai->IsRealPlayer() || !CanManageBotCommands(ai,requester) || ai->GetMaster()!=requester ||
+        !bot->GetGroup() || requester->GetGroup()!=bot->GetGroup() || !bot->IsInMap(requester) ||
+        !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        !target || !target->IsInWorld() || !target->IsAlive() || !bot->IsInMap(target) ||
+        sServerFacade.IsFriendlyTo(bot,target)) return;
+    orderedOwner=requester->GetObjectGuid();orderedTarget=target->GetObjectGuid();
+    orderedAt=time(0);orderedCombatStart=ai->GetCombatStartTime();
+}
+
+bool WaitForAttackStrategy::HasExplicitAttackOrder(PlayerbotAI* ai, time_t combatStart)
+{
+    Player* bot=ai->GetBot();Player* owner=ai->GetMaster();
+    Unit* target=ai->GetUnit(orderedTarget);
+    if (!orderedAt || !combatStart || !owner || owner->GetObjectGuid()!=orderedOwner ||
+        !bot->GetGroup() || owner->GetGroup()!=bot->GetGroup() || !bot->IsInMap(owner) ||
+        !target || !target->IsInWorld() || !target->IsAlive() || !target->IsInCombat() ||
+        !bot->IsInMap(target) || sServerFacade.IsFriendlyTo(bot,target) || (target->GetEntry()==11669 && !ai->IsTank(bot))) return false;
+    // Bind an order issued just before the pull to that first combat epoch.
+    // A later pull or a changed controller cannot reuse the order.
+    if (!orderedCombatStart && combatStart>=orderedAt && combatStart<=orderedAt+3)
+        orderedCombatStart=combatStart;
+    return orderedCombatStart && combatStart==orderedCombatStart;
+}
+
 bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
 {
     // Only check if the bot has the strategy enabled
@@ -151,6 +179,8 @@ bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
                 const time_t combatStartTime = AI_VALUE(time_t, "combat start time");
                 if (combatStartTime > 0)
                 {
+                    if (WaitForAttackStrategy* strategy=Get(ai))
+                        if (strategy->HasExplicitAttackOrder(ai,combatStartTime)) return false;
                     // Check the amount of time elapsed from the combat start
                     const time_t elapsedTime = time(0) - combatStartTime;
                     return elapsedTime < GetWaitTime(ai);
@@ -179,8 +209,8 @@ float WaitForAttackMultiplier::GetValue(Action* action)
 
     // Allow some movement and targeting actions and non threat actions (like cc!)
     const std::string& actionName = action->getName();
-    if ((actionName != "wait for attack keep safe distance") && 
-        (actionName != "dps assist") && 
+    if ((actionName != "wait for attack keep safe distance") &&
+        (actionName != "dps assist") &&
         (actionName != "set facing") &&
         (actionName != "pull my target") &&
         (actionName != "pull rti target") &&

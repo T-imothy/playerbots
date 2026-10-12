@@ -378,6 +378,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
         return;
 
     PrepareForUrgentAttack(); // Explicit authorized orders outrank food/drink duration.
+    PrepareForUrgentCombat(); // Native imp aggro must not wait behind an AoE channel.
 
     // Food/drink duration must not hide a nearby party pull from its healer.
     // Standing removes the sitting-only regeneration auras normally.
@@ -1420,6 +1421,26 @@ void PlayerbotAI::PrepareForUrgentAttack()
     // in-flight heal or mutate spells from the command-receiving world thread.
 }
 
+void PlayerbotAI::PrepareForUrgentCombat()
+{
+    if (!urgentCombatPending.exchange(false,std::memory_order_acq_rel)) return;
+    if (!bot || IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || bot->HasCharmer() || bot->GetMapId()!=409 ||
+        !bot->GetGroup() || IsTank(bot)) return;
+    for (Unit* attacker : bot->getAttackers())
+        if (attacker && attacker->IsInWorld() && attacker->IsAlive() && attacker->GetEntry()==11669 &&
+            attacker->GetVictim()==bot && bot->IsInMap(attacker) && !attacker->HasCharmer())
+        {
+            // Resolve the live native attacker on the owning map. The packet
+            // receiver only published a wake flag, never moved or cast.
+            bot->InterruptNonMeleeSpells(false);
+            if (bot->IsSitState()) bot->SetStandState(UNIT_STAND_STATE_STAND);
+            aiInternalUpdateDelay=0;isWaiting=false;
+            aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
+            return;
+        }
+}
+
 void PlayerbotAI::RunOnOwningThread(Player* target, std::function<void(Player*)> action)
 {
     if (!target || !action)
@@ -2067,6 +2088,12 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
 
 void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 {
+    if (packet.GetOpcode()==SMSG_ATTACKSTART && packet.size()>=16 && bot->GetMapId()==409)
+    {
+        WorldPacket copy(packet);copy.rpos(0);
+        ObjectGuid attacker,victim;copy>>attacker>>victim;
+        if (victim==bot->GetObjectGuid()) urgentCombatPending.store(true,std::memory_order_release);
+    }
     //if (packet.empty())
     //    return;
 

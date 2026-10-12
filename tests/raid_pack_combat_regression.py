@@ -4,11 +4,12 @@ import subprocess, tempfile
 from behavior_regression import block
 r = Path(__file__).resolve().parents[1]
 aoe=(r/'playerbot/strategy/values/AoeValues.cpp').read_text()
+policy=(r/'playerbot/strategy/MoltenCoreTrashPolicy.h').read_text()
 pet=(r/'playerbot/RaidPetPolicy.h').read_text()
 update=(r/'playerbot/PlayerbotAI.cpp').read_text()
 fire=(r/'playerbot/strategy/values/MoltenCorePositionValue.cpp').read_text()
 safety=(r/'playerbot/strategy/actions/MovementPathSafety.h').read_text()
-methods='\n'.join(('namespace ai {\n'+block(pet,'inline bool RaidPetThreatSpell(')+'\n'+block(pet,'inline bool RaidPetThreatBlocked(')+'\n}',
+methods='\n'.join(('namespace ai {\n'+block(pet,'inline bool RaidPetThreatSpell(')+'\n'+block(pet,'inline bool RaidPetThreatBlocked(')+'\n'+block(policy,'inline bool MoltenCoreImpAoeOpening(')+'\n}',
  block(aoe,'bool ai::ControlledRaidAoe('),block(update,'void PlayerbotAI::UpdateRaidPetThreat('),
  block(safety,'inline bool IsFiniteMovementPoint('),block(safety,'inline bool IsHazardSafeSegment('),
  block(fire,'bool ai::StopMoltenCoreUnsafeTravel(')))
@@ -28,7 +29,7 @@ enum{CLASS_WARRIOR=1,CLASS_MAGE=8,MAX_EFFECT_INDEX=3,SPELL_EFFECT_ATTACK_ME=1,SP
 struct SpellEntry{unsigned Effect[3]={},EffectApplyAuraName[3]={};int EffectBasePoints[3]={};};
 struct Map{bool raid=true;bool IsRaid(){return raid;}};
 struct Group{bool raid=true;bool IsRaidGroup(){return raid;}};
-struct Unit{virtual ~Unit()=default;virtual bool IsPlayer(){return false;}
+struct Unit{virtual ~Unit()=default;virtual bool IsPlayer(){return false;}unsigned entry=0;unsigned GetEntry(){return entry;}
  bool world=true,alive=true,combat=true,charmed=false,cc=false,hardCC=false,friendly=false;unsigned instance=1;float x=0,y=0,z=0;
  Unit*victim=nullptr;bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}float GetCombatReach(){return 1.5f;}Unit*GetVictim(){return victim;}};
@@ -91,6 +92,8 @@ int main(){
  two.victim=&bot;assert(!ControlledRaidAoe(&ai));two.victim=&tank;
  bot.cls=CLASS_MAGE;ai.context.possible.value={2,3,4};
  assert(ControlledRaidAoe(&ai));tank.tank=false;assert(!ControlledRaidAoe(&ai));tank.tank=true;
+ one.entry=11669;assert(!ControlledRaidAoe(&ai));bot.tank=true;assert(ControlledRaidAoe(&ai));bot.tank=false;
+ ai.start=time(0)-10;assert(ControlledRaidAoe(&ai));one.entry=0;ai.start=time(0)-5;
  three.victim=&bot;assert(!ControlledRaidAoe(&ai));three.victim=&tank;
  nearby.x=11;nearby.cc=true;ai.context.possible.value.push_back(5);assert(!ControlledRaidAoe(&ai));
  nearby.cc=false;nearby.combat=false;assert(!ControlledRaidAoe(&ai));nearby.x=50;assert(ControlledRaidAoe(&ai));

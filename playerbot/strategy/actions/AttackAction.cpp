@@ -35,6 +35,9 @@ bool AttackMyTargetAction::Execute(Event& event)
         if (guid)
         {
             Unit* target = ai->GetUnit(guid);
+            if (event.getOwner() && IsTargetValid(requester,target))
+                if (WaitForAttackStrategy* strategy=WaitForAttackStrategy::Get(ai))
+                    strategy->AllowExplicitAttack(ai,requester,target);
             if (IsTargetValid(requester, target) && ai->IsHeal(bot) &&
                 !ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT))
             {
@@ -74,6 +77,9 @@ bool AttackRTITargetAction::Execute(Event& event)
 
     if (rtiTarget && rtiTarget->IsInWorld() && rtiTarget->GetMapId() == bot->GetMapId())
     {
+        if (event.getOwner() && IsTargetValid(requester,rtiTarget))
+            if (WaitForAttackStrategy* strategy=WaitForAttackStrategy::Get(ai))
+                strategy->AllowExplicitAttack(ai,requester,rtiTarget);
         if (Attack(requester, rtiTarget))
         {
             SET_AI_VALUE(ObjectGuid, "attack target", rtiTarget->GetObjectGuid());

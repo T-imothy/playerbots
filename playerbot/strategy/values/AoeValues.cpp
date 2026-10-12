@@ -27,6 +27,7 @@ bool ai::ControlledRaidAoe(PlayerbotAI* ai)
         !bot->IsInCombat() || !bot->GetGroup() || !bot->GetMap()->IsRaid() || ai->IsRealPlayer() ||
         ai->IsHeal(bot) || !ai->GetCombatStartTime() || time(0) - ai->GetCombatStartTime() < 2) return false;
     if (!ai->IsTank(bot) && (MoltenCoreNukeTarget(ai) || MoltenCoreBossBurn(ai))) return false;
+    if (MoltenCoreImpAoeOpening(ai)) return false;
     const bool dpsWarrior = bot->getClass() == CLASS_WARRIOR && !ai->IsTank(bot);
     WorldLocation center = ai->GetAiObjectContext()->GetValue<WorldLocation>("aoe position")->Get();
     // Whirlwind is self-centred; a distant caster cluster must not admit it.

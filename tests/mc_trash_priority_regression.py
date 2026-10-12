@@ -4,20 +4,21 @@ import subprocess,tempfile
 from behavior_regression import block
 r=Path(__file__).resolve().parents[1]
 s=(r/'playerbot/strategy/MoltenCoreTrashPolicy.h').read_text(encoding='utf-8')
-methods='\n'.join(block(s,x) for x in ('inline Unit* MoltenCoreNukeTarget(','inline bool MoltenCoreBossBurn(','inline bool MoltenCoreBroadAoeSpell(','inline bool MoltenCoreTrashSpellAllowed('))
+methods='\n'.join(block(s,x) for x in ('inline bool MoltenCoreImpAoeOpening(','inline Unit* MoltenCoreNukeTarget(','inline bool MoltenCoreBossBurn(','inline bool MoltenCoreBroadAoeSpell(','inline bool MoltenCoreTrashSpellAllowed('))
 code=r'''
 #include <cassert>
 #include <list>
 #include <map>
 #include <string>
 #include <iostream>
+#include <ctime>
 using ObjectGuid=unsigned;
-struct Unit{unsigned guid=0,entry=0,instance=1;float health=100;bool world=true,alive=true,combat=true,cc=false,hardCC=false,valid=true;
+struct Unit{unsigned guid=0,entry=0,instance=1;float health=100;bool world=true,alive=true,combat=true,cc=false,hardCC=false,valid=true,charmed=false;bool HasCharmer(){return charmed;}
 bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}unsigned GetEntry(){return entry;}unsigned GetObjectGuid(){return guid;}float GetHealthPercent(){return health;}};
 struct Player:Unit{bool teleport=false,charmed=false,tank=false;unsigned map=409;bool IsBeingTeleported(){return teleport;}bool HasCharmer(){return charmed;}unsigned GetMapId(){return map;}bool IsInMap(Unit*u){return u->instance==instance;}};
 template<class T>struct Cached{T value;T Get(){return value;}};
 struct Context{Cached<ObjectGuid>marked;Cached<std::list<ObjectGuid>>possible;template<class T>Cached<T>*GetValue(const char*){if constexpr(std::is_same_v<T,ObjectGuid>)return &marked;else return &possible;}};
-struct PlayerbotAI{Player*bot;Context context;std::map<unsigned,Unit*>units;Player*GetBot(){return bot;}Context*GetAiObjectContext(){return &context;}bool IsTank(Player*p){return p->tank;}Unit*GetUnit(unsigned g){return units.count(g)?units[g]:nullptr;}};
+struct PlayerbotAI{Player*bot;Context context;std::map<unsigned,Unit*>units;time_t started=time(0)-12;time_t GetCombatStartTime(){return started;}Player*GetBot(){return bot;}Context*GetAiObjectContext(){return &context;}bool IsTank(Player*p){return p->tank;}Unit*GetUnit(unsigned g){return units.count(g)?units[g]:nullptr;}};
 struct{float sightDistance=60;}sPlayerbotAIConfig;
 namespace ai{struct PossibleAttackTargetsValue{static bool IsValid(Unit*u,Player*,float,bool,bool){return u->valid;}static bool HasBreakableCC(Unit*u,Player*){return u->cc;}static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}};
 __METHODS__
@@ -38,6 +39,14 @@ walker.alive=guard.alive=false;elemental.entry=11988;assert(MoltenCoreBossBurn(&
 elemental.alive=true;elemental.entry=12018;assert(!MoltenCoreTrashSpellAllowed(&a,"cleave")&&!MoltenCoreTrashSpellAllowed(&a,"multi-shot"));
 bot.tank=true;assert(!MoltenCoreTrashSpellAllowed(&a,"thunder clap")&&MoltenCoreTrashSpellAllowed(&a,"shield slam")&&MoltenCoreTrashSpellAllowed(&a,"chain heal"));bot.tank=false;
 elemental.alive=false;
+elemental.alive=true;elemental.entry=11669;a.started=time(0)-9;
+assert(!MoltenCoreTrashSpellAllowed(&a,"blizzard")&&!MoltenCoreTrashSpellAllowed(&a,"rain of fire")&&!MoltenCoreTrashSpellAllowed(&a,"multi-shot"));
+assert(MoltenCoreTrashSpellAllowed(&a,"shadow bolt")&&MoltenCoreTrashSpellAllowed(&a,"flash heal"));
+bot.tank=true;assert(MoltenCoreTrashSpellAllowed(&a,"thunder clap")&&MoltenCoreTrashSpellAllowed(&a,"consecration"));bot.tank=false;
+a.started=time(0)-10;assert(MoltenCoreTrashSpellAllowed(&a,"blizzard"));
+a.started=0;assert(!MoltenCoreTrashSpellAllowed(&a,"blizzard"));elemental.combat=false;assert(MoltenCoreTrashSpellAllowed(&a,"blizzard"));
+elemental.combat=true;elemental.instance=2;assert(MoltenCoreTrashSpellAllowed(&a,"blizzard"));elemental.instance=1;
+elemental.alive=false;a.started=time(0)-12;
 bot.map=0;assert(!MoltenCoreNukeTarget(&a)&&MoltenCoreTrashSpellAllowed(&a,"blizzard"));bot.map=409;bot.teleport=true;assert(!MoltenCoreNukeTarget(&a));
 std::cout<<"PASS: Firewalker/Flameguard focus ahead of elementals, marked target, CC/map safety, broad AoE hold, cleave and tank threat\n";}
 '''.replace('__METHODS__',methods)

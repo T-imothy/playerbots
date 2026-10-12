@@ -3,6 +3,22 @@
 
 namespace ai
 {
+    inline bool MoltenCoreImpAoeOpening(PlayerbotAI* ai)
+    {
+        Player* bot=ai->GetBot();
+        if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
+            bot->HasCharmer() || bot->GetMapId()!=409 || !bot->IsInCombat() || ai->IsTank(bot)) return false;
+        const time_t started=ai->GetCombatStartTime();
+        if (started && time(0)-started>=10) return false;
+        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
+        {
+            Unit* imp=ai->GetUnit(guid);
+            if (imp && imp->GetEntry()==11669 && imp->IsInWorld() && imp->IsAlive() &&
+                imp->IsInCombat() && !imp->HasCharmer() && bot->IsInMap(imp)) return true;
+        }
+        return false;
+    }
+
     inline Unit* MoltenCoreNukeTarget(PlayerbotAI* ai)
     {
         Player* bot = ai->GetBot();
@@ -56,6 +72,8 @@ namespace ai
         // Majordomo requires single-target damage, including tank attacks:
         // neither cleave nor broad AoE may release another assigned sheep.
         Player* bot=ai->GetBot();
+        if (MoltenCoreImpAoeOpening(ai) && (MoltenCoreBroadAoeSpell(name) ||
+            name=="cleave" || name=="blade flurry" || name=="multi-shot")) return false;
         if (bot && bot->GetMapId()==409 && MoltenCoreBossBurn(ai))
             for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
             {

@@ -65,6 +65,7 @@ struct PlayerbotAI {
  }
 };
 namespace ai {
+ std::vector<Unit*> MoltenCorePack(PlayerbotAI*a){std::vector<Unit*>out;for(auto g:a->possible){auto*u=a->GetUnit(g);if(u&&u->entry==11671)out.push_back(u);}return out;} // Native group allocation is executed separately in the support fixture.
  Unit* MoltenCoreNukeTarget(PlayerbotAI*) { return nullptr; }
  struct PossibleAttackTargetsValue {
   static bool HasBreakableCC(Unit* unit,Player*){return unit->breakCC;}
@@ -200,9 +201,10 @@ int main(){
  add.map=second.map=&map;add.entry=second.entry=11671;add.guid=2;second.guid=3;
  add.health=20;second.health=70;ai.units={{2,&add},{3,&second}};ai.possible={2,3};
  ai.current=&add;ai.marked=&add;assert(mc.GetTarget()==&second);
- second.health=23;assert(mc.GetTarget()==&add); // stay within five-point band
+ second.health=23;assert(mc.GetTarget()==&second); // leave a hound at 20%, even inside the five-point band
+ add.health=22;assert(mc.GetTarget()==&add); // ordinary five-point hysteresis above 20%
  add.alive=false;assert(mc.GetTarget()==&second);
- ai.commanded=3;assert(!mc.GetTarget());ai.commanded=0;
+ ai.commanded=3;assert(mc.GetTarget()==&second);ai.commanded=0; // group Attack does not disable balancing
  ai.tank=true;assert(!mc.GetTarget());ai.tank=false;
  ai.healer=true;assert(!mc.GetTarget());ai.healer=false;
  second.breakCC=true;assert(!mc.GetTarget());second.breakCC=false;

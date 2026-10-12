@@ -36,6 +36,7 @@ struct PlayerbotAI{Player*bot;Player*owner;Unit*target;bool human=false,healer=f
 };
 struct Event{Player*owner;Player*getOwner(){return owner;}};
 struct FollowAction{PlayerbotAI*ai;explicit FollowAction(PlayerbotAI*a):ai(a){}bool Execute(Event&){++ai->followed;return ai->moved;}bool isUseful(){return ai->followUseful;}};
+struct WaitForAttackStrategy{static WaitForAttackStrategy*Get(PlayerbotAI*){return nullptr;}void AllowExplicitAttack(PlayerbotAI*,Player*,Unit*){assert(false);}};
 struct AttackMyTargetAction{PlayerbotAI*ai;Player*bot;bool verbose=true;Player*GetMaster(){return ai->owner;}
  bool IsTargetValid(Player*,Unit*u){return u&&u->world&&u->alive&&!u->friendly&&u->distance<=100;}
  bool Attack(Player*p,Unit*u){if(!IsTargetValid(p,u))return false;++ai->attacked;return true;}bool Execute(Event&);bool isUseful();};

@@ -97,6 +97,8 @@ namespace ai
 
         static bool ShouldWait(PlayerbotAI* ai);
         static uint8 GetWaitTime(PlayerbotAI* ai);
+        void AllowExplicitAttack(PlayerbotAI* ai, Player* requester, Unit* target);
+        bool HasExplicitAttackOrder(PlayerbotAI* ai, time_t combatStart);
         static float GetSafeDistance() { return sPlayerbotAIConfig.fleeDistance; }
         static float GetSafeDistanceThreshold() { return 2.5f; }
         ReactStates GetPetReactState() const { return petReactState; }
@@ -116,6 +118,8 @@ namespace ai
 
     private:
         ReactStates petReactState;
+        ObjectGuid orderedOwner, orderedTarget;
+        time_t orderedAt = 0, orderedCombatStart = 0;
     };
 
     class WaitForAttackMultiplier : public Multiplier

@@ -34,6 +34,78 @@ namespace
         std::rotate(tanks.begin(), main, main + 1);
     }
 
+    const char* MoltenCoreRangeSpell(PlayerbotAI* ai, Player* member)
+    {
+        if (ai->IsHeal(member)) return member->getClass()==CLASS_PALADIN?"flash of light":
+            member->getClass()==CLASS_SHAMAN?"healing wave":member->getClass()==CLASS_DRUID?"healing touch":"flash heal";
+        switch (member->getClass())
+        {
+            case CLASS_HUNTER:return "auto shot";
+            case CLASS_WARLOCK:return "shadow bolt";
+            case CLASS_PRIEST:return "mind blast";
+            case CLASS_SHAMAN:return "lightning bolt";
+            case CLASS_DRUID:return "wrath";
+            default:return "frostbolt";
+        }
+    }
+
+    bool PlanCoreHoundRanged(PlayerbotAI* ai, Unit* hound, EncounterPosition& plan)
+    {
+        Player* bot=ai->GetBot();
+        Unit* patient=ai->IsHeal(bot)?hound->GetVictim():hound;
+        plan.active=false;
+        float spellRange=0;
+        const float stomp=NativeEncounterSpellRadius(19364);
+        if (!patient || !patient->IsInWorld() || !patient->IsAlive() || !bot->IsInMap(patient) ||
+            !ai->GetSpellRange(MoltenCoreRangeSpell(ai,bot),&spellRange) ||
+            !std::isfinite(spellRange) || spellRange<=5 || !std::isfinite(stomp) || stomp<=0) return false;
+        const float legal=spellRange+bot->GetCombatReach()+patient->GetCombatReach()-2;
+        if (!std::isfinite(legal) || legal<=5) return false;
+        const float safe=stomp+hound->GetObjectBoundingRadius()+bot->GetObjectBoundingRadius()+2;
+        bool found=false,outside=false;
+        float bestDistance=0;
+        encounter::Point best;
+        // Rear lanes avoid the native frontal breath. Healers solve their
+        // range against the actual holding tank, rather than the hound centre.
+        for (float offset : {180.0f,140.0f,220.0f,110.0f,250.0f})
+        {
+            const float angle=hound->GetOrientation()+offset*float(M_PI)/180;
+            const float ux=std::cos(angle),uy=std::sin(angle);
+            const float vx=patient->GetPositionX()-hound->GetPositionX();
+            const float vy=patient->GetPositionY()-hound->GetPositionY();
+            const float vz=patient->GetPositionZ()-hound->GetPositionZ();
+            const float projection=vx*ux+vy*uy;
+            const float discriminant=legal*legal-vx*vx-vy*vy-vz*vz+projection*projection;
+            if (discriminant<0) continue;
+            const float distance=projection+std::sqrt(discriminant);
+            if (!std::isfinite(distance) || distance<=5) continue;
+            plan.destination={hound->GetPositionX()+ux*distance,
+                hound->GetPositionY()+uy*distance,hound->GetPositionZ()};
+            plan.active=true;plan.spell=19364;
+            if (!ValidateEncounterDestination(ai,plan)) continue;
+            const auto& p=plan.destination;
+            const float dx=p.x-patient->GetPositionX(),dy=p.y-patient->GetPositionY(),dz=p.z-patient->GetPositionZ();
+            if (dx*dx+dy*dy+dz*dz>legal*legal+0.01f) continue;
+            const float radial=std::hypot(p.x-hound->GetPositionX(),p.y-hound->GetPositionY());
+            const bool safeLane=radial>=safe;
+            if (found && ((outside&&!safeLane) || (outside==safeLane&&radial<=bestDistance+0.25f))) continue;
+            found=true;outside=safeLane;bestDistance=radial;best=p;
+        }
+        if (!found) { plan.active=false;return false; } // No path, terrain or range bypass.
+        const float dx=bot->GetPositionX()-patient->GetPositionX();
+        const float dy=bot->GetPositionY()-patient->GetPositionY();
+        const float dz=bot->GetPositionZ()-patient->GetPositionZ();
+        const float radial=std::hypot(bot->GetPositionX()-hound->GetPositionX(),bot->GetPositionY()-hound->GetPositionY());
+        // Retain a legal rear station near maximum range; never hold the old
+        // 25-yard station just because it was behind the hound.
+        if (std::cos(hound->GetAngle(bot)-hound->GetOrientation())<-0.25f &&
+            radial>=bestDistance-1 && dx*dx+dy*dy+dz*dz<=legal*legal &&
+            (!outside || radial>=safe)) best={bot->GetPositionX(),bot->GetPositionY(),bot->GetPositionZ()};
+        plan.destination=best;plan.spell=19364;plan.active=true;
+        if (ValidateEncounterDestination(ai,plan)) return true;
+        plan.active=false;return false;
+    }
+
     std::vector<Unit*> MoltenCorePack(PlayerbotAI* ai)
     {
         Player* bot = ai->GetBot();
@@ -44,13 +116,18 @@ namespace
             Unit* unit = ai->GetUnit(guid);
             if (!unit || !unit->IsInWorld() || !unit->IsAlive() || !unit->IsInCombat() ||
                 !bot->IsInMap(unit) || unit->HasCharmer() || sServerFacade.IsFriendlyTo(bot, unit) ||
-                (unit->GetEntry() != 11671 && unit->GetEntry() != 11669) || unit->HasAura(19951) ||
-                PossibleAttackTargetsValue::HasBreakableCC(unit, bot) ||
-                PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot)) continue;
+                (unit->GetEntry() != 11671 && unit->GetEntry() != 11669) ||
+                (!(unit->GetEntry()==11671 && unit->HasAura(19951)) &&
+                 (PossibleAttackTargetsValue::HasBreakableCC(unit, bot) ||
+                  PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot)))) continue;
             if (!anchor || unit->GetObjectGuid() < anchor->GetObjectGuid()) anchor = unit;
             pack.push_back(unit);
         }
         if (!anchor) return {};
+        // A group Attack starts this pack, rather than pinning every tank to
+        // one member. Keep collapsed hounds in its identity and allocation.
+        Unit* commanded=ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("attack target")->Get());
+        if (commanded && std::find(pack.begin(),pack.end(),commanded)!=pack.end()) anchor=commanded;
         const auto* group = static_cast<Creature*>(anchor)->GetCreatureGroup();
         pack.erase(std::remove_if(pack.begin(), pack.end(), [anchor, group](Unit* unit) {
             return unit->GetEntry() != anchor->GetEntry() ||
@@ -84,12 +161,13 @@ Unit* ai::MoltenCorePackTankTarget(PlayerbotAI* ai)
     auto pack = MoltenCorePack(ai);
     auto tanks = MoltenCorePackTanks(ai, pack);
     auto own = std::find(tanks.begin(), tanks.end(), ai->GetBot());
-    if (pack.size() < 2 || own == tanks.end()) return nullptr;
+    if (pack.empty() || (pack.size()<2 && pack.front()->GetEntry()!=11669) || own == tanks.end()) return nullptr;
     const size_t slot = std::distance(tanks.begin(), own);
     Unit* held = nullptr;
     for (size_t i = slot; i < pack.size(); i += tanks.size())
     {
         Unit* enemy = pack[i];
+        if (enemy->HasAura(19951)) continue; // Native collapsed hound; retain its slot but never attack it.
         if (!PossibleAttackTargetsValue::IsValid(enemy, ai->GetBot(), 60, false, true)) continue;
         Unit* victim = enemy->GetVictim();
         // Recover a pet/healer-held assigned enemy first. Never steal from
@@ -106,11 +184,22 @@ bool ai::PlanMoltenCorePack(PlayerbotAI* ai, EncounterPosition& plan)
 {
     auto pack = MoltenCorePack(ai);
     auto tanks = MoltenCorePackTanks(ai, pack);
-    if (pack.size() < 2 || tanks.empty()) return false;
+    if (pack.empty() || tanks.empty()) return false;
     Player* bot = ai->GetBot();
     Player* anchor = tanks.front();
     plan.active = true; plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
     plan.boss = pack.front()->GetObjectGuid(); plan.spell = 19771;
+    if (!ai->IsTank(bot) && pack.front()->GetEntry()==11669)
+        for (size_t i=0;i<pack.size();++i)
+            if (pack[i]->GetVictim()==bot)
+            {
+                Player* tank=tanks[i%tanks.size()];
+                plan.boss=pack[i]->GetObjectGuid();plan.spell=20602;
+                plan.destination={tank->GetPositionX(),tank->GetPositionY(),tank->GetPositionZ()};
+                if (ValidateEncounterDestination(ai,plan)) return true;
+                plan.active=false;return false;
+            }
+    if (pack.size()<2 && pack.front()->GetEntry()!=11669) {plan.active=false;return false;}
     if (ai->IsTank(bot))
     {
         // Holding tank remains stationary; off-tanks bring their mobs to it.
@@ -179,7 +268,7 @@ bool ai::MoltenCoreImpPack(PlayerbotAI* ai)
             ++imps;
         }
     }
-    return imps >= 3 && ai->GetCombatStartTime() && time(0) - ai->GetCombatStartTime() >= 2;
+    return imps >= 3 && ai->GetCombatStartTime() && time(0) - ai->GetCombatStartTime() >= 10;
 }
 
 namespace
@@ -459,6 +548,8 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
         else
         {
             if (ai->IsTank(bot)) { plan.active = false; return false; }
+            if (selected->GetEntry()==11673 && (ai->IsRanged(bot) || ai->IsHeal(bot)))
+                return PlanCoreHoundRanged(ai,selected,plan);
             if (ai->IsRanged(bot) || ai->IsHeal(bot))
             {
                 distance = 25.0f;
@@ -724,9 +815,10 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
             !PossibleAttackTargetsValue::HasBreakableCC(unit, bot) &&
             !PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot);
     };
-    // Manual attack commands and configured raid marks remain authoritative.
+    // A group attack on the small hound pack starts its native balanced-kill
+    // routine. Explicit commands on other mobs remain authoritative.
     Unit* commanded = ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"));
-    if (valid(commanded)) return nullptr;
+    if (valid(commanded) && (bossEntry || commanded->GetEntry()!=11671)) return nullptr;
     if (Unit* garr = GarrFocusTarget(ai)) return garr;
     Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     Unit* marked = ai->GetUnit(AI_VALUE(ObjectGuid, "rti target"));
@@ -770,13 +862,12 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
     if (!bossEntry)
     {
         // Balance the engaged small Core Hounds, not Ancient Core Hounds or
-        // Golemagg's Core Ragers. Raid marks on this pack are advisory; direct
-        // attack commands above remain an explicit human override.
+        // Golemagg's Core Ragers. Pack marks initiate the pull and do not pin
+        // damage to one hound through its native collapse/reignite cycle.
         std::vector<Unit*> hounds;
         Unit* anchor = valid(current) && current->GetEntry() == 11671 ? current : nullptr;
-        for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
+        for (Unit* unit : MoltenCorePack(ai))
         {
-            Unit* unit = ai->GetUnit(guid);
             if (!valid(unit) || unit->GetEntry() != 11671 || unit->HasAura(19951)) continue;
             hounds.push_back(unit);
         }
@@ -805,7 +896,8 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
         // sending the entire raid onto the same nearly-dead marked hound.
         std::vector<Unit*> band;
         for (Unit* hound : hounds)
-            if (hound->GetDistance(anchor) <= 30 && hound->GetHealthPercent() + 5.0f >= highest) band.push_back(hound);
+            if (hound->GetDistance(anchor) <= 30 && hound->GetHealthPercent() + 5.0f >= highest &&
+                (highest<=20.0f || hound->GetHealthPercent()>20.0f)) band.push_back(hound);
         if (band.empty()) return nullptr;
         if (std::find(band.begin(), band.end(), current) != band.end()) return current;
         std::sort(band.begin(), band.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
@@ -850,14 +942,16 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         Player* member = static_cast<Player*>(carrier);
         return !member->IsBeingTeleported() && member->GetGroup() && member->GetGroup() == bot->GetGroup();
     }
-    if (plan.spell != 19196 && plan.spell != 19272 && plan.spell != 19630 && plan.spell != 19771 && plan.spell != 21155)
+    if (plan.spell != 19196 && plan.spell != 19272 && plan.spell != 19364 && plan.spell != 19630 &&
+        plan.spell != 19771 && plan.spell != 20602 && plan.spell != 21155)
     {
         EncounterPosition current;
         std::vector<encounter::Circle> threats;
         return MoltenCoreThreats(ai, current, threats);
     }
     Unit* boss = ai->GetUnit(plan.boss);
-    return boss && boss->IsInWorld() && bot->IsInMap(boss) && boss->IsAlive() && boss->IsInCombat();
+    return boss && boss->IsInWorld() && bot->IsInMap(boss) && boss->IsAlive() && boss->IsInCombat() &&
+        (plan.spell!=20602 || (boss->GetEntry()==11669 && boss->GetVictim()==bot && !ai->IsTank(bot)));
 }
 
 bool MoltenCorePositionAction::isUseful()
@@ -890,7 +984,8 @@ bool MoltenCorePositionAction::Execute(Event& event)
             if (jump.Execute(event)) return true;
         }
     }
-    else if (plan.spell == 19196 || plan.spell == 19272 || plan.spell == 19630 || plan.spell == 19771)
+    else if (plan.spell == 19196 || plan.spell == 19272 || plan.spell == 19364 || plan.spell == 19630 ||
+        plan.spell == 19771 || plan.spell == 20602)
     {
         if (MoltenCoreThreats(ai, current, threats) || !PlanMoltenCoreTrash(ai, current)) return false;
         plan = current;
@@ -913,7 +1008,8 @@ Unit* ai::MoltenCoreAssignedTankTarget(PlayerbotAI* ai)
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || !ai->IsTank(bot) || ai->IsRealPlayer()) return nullptr;
     // Direct commands remain available for a human-led alternative tactic.
-    if (RaidEnemy(bot, ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("attack target")->Get()))) return nullptr;
+    Unit* commanded=ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("attack target")->Get());
+    if (RaidEnemy(bot,commanded) && commanded->GetEntry()!=11671 && commanded->GetEntry()!=11669) return nullptr;
     if (Unit* assigned = GarrTankTarget(ai)) return assigned;
     if (Unit* assigned = MoltenCorePackTankTarget(ai)) return assigned;
     Unit* boss = RaidBoss(ai);
