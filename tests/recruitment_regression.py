@@ -43,7 +43,7 @@ struct ObjectGuid {
 struct Player; struct Group; struct WorldSession;
 std::map<uint32,Player*> players;
 std::vector<std::string> messages;
-struct ObjectMgr {Player* GetPlayer(ObjectGuid g){auto it=players.find(g.value);return it==players.end()?nullptr:it->second;}} sObjectMgr;
+struct ObjectMgr {Player* GetPlayer(const char* name);Player* GetPlayer(ObjectGuid g){auto it=players.find(g.value);return it==players.end()?nullptr:it->second;}} sObjectMgr;
 struct WorldPacket {std::string name;ObjectGuid npc{1,14387};unsigned bytes=8;
  unsigned size()const{return bytes;}void rpos(unsigned){}WorldPacket&operator>>(ObjectGuid&g){g=npc;return *this;}
  WorldPacket& operator<<(std::string const& s){name=s;return *this;} WorldPacket& operator<<(uint32){return *this;}};
@@ -136,8 +136,9 @@ struct SummonAction{static void PrepareRaidBinding(Player* owner,Player* p){asse
 }
 '''
 tests=r'''
+Player* ObjectMgr::GetPlayer(const char* name){Player* result=nullptr;for(auto const& x:players)if(x.second->name==name)result=x.second;return result;}
 void WorldSession::HandleGroupInviteOpcode(WorldPacket& p){
- Player* bot=nullptr;for(auto const& x:players)if(x.second->name==p.name)bot=x.second;
+ Player* bot=sObjectMgr.GetPlayer(p.name.c_str());
  if(!bot||bot->group||bot->invite||!ai::BotRecruitment::CanInvite(player,bot))return;
  Group* group=player->group?player->group:player->invite;
  if(!group){groups.emplace_back(new Group);group=groups.back().get();group->leader=player->GetObjectGuid();player->invite=group;}
@@ -159,6 +160,21 @@ void invite(Player& p,Player& b){WorldPacket packet;packet<<b.name;p.session.Han
 void command(Player& p,std::string args){assert(ai::BotRecruitment::HandleCommand(&p,"recruit v1 "+args));tick();}
 bool has(std::string t){for(auto const& m:messages)if(m.find(t)!=std::string::npos)return true;return false;}
 int main(){
+ // Windia regression: GUID discovery must not invite the lower-level namesake
+ // selected by native name lookup. Also test a conflicting real player.
+ for(bool human : {false,true}) { reset();Player p(1,true),wanted(2),namesake(3,human);
+ wanted.name=namesake.name="Windia";wanted.level=60;namesake.level=30;
+ assert(ai::BotRecruitment::Eligibility(&p,&wanted)=="name_identity_conflict");
+ command(p,"d discover 1 60 60 0");assert(!has("eligible"));
+ command(p,"r reserve 2");assert(has("refused name_identity_conflict")&&State().reservations.empty());
+ command(p,"i invite 2 5");assert(!wanted.invite&&!namesake.invite&&!p.invite);
+ assert(!wanted.group&&!namesake.group&&!wanted.gear&&!namesake.gear);
+ }
+ // Names can become ambiguous after reservation; invite must recheck.
+ reset();{Player p(1,true),wanted(2);wanted.name="Windia";
+ command(p,"r reserve 2");assert(has("reserved"));Player namesake(3);namesake.name="Windia";
+ command(p,"i invite 2 5");assert(has("refused name_identity_conflict")&&!namesake.invite&&!wanted.invite);
+ namesake.name="Other";command(p,"i2 invite 2 5");tick();assert(wanted.group==p.group&&wanted.group&&!namesake.group);}
  // Actual Lothos entry captures all 39 authorized companions after native acceptance,
  // waits for the human's landing, then uses the existing bounded coordinator.
  reset();{Player p(1,true);Group g;g.raid=true;g.leader=p.GetObjectGuid();p.group=&g;

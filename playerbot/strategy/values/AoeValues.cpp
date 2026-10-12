@@ -58,7 +58,10 @@ bool ai::ControlledRaidAoe(PlayerbotAI* ai)
             !ai->IsTank(tank)) return false;
         ++controlled;
     }
-    return controlled >= 3;
+    // DPS Whirlwind is useful on a controlled pair. Keep the heavier caster
+    // area spells and tank AoE at their existing three-target threshold.
+    const unsigned minimum = bot->getClass() == CLASS_WARRIOR && !ai->IsTank(bot) ? 2 : 3;
+    return controlled >= minimum;
 }
 
 std::list<ObjectGuid> AoeCountValue::FindMaxDensity(Player* bot, float range)

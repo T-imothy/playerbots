@@ -500,6 +500,11 @@ std::string BotRecruitment::Eligibility(Player* owner, Player* bot)
 {
     std::string reason = Identity(owner,bot);
     if (!reason.empty()) return reason;
+    // Discovery is GUID-addressed, but native invitations and subsequent bot
+    // whispers resolve a name. Duplicate database names must never redirect an
+    // invitation to a different player (including a real player or lower level
+    // bot). Recheck on reserve/invite/status too, not just during discovery.
+    if (sObjectMgr.GetPlayer(bot->GetName()) != bot) return "name_identity_conflict";
     Group* group = Party(bot);
     if (group) return group == Party(owner) ? "existing" : "external_group";
     Player* master = bot->GetPlayerbotAI()->GetMaster();

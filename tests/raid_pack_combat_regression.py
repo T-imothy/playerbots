@@ -24,7 +24,7 @@ code=r'''
 #include <ctime>
 #include <iostream>
 using uint32=unsigned;using ObjectGuid=unsigned;
-enum{MAX_EFFECT_INDEX=3,SPELL_EFFECT_ATTACK_ME=1,SPELL_EFFECT_APPLY_AURA,SPELL_AURA_MOD_TAUNT,SPELL_EFFECT_THREAT};
+enum{CLASS_WARRIOR=1,CLASS_MAGE=8,MAX_EFFECT_INDEX=3,SPELL_EFFECT_ATTACK_ME=1,SPELL_EFFECT_APPLY_AURA,SPELL_AURA_MOD_TAUNT,SPELL_EFFECT_THREAT};
 struct SpellEntry{unsigned Effect[3]={},EffectApplyAuraName[3]={};int EffectBasePoints[3]={};};
 struct Map{bool raid=true;bool IsRaid(){return raid;}};
 struct Group{bool raid=true;bool IsRaidGroup(){return raid;}};
@@ -38,7 +38,8 @@ struct Pet:Unit{ObjectGuid guid=2;Charm charm;std::vector<unsigned>m_autospells;
  bool HasSpell(unsigned id){return known.count(id);}void ToggleAutocast(unsigned id,bool on){++writes;
  m_autospells.erase(std::remove(m_autospells.begin(),m_autospells.end(),id),m_autospells.end());if(on)m_autospells.push_back(id);}};
 struct Spline{bool done=false;struct Point{float x=10,y=0,z=0;}destination;bool Finalized(){return done;}Point CurrentDestination(){return destination;}};
-struct Player:Unit{bool teleport=false,tank=false,healer=false,flying=false,transport=false;unsigned mapId=409;Map map;Group*group=nullptr;Pet*pet=nullptr;Spline*movespline=nullptr;
+struct Player:Unit{bool teleport=false,tank=false,healer=false,flying=false,transport=false;unsigned mapId=409,cls=CLASS_MAGE;Map map;Group*group=nullptr;Pet*pet=nullptr;Spline*movespline=nullptr;
+ unsigned getClass(){return cls;}
  bool IsPlayer()override{return true;}bool IsBeingTeleported(){return teleport;}Map*GetMap(){return &map;}Group*GetGroup(){return group;}
  bool IsInMap(Unit*u){return u&&world&&u->world&&instance==u->instance;}ObjectGuid GetObjectGuid(){return 1;}unsigned GetMapId(){return mapId;}
  Pet*GetPet(){return pet;}bool GetTransport(){return transport;}bool IsFreeFlying(){return flying;}};
@@ -70,6 +71,17 @@ int main(){
  Player bot,tank;Group group;bot.group=tank.group=&group;tank.tank=true;PlayerbotAI ai{&bot};
  Unit one,two,three,nearby;one.victim=two.victim=three.victim=&tank;one.x=-1;two.x=1;three.y=2;
  ai.units={{2,&one},{3,&two},{4,&three},{5,&nearby}};ai.context.possible.value={2,3,4};
+ // Only DPS warriors admit a pair; one target, caster pairs and tank pairs
+ // retain their existing behavior. All CC and tank-control guards still apply.
+ ai.context.possible.value={2,3};assert(!ControlledRaidAoe(&ai));
+ bot.cls=CLASS_WARRIOR;assert(ControlledRaidAoe(&ai));
+ ai.context.possible.value={2};assert(!ControlledRaidAoe(&ai));ai.context.possible.value={2,3};
+ bot.tank=true;assert(!ControlledRaidAoe(&ai));bot.tank=false;
+ two.cc=true;assert(!ControlledRaidAoe(&ai));two.cc=false;
+ two.hardCC=true;assert(!ControlledRaidAoe(&ai));two.hardCC=false;
+ two.combat=false;assert(!ControlledRaidAoe(&ai));two.combat=true;
+ two.victim=&bot;assert(!ControlledRaidAoe(&ai));two.victim=&tank;
+ bot.cls=CLASS_MAGE;ai.context.possible.value={2,3,4};
  assert(ControlledRaidAoe(&ai));tank.tank=false;assert(!ControlledRaidAoe(&ai));tank.tank=true;
  three.victim=&bot;assert(!ControlledRaidAoe(&ai));three.victim=&tank;
  nearby.x=11;nearby.cc=true;ai.context.possible.value.push_back(5);assert(!ControlledRaidAoe(&ai));
