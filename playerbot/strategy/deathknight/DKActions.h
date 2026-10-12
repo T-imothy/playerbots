@@ -276,6 +276,7 @@ namespace ai
 	public:
 		CastRaiseDeadAction(PlayerbotAI* ai) : CastBuffSpellAction(ai, "raise dead") {}
 		virtual bool isPossible() override;
+        bool isUseful() override { return !bot->GetPet() && CastBuffSpellAction::isUseful() && isPossible(); }
 	};
 
 	class CastKillingMachineAction : public CastBuffSpellAction

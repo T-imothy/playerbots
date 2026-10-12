@@ -10,7 +10,15 @@ bool LfgJoinAction::Execute(Event& event)
 {
     if (!isUseful())
         return false;
-    return JoinLFG();
+    bool const joined = JoinLFG();
+#ifdef MANGOSBOT_ONE
+    // No eligible listing is normal while travelling. Retry when circumstances
+    // change, or after a short interval, rather than every decision tick.
+    retryAfter = joined ? 0 : time(nullptr) + 15;
+    if (!joined)
+        failedRetryState = GetRetryState();
+#endif
+    return joined;
 }
 
 #ifdef MANGOSBOT_TWO
@@ -241,9 +249,9 @@ bool LfgJoinAction::JoinLFG()
         // queue only if quest not completed
         if (state < TravelState::TRAVEL_STATE_TRAVEL_HAND_IN_QUEST)
         {
-            if (typeid(*target) == typeid(QuestTravelDestination))
+            if (QuestTravelDestination* questDestination = dynamic_cast<QuestTravelDestination*>(target->GetDestination()))
             {
-                Quest const* qinfo = sObjectMgr.GetQuestTemplate(((QuestTravelDestination*)target->GetDestination())->GetQuestId());
+                Quest const* qinfo = sObjectMgr.GetQuestTemplate(questDestination->GetQuestId());
                 if (qinfo)
                 {
                     // only group quests are allowed for quest lfg
@@ -1153,6 +1161,24 @@ bool LfgTeleportAction::Execute(Event& event)
     return true;
 }
 
+#ifdef MANGOSBOT_ONE
+std::vector<uint64> LfgJoinAction::GetRetryState()
+{
+    Group* group = bot->GetGroup();
+    TravelTarget* target = AI_VALUE(TravelTarget*, "travel target");
+    std::vector<uint64> state = {bot->GetLevel(), bot->GetMapId(), bot->GetZoneId(),
+        uint64(ai->GetGrouperType()), group ? group->GetMembersCount() : 0,
+        group ? group->GetLeaderGuid().GetRawValue() : 0,
+        target ? uint64(target->GetTravelState()) : 0,
+        target ? uint64(target->GetStatus()) : 0,
+        target ? uint64(target->GetEntry()) : 0};
+    // New human LFG requests invalidate the delay immediately.
+    for (uint32 request : sRandomPlayerbotMgr.LfgDungeons[bot->GetTeam()])
+        state.push_back(request);
+    return state;
+}
+#endif
+
 bool LfgJoinAction::isUseful()
 {
     if (!sPlayerbotAIConfig.randomBotJoinLfg)
@@ -1219,6 +1245,8 @@ bool LfgJoinAction::isUseful()
         return false;
 #endif
 #ifdef MANGOSBOT_ONE
+    if (retryAfter > time(nullptr) && failedRetryState == GetRetryState())
+        return false;
     // Mirror JoinLFG's stable eligibility rules before scheduling the action.
     GrouperType const grouperType = ai->GetGrouperType();
     Group* group = bot->GetGroup();

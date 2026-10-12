@@ -124,6 +124,7 @@ public:
         std::string GetData(uint32 bot, std::string type);
         void SetValue(uint32 bot, std::string type, uint32 value, std::string data = "", int32 validIn = -1);
         void SetValue(Player* bot, std::string type, uint32 value, std::string data = "", int32 validIn = -1);
+        bool BumpDeferredJoinTries(uint32 botGuid);
         void Remove(Player* bot);
         void Hotfix(Player* player, uint32 version);
         uint32 GetBattleMasterEntry(Player* bot, BattleGroundTypeId bgTypeId, bool fake = false);
@@ -252,6 +253,8 @@ public:
         std::list<std::string> HandleConsoleCleanMap(std::string param);
         std::list<std::string> HandleConsoleLoginDebug(std::string param);
         std::list<std::string> HandleConsolePathCheck(std::string param);
+        std::list<std::string> HandleConsoleTaxTest(std::string param);
+        std::list<std::string> HandleConsoleZoneUpd(std::string param);
         // Override virtual methods from PlayerbotHolder
         virtual uint32 GetOrCreateAccount(Player* master, std::string& error) override;
         virtual void OnBotDeleted(uint32 botGuid, uint32 accountId) override;

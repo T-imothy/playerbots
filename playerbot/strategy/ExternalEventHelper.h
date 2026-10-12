@@ -61,6 +61,29 @@ namespace ai
         {
             uint16 opcode = packet.GetOpcode();
             std::string name = handlers[opcode];
+            // BuyResult values are payload fields, not packet opcodes. All
+            // three native SendBuyError layouts finish with the result byte.
+            if (opcode == SMSG_BUY_FAILED && name == "buy failed")
+            {
+                if (packet.size() != 13 && packet.size() != 17)
+                    return true;
+                WorldPacket resultPacket(packet);
+                resultPacket.rpos(packet.size() - 1);
+                uint8 result;
+                resultPacket >> result;
+#ifdef MANGOSBOT_TWO
+                if (result == uint8(BuyResult::NOT_ENOUGHT_MONEY))
+                    name = "not enough money";
+                else if (result == uint8(BuyResult::REPUTATION_REQUIRE))
+#else
+                if (result == uint8(BUY_ERR_NOT_ENOUGHT_MONEY))
+                    name = "not enough money";
+                else if (result == uint8(BUY_ERR_REPUTATION_REQUIRE))
+#endif
+                    name = "not enough reputation";
+                else
+                    return true;
+            }
             if (name.empty())
                 return true;
 

@@ -139,6 +139,10 @@ void ArcaneMageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "enemy too close for spell",
         NextAction::array(0, new NextAction("arcane explosion", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "ranged high aoe",
+        NextAction::array(0, new NextAction("flamestrike", ACTION_HIGH + 2), new NextAction("blizzard", ACTION_HIGH + 1), NULL)));
 }
 
 void ArcaneMageAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
@@ -495,6 +499,10 @@ void ArcaneMageAoeStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
     triggers.push_back(new TriggerNode(
         "enemy too close for spell",
         NextAction::array(0, new NextAction("arcane explosion", ACTION_HIGH), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "ranged high aoe",
+        NextAction::array(0, new NextAction("flamestrike", ACTION_HIGH + 2), new NextAction("blizzard", ACTION_HIGH + 1), NULL)));
 }
 
 void ArcaneMageAoeStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)

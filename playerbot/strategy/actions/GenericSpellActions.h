@@ -23,8 +23,10 @@ namespace ai
         bool HasMovementEffect();
         uint32 GetDecisionSpellId() { RefreshSpellId(); return spellId; }
         
-    protected:
         const uint32& GetSpellID() const { return spellId; }
+
+    protected:
+
         const std::string& GetSpellName() const { return spellName; }
         void SetSpellName(const std::string& name, std::string spellIDContextName = "spell id", bool force = false);
         void RefreshSpellId();

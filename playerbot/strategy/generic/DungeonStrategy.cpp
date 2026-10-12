@@ -62,8 +62,8 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("enable naxxramas strategy", 100.0f), NULL)));
     // Add this combat triggers in case the bot gets summoned into the dungeon and goes straight into combat
     triggers.push_back(new TriggerNode(
-        "enter onyxia's lair",
-        NextAction::array(0, new NextAction("enable onyxia's lair strategy", 100.0f), NULL)));
+        "enter onyxias lair",
+        NextAction::array(0, new NextAction("enable onyxias lair strategy", 100.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
         "enter molten core",
@@ -95,12 +95,12 @@ void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
         "leave naxxramas",
         NextAction::array(0, new NextAction("disable naxxramas strategy", 100.0f), NULL)));
     triggers.push_back(new TriggerNode(
-        "enter onyxia's lair",
-        NextAction::array(0, new NextAction("enable onyxia's lair strategy", 100.0f), NULL)));
+        "enter onyxias lair",
+        NextAction::array(0, new NextAction("enable onyxias lair strategy", 100.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
-        "leave onyxia's lair",
-        NextAction::array(0, new NextAction("disable onyxia's lair strategy", 100.0f), NULL)));
+        "leave onyxias lair",
+        NextAction::array(0, new NextAction("disable onyxias lair strategy", 100.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
         "enter molten core",

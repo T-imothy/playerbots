@@ -29,11 +29,17 @@ TestResult CommandFlowWait::Execute(const std::string& params, Player* bot, Play
     if (!ctx.waitTime)
         ctx.waitTime = WorldTimer::getMSTime();
 
-    uint32 waitDuration = 0;
-    if (TryParseUInt32Strict(params, waitDuration, message, GetName()) != TestResult::PASS)
+    // Scripts are written as "wait <seconds>" (e.g. "wait 5"). The older spelling is still accepted
+    // as "wait time <seconds>".
+    std::string value = params;
+    if (value.find("time ") == 0)
+        value = value.substr(5);
+
+    uint32 waitSeconds = 0;
+    if (TryParseUInt32Strict(value, waitSeconds, message, GetName()) != TestResult::PASS)
         return TestResult::IMPOSSIBLE;
 
-    if (WorldTimer::getMSTimeDiff(ctx.waitTime, WorldTimer::getMSTime()) >= waitDuration)
+    if (WorldTimer::getMSTimeDiff(ctx.waitTime, WorldTimer::getMSTime()) >= waitSeconds * 1000)
     {
         ctx.waitTime = 0;
         return TestResult::PASS;
@@ -50,11 +56,68 @@ TestResult CommandFlowWaitDestination::Execute(const std::string& params, Player
     if (!ctx.waitTime)
         ctx.waitTime = WorldTimer::getMSTime();
 
-    uint32 waitDuration = 0;
-    if (TryParseUInt32Strict(params, waitDuration, message, GetName()) != TestResult::PASS)
+    // Seconds, like "wait" - scripts use "wait destination 600" to mean ten minutes.
+    // Optional trailing distance: "wait destination 600 4" passes within 4 yd instead of the
+    // default 10. Rpg injection must happen inside INTERACTION_DISTANCE (~5.5 yd), otherwise
+    // the far-from-rpg-target machinery drops the injected target again.
+    std::string value = params;
+    if (value.find("time ") == 0)
+        value = value.substr(5);
+
+    float arriveDistance = 10.0f;
+    size_t space = value.rfind(' ');
+    if (space != std::string::npos)
+    {
+        if (TryParseFloatStrict(value.substr(space + 1), arriveDistance, message, GetName()) != TestResult::PASS)
+            return TestResult::IMPOSSIBLE;
+        value = value.substr(0, space);
+    }
+
+    uint32 waitSeconds = 0;
+    if (TryParseUInt32Strict(value, waitSeconds, message, GetName()) != TestResult::PASS)
         return TestResult::IMPOSSIBLE;
 
-    if (WorldTimer::getMSTimeDiff(ctx.waitTime, WorldTimer::getMSTime()) >= waitDuration)
+    if (ctx.destinationPosition.distance(bot) < arriveDistance)
+        return TestResult::PASS;
+
+    if (WorldTimer::getMSTimeDiff(ctx.waitTime, WorldTimer::getMSTime()) >= waitSeconds * 1000)
+    {
+        ctx.waitTime = 0;
+        return TestResult::PASS;
+    }
+
+    return TestResult::PENDING;
+}
+
+TestResult CommandFlowWaitGroup::Execute(const std::string& params, Player* bot, PlayerbotAI* ai, TestContext& ctx, std::string& message)
+{
+    std::string value = params;
+    size_t space = value.find(' ');
+
+    std::string sizePart = space == std::string::npos ? value : value.substr(0, space);
+    std::string timeoutPart = space == std::string::npos ? std::string() : value.substr(space + 1);
+
+    uint32 expected = 0;
+    if (TryParseUInt32Strict(sizePart, expected, message, GetName()) != TestResult::PASS)
+        return TestResult::IMPOSSIBLE;
+
+    uint32 waitSeconds = 180;
+    if (!timeoutPart.empty() && TryParseUInt32Strict(timeoutPart, waitSeconds, message, GetName()) != TestResult::PASS)
+        return TestResult::IMPOSSIBLE;
+
+    if (!ctx.waitTime)
+        ctx.waitTime = WorldTimer::getMSTime();
+
+    Group* group = bot->GetGroup();
+
+    if (group && group->GetMembersCount() >= expected)
+    {
+        ctx.waitTime = 0;
+        return TestResult::PASS;
+    }
+
+    uint32 elapsed = WorldTimer::getMSTimeDiff(ctx.waitTime, WorldTimer::getMSTime());
+    if (elapsed >= waitSeconds * 1000)
     {
         ctx.waitTime = 0;
         return TestResult::PASS;

@@ -173,6 +173,10 @@ bool HasAreaDebuffValue::Calculate()
         if (!spellProto)
             continue;
 
+        // I will not move when flame wreath is cast or the raid blows up
+        if (spellProto->Id == 29946)
+            continue;
+
         if (IsPositiveEffect(spellProto, go->GetEffIndex()))
             continue;
 

@@ -465,6 +465,8 @@ namespace ai
                     creators["update pvp strats"] = [](PlayerbotAI* ai) { return new UpdatePaladinPvpStrategiesAction(ai); };
                     creators["update raid strats"] = [](PlayerbotAI* ai) { return new UpdatePaladinRaidStrategiesAction(ai); };
                 });
+
+                creators["prot seal"] = [](PlayerbotAI* ai) { return new ProtSealAction(ai); };
             }
         };
     };

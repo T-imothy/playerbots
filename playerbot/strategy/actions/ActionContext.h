@@ -383,6 +383,9 @@ namespace ai
                 creators["enable mechanar strategy"] = [](PlayerbotAI* ai) { return new MechanarEnableDungeonStrategyAction(ai); };
                 creators["disable mechanar strategy"] = [](PlayerbotAI* ai) { return new MechanarDisableDungeonStrategyAction(ai); };
 
+            creators["enable onyxias lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairEnableDungeonStrategyAction(ai); };
+            creators["disable onyxias lair strategy"] = [](PlayerbotAI* ai) { return new OnyxiasLairDisableDungeonStrategyAction(ai); };
+
                 // Dungeon Boss Actions
                 creators["enable onyxia fight strategy"] = [](PlayerbotAI* ai) { return new OnyxiaEnableFightStrategyAction(ai); };
                 creators["onyxia safe position"] = [](PlayerbotAI* ai) { return new OnyxiaPositionAction(ai); };
@@ -454,6 +457,18 @@ namespace ai
                 creators["move away from netherspite infernal"] = [](PlayerbotAI* ai) { return new NetherspiteInfernalMoveAwayAction(ai); };
                 creators["move away from prince malchezaar"] = [](PlayerbotAI* ai) { return new PrinceMalchezaarMoveAwayAction(ai); };
 
+            creators["enable shade of aran fight strategy"] = [](PlayerbotAI* ai) { return new ShadeOfAranEnableFightStrategyAction(ai); };
+            creators["disable shade of aran fight strategy"] = [](PlayerbotAI* ai) { return new ShadeOfAranDisableFightStrategyAction(ai); };
+            creators["start aran fire phase"] = [](PlayerbotAI* ai) { return new ShadeOfAranFirePhaseStartedAction(ai); };
+            creators["start aran frost phase"] = [](PlayerbotAI* ai) { return new ShadeOfAranFrostPhaseStartedAction(ai); };
+            creators["start aran arcane phase"] = [](PlayerbotAI* ai) { return new ShadeOfAranArcanePhaseStartedAction(ai); };
+            creators["end aran arcane phase"] = [](PlayerbotAI* ai) { return new ShadeOfAranArcanePhaseEndedAction(ai); };
+            creators["start aran elementals"] = [](PlayerbotAI* ai) { return new ShadeOfAranElementalsAction(ai); };
+            creators["move away from shade of aran"] = [](PlayerbotAI* ai) { return new ShadeOfAranMoveAwayAction(ai); };
+            creators["enable big bad wolf fight strategy"] = [](PlayerbotAI* ai) { return new BigBadWolfEnableFightStrategyAction(ai); };
+            creators["disable big bad wolf fight strategy"] = [](PlayerbotAI* ai) { return new BigBadWolfDisableFightStrategyAction(ai); };
+            creators["move away from big bad wolf"] = [](PlayerbotAI* ai) { return new BigBadWolfMoveAwayAction(ai); };
+
                 creators["enable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanEnableFightStrategyAction(ai); };
                 creators["disable four horseman fight strategy"] = [](PlayerbotAI* ai) { return new FourHorsemanDisableFightStrategyAction(ai); };
 
@@ -462,6 +477,8 @@ namespace ai
                 creators["move away from raging flames"] = [](PlayerbotAI* ai) { return new RagingFlamesMoveAwayAction(ai); };
 
                 creators["move away from specific creatures"] = [](PlayerbotAI* ai) { return new MoveAwayFromSpecificCreatures(ai, 15); };
+
+
 
 #ifdef GenerateBotTests
                 creators["test"] = [](PlayerbotAI* ai) { return new TestAction(ai); };

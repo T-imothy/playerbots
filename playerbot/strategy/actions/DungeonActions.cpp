@@ -192,7 +192,7 @@ bool MoveAwayFromHazard::Execute(Event& event)
 
                         if (MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(), false, IsReaction(), false, true))
                         {
-                            if (IsReaction())
+                            if (!IsReaction())
                             {
                                 WaitForReach(point.distance(botPosition));
                             }
@@ -337,7 +337,7 @@ bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, const std:
                 if (IsValidPoint(point, creatures, hazards) &&
                     MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(), false, IsReaction(), false, false))
                 {
-                    if (IsReaction())
+                    if (!IsReaction())
                         WaitForReach(point.distance(botPosition));
                     return true;
                 }
@@ -381,7 +381,7 @@ bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, const std:
 
             if (MoveTo(bot->GetMapId(), validPoint->getX(), validPoint->getY(), validPoint->getZ(), false, IsReaction(), false, true))
             {
-                if (IsReaction())
+                if (!IsReaction())
                 {
                     WaitForReach(validPoint->distance(botPosition));
                 }

@@ -23,13 +23,6 @@ namespace ai
                 attacker->HasBreakableByDamageCrowdControlAura() || IsCcTarget(attacker))
                 return;
 
-            Group* group = ai->GetBot()->GetGroup();
-            if (group)
-            {
-                uint64 guid = group->GetTargetIcon(4);
-                if (guid && attacker->GetObjectGuid() == ObjectGuid(guid))
-                    return;
-            }
             if (!result || result->GetHealth() > attacker->GetHealth())
                 result = attacker;
         }

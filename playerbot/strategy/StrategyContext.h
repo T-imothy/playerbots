@@ -184,6 +184,12 @@ namespace ai
                 creators["four horseman"] = [](PlayerbotAI* ai) { return new FourHorsemanFightStrategy(ai); };
                 creators["nethermancer sepethrea"] = [](PlayerbotAI* ai) { return new NethermancerSepethreaFightStrategy(ai); };
 
+            creators["debug heartbeat"] = [](PlayerbotAI* ai) { return new DebugHeartbeatStrategy(ai); };
+            creators["debug reactions"] = [](PlayerbotAI* ai) { return new DebugReactionsStrategy(ai); };
+            creators["onyxias lair"] = [](PlayerbotAI* ai) { return new OnyxiasLairDungeonStrategy(ai); };
+            creators["shade of aran"] = [](PlayerbotAI* ai) { return new ShadeOfAranFightStrategy(ai); };
+            creators["big bad wolf"] = [](PlayerbotAI* ai) { return new BigBadWolfFightStrategy(ai); };
+
 #ifdef GenerateBotTests
                 creators["test"] = [](PlayerbotAI* ai) { return new TestStrategy(ai); };
 #endif

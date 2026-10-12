@@ -446,6 +446,18 @@ bool BoostTrigger::IsActive()
         }
         else
         {
+            const SpellEntry* spellInfo = sServerFacade.LookupSpellInfo(spellId);
+            if ((bot->GetMap()->IsRaid() || bot->GetMap()->IsDungeon()) && spellInfo &&
+                spellInfo->RecoveryTime >= 5 * MINUTE * IN_MILLISECONDS)
+            {
+                for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
+                {
+                    Unit* unit = ai->GetUnit(guid);
+                    if (unit && unit->IsAlive() && !unit->IsPlayer() &&
+                        sObjectMgr.IsEncounter(unit->GetEntry(), unit->GetMapId())) return true;
+                }
+                return false;
+            }
             return true;
         }
     }

@@ -371,6 +371,8 @@ namespace ai
 
         bool isUseful() override
         {
+            if (!isPossible())
+                return false;
             // Always allow poison on offhand
             if (!mainHand)
                 return true;
@@ -476,6 +478,12 @@ namespace ai
 
         bool isPossible() override
         {
+            if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported())
+                return false;
+            const uint8 slot = mainHand ? EQUIPMENT_SLOT_MAINHAND : EQUIPMENT_SLOT_OFFHAND;
+            Item* weapon = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot);
+            if (!weapon || weapon->GetProto()->Class != ITEM_CLASS_WEAPON)
+                return false;
             // Check if poison item is in bag
             for (const uint32 itemId : poisonItemIds)
             {

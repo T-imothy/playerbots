@@ -54,6 +54,7 @@
 #include "Guilds/GuildMgr.h"
 #include "Chat/ChannelMgr.h"
 #include "PlayerbotLLMInterface.h"
+#include "strategy/values/Stances.h"
 
 #include <boost/algorithm/string.hpp>
 #include <cmath>
@@ -194,6 +195,18 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
     engines[(uint8)BotState::BOT_STATE_DEAD] = AiFactory::createDeadEngine(bot, this, aiObjectContext);
     engines[(uint8)BotState::BOT_STATE_REACTION] = reactionEngine = AiFactory::createReactionEngine(bot, this, aiObjectContext);
 
+    StanceValue* stanceValue = (StanceValue*)aiObjectContext->GetValue<Stance*>("stance");
+
+    if (stanceValue)
+    {
+        if (IsTank(bot))
+            stanceValue->Load("turnback");
+        else if (!IsRanged(bot))
+            stanceValue->Load("behind");
+        else
+            stanceValue->Load("near");
+    }
+
     for (uint8 e = 0; e < (uint8)BotState::BOT_STATE_ALL; e++)
     {
         engines[e]->initMode = false;
@@ -236,8 +249,7 @@ PlayerbotAI::PlayerbotAI(Player* bot) :
     botOutgoingPacketHandlers.AddHandler(SMSG_BATTLEFIELD_STATUS, "bg status");
     botOutgoingPacketHandlers.AddHandler(SMSG_GROUP_INVITE, "group invite");
     botOutgoingPacketHandlers.AddHandler(SMSG_GUILD_INVITE, "guild accept");
-    botOutgoingPacketHandlers.AddHandler(BUY_ERR_NOT_ENOUGHT_MONEY, "not enough money");
-    botOutgoingPacketHandlers.AddHandler(BUY_ERR_REPUTATION_REQUIRE, "not enough reputation");
+    botOutgoingPacketHandlers.AddHandler(SMSG_BUY_FAILED, "buy failed");
     botOutgoingPacketHandlers.AddHandler(SMSG_GROUP_SET_LEADER, "group set leader");
     botOutgoingPacketHandlers.AddHandler(SMSG_FORCE_RUN_SPEED_CHANGE, "check mount state");
     // shouldDelay=true: ExternalEventHelper::HandlePacket() returns false when the 'resurrect request'
@@ -1470,6 +1482,69 @@ bool PlayerbotAI::SendResurrectRequest(Player* summoner, Player* target, uint32 
     return true;
 }
 
+namespace
+{
+    std::mutex killLogMutex;
+    std::map<uint32, time_t> killLogRegistry;
+
+    bool MarkKillLogged(ObjectGuid guid)
+    {
+        time_t now = time(nullptr);
+        std::scoped_lock lock(killLogMutex);
+        for (auto it = killLogRegistry.begin(); it != killLogRegistry.end();)
+        {
+            if (now - it->second > 60)
+                it = killLogRegistry.erase(it);
+            else
+                ++it;
+        }
+        if (killLogRegistry.find(guid.GetCounter()) != killLogRegistry.end())
+            return false;
+        killLogRegistry[guid.GetCounter()] = now;
+        return true;
+    }
+}
+
+void PlayerbotAI::LogKillEvents()
+{
+    if (!sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        return;
+
+    if (!bot->IsInWorld())
+        return;
+
+    Map* map = bot->GetMap();
+    if (!map)
+        return;
+
+    AiObjectContext* context = GetAiObjectContext();
+    ObjectGuid target = AI_VALUE(ObjectGuid, "current target");
+
+    auto logIfDead = [this, map](ObjectGuid guid)
+    {
+        if (!guid.IsCreature())
+            return;
+
+        Creature* creature = map->GetCreature(guid);
+        if (!creature || creature->IsAlive())
+            return;
+
+        if (!MarkKillLogged(guid))
+            return;
+
+        sPlayerbotAIConfig.logEvent(this, "KillCreature", creature->GetName(), std::to_string(creature->GetEntry()));
+    };
+
+    if (target != m_killWatchTarget)
+    {
+        ObjectGuid previous = m_killWatchTarget;
+        m_killWatchTarget = target;
+        logIfDead(previous);
+    }
+
+    logIfDead(target);
+}
+
 void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
     MANTECH_DIAG_SCOPE(BotDecision,32,nullptr);
@@ -1552,6 +1627,7 @@ void PlayerbotAI::UpdateAIInternal(uint32 elapsed, bool minimal)
     masterOutgoingPacketHandlers.Handle(helper);
 
 	DoNextAction(minimal);
+    LogKillEvents();
 }
 
 void PlayerbotAI::QueueSummonRevival(uint32 mapId, float x, float y, float z, uint32 instanceId)
@@ -2673,6 +2749,38 @@ void PlayerbotAI::ChangeEngine(BotState type)
 
     if (currentEngine != engine)
     {
+        if (sPlayerbotAIConfig.hasLog("bot_states.csv"))
+        {
+            Engine* previous = currentEngine;
+
+            std::ostringstream out;
+            out << sPlayerbotAIConfig.GetTimestampStr() << "+00,";
+            out << bot->GetName() << ",";
+            out << (previous == engines[(uint8)BotState::BOT_STATE_COMBAT] ? "combat" :
+                    previous == engines[(uint8)BotState::BOT_STATE_NON_COMBAT] ? "non-combat" :
+                    previous == engines[(uint8)BotState::BOT_STATE_DEAD] ? "dead" :
+                    previous == engines[(uint8)BotState::BOT_STATE_REACTION] ? "reaction" : "none")
+                << ",";
+            switch (type)
+            {
+            case BotState::BOT_STATE_COMBAT: out << "combat"; break;
+            case BotState::BOT_STATE_NON_COMBAT: out << "non-combat"; break;
+            case BotState::BOT_STATE_DEAD: out << "dead"; break;
+            case BotState::BOT_STATE_REACTION: out << "reaction"; break;
+            default: out << "?"; break;
+            }
+            out << ",";
+            out << (bot->IsInCombat() ? "combat" : "safe") << ",";
+            out << (!sServerFacade.IsAlive(bot) ? (bot->GetCorpse() ? "ghost" : "dead") : "alive") << ",";
+            ObjectGuid target = aiObjectContext->GetValue<ObjectGuid>("current target")->Get();
+            if (Unit* t = GetUnit(target))
+                out << t->GetName();
+            out << ",";
+            WorldPosition(bot).printWKT(out);
+
+            sPlayerbotAIConfig.log("bot_states.csv", out.str().c_str());
+        }
+
         currentEngine = engine;
         currentState = type;
         ReInitCurrentEngine();
@@ -3157,6 +3265,18 @@ bool PlayerbotAI::HasStrategy(const std::string& name, BotState type)
 
 void PlayerbotAI::ResetStrategies(bool autoLoad)
 {
+#ifdef GenerateBotTests
+    std::map<uint8, std::vector<std::string>> testStrategies;
+    for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; i++)
+    {
+        for (std::string_view strat : engines[i]->GetStrategies())
+        {
+            if (strat.rfind("test::", 0) == 0)
+                testStrategies[i].push_back(std::string(strat));
+        }
+    }
+#endif
+
     for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
         engines[i]->initMode = true;
@@ -3167,7 +3287,28 @@ void PlayerbotAI::ResetStrategies(bool autoLoad)
     AiFactory::AddDefaultNonCombatStrategies(bot, this, engines[(uint8)BotState::BOT_STATE_NON_COMBAT]);
     AiFactory::AddDefaultDeadStrategies(bot, this, engines[(uint8)BotState::BOT_STATE_DEAD]);
     AiFactory::AddDefaultReactionStrategies(bot, this, reactionEngine);
+
+    StanceValue* stanceValue = (StanceValue*)aiObjectContext->GetValue<Stance*>("stance");
+
+    if (stanceValue)
+    {
+        if (IsTank(bot))
+            stanceValue->Load("turnback");
+        else if (!IsRanged(bot))
+            stanceValue->Load("behind");
+        else
+            stanceValue->Load("near");
+    }
+
     if (autoLoad && HasPlayerRelation()) sPlayerbotDbStore.Load(this);
+
+#ifdef GenerateBotTests
+    for (auto& [state, strats] : testStrategies)
+    {
+        for (const auto& strat : strats)
+            engines[state]->addStrategy(strat);
+    }
+#endif
 
     for (uint8 i = 0; i < (uint8)BotState::BOT_STATE_ALL; i++)
     {
@@ -6781,8 +6922,10 @@ ActivePiorityType PlayerbotAI::GetPriorityType()
 
     AiObjectContext* context = GetAiObjectContext();
 
+#ifdef GenerateBotTests
     if (AI_VALUE2(bool, "manual bool", "is running test"))
         return ActivePiorityType::IS_RUNNING_TEST;
+#endif
 
     if (!WorldPosition(bot).isOverworld())
     {
@@ -8613,7 +8756,7 @@ std::list<Unit*> PlayerbotAI::GetAllHostileNPCNonPetUnitsAroundWO(WorldObject* w
             if (hostileUnit->IsCreature())
             {
                 Creature* creature = GetCreature(hostileUnit->GetObjectGuid());
-                if (!creature || (creature && creature->IsPet()))
+                if (!creature || (creature && creature->IsPet()) || !sServerFacade.IsHostileTo(bot, creature))
                 {
                     continue;
                 }

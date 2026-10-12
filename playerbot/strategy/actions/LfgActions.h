@@ -30,6 +30,11 @@ namespace ai
         virtual bool isUseful() override;
 
     protected:
+#ifdef MANGOSBOT_ONE
+        std::vector<uint64> GetRetryState();
+        std::vector<uint64> failedRetryState;
+        time_t retryAfter = 0;
+#endif
         bool JoinLFG();
         bool SetRoles();
 #ifdef MANGOSBOT_TWO

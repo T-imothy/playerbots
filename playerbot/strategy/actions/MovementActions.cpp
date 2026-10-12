@@ -477,6 +477,20 @@ bool MovementAction::UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition d
     Player* bot = ai->GetBot();
     WorldPosition botPos(bot);
 
+    // Mesa elevators move vertically while their X/Y position remains
+    // effectively unchanged. Use 3D distance so upper and lower stops
+    // are not treated as the same dock position.
+    auto dockDistanceSq = [&dockPosition](GenericTransport* trans) -> float
+    {
+        GameObjectInfo const* info =
+            sGOStorage.LookupEntry<GameObjectInfo>(trans->GetEntry());
+
+        if (info && info->displayId == 360) // Elevatorcar.m2
+            return dockPosition.sqDistance(WorldPosition(trans));
+
+        return dockPosition.sqDistance2d(WorldPosition(trans));
+    };
+
     GenericTransport* transport = bot->GetTransport();
 
     if (transport)
@@ -486,7 +500,7 @@ bool MovementAction::UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition d
         if (transportName.empty())
             transportName = data->name;
 
-        if (dockPosition.mapid == bot->GetMapId() && dockPosition.sqDistance2d(transport) < INTERACTION_DISTANCE * INTERACTION_DISTANCE)
+        if (dockPosition.mapid == bot->GetMapId() && dockDistanceSq(transport) < INTERACTION_DISTANCE * INTERACTION_DISTANCE)
         {
             MoveOffTransport(ai, exitPosition, doTeleport);
             ai->TellDebug(ai->GetMaster(), "Leaving transport " + transportName, "debug move");
@@ -507,7 +521,7 @@ bool MovementAction::UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition d
 
     for (auto& trans : dockPosition.getTransports(entry))
     {
-        float distance = dockPosition.sqDistance2d(trans);
+        float distance = dockDistanceSq(trans);
 
         if (minDist && distance > minDist)
             continue;
@@ -521,7 +535,7 @@ bool MovementAction::UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition d
             transportName = data->name;
     }
 
-    if (transport && dockPosition.mapid == bot->GetMapId() && dockPosition.sqDistance2d(transport) < INTERACTION_DISTANCE * INTERACTION_DISTANCE)
+    if (transport && dockPosition.mapid == bot->GetMapId() && dockDistanceSq(transport) < INTERACTION_DISTANCE * INTERACTION_DISTANCE)
     {
         MoveOnTransport(ai, transport, doTeleport);
 
@@ -2737,14 +2751,20 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     }
 #endif
 
-    if (ai->HasStrategy("behind", BotState::BOT_STATE_COMBAT))
+    if (!ai->IsRanged(bot) && obj->IsUnit() && sServerFacade.IsHostileTo(bot, static_cast<Unit*>(obj)))
     {
-        angle = GetFollowAngle() / 3 + obj->GetOrientation() + M_PI;
         float flankAngle = 0.0f;
         if (BlackwingMeleeFlankAngle(ai, dynamic_cast<Unit*>(obj), flankAngle))
         {
             // Native chase takes an angle relative to the target's facing.
             angle = flankAngle - obj->GetOrientation();
+            if (angle < 0) angle += float(2 * M_PI);
+        }
+        else if (Stance* stance = AI_VALUE(Stance*, "stance"))
+        {
+            WorldLocation location = stance->GetLocation();
+            if (stance->getName() != "turnback" && !Formation::IsNullLocation(location) && location.mapid != uint32(-1))
+                angle = atan2(location.coord_y - obj->GetPositionY(), location.coord_x - obj->GetPositionX()) - obj->GetOrientation();
             if (angle < 0) angle += float(2 * M_PI);
         }
     }
@@ -3422,6 +3442,7 @@ bool MoveToLootAction::Execute(Event& event)
         AI_VALUE(LootObjectStack*, "available loot")->Remove(loot.guid);
         RESET_AI_VALUE(LootObject, "loot target");
     }
+    if (moved && sServerFacade.IsWithinLOSInMap(bot, wo)) WaitForReach(bot->GetDistance(wo));
     return moved;
 }
 

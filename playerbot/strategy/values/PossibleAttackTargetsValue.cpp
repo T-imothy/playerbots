@@ -197,10 +197,6 @@ bool PossibleAttackTargetsValue::IsCcTarget(Unit* attacker, Player* player)
                     }
                 }
             }
-
-            uint64 guid = group->GetTargetIcon(4);
-            if (guid && attacker->GetObjectGuid() == ObjectGuid(guid))
-                return true;
         }
     }
 
