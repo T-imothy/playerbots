@@ -2,6 +2,8 @@
 #include "Trigger.h"
 #include "triggers/WorldPacketTrigger.h"
 #include "playerbot/ChatHelper.h"
+#include "Entities/Item.h"
+#include <type_traits>
 
 namespace ai
 {
@@ -71,18 +73,7 @@ namespace ai
                 resultPacket.rpos(packet.size() - 1);
                 uint8 result;
                 resultPacket >> result;
-#ifdef MANGOSBOT_TWO
-                if (result == uint8(BuyResult::NOT_ENOUGHT_MONEY))
-                    name = "not enough money";
-                else if (result == uint8(BuyResult::REPUTATION_REQUIRE))
-#else
-                if (result == uint8(BUY_ERR_NOT_ENOUGHT_MONEY))
-                    name = "not enough money";
-                else if (result == uint8(BUY_ERR_REPUTATION_REQUIRE))
-#endif
-                    name = "not enough reputation";
-                else
-                    return true;
+                name = BuyFailureName<BuyResult>(result);
             }
             if (name.empty())
                 return true;
@@ -115,6 +106,29 @@ namespace ai
         }
 
     private:
+        // Core translation units also include this header, without the
+        // module's MANGOSBOT_* defines. Select the native enum's shape so
+        // the same packet dispatch works in both compilation contexts.
+        template<class Result>
+        static std::string BuyFailureName(uint8 result)
+        {
+            if constexpr (std::is_convertible<Result, uint8>::value)
+            {
+                if (result == uint8(Result::BUY_ERR_NOT_ENOUGHT_MONEY))
+                    return "not enough money";
+                if (result == uint8(Result::BUY_ERR_REPUTATION_REQUIRE))
+                    return "not enough reputation";
+            }
+            else
+            {
+                if (result == uint8(Result::NOT_ENOUGHT_MONEY))
+                    return "not enough money";
+                if (result == uint8(Result::REPUTATION_REQUIRE))
+                    return "not enough reputation";
+            }
+            return "";
+        }
+
         AiObjectContext* aiObjectContext;
     };
 }
