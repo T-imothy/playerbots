@@ -1049,6 +1049,9 @@ void LogAnalysis::AnalyseEvents()
 
         Tokens tokens = StrSplit(line, ",");
 
+        if (tokens.size() < 3)
+            continue;
+
         eventCount[tokens[2]]++;
     } while (in.good());
 
@@ -1092,6 +1095,9 @@ void LogAnalysis::AnalyseQuests()
             continue;
 
         Tokens tokens = StrSplit(line, ",");
+
+        if (tokens.size() < 9)
+            continue;
 
         if (tokens.size() == 10) //Some quest names have a "," so add an extra element.
         {
@@ -1188,6 +1194,9 @@ void LogAnalysis::AnalyseCounts()
             continue;
 
         Tokens tokens = StrSplit(line, ",");
+
+        if (tokens.size() < 9)
+            continue;
 
         if (tokens.size() == 10) //Some quest names have a "," so add an extra element. 
         {

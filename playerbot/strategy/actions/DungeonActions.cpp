@@ -37,7 +37,7 @@ bool MoveAwayFromHazard::Execute(Event& event)
             const WorldPosition initialPosition(closestHazard->first);
             const float distance = frand(hazardRadius, hazardRadius * 1.5f);
 
-            Unit* currentTarget = AI_VALUE(Unit*, "current target");
+            Unit* currentTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
             if (currentTarget)
             {
                 const int8 startDir = urand(0, 1) * 2 - 1;
@@ -69,7 +69,7 @@ bool MoveAwayFromHazard::Execute(Event& event)
 
                         if (MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(), false, IsReaction(), false, true))
                         {
-                            if (IsReaction())
+                            if (!IsReaction())
                             {
                                 WaitForReach(point.distance(initialPosition));
                             }
@@ -194,7 +194,7 @@ bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, uint32 cre
             {
                 if (MoveTo(bot->GetMapId(), validPoint->getX(), validPoint->getY(), validPoint->getZ(), false, IsReaction(), false, false))
                 {
-                    if (IsReaction())
+                    if (!IsReaction())
                         WaitForReach(validPoint->distance(botPosition));
                     return true;
                 }
@@ -238,7 +238,7 @@ bool MoveAwayFromCreature::CreatureSearchHelperFunction(Event& event, uint32 cre
 
             if (MoveTo(bot->GetMapId(), validPoint->getX(), validPoint->getY(), validPoint->getZ(), false, IsReaction(), false, true))
             {
-                if (IsReaction())
+                if (!IsReaction())
                 {
                     WaitForReach(validPoint->distance(botPosition));
                 }

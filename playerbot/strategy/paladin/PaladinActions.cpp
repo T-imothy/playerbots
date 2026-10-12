@@ -4,6 +4,44 @@
 
 using namespace ai;
 
+namespace
+{
+    bool HasOwnedBlessing(PlayerbotAI* ai, Unit* target, const std::vector<std::string>& blessings)
+    {
+        for (const std::string& blessing : blessings)
+        {
+            if (ai->HasMyAura(blessing, target) || ai->HasMyAura("greater " + blessing, target))
+                return true;
+        }
+
+        return false;
+    }
+}
+
+bool ProtSealAction::Execute(Event& event)
+{
+    bool isEncounter = false;
+    // Use seal of vengeance if on a boss, seal of righteousness otherwise, trash, world etc.
+    std::list<ObjectGuid> v = context->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+    for (std::list<ObjectGuid>::iterator i = v.begin(); i!=v.end(); i++)
+    {
+        Unit* unit = ai->GetUnit(*i);
+        if (!unit || !sServerFacade.IsAlive(unit) || unit->IsPlayer())
+            continue;
+
+        if (sObjectMgr.IsEncounter(unit->GetEntry(), unit->GetMapId()))
+        {
+            isEncounter = true;
+            break;
+        }    
+    }
+    if (isEncounter && bot->HasSpell(AI_VALUE2(uint32, "spell id", "seal of vengeance")))
+        SetSpellName("seal of vengeance");
+    else
+        SetSpellName("seal of righteousness");
+    return CastBuffSpellAction::Execute(event);
+}
+
 bool CastPaladinAuraAction::Execute(Event& event)
 {
     std::vector<std::string> altAuras;
@@ -73,6 +111,12 @@ std::string CastBlessingAction::GetBlessingForTarget(Unit* target)
     if (target)
     {
         std::vector<std::string> possibleBlessings = GetPossibleBlessingsForTarget(target);
+        // Revalidate ownership at execution time so another action pass cannot
+        // replace this paladin's active Wisdom/Salvation with a lower-priority
+        // blessing such as Might.
+        if (HasOwnedBlessing(ai, target, possibleBlessings))
+            return chosenBlessing;
+
         for (const std::string& blessing : possibleBlessings)
         {
             const std::string greaterBlessing = "greater " + blessing;
@@ -237,7 +281,7 @@ Unit* CastBlessingOnPartyAction::GetTarget()
         }
     }
 
-    return AI_VALUE2(Unit*, "party member without my aura", blessList);
+    return ai->GetUnit(AI_VALUE2(ObjectGuid, "party member without my aura", blessList));
 }
 
 bool CastBlessingOnPartyAction::isPossible()
@@ -262,6 +306,12 @@ std::string CastBlessingOnPartyAction::GetBlessingForTarget(Unit* target)
     if (target)
     {
         std::vector<std::string> possibleBlessings = GetPossibleBlessingsForTarget(target);
+        // Multiple paladins may each contribute one blessing, but this
+        // paladin must never overwrite its own active blessing when the
+        // cached party target survives into the next action pass.
+        if (HasOwnedBlessing(ai, target, possibleBlessings))
+            return chosenBlessing;
+
         for (const std::string& blessing : possibleBlessings)
         {
             // Don't cast greater salvation on possible tank classes

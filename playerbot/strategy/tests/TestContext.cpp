@@ -21,6 +21,13 @@ void TestContext::Reset()
     testName.clear();
     testStartPosition = WorldPosition();
     destinationPosition = GuidPosition();
+    partyXpStart = 0;
+    partyXpCaptured = false;
+    observedDeadMobs.clear();
+    resurrectMapId = 0;
+    resurrectX = resurrectY = resurrectZ = 0.0f;
+    hasResurrectRequest = false;
+    groupMembersSeenOnMap.clear();
 
     for (ObjectGuid const& guid : spawnedBots)
     {
@@ -30,4 +37,18 @@ void TestContext::Reset()
         }
     }
     spawnedBots.clear();
+    deliveredGroupMembers.clear();
+    groupOnMapExpected = 0;
+}
+
+void TestContext::RecordDeliveredGroupMember(ObjectGuid guid)
+{
+    std::lock_guard<std::mutex> lock(groupDeliveryMutex);
+    deliveredGroupMembers.insert(guid);
+}
+
+std::set<ObjectGuid> TestContext::GetDeliveredGroupMembers()
+{
+    std::lock_guard<std::mutex> lock(groupDeliveryMutex);
+    return deliveredGroupMembers;
 }

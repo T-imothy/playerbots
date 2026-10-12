@@ -112,6 +112,8 @@ void Engine::Init()
         MultiplyAndPush(strategy->getDefaultActions(state), 0.0f, false, Event(), "default");
     }
 
+    PruneUnhandledExternalEvents();
+
 	if (testMode)
 	{
         FILE* file = fopen("test.log", "w");
@@ -150,6 +152,13 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                 continue;
             // NOTE: queue.Pop() deletes basket
             ActionNode* actionNode = queue.Pop();
+
+            // The event has had its turn now, so the trigger can be handed back - even if the action
+            // turns out to be unknown/useless/impossible, or deliberately does nothing with the
+            // packet (e.g. an already-alive bot declining a resurrect). Leaving it armed would have
+            // the same packet re-queued on every subsequent tick.
+            ReleaseExternalEvent(event.getSource());
+
             Action* action = InitializeAction(actionNode);
 
             std::string actionName = (action ? action->getName() : "unknown");
@@ -178,6 +187,8 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
                     ai->TellPlayerNoFacing(ai->GetMaster() ? ai->GetMaster() : ai->GetBot(), out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
 
+                    if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+                        sPlayerbotAIConfig.logEvent(ai, "try", actionNode->getName(), "unknown r=" + std::to_string(relevance));
                 }
                 LogAction("A:%s - UNKNOWN", actionNode->getName().c_str());
             }
@@ -234,8 +245,25 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                     if (isPossible && relevance)
                     {
                         auto pmo4 = sPerformanceMonitor.start(PERF_MON_ACTION, "Execute", ai);
+                        uint32 reactionStart = WorldTimer::getMSTime();
                         actionExecuted = ListenAndExecute(action, event);
+                        uint32 reactionElapsed = WorldTimer::getMSTimeDiff(reactionStart, WorldTimer::getMSTime());
                         pmo4.reset();
+
+                        if (actionExecuted && sPlayerbotAIConfig.hasLog("bot_reactions.csv") && ai->HasStrategy("debug reactions", BotState::BOT_STATE_NON_COMBAT))
+                        {
+                            std::ostringstream out;
+                            out << sPlayerbotAIConfig.GetTimestampStr() << "+00,";
+                            out << ai->GetBot()->GetName() << ",";
+                            out << (event.getSource().empty() ? "default" : event.getSource()) << ",";
+                            out << std::fixed << std::setprecision(2) << relevance << ",";
+                            out << actionName << ",";
+                            out << reactionElapsed << ",";
+                            out << (ai->GetBot()->IsInCombat() ? "combat" : "non-combat") << ",";
+                            WorldPosition(ai->GetBot()).printWKT(out);
+
+                            sPlayerbotAIConfig.log("bot_reactions.csv", out.str().c_str());
+                        }
 
 #ifdef PLAYERBOT_ELUNA
                         // used by eluna    
@@ -273,6 +301,9 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                                 out << " [" << event.getSource() << "]";
 
                             ai->TellPlayerNoFacing(ai->GetMaster() ? ai->GetMaster() : ai->GetBot(), out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+
+                            if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+                                sPlayerbotAIConfig.logEvent(ai, "try", action->getName(), "impossible r=" + std::to_string(action->getRelevance()));
                         }
                         LogAction("A:%s - IMPOSSIBLE", action->getName().c_str());
                         MultiplyAndPush(actionNode->getAlternatives(), relevance + 0.03, false, event, "alt");
@@ -294,6 +325,9 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
                             out << " [" << event.getSource() << "]";
 
                         ai->TellPlayerNoFacing(ai->GetMaster() ? ai->GetMaster() : ai->GetBot(), out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+
+                        if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+                            sPlayerbotAIConfig.logEvent(ai, "try", action->getName(), "useless r=" + std::to_string(action->getRelevance()));
                     }
                     lastRelevance = relevance;
                     LogAction("A:%s - USELESS", action->getName().c_str());
@@ -332,6 +366,42 @@ bool Engine::DoNextAction(Unit* unit, int depth, bool minimal, bool isStunned)
 
     queue.RemoveExpired();
     return actionExecuted;
+}
+
+void Engine::ReleaseExternalEvent(const std::string& source)
+{
+    auto it = unhandledExternalEvents.find(source);
+    if (it == unhandledExternalEvents.end())
+        return;
+
+    it->second->Reset();
+    unhandledExternalEvents.erase(it);
+}
+
+void Engine::PruneUnhandledExternalEvents()
+{
+    for (auto it = unhandledExternalEvents.begin(); it != unhandledExternalEvents.end();)
+    {
+        bool held = false;
+        for (std::list<TriggerNode*>::iterator i = triggers.begin(); i != triggers.end(); i++)
+        {
+            if ((*i)->getName() == it->first)
+            {
+                held = true;
+                break;
+            }
+        }
+
+        // Its node is gone (strategy teardown), so nothing can ever release it again - hand the
+        // trigger back rather than let the armed state suppress later packets of the same opcode.
+        if (!held)
+        {
+            it->second->Reset();
+            it = unhandledExternalEvents.erase(it);
+        }
+        else
+            ++it;
+    }
 }
 
 ActionNode* Engine::CreateActionNode(const std::string& name)
@@ -605,15 +675,28 @@ void Engine::ProcessTriggers(bool minimal)
             if (!event)
                 continue;
 
-            MultiplyAndPush(node->getHandlers(), 0.0f, false, event, "trigger");
-            LogAction("T:%s", trigger->getName().c_str());
+            // An external (packet) event is a one-shot obligation: keep the trigger armed until its
+            // action has had its turn, so a basket that loses this tick or is dropped from the queue
+            // is re-pushed instead of being silently lost. Only arm it when the event actually made
+            // it into the queue - a handler list with nothing pushable must not leave it armed.
+            if (MultiplyAndPush(node->getHandlers(), 0.0f, false, event, "trigger") && trigger->IsExternalEvent())
+                unhandledExternalEvents[trigger->getName()] = trigger;
+
+            LogAction("T:%s - %f", trigger->getName().c_str(), node->getFirstRelevance());
         }
     }
 
     for (std::list<TriggerNode*>::iterator i = triggers.begin(); i != triggers.end(); i++)
     {
         Trigger* trigger = (*i)->getTrigger();
-        if (trigger) trigger->Reset();
+        if (!trigger)
+            continue;
+
+        // Deliberately left armed: its event has not reached an action yet (see above).
+        if (unhandledExternalEvents.find(trigger->getName()) != unhandledExternalEvents.end())
+            continue;
+
+        trigger->Reset();
     }
 }
 
@@ -729,6 +812,21 @@ bool Engine::ListenAndExecute(Action* action, Event& event)
         }
 
         ai->TellPlayerNoFacing(ai->GetMaster() ? ai->GetMaster() : ai->GetBot(), out, PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, false);
+
+        if (sPlayerbotAIConfig.hasLog("bot_events.csv"))
+        {
+            std::ostringstream info;
+            info << "r=" << std::fixed << std::setprecision(2) << action->getRelevance();
+            if (!event.getSource().empty())
+                info << " [" << event.getSource() << "]";
+            const uint32 actionDuration = action->GetDuration();
+            if (actionDuration > 0)
+                info << " dur=" << ((float)actionDuration / static_cast<float>(IN_MILLISECONDS)) << "s";
+            if (!actionExecuted)
+                info << " (not executed)";
+
+            sPlayerbotAIConfig.logEvent(ai, "do", action->getName(), info.str());
+        }
     }
 
     if (ai->HasStrategy("debug threat", BotState::BOT_STATE_NON_COMBAT))

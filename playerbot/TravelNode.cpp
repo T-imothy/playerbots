@@ -1123,10 +1123,10 @@ void TravelPath::ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets)
 {
     auto startP = getNextPoint(mover, 0.0f, false);
 
-    cutTo(*startP, false);
-
     if (startP == fullPath.end())
         return;
+
+    cutTo(*startP, false);
 
     AiObjectContext* context = ai->GetAiObjectContext();
     std::list<ObjectGuid> targets;
@@ -1924,7 +1924,7 @@ TravelPath TravelNodeMap::getFullPath(WorldPosition startPos, WorldPosition endP
 
 bool TravelNodeMap::cropUselessNode(TravelNode* startNode)
 {
-    if (!startNode->isLinked() || startNode->isImportant())
+    if (!startNode->isLinked() || startNode->isImportant() || startNode->isPortal())
         return false;
 
     std::vector<TravelNode*> ignore = { startNode };

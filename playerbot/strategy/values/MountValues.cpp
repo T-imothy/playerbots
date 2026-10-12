@@ -172,7 +172,7 @@ bool MountValue::IsValidLocation(Player* bot)
 
 uint32 CurrentMountSpeedValue::Calculate()
 {
-    Unit* unit = AI_VALUE(Unit*, getQualifier());
+    Unit* unit = ai->GetUnit(AI_VALUE(ObjectGuid, getQualifier()));
 
     if (!unit)
         return 0;
@@ -274,7 +274,12 @@ std::string MountListValue::Format()
     for (auto& mount : this->Calculate())
     {
         std::string speed = std::to_string(mount.GetSpeed(false) + 1) + "%" + (mount.GetSpeed(true) ? ("/" + (std::to_string(mount.GetSpeed(true) + 1) + "%")) : "");
-        out << (mount.IsItem() ? "(item)" : "(spell)") << chat->formatSpell(mount.GetSpellId()) << "(" << speed << "),";
+
+        SpellEntry const* spellInfo = sSpellTemplate.LookupEntry<SpellEntry>(mount.GetSpellId());
+        if (spellInfo && !spellInfo->SpellName[LOCALE_enUS])
+            spellInfo = nullptr;
+
+        out << (mount.IsItem() ? "(item)" : "(spell)") << (spellInfo ? chat->formatSpell(spellInfo) : std::string()) << "(" << speed << "),";
     }
     out << "}";
     return out.str();

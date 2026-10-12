@@ -6,6 +6,7 @@
 #include "playerbot/RandomPlayerbotMgr.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
+#include "playerbot/WorldPosition.h"
 #include "Chat/ChannelMgr.h"
 #include "Social/SocialMgr.h"
 #include "Accounts/AccountMgr.h"
@@ -75,7 +76,9 @@ PlayerbotHolder::PlayerbotHolder() : PlayerbotAIBase()
     m_botCommandHandlers["c"] = &PlayerbotHolder::HandleBotC;
     m_botCommandHandlers["w"] = &PlayerbotHolder::HandleConsoleWhisper;
     m_botCommandHandlers["cmd"] = &PlayerbotHolder::HandleConsoleCmd;
+#ifdef GenerateBotTests
     m_botCommandHandlers["test"] = &PlayerbotHolder::HandleBotTest;
+#endif
     m_botCommandHandlers["do"] = &PlayerbotHolder::HandleBotDo;
     m_botCommandHandlers["record"] = &PlayerbotHolder::HandleBotRecord;
     m_botCommandHandlers["read"] = &PlayerbotHolder::HandleBotRead;
@@ -1480,6 +1483,7 @@ std::string PlayerbotHolder::HandleConsoleCmd(Player* bot, Player* master, const
     return msg;
 }
 
+#ifdef GenerateBotTests
 std::string PlayerbotHolder::HandleBotTest(Player* bot, Player* master, const std::string param)
 {
     if (!bot)
@@ -1494,12 +1498,11 @@ std::string PlayerbotHolder::HandleBotTest(Player* bot, Player* master, const st
         return "Usage: test <testName>. Available tests: walk_to_ironforge, flight_ratchet_to_booty_bay";
     }
 
-    // Activate test strategy which will run the test over multiple ticks
-    std::string strategyName = "test::" + param;
-    ai->ChangeStrategy("+" + strategyName, BotState::BOT_STATE_NON_COMBAT);
-    
+    TestRegistry::StartTest(ai, param);
+
     return "Test '" + param + "' started for bot " + bot->GetName();
 }
+#endif
 
 std::string PlayerbotHolder::HandleBotDo(Player* bot, Player* master, const std::string param)
 {
@@ -2016,11 +2019,12 @@ void PlayerbotHolder::CreateBot(Player* master, const std::string param, std::li
             ChangeTalentsAction::AutoSelectTalents(newBot, &out, role);
 
             sRandomPlayerbotMgr.SetValue(botGuid, "create levelup", 1);
-            sRandomPlayerbotMgr.SetValue(botGuid, "create group", 1, groupWith);
-            sRandomPlayerbotMgr.SetValue(botGuid, "create gear", 1, gear);
         }
         else
             newBot->SetLevel(1);
+
+        sRandomPlayerbotMgr.SetValue(botGuid, "create group", 1, groupWith);
+        sRandomPlayerbotMgr.SetValue(botGuid, "create gear", 1, gear);
 
         if (!testName.empty())
         {
@@ -2033,10 +2037,22 @@ void PlayerbotHolder::CreateBot(Player* master, const std::string param, std::li
             sRandomPlayerbotMgr.SetValue(botGuid, "temporary", 1, name);
         }
 
-        if (master)
+        const bool hasMaster = (master != nullptr);
+        uint32 masterMapId = 0;
+        float masterX = 0.0f, masterY = 0.0f, masterZ = 0.0f, masterO = 0.0f;
+        if (hasMaster)
         {
-            newBot->SetMap(master->GetMap());
-            newBot->SetPosition(master->GetPositionX(), master->GetPositionY(), master->GetPositionZ(), master->GetOrientation());
+            masterMapId = master->GetMapId();
+            masterX = master->GetPositionX();
+            masterY = master->GetPositionY();
+            masterZ = master->GetPositionZ();
+            masterO = master->GetOrientation();
+        }
+
+        if (hasMaster)
+        {
+            newBot->GetTeleportDest() = WorldLocation(masterMapId, masterX, masterY, masterZ, masterO);
+            newBot->SetSemaphoreTeleportNear(true);
         }
 
         newBot->SaveToDB();
@@ -2113,7 +2129,7 @@ std::list<std::string> PlayerbotHolder::HandleGroup(Player* master, const std::s
 
     RandomPlayerbotFactory factory(0);
 
-    uint32 maxTries = 10*groupSize;
+    uint32 maxTries = 100*groupSize;
 
     uint32 botsCreated = 0;
     uint32 continue_role = 0, continue_race = 0, continue_class = 0;
@@ -2125,13 +2141,18 @@ std::list<std::string> PlayerbotHolder::HandleGroup(Player* master, const std::s
         if (!maxTries)
             break;
 
-        BotRoles role = BotRoles(urand(BotRoles::BOT_ROLE_TANK, BotRoles::BOT_ROLE_DPS));
-
-        if (allowedClassNr[0][role] == 0)
+        static const BotRoles roleValues[] = { BOT_ROLE_TANK, BOT_ROLE_HEALER, BOT_ROLE_DPS };
+        std::vector<BotRoles> availableRoles;
+        for (BotRoles candidate : roleValues)
         {
-            continue_role++;
-            continue;
+            if (allowedClassNr[0][candidate] > 0)
+                availableRoles.push_back(candidate);
         }
+
+        if (availableRoles.empty())
+            break;
+
+        BotRoles role = availableRoles[urand(0, (uint32)availableRoles.size() - 1)];
 
         uint8 cls = factory.GetRandomClass(0, role);
 
@@ -2158,17 +2179,14 @@ std::list<std::string> PlayerbotHolder::HandleGroup(Player* master, const std::s
         paramStr << "level=" << masterLevel << " class=" << ChatHelper::formatClass(cls) << " group=" << master->GetName() << " " << passThroughParam; //Passthrough will override.
 
         auto result = HandleCreate(master, paramStr.str(), security);
+        bool created = !result.empty() && result.front().find("Bot created:") == 0;
         messages.splice(messages.end(), result);
 
-        if (!messages.empty())
+        if (created)
         {
-            auto lastMsg = messages.front();
-            if (lastMsg.find("Bot created:") != std::string::npos)
-            {
-                classesCreated[cls]++;
-                botsCreated++;
-                currentGroupSize++;
-            }
+            classesCreated[cls]++;
+            botsCreated++;
+            currentGroupSize++;
         }
     
         allowedClassNr[0][role]--; 
@@ -2295,6 +2313,23 @@ std::list<std::string> PlayerbotHolder::HandleRunTest(Player* master, const std:
         return messages;
     }
 
+    if (!listTests && matchingTests.size() > 1)
+    {
+        std::vector<std::string> exact;
+        for (const auto& test : matchingTests)
+        {
+            std::string lowerTest = test;
+            std::transform(lowerTest.begin(), lowerTest.end(), lowerTest.begin(), ::tolower);
+            if (lowerTest == testNamePart)
+            {
+                exact.push_back(test);
+                break;
+            }
+        }
+        if (!exact.empty())
+            matchingTests = exact;
+    }
+
     if (listTests)
     {
         messages.push_back("Tests matching '" + param + "':");
@@ -2347,6 +2382,14 @@ void PlayerbotHolder::UpdatePendingTests(uint32 elapsed)
 {
     std::lock_guard<std::mutex> lock(testResultsMutex);
 
+    static constexpr uint32 maxActiveTestBots = 50;
+    uint32 activeTestBots = 0;
+    for (const auto& test : pendingTests)
+    {
+        if (test.pending && !test.completed)
+            activeTestBots += std::max<uint32>(1, test.expectedBotSpawnCount);
+    }
+
     for (auto& pt : pendingTests)
     {
         if (pt.pending)
@@ -2364,24 +2407,20 @@ void PlayerbotHolder::UpdatePendingTests(uint32 elapsed)
 
         if (dynamic_cast<PlayerbotMgr*>(this))
         {
+            Player* master = (dynamic_cast<PlayerbotMgr*>(this))->GetMaster();
+            if (!master)
+                continue;
+
             uint32 maxCharsPerAccount = 9;
 #ifdef MANGOSBOT_TWO
             maxCharsPerAccount = 10;
 #endif
-            uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID((dynamic_cast<PlayerbotMgr*>(this))->GetMaster()->GetObjectGuid());
+            uint32 accountId = sObjectMgr.GetPlayerAccountIdByGUID(master->GetObjectGuid());
                 if (accountId == 0) continue;
 
             uint32 currentChars = sAccountMgr.GetCharactersCount(accountId);
             if (currentChars >= maxCharsPerAccount)
                 continue;
-        }
-
-        static constexpr uint32 maxActiveTestBots = 50;
-        uint32 activeTestBots = 0;
-        for (const auto& test : pendingTests)
-        {
-            if (test.pending && !test.completed)
-                activeTestBots += std::max<uint32>(1, test.expectedBotSpawnCount);
         }
 
         uint32 newTestBotCount = std::max<uint32>(1, pt.expectedBotSpawnCount);
@@ -2394,7 +2433,27 @@ void PlayerbotHolder::UpdatePendingTests(uint32 elapsed)
 
         std::list<std::string> createMsgs = HandleCreate(nullptr, createParams, SEC_PLAYER);
 
-        pt.pending = true;
+        bool created = false;
+        for (auto const& msg : createMsgs)
+        {
+            if (msg.find("Bot created: ") == 0)
+            {
+                created = true;
+                break;
+            }
+        }
+
+        if (created)
+        {
+            pt.pending = true;
+            activeTestBots += newTestBotCount;
+        }
+        else if (++pt.retry >= 20)
+        {
+            pt.result = "FAILED: host bot creation failed";
+            pt.completed = true;
+            testResults.push_back(pt);
+        }
     }
 }
 
@@ -2413,8 +2472,8 @@ void PlayerbotHolder::DepositTestResult(const std::string& testName, const std::
             if (result == "ABORT") //Failed this time but might work next time.
             {
                 pt.result = result;
-                pt.retry++;
-                break;
+                if (++pt.retry < 3)
+                    break;
             }
 
             pt.result = result;

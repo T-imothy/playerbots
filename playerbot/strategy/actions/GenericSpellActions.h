@@ -18,9 +18,9 @@ namespace ai
         bool ShouldReactionInterruptCast() const override { return true; }
 
         bool HasReachAction() { return !GetReachActionName().empty(); }
+        const uint32& GetSpellID() const { return spellId; }
         
     protected:
-        const uint32& GetSpellID() const { return spellId; }
         const std::string& GetSpellName() const { return spellName; }
         void SetSpellName(const std::string& name, std::string spellIDContextName = "spell id", bool force = false);
 
@@ -209,7 +209,7 @@ namespace ai
         virtual bool isUseful() override 
         {
             // do not heal if they will not receive healing due to debuff
-            Unit* target = AI_VALUE(Unit*, GetTargetName());
+            Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, GetTargetName()));
             if (target && target->GetMaxNegativeAuraModifier(SPELL_AURA_MOD_HEALING_PCT) <= -100)
                 return false;
             return CastAuraSpellAction::isUseful();
@@ -411,7 +411,7 @@ namespace ai
     //cc breakers
 
     BUFF_ACTION(CastWillOfTheForsakenAction, "will of the forsaken");
-    BUFF_ACTION_U(CastEscapeArtistAction, "escape artist", !ai->HasAura("stealth", AI_VALUE(Unit*, "self target")));
+    BUFF_ACTION_U(CastEscapeArtistAction, "escape artist", !ai->HasAura("stealth", ai->GetUnit(AI_VALUE(ObjectGuid, "self target"))));
 
 #ifdef MANGOSBOT_TWO
     SPELL_ACTION(CastEveryManforHimselfAction, "every man for himself");

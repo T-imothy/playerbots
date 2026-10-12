@@ -38,7 +38,9 @@ namespace ai
     public:
         TestResult Execute(const std::string& params, Player* bot, PlayerbotAI* ai, TestContext& ctx, std::string& message) override;
     protected:
-        std::string GetName() const override { return "wait time"; }
+        // Scripts are written as "wait <seconds>". Registered AFTER CommandFlowWaitDestination so
+        // that "wait destination <n>" still resolves to the destination variant.
+        std::string GetName() const override { return "wait"; }
     };
 
     class CommandFlowWaitDestination : public TestCommand
@@ -47,6 +49,14 @@ namespace ai
         TestResult Execute(const std::string& params, Player* bot, PlayerbotAI* ai, TestContext& ctx, std::string& message) override;
     protected:
         std::string GetName() const override { return "wait destination"; }
+    };
+
+    class CommandFlowWaitGroup : public TestCommand
+    {
+    public:
+        TestResult Execute(const std::string& params, Player* bot, PlayerbotAI* ai, TestContext& ctx, std::string& message) override;
+    protected:
+        std::string GetName() const override { return "wait group"; }
     };
 
     class CommandFlowRepeat : public TestCommand
