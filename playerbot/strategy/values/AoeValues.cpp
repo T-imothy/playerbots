@@ -27,9 +27,16 @@ bool ai::ControlledRaidAoe(PlayerbotAI* ai)
         !bot->IsInCombat() || !bot->GetGroup() || !bot->GetMap()->IsRaid() || ai->IsRealPlayer() ||
         ai->IsHeal(bot) || !ai->GetCombatStartTime() || time(0) - ai->GetCombatStartTime() < 2) return false;
     if (!ai->IsTank(bot) && (MoltenCoreNukeTarget(ai) || MoltenCoreBossBurn(ai))) return false;
-    const WorldLocation center = ai->GetAiObjectContext()->GetValue<WorldLocation>("aoe position")->Get();
-    // Validate the same centre the ground-targeted action will cast at. A
-    // separate density scan can select a different, farther cluster.
+    const bool dpsWarrior = bot->getClass() == CLASS_WARRIOR && !ai->IsTank(bot);
+    WorldLocation center = ai->GetAiObjectContext()->GetValue<WorldLocation>("aoe position")->Get();
+    // Whirlwind is self-centred; a distant caster cluster must not admit it.
+    // Ground-targeted classes retain the centre their action will cast at.
+    if (dpsWarrior)
+    {
+        center.coord_x = bot->GetPositionX();
+        center.coord_y = bot->GetPositionY();
+        center.coord_z = bot->GetPositionZ();
+    }
     const float range = std::min(40.0f, ai->GetRange("spell"));
     if (!std::isfinite(center.coord_x) || !std::isfinite(center.coord_y) || !std::isfinite(center.coord_z) ||
         std::hypot(center.coord_x - bot->GetPositionX(), center.coord_y - bot->GetPositionY()) > range) return false;
@@ -60,7 +67,7 @@ bool ai::ControlledRaidAoe(PlayerbotAI* ai)
     }
     // DPS Whirlwind is useful on a controlled pair. Keep the heavier caster
     // area spells and tank AoE at their existing three-target threshold.
-    const unsigned minimum = bot->getClass() == CLASS_WARRIOR && !ai->IsTank(bot) ? 2 : 3;
+    const unsigned minimum = dpsWarrior ? 2 : 3;
     return controlled >= minimum;
 }
 

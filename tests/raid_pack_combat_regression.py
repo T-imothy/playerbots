@@ -75,6 +75,14 @@ int main(){
  // retain their existing behavior. All CC and tank-control guards still apply.
  ai.context.possible.value={2,3};assert(!ControlledRaidAoe(&ai));
  bot.cls=CLASS_WARRIOR;assert(ControlledRaidAoe(&ai));
+ // The caster's cluster can be distant or stale; Whirlwind counts around the
+ // warrior and protects CC/unpulled neighbours around that actual origin.
+ bot.x=30;ai.context.center.value.coord_x=0;assert(!ControlledRaidAoe(&ai));
+ one.x=29;two.x=31;assert(ControlledRaidAoe(&ai));
+ nearby.x=20;nearby.cc=true;ai.context.possible.value.push_back(5);assert(!ControlledRaidAoe(&ai));
+ nearby.cc=false;nearby.combat=false;assert(!ControlledRaidAoe(&ai));
+ ai.context.possible.value={2,3};nearby.combat=true;bot.x=0;one.x=-1;two.x=1;
+ two.x=9;assert(!ControlledRaidAoe(&ai));two.x=1;
  ai.context.possible.value={2};assert(!ControlledRaidAoe(&ai));ai.context.possible.value={2,3};
  bot.tank=true;assert(!ControlledRaidAoe(&ai));bot.tank=false;
  two.cc=true;assert(!ControlledRaidAoe(&ai));two.cc=false;
@@ -104,7 +112,7 @@ int main(){
  bot.x=1;spline.destination.x=10;assert(!StopMoltenCoreUnsafeTravel(&ai)); // escape from inside remains legal
  spline.destination.x=-10;assert(StopMoltenCoreUnsafeTravel(&ai));bot.transport=true;assert(!StopMoltenCoreUnsafeTravel(&ai));bot.transport=false;
  bot.teleport=true;assert(!StopMoltenCoreUnsafeTravel(&ai));bot.teleport=false;spline.done=true;assert(!StopMoltenCoreUnsafeTravel(&ai));
- std::cout<<"PASS: tank-controlled raid AoE, CC/unpulled exclusion, pet taunt suppression/restoration and newly spawned fire on active splines\n";
+ std::cout<<"PASS: self-centred two-target DPS Whirlwind, tank-controlled raid AoE, CC/unpulled exclusion, pet taunt suppression/restoration and newly spawned fire on active splines\n";
 }
 '''.replace('__METHODS__',methods).replace('GetValue<EncounterPosition>', 'GetValue<int>')
 for era in ('ZERO','ONE','TWO'):
