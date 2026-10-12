@@ -6,6 +6,7 @@
 #include "EncounterSpellPolicy.h"
 #include "MotionGenerators/MovementGenerator.h"
 #include "AI/BaseAI/CreatureAI.h"
+#include "FollowActions.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/generic/CombatStrategy.h"
@@ -33,7 +34,25 @@ bool AttackMyTargetAction::Execute(Event& event)
         const ObjectGuid guid = requester->GetSelectionGuid();
         if (guid)
         {
-            if (Attack(requester, ai->GetUnit(guid)))
+            Unit* target = ai->GetUnit(guid);
+            if (IsTargetValid(requester, target) && ai->IsHeal(bot) &&
+                !ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT))
+            {
+                // An explicit Attack order brings a healer into support range;
+                // it does not turn that healer into a melee/DPS bot.
+                FollowAction follow(ai);
+                return follow.Execute(event) || !follow.isUseful();
+            }
+            if (target && target->IsInWorld() && target->IsAlive() && bot->IsInMap(target) &&
+                !sServerFacade.IsFriendlyTo(bot, target) &&
+                sServerFacade.GetDistance2d(bot, target) > sPlayerbotAIConfig.sightDistance)
+            {
+                if (!ai->IsHeal(bot) || ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT))
+                    SET_AI_VALUE(ObjectGuid, "attack target", guid);
+                FollowAction follow(ai);
+                return follow.Execute(event);
+            }
+            if (Attack(requester, target))
             {
                 SET_AI_VALUE(ObjectGuid, "attack target", guid);
                 return true;
@@ -71,7 +90,7 @@ bool AttackRTITargetAction::Execute(Event& event)
 
 bool AttackMyTargetAction::isUseful()
 {
-    return !ai->ContainsStrategy(STRATEGY_TYPE_HEAL) || ai->HasStrategy("offdps", BotState::BOT_STATE_COMBAT);
+    return true; // Explicit command: healers join through FollowAction above.
 }
 
 bool AttackRTITargetAction::isUseful()

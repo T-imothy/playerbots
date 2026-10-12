@@ -15,6 +15,7 @@ public:
 public:
     bool IsActive() const;
     virtual void UpdateAI(uint32 elapsed);
+    virtual bool HasUrgentCommand() const { return false; }
     // Advance the inexpensive AI wake-up timer on the owning map thread.
     // Returning false lets the map avoid allocating and dispatching a worker
     // for an idle bot whose passive AI is not due yet.

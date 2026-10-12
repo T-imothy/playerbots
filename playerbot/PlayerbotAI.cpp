@@ -377,6 +377,8 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
     if (ProcessPendingTransition())
         return;
 
+    PrepareForUrgentAttack(); // Explicit authorized orders outrank food/drink duration.
+
     // Food/drink duration must not hide a nearby party pull from its healer.
     // Standing removes the sitting-only regeneration auras normally.
     if (bot->IsSitState() && ai::NeedsPartyCombatSupport(this))
@@ -1402,6 +1404,22 @@ void PlayerbotAI::HandleCommands()
     }
 }
 
+void PlayerbotAI::PrepareForUrgentAttack()
+{
+    // Executed under updateExecutionMutex on the bot's owning map only.
+    if (!urgentAttackPending.exchange(false, std::memory_order_acq_rel))
+        return;
+    if (!bot || IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || bot->HasCharmer())
+        return;
+    if (bot->IsSitState())
+        bot->SetStandState(UNIT_STAND_STATE_STAND);
+    aiInternalUpdateDelay = 0;
+    isWaiting = false;
+    // Native cast readiness and GCD admission still apply. Never interrupt an
+    // in-flight heal or mutate spells from the command-receiving world thread.
+}
+
 void PlayerbotAI::RunOnOwningThread(Player* target, std::function<void(Player*)> action)
 {
     if (!target || !action)
@@ -2040,6 +2058,10 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
     {
         ChatCommandHolder cmd(filtered, &fromPlayer, type);
         chatCommands.push(cmd);
+        if (fromPlayer.isRealPlayer() &&
+            (type == CHAT_MSG_WHISPER || type == CHAT_MSG_PARTY || type == CHAT_MSG_RAID) &&
+            (filtered == "attack" || filtered == "attack rti"))
+            urgentAttackPending.store(true, std::memory_order_release);
     }
 }
 

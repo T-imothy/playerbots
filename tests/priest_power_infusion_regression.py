@@ -14,7 +14,7 @@ code=r'''
 using uint8=unsigned char;using uint64=unsigned long long;using ObjectGuid=unsigned;
 enum{POWER_MANA,CLASS_WARRIOR=1,CLASS_HUNTER=3,CLASS_PRIEST=5,CLASS_SHAMAN=7,CLASS_MAGE=8,CLASS_WARLOCK=9,CLASS_DRUID=11};
 struct Group;struct Map{bool raid=true;bool IsRaid(){return raid;}};
-struct Unit{virtual ~Unit()=default;bool world=true,alive=true,combat=true,teleport=false,safe=true,friendly=true,legal=true;unsigned instance=1,guid=0;std::set<std::string>auras;Group*group=nullptr;
+struct Unit{virtual ~Unit()=default;bool world=true,alive=true,combat=true,teleport=false,safe=true,friendly=true,legal=true;bool player=true;unsigned entry=0,mapid=409;bool IsPlayer(){return player;}unsigned GetEntry(){return entry;}unsigned GetMapId(){return mapid;}unsigned instance=1,guid=0;std::set<std::string>auras;Group*group=nullptr;
 bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool IsBeingTeleported(){return teleport;}bool IsInMap(Unit*u){return u&&world&&u->world&&instance==u->instance;}
 bool IsInGroup(Unit*u){return u==this||(group&&group==u->group);}unsigned GetObjectGuid(){return guid;}};
 struct Player:Unit{bool healer=false,tank=false,ranged=true;unsigned cls=CLASS_PRIEST,mana=100,maxMana=100;Map map;
@@ -22,8 +22,8 @@ Group*GetGroup(){return group;}Map*GetMap(){return &map;}unsigned getClass(){ret
 struct GroupReference{Player*player;GroupReference*following=nullptr;Player*getSource(){return player;}GroupReference*next(){return following;}};
 struct Group{bool raid=true;std::list<GroupReference>refs;bool IsRaidGroup(){return raid;}GroupReference*GetFirstMember(){return refs.empty()?nullptr:&refs.front();}
 void Add(Player*p){p->group=this;if(!refs.empty()){auto&old=refs.back();refs.push_back({p});old.following=&refs.back();}else refs.push_back({p});}};
-template<class T>struct Cached{T value;T Get(){return value;}};struct Context{Cached<std::list<ObjectGuid>>assigned;template<class T>Cached<T>*GetValue(const char*){return &assigned;}};
-struct{unsigned lowHealth=40;}sPlayerbotAIConfig;
+template<class T>struct Cached{T value;T Get(){return value;}};struct Context{Cached<std::list<ObjectGuid>>assigned,targets;template<class T>Cached<T>*GetValue(const char*n){return std::string(n)=="boost targets"?&assigned:&targets;}};
+struct{unsigned lowHealth=40;}sPlayerbotAIConfig;struct{bool IsEncounter(unsigned e,unsigned m){return e==12057&&m==409;}}sObjectMgr;
 struct{bool IsFriendlyTo(Player*,Unit*u){return u->friendly;}}sServerFacade;
 struct PlayerbotAI{Player*bot;Context context;bool learned=true,ready=true,pressure=false;std::map<unsigned,Unit*>units;
 Player*GetBot(){return bot;}bool HasSpell(const char*){return learned;}Context*GetAiObjectContext(){return &context;}Unit*GetUnit(unsigned g){return units.count(g)?units[g]:nullptr;}
@@ -32,10 +32,16 @@ bool IsHeal(Player*p){return p->healer;}bool IsTank(Player*p){return p->tank;}bo
 namespace ai{bool HasHealingPressure(PlayerbotAI*a,unsigned){return a->pressure;}
 __BODY__
 }
-int main(){using ai::SelectPowerInfusionTarget;Player bot;bot.guid=1;bot.healer=true;PlayerbotAI a{&bot};Group group;group.Add(&bot);
+int main(){using ai::SelectPowerInfusionTarget;Player bot;bot.guid=1;bot.healer=true;PlayerbotAI a{&bot};Unit boss;boss.player=false;boss.entry=12057;boss.guid=100;a.units[100]=&boss;a.context.targets.value={100};Group group;group.Add(&bot);
 Player mage,lock,balance,hunter;mage.cls=CLASS_MAGE;mage.guid=10;lock.cls=CLASS_WARLOCK;lock.guid=20;balance.cls=CLASS_DRUID;balance.guid=2;hunter.cls=CLASS_HUNTER;hunter.guid=3;
 for(Player*p:{&hunter,&balance,&lock,&mage}){group.Add(p);a.units[p->guid]=p;}a.units[bot.guid]=&bot;
-assert(SelectPowerInfusionTarget(&a)==&mage);mage.auras.insert("power infusion");assert(SelectPowerInfusionTarget(&a)==&lock);
+assert(SelectPowerInfusionTarget(&a)==&mage);
+boss.entry=11665;assert(!SelectPowerInfusionTarget(&a));boss.entry=12057;
+boss.combat=false;assert(!SelectPowerInfusionTarget(&a));boss.combat=true;
+boss.alive=false;assert(!SelectPowerInfusionTarget(&a));boss.alive=true;
+boss.instance=2;assert(!SelectPowerInfusionTarget(&a));boss.instance=1;
+a.context.targets.value.clear();assert(!SelectPowerInfusionTarget(&a));a.context.targets.value={100};
+mage.auras.insert("power infusion");assert(SelectPowerInfusionTarget(&a)==&lock);
 lock.legal=false;assert(SelectPowerInfusionTarget(&a)==&balance);balance.healer=true;assert(!SelectPowerInfusionTarget(&a));balance.healer=false;lock.legal=true;mage.auras.clear();
 mage.mana=0;assert(SelectPowerInfusionTarget(&a)==&lock);mage.mana=100;mage.instance=2;assert(SelectPowerInfusionTarget(&a)==&lock);mage.instance=1;
 mage.teleport=true;assert(SelectPowerInfusionTarget(&a)==&lock);mage.teleport=false;mage.combat=false;assert(SelectPowerInfusionTarget(&a)==&lock);mage.combat=true;

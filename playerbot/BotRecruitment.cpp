@@ -38,7 +38,7 @@ namespace
         uint64 expires = 0;
         unsigned size = 40;
         uint32 map = 0, instance = 0;
-        uint32 entryMap = 0, entrySourceMap = 0, entrySourceInstance = 0;
+        uint32 entryMap = 0;
         bool started = false;
         bool leftPreviousInstance = false;
         unsigned attempts = 0;
@@ -583,26 +583,21 @@ void BotRecruitment::FollowMoltenCoreEntry(Player* owner, const WorldPacket& pac
     for (GroupReference* member = group->GetFirstMember(); member; member = member->next())
     {
         Player* follower = member->getSource();
-        if (!IsBot(follower) || !Control(owner, follower).empty() ||
-            !follower->IsInWorld() || follower->IsBeingTeleported() ||
-            !follower->IsAlive() || follower->IsInCombat() || follower->HasCharmer() ||
-            follower->IsTaxiFlying() || follower->GetTransport() ||
-            follower->GetMapId() != owner->GetMapId() ||
-            follower->GetInstanceId() != owner->GetInstanceId() ||
-            follower->GetDistance(owner) > sPlayerbotAIConfig.sightDistance ||
-            !follower->GetPlayerbotAI()->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT))
+        // The human accepted entry for this raid's companions. Capture the
+        // entire authorized roster, including stragglers and public bots in
+        // another MC save. The coordinator owns native transfer/lockout checks.
+        if (!IsBot(follower) || Party(follower) != group || !Control(owner, follower).empty())
             continue;
         Request request;
         request.owner = owner->GetObjectGuid(); request.bot = follower->GetObjectGuid();
         request.ownerIdentity = EventOwner(owner); request.botIdentity = EventOwner(follower);
         request.operation = "summon"; request.expires = Now() + limits::SummonSeconds;
-        request.entryMap = 409; request.entrySourceMap = owner->GetMapId();
-        request.entrySourceInstance = owner->GetInstanceId();
+        request.entryMap = 409;
         request.membership = group; request.leader = group->GetLeaderGuid();
         if (Enqueue(request)) ++queued;
         else Report(request, "refused", "busy");
     }
-    sLog.outString("PLAYERBOT_RAID_ENTRY: requester %u Lothos transfer accepted; queued %u nearby raid followers",
+    sLog.outString("PLAYERBOT_RAID_ENTRY: requester %u Lothos transfer accepted; queued %u authorized raid companions",
         owner->GetGUIDLow(), queued);
 }
 
@@ -731,14 +726,10 @@ void BotRecruitment::Update(uint32 diff)
             if (!request.started && bot->IsInWorld() && !bot->IsBeingTeleported())
             {
                 // An independently completed NPC/portal entry needs no second
-                // teleport or refill. Never drag a follower from a new location.
+                // teleport or refill. Other raid copies use LeavePreviousRaid
+                // below; far/near transfers wait for their native ACK first.
                 if (bot->GetMapId() == request.entryMap && bot->GetInstanceId() == owner->GetInstanceId())
                 { Report(request,"arrived","already_inside"); it = state.summons.erase(it); continue; }
-                if (bot->GetMapId() != request.entrySourceMap || bot->GetInstanceId() != request.entrySourceInstance ||
-                    !bot->IsAlive() || bot->IsInCombat() || owner->IsInCombat() || bot->HasCharmer() ||
-                    bot->IsTaxiFlying() || bot->GetTransport() ||
-                    !bot->GetPlayerbotAI()->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT))
-                { Report(request,"refused","raid_follow_cancelled"); it = state.summons.erase(it); continue; }
             }
         }
         if (request.started) bot->GetPlayerbotAI()->CompleteSummonRevival();

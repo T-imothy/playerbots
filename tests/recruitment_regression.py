@@ -159,17 +159,23 @@ void invite(Player& p,Player& b){WorldPacket packet;packet<<b.name;p.session.Han
 void command(Player& p,std::string args){assert(ai::BotRecruitment::HandleCommand(&p,"recruit v1 "+args));tick();}
 bool has(std::string t){for(auto const& m:messages)if(m.find(t)!=std::string::npos)return true;return false;}
 int main(){
- // Actual Lothos entry captures all 39 nearby followers after native acceptance,
+ // Actual Lothos entry captures all 39 authorized companions after native acceptance,
  // waits for the human's landing, then uses the existing bounded coordinator.
  reset();{Player p(1,true);Group g;g.raid=true;g.leader=p.GetObjectGuid();p.group=&g;
  p.mapId=0;p.transfer=true;p.world=false;WorldPacket packet;
  std::vector<std::unique_ptr<Player>> bots;g.members.resize(39);
  for(unsigned i=0;i<39;++i){bots.emplace_back(new Player(i+2));auto*b=bots.back().get();
- b->group=&g;b->ai.master=&p;b->mapId=0;g.members[i]={b,i+1<39?&g.members[i+1]:nullptr};}
+ b->group=&g;b->ai.master=&p;b->mapId=0;
+ b->distance=i%2?150:0;b->ai.following=i%3!=0;b->combat=i%5==0;b->alive=i%7!=0;
+ if(i%4==0){b->mapId=409;b->instance=25;}
+ if(i%6==0)b->mapId=1;
+ g.members[i]={b,i+1<39?&g.members[i+1]:nullptr};}
  ai::BotRecruitment::FollowMoltenCoreEntry(&p,packet);assert(State().incoming.size()==39);
  for(int i=0;i<6;++i)tick();for(auto&b:bots)assert(!b->summons);
- p.world=true;p.transfer=false;p.mapId=409;p.instance=55;
- for(int i=0;i<25;++i){tick();for(auto&b:bots)if(b->transfer){b->transfer=false;b->mapId=409;b->instance=55;}}
+ p.world=true;p.transfer=false;p.mapId=409;p.instance=55;p.map.raid=true;g.binding.state=&p.map.state;
+ for(auto&b:bots){b->map.raid=true;if(b->mapId==409)b->homeMap=0;}
+ for(int i=0;i<25;++i){tick();for(auto&b:bots)if(b->transfer){b->transfer=false;if(b->departures&&!b->summons)b->mapId=0;
+ else{b->mapId=409;b->instance=55;b->alive=true;}}}
  tick();for(auto&b:bots)assert(b->summons==1&&b->mapId==409&&b->instance==55);
  assert(State().summons.empty());}
  for(unsigned fault=0;fault<13;++fault){reset();Player p(1,true),b(2),other(99,true);Group g;
@@ -180,7 +186,9 @@ int main(){
  if(fault==6)b.real=true;if(fault==7)b.ai.master=&other;if(fault==8)b.alive=false;
  if(fault==9)b.mapId=1;if(fault==10)b.transfer=true;if(fault==11)b.charm=true;
  if(fault==12)g.raid=false;
- ai::BotRecruitment::FollowMoltenCoreEntry(&p,packet);assert(State().incoming.empty());}
+ ai::BotRecruitment::FollowMoltenCoreEntry(&p,packet);
+ bool denied=fault<=2||fault==6||fault==7||fault==12;
+ assert(State().incoming.size()==(denied?0u:1u));}
  for(unsigned fault=0;fault<5;++fault){reset();Player p(1,true),b(2);Group g;
  g.raid=true;g.leader=p.GetObjectGuid();g.members={{&b,nullptr}};p.group=b.group=&g;
  p.mapId=b.mapId=0;p.transfer=true;p.world=false;b.ai.master=&p;WorldPacket packet;
@@ -188,7 +196,8 @@ int main(){
  p.world=true;p.transfer=false;p.mapId=409;
  if(fault==0)p.mapId=0;if(fault==1)b.group=nullptr;if(fault==2)b.ai.following=false;
  if(fault==3)b.mapId=1;if(fault==4){b.mapId=409;b.instance=p.instance;}
- tick();assert(!b.summons&&State().summons.empty());}
+ tick();if(fault==2||fault==3){assert(b.summons==1);b.transfer=false;b.mapId=409;tick();}
+ else assert(!b.summons);assert(State().summons.empty());}
  // Successful legacy gear requests refill current post-equipment maxima,
  // including cached repeats, without rerolling gear or touching other powers.
  reset();{Player p(1,true),b(2);b.ai.master=&p;unsigned calls=0;

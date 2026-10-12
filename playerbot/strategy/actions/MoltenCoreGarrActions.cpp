@@ -91,7 +91,7 @@ namespace
     bool Reserved(const GarrEncounter& encounter, Unit* add)
     {
         if (Banish(add)) return true;
-        if (encounter.boss->IsAlive())
+        if (encounter.boss->IsAlive() || add->GetGUIDLow() != encounter.control.allocation.focus)
             for (const auto& [owner, target] : encounter.control.allocation.banishes)
                 if (add->GetGUIDLow() == target) return true;
         return false;
@@ -128,10 +128,12 @@ namespace
 Unit* ai::GarrBanishTarget(PlayerbotAI* ai)
 {
     auto encounter = Encounter(ai);
-    if (!encounter.boss || !encounter.boss->IsAlive()) return nullptr;
+    if (!encounter.boss) return nullptr;
     auto own = encounter.control.allocation.banishes.find(ai->GetBot()->GetGUIDLow());
     if (own == encounter.control.allocation.banishes.end()) return nullptr;
-    for (Unit* add : encounter.adds) if (add->GetGUIDLow() == own->second && !Banish(add)) return add;
+    for (Unit* add : encounter.adds)
+        if (add->GetGUIDLow() == own->second && !Banish(add) &&
+            (encounter.boss->IsAlive() || own->second != encounter.control.allocation.focus)) return add;
     return nullptr; // Recasting on an active native banish can cancel it.
 }
 
@@ -140,7 +142,7 @@ Unit* ai::GarrFocusTarget(PlayerbotAI* ai)
     auto encounter = Encounter(ai);
     if (!encounter.boss) return nullptr;
     if (encounter.focus)
-        return !PossibleAttackTargetsValue::HasBreakableCC(encounter.focus, ai->GetBot()) &&
+        return !Banish(encounter.focus) && !PossibleAttackTargetsValue::HasBreakableCC(encounter.focus, ai->GetBot()) &&
             !PossibleAttackTargetsValue::HasUnBreakableCC(encounter.focus, ai->GetBot()) ? encounter.focus : nullptr;
     return encounter.boss->IsAlive() ? encounter.boss : nullptr;
 }
@@ -183,7 +185,8 @@ bool ai::PlanGarrPosition(PlayerbotAI* ai, EncounterPosition& plan)
         // kill station moves away. Stand on the parking side of that add, away
         // from the kill station, rather than following the ranged DPS cluster.
         auto own = encounter.control.allocation.banishes.find(bot->GetGUIDLow());
-        if (encounter.boss->IsAlive() && own != encounter.control.allocation.banishes.end())
+        if (own != encounter.control.allocation.banishes.end() &&
+            (encounter.boss->IsAlive() || own->second != encounter.control.allocation.focus))
         {
             for (Unit* add : encounter.adds) if (add->GetGUIDLow() == own->second) target = add;
             float range = 0;
@@ -223,10 +226,9 @@ bool ai::GarrSpellAllowed(PlayerbotAI* ai, const std::string& name, Unit* target
 {
     if (ai->GetBot()->GetMapId() != 409) return true;
     auto encounter = Encounter(ai);
-    if (!encounter.boss || encounter.adds.empty()) return true;
     if (name == "banish" || name == "banish on cc")
-        return target && target->GetEntry() == 12099 ?
-            encounter.boss->IsAlive() && target == GarrBanishTarget(ai) : true;
+        return encounter.boss && target && target->GetEntry() == 12099 && target == GarrBanishTarget(ai);
+    if (!encounter.boss || encounter.adds.empty()) return true;
     bool damage = CasterDamageSpell(spell);
     if (spell) for (uint32 effect : spell->Effect)
         damage = damage || effect == SPELL_EFFECT_WEAPON_DAMAGE || effect == SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL ||

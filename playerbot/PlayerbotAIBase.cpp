@@ -31,6 +31,10 @@ void PlayerbotAIBase::UpdateAI(uint32 elapsed)
 
 bool PlayerbotAIBase::AdvanceMinimalUpdateDelay(uint32 elapsed)
 {
+    // The owning map advances this timer. A command publisher only sets an
+    // atomic request; it never mutates worker-owned delay or movement state.
+    if (HasUrgentCommand())
+        aiInternalUpdateDelay = 0;
     if (aiInternalUpdateDelay > elapsed)
     {
         aiInternalUpdateDelay -= elapsed;

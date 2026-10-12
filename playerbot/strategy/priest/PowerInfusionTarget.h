@@ -10,6 +10,20 @@ namespace ai
             !bot->IsInCombat() || !ai->HasSpell("power infusion") ||
             HasHealingPressure(ai, sPlayerbotAIConfig.lowHealth)) return nullptr;
 
+        // Reserve this cooldown for an engaged native encounter boss, never
+        // ordinary raid trash or an idle boss merely present in the grid.
+        bool bossFight = false;
+        const auto targets = ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible attack targets")->Get();
+        for (ObjectGuid guid : targets)
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (unit && unit->IsInWorld() && unit->IsAlive() && unit->IsInCombat() &&
+                !unit->IsPlayer() && bot->IsInMap(unit) &&
+                sObjectMgr.IsEncounter(unit->GetEntry(), unit->GetMapId()))
+            { bossFight = true; break; }
+        }
+        if (!bossFight) return nullptr;
+
         const auto eligible = [&](Unit* unit) {
             return unit && unit->IsInWorld() && unit->IsAlive() && bot->IsInMap(unit) &&
                 bot->IsInGroup(unit) && ai->IsSafe(unit) && sServerFacade.IsFriendlyTo(bot, unit) &&

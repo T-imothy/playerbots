@@ -411,6 +411,7 @@ public:
 	virtual ~PlayerbotAI();
 
     virtual void UpdateAI(uint32 elapsed, bool minimal = false, bool delayAlreadyAdvanced = false);
+    bool HasUrgentCommand() const override { return urgentAttackPending.load(std::memory_order_acquire); }
 
     void HandleCommands();
 private:
@@ -775,6 +776,7 @@ private:
     void UpdateFaceTarget(uint32 elapsed, bool minimal);
     void RequestUrgentTransition(uint32 triggerId);
     void PrepareForUrgentTransition();
+    void PrepareForUrgentAttack();
     bool ProcessPendingTransition();
     void ClearPendingTransition(uint32 expectedTriggerId = 0, bool stopMovement = false);
 
@@ -804,6 +806,7 @@ protected:
     // queues without touching mutable AI state.
     std::atomic<uint32> transitionGeneration{1};
     std::atomic<bool> urgentTransitionPending{false};
+    std::atomic<bool> urgentAttackPending{false};
     ObjectGuid raidPetGuid;
     uint32 raidPetNumber = 0;
     std::set<uint32> raidPetSuppressedSpells;

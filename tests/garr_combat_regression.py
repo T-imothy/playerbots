@@ -31,6 +31,9 @@ bool GarrSpellAllowed(PlayerbotAI*,const std::string&,Unit*,const SpellEntry*);
 '''
 native=(r/'playerbot/strategy/actions/MoltenCoreGarrActions.cpp').read_text()
 code+=native[native.index('using namespace ai;'):]
+from behavior_regression import block
+cc=(r/'playerbot/strategy/values/CcTargetValue.cpp').read_text()
+code+=block(cc,'bool GarrBanishAssignment(')
 code+=r'''
 int main(){
  GarrAllocation pure;
@@ -39,9 +42,22 @@ int main(){
  auto first=pure.banishes;adds.erase(adds.begin());pure.Reconcile(locks,adds,{},true);
  assert(pure.banishes==first&&pure.focus==202);
  pure.Reconcile(locks,adds,{{202,999}},true);assert(pure.focus==203); // human CC is protected
- pure.Reconcile(locks,adds,{{208,101}},false);assert(pure.banishes.empty()&&pure.focus==203);
+ pure.Reconcile(locks,adds,{{208,101}},false);assert(pure.banishes==first&&pure.focus==203);
  GarrAllocation joined;joined.Reconcile(locks,{205,206,207,208},{{205,104},{206,103},{207,102},{208,101}},true);
  assert(joined.banishes.size()==4&&joined.focus==0); // late join doesn't release a native banish
+ // Variable raid composition: zero through eight warlocks, preserving one
+ // initial kill add and releasing exactly one owned Banish per cleanup step.
+ for(unsigned n=0;n<=8;++n){GarrAllocation a;std::vector<uint32_t> ls,live={201,202,203,204,205,206,207,208};
+  for(unsigned k=0;k<n;++k)ls.push_back(101+k);a.Reconcile(ls,live,{},true);
+  assert(a.banishes.size()==std::min(n,7u));std::map<uint32_t,uint32_t> native;
+  for(auto pair:a.banishes)native[pair.second]=pair.first;
+  while(a.focus){live.erase(std::find(live.begin(),live.end(),a.focus));a.Reconcile(ls,live,native,true);}
+  unsigned remaining=live.size();while(!live.empty()){
+   a.Reconcile(ls,live,native,false);assert(a.focus&&a.banishes.size()==remaining);
+   unsigned selected=a.focus;a.Reconcile(ls,live,native,false);assert(a.focus==selected);
+   live.erase(std::find(live.begin(),live.end(),selected));native.erase(selected);--remaining;
+  }a.Reconcile(ls,live,native,false);assert(!a.focus&&a.banishes.empty());
+ }
  Player mainTank,killTank,parkTank,warlocks[4],mage,melee;Group raid;
  mainTank.guid=1;killTank.guid=2;parkTank.guid=3;mainTank.tank=killTank.tank=parkTank.tank=true;
  PlayerbotAI tankAI(&mainTank),killAI(&killTank),parkAI(&parkTank),mageAI(&mage),meleeAI(&melee);
@@ -58,6 +74,7 @@ int main(){
   Unit* target=GarrBanishTarget(lockAI[i]);assert(target==&fire[7-i]);
   target->auras.insert(710);target->holders[710].caster=warlocks[i].guid;
   assert(!GarrBanishTarget(lockAI[i])); // never cancel a working banish
+  Unit* assigned=nullptr;assert(GarrBanishAssignment(lockAI[i],"banish",assigned)&&!assigned);
  }
  assert(GarrFocusTarget(&mageAI)==&fire[0]);assert(GarrTankTarget(&tankAI)==&garr);
  assert(GarrTankTarget(&killAI)==&fire[0]);assert(GarrTankTarget(&parkAI)==&fire[1]);
@@ -80,8 +97,31 @@ int main(){
  assert(GarrFocusTarget(&mageAI)==&garr);assert(!GarrBanishTarget(lockAI[0]));
  garr.alive=false;assert(!GarrFocusTarget(&mageAI));
  assert(!GarrSpellAllowed(lockAI[0],"banish",&fire[7],&damage)); // no post-kill renewal
- fire[4].auras.clear();fire[4].holders.clear();assert(GarrFocusTarget(&mageAI)==&fire[4]);
- assert(GarrTankTarget(&tankAI)==&fire[4]); // boss tank joins post-kill cleanup
+ // Only the selected lock releases. The other three continue native renewals.
+ for(int next=7;next>=4;--next){
+  assert(!GarrFocusTarget(&mageAI)); // selected native Banish expires naturally
+  fire[next].auras.clear();fire[next].holders.clear();
+  assert(GarrFocusTarget(&mageAI)==&fire[next]);assert(GarrTankTarget(&tankAI)==&fire[next]);
+  unsigned owner=7-next;assert(!GarrBanishTarget(lockAI[owner]));
+  Unit* assigned=nullptr;assert(GarrBanishAssignment(lockAI[owner],"banish",assigned)&&!assigned);
+  for(int held=next-1;held>=4;--held){unsigned lock=7-held;
+   fire[held].auras.clear();fire[held].holders.clear();
+   assert(GarrBanishTarget(lockAI[lock])==&fire[held]);
+   assert(GarrSpellAllowed(lockAI[lock],"banish",&fire[held],&damage));
+   assigned=nullptr;assert(GarrBanishAssignment(lockAI[lock],"banish",assigned)&&assigned==&fire[held]);
+   fire[held].auras.insert(710);fire[held].holders[710].caster=warlocks[lock].guid;
+  }
+  fire[next].alive=false;
+ }
+ assert(!GarrFocusTarget(&mageAI));
+ Unit trash;trash.guid=5000;trash.entry=11665;units.push_back(&trash);
+ assert(!GarrSpellAllowed(lockAI[0],"banish",&trash,&damage));
+ trash.entry=11666;assert(!GarrSpellAllowed(lockAI[0],"banish on cc",&trash,&damage));
+ Unit* assigned=nullptr;assert(GarrBanishAssignment(lockAI[0],"banish",assigned)&&!assigned);
+ // A corpse disappearing must not re-enable generic MC trash Banish.
+ units.erase(std::find(units.begin(),units.end(),&garr));
+ assert(!GarrSpellAllowed(lockAI[0],"banish",&fire[7],&damage));
+ units.push_back(&garr);
  garr.alive=true;garr.combat=false;assert(!GarrFocusTarget(&mageAI));assert(mageAI.context.garr.value.boss.IsEmpty());
  mageAI.real=true;assert(!GarrFocusTarget(&mageAI));
  for(auto* brain:lockAI)delete brain;
