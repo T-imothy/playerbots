@@ -778,6 +778,7 @@ private:
     void PrepareForUrgentTransition();
     void PrepareForUrgentAttack();
     void PrepareForUrgentCombat();
+    void PrepareForPartyCombat();
     bool ProcessPendingTransition();
     void ClearPendingTransition(uint32 expectedTriggerId = 0, bool stopMovement = false);
 

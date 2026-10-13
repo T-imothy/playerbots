@@ -80,14 +80,21 @@ void MovementAction::CreateWp(Player* wpOwner, float x, float y, float z, float 
         wpCreature->SetObjectScale(0.5f);
 }
 
+bool MovementAction::IsGenericRaidFleeBlocked() const
+{
+    const std::string& name=getName();
+    return bot->GetMap() && bot->GetMap()->IsRaid() &&
+        (name=="flee" || name=="flee with pet" || name=="runaway" || name=="flee to master");
+}
+
 bool MovementAction::isPossible()
 {
-    return ai->CanMove();
+    return !IsGenericRaidFleeBlocked() && ai->CanMove();
 }
 
 bool MovementAction::isUseful()
 {
-    return !ai->HasStrategy("stay", ai->GetState());
+    return !IsGenericRaidFleeBlocked() && !ai->HasStrategy("stay", ai->GetState());
 }
 
 bool MovementAction::MoveNear(uint32 mapId, float x, float y, float z, float distance)
@@ -3377,11 +3384,13 @@ bool MovementAction::GeneratePathAvoidingHazards(std::vector<WorldPosition>& mov
 
 bool FleeAction::Execute(Event& event)
 {
+    if (IsGenericRaidFleeBlocked()) return false;
     return Flee(ai->GetUnit(AI_VALUE(ObjectGuid, "current target")));
 }
 
 bool FleeWithPetAction::Execute(Event& event)
 {
+    if (IsGenericRaidFleeBlocked()) return false;
     Pet* pet = bot->GetPet();
     if (pet)
     {
@@ -3398,6 +3407,7 @@ bool FleeWithPetAction::Execute(Event& event)
 
 bool RunAwayAction::Execute(Event& event)
 {
+    if (IsGenericRaidFleeBlocked()) return false;
     return Flee(ai->GetUnit(AI_VALUE(ObjectGuid, "master target")));
 }
 

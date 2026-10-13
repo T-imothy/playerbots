@@ -21,14 +21,19 @@ code=r'''
 #include <iostream>
 using uint32=unsigned;using ObjectGuid=unsigned;
 constexpr unsigned UNIT_STAND_STATE_STAND=0;
+struct EncounterPosition{};
+struct ReactionEngine{unsigned notifications=0;void NotifyPartyCombat(){++notifications;}};
+template<class T>struct Cached{unsigned resets=0;void Reset(){++resets;}};
+struct Context{Cached<EncounterPosition>plan;template<class T>Cached<T>*GetValue(const char*){return &plan;}};
 enum class BotState{BOT_STATE_COMBAT};
 struct Unit{bool world=true,alive=true,friendly=false;float distance=10;bool IsInWorld(){return world;}bool IsAlive(){return alive;}};
 struct Player:Unit{bool transfer=false,charm=false,sit=true;unsigned selected=2,stands=0;bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}
- bool IsSitState(){return sit;}void SetStandState(unsigned s){assert(s==0);sit=false;++stands;}unsigned GetSelectionGuid(){return selected;}bool IsInMap(Unit*u){return u&&u->world;}};
+ bool IsSitState(){return sit;}void SetStandState(unsigned s){assert(s==0);sit=false;++stands;}unsigned GetMapId(){return 409;}unsigned GetSelectionGuid(){return selected;}bool IsInMap(Unit*u){return u&&u->world;}};
 struct{float sightDistance=100;}sPlayerbotAIConfig;
 struct{bool IsFriendlyTo(Player*,Unit*u){return u->friendly;}float GetDistance2d(Player*,Unit*u){return u->distance;}}sServerFacade;
 struct PlayerbotAI{Player*bot;Player*owner;Unit*target;bool human=false,healer=false,offdps=false,isWaiting=true;unsigned aiInternalUpdateDelay=15000,attackGuid=0,followed=0,attacked=0;
  bool moved=true,followUseful=true;std::atomic<bool>urgentAttackPending{false};
+ ReactionEngine reactions;ReactionEngine*reactionEngine=&reactions;Context context;Context*aiObjectContext=&context;
  bool IsRealPlayer(){return human;}bool IsHeal(Player*){return healer;}bool HasStrategy(const char*,BotState){return offdps;}
  Unit*GetUnit(unsigned g){return g==2?target:nullptr;}void TellError(Player*,const char*){}
  bool HasUrgentCommand(){return urgentAttackPending.load(std::memory_order_acquire);}
@@ -46,6 +51,7 @@ int main(){Player bot,owner;Unit enemy;PlayerbotAI ai{&bot,&owner,&enemy};Attack
  assert(!ai.AdvanceMinimalUpdateDelay(50)&&ai.aiInternalUpdateDelay==14950);
  ai.urgentAttackPending=true;assert(ai.AdvanceMinimalUpdateDelay(50));ai.PrepareForUrgentAttack();
  assert(!bot.sit&&bot.stands==1&&ai.aiInternalUpdateDelay==0&&!ai.isWaiting&&!ai.HasUrgentCommand());
+ assert(ai.reactions.notifications==1&&ai.context.plan.resets==1);
  assert(action.isUseful()&&action.Execute(event)&&ai.attacked==1&&ai.attackGuid==2);
  ai.healer=true;ai.attackGuid=0;assert(action.Execute(event)&&ai.followed==1&&ai.attacked==1&&ai.attackGuid==0);
  ai.moved=false;ai.followUseful=false;assert(action.Execute(event)&&ai.attacked==1);

@@ -2,6 +2,8 @@
 #include "playerbot/playerbot.h"
 
 #include "ReactionEngine.h"
+#include "actions/MovementActions.h"
+#include "actions/AttackAction.h"
 #include <iomanip>
 
 using namespace ai;
@@ -181,12 +183,33 @@ void ReactionEngine::StopReaction()
     // ...
 }
 
+void ReactionEngine::NotifyPartyCombat()
+{
+    aiReactionUpdateDelay = 0U;
+    // Only release movement bookkeeping. The native spline continues until
+    // the freshly evaluated highest-priority movement replaces it. Fire/bomb
+    // avoidance is re-evaluated before ordinary offense, and casts/GCD remain.
+    auto movement = [](Action* action) {
+        return action && dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action);
+    };
+    if (movement(ongoingReaction.GetAction())) ongoingReaction.Reset();
+    if (movement(incomingReaction.GetAction())) incomingReaction.Reset();
+}
+
 bool ReactionEngine::Update(uint32 elapsed, bool minimal, bool isStunned, bool& reactionFound)
 {
     aiReactionUpdateDelay = aiReactionUpdateDelay > elapsed ? aiReactionUpdateDelay - elapsed : 0U;
 
     reactionFound = false;
     bool reactionFinished = false;
+
+    // A completed native move must not occupy its estimated travel time.
+    // Do not release casting reactions, airborne movement, or virtual travel.
+    if (ai->HasRealPlayerMaster() && !ai->IsJumping() && !ai->GetBot()->IsTaxiFlying())
+        if (Action* action = ongoingReaction.GetAction())
+            if (dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
+                (ai->GetBot()->IsStopped() || !action->isUseful()))
+                StopReaction();
 
     // Can update reaction?
     if (CanUpdateAIReaction())

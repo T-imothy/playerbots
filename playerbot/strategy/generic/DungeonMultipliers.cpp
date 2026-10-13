@@ -254,6 +254,12 @@ float PreserveMechanarPositionMultiplier::GetValue(Action* action)
 float PreserveMoltenCorePositionMultiplier::GetValue(Action* action)
 {
     if (!action) return 1.0f;
+    const std::string& name=action->getName();
+    // Five-pack hounds are held at the tanks. Generic low-health/ranged flee
+    // and opening-threat stand-off must not drag them into the next pull,
+    // even when a stack destination temporarily fails path validation.
+    if ((name=="flee" || name=="flee with pet" || name=="runaway" || name=="flee to master" ||
+         name=="wait for attack keep safe distance") && MoltenCorePackStackRequired(ai)) return 0.0f;
     if (action->getName() == "dps assist" || action->getName() == "tank assist")
     {
         MoltenCorePriorityTargetAction priority(ai);

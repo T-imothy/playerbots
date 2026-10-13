@@ -12,9 +12,10 @@ code=r'''
 #include <cassert>
 #include <string>
 #include <iostream>
-struct PlayerbotAI{bool active=true,exclusive=true;};
+struct PlayerbotAI{bool active=true,exclusive=true,stack=false;};
+bool MoltenCorePackStackRequired(PlayerbotAI*a){return a->stack;}
 struct Action{virtual ~Action()=default;virtual std::string getName(){return "action";}};
-struct MovementAction:Action{};struct AttackAction:MovementAction{};struct MoveAwayFromHazard:MovementAction{};struct SetBehindTargetAction:MovementAction{};
+struct MovementAction:Action{};struct NamedMove:MovementAction{std::string name;NamedMove(const char*n):name(n){}std::string getName()override{return name;}};struct AttackAction:MovementAction{};struct MoveAwayFromHazard:MovementAction{};struct SetBehindTargetAction:MovementAction{};
 struct CastSpellAction:Action{bool moves=false;bool HasMovementEffect(){return moves;}};
 struct EncounterPosition{bool exclusive=true;};
 struct MoltenCorePositionAction:MovementAction{static bool GetPlan(PlayerbotAI* ai,EncounterPosition&){return ai->active;}};
@@ -40,6 +41,10 @@ int main(){
  assert(mechanar.GetValue(&reposition)==1&&onyxia.GetValue(&onyxiaReposition)==1);
  assert(mc.GetValue(&attack)==1&&mc.GetValue(&heal)==1&&mc.GetValue(&chase)==0&&mc.GetValue(&blink)==0);
  assert(mc.GetValue(&escape)==1);MoltenCorePositionAction mcReposition;assert(mc.GetValue(&mcReposition)==1);
+ ai.active=false;ai.stack=true;
+ for(const char* name : {"flee","flee with pet","runaway","flee to master","wait for attack keep safe distance"}){
+  NamedMove unwanted(name);assert(mc.GetValue(&unwanted)==0);ai.stack=false;assert(mc.GetValue(&unwanted)==1);ai.stack=true;}
+ assert(mc.GetValue(&escape)==1&&mc.GetValue(&attack)==1&&mc.GetValue(&heal)==1);ai.stack=false;
  ai.active=false;assert(mc.GetValue(&chase)==1&&mc.GetValue(&blink)==1);ai.active=true;
  ai.exclusive=false;assert(onyxia.GetValue(&blink)==1&&onyxia.GetValue(&chase)==1&&onyxia.GetValue(&behind)==0);
  ai.active=false;assert(mechanar.GetValue(&blink)==1&&onyxia.GetValue(&blink)==1);

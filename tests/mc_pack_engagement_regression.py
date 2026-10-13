@@ -17,6 +17,7 @@ code=r'''
 #include <cassert>
 #include <atomic>
 #include <map>
+#include <set>
 #include <vector>
 #include <string>
 #include <iostream>
@@ -25,7 +26,7 @@ struct ObjectGuid{unsigned id=0;ObjectGuid(unsigned i=0):id(i){}bool IsEmpty(){r
 constexpr unsigned SMSG_ATTACKSTART=1,UNIT_STAND_STATE_STAND=0;
 struct Group{};struct Unit{virtual ~Unit()=default;unsigned entry=11669,map=409,instance=1;bool world=true,alive=true,combat=true,charm=false;Unit*victim=nullptr;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charm;}unsigned GetEntry(){return entry;}
- bool HasAura(unsigned){return false;}Unit*GetVictim(){return victim;}virtual bool IsPlayer(){return false;}};
+ std::set<unsigned>auras;bool HasAura(unsigned id){return auras.count(id);}Unit*GetVictim(){return victim;}virtual bool IsPlayer(){return false;}};
 struct Player:Unit{bool transfer=false,tank=false,sit=true;unsigned guid=2,interrupts=0,stands=0;Group*group=nullptr;std::vector<Unit*>attackers;
  bool IsPlayer()override{return true;}bool IsBeingTeleported(){return transfer;}unsigned GetMapId(){return map;}unsigned GetInstanceId(){return instance;}
  bool IsInMap(Unit*u){return u&&u->world&&map==u->map&&instance==u->instance;}Group*GetGroup(){return group;}
@@ -38,14 +39,16 @@ template<class T>struct Cached{T value;unsigned resets=0;T Get(){return value;}v
 struct Context{Cached<EncounterPosition>plan;template<class T>Cached<T>*GetValue(const char*){return &plan;}};
 struct WorldPacket{unsigned opcode=1,bytes=16,index=0;unsigned ids[2]={3,2};unsigned GetOpcode()const{return opcode;}unsigned size()const{return bytes;}
  void rpos(unsigned n){index=n;}WorldPacket&operator>>(ObjectGuid&g){g=ids[index++];return *this;}};
+struct ReactionEngine{unsigned notifications=0;void NotifyPartyCombat(){++notifications;}};
 struct PlayerbotAI{Player*bot;bool real=false,isWaiting=true;unsigned aiInternalUpdateDelay=8000;Context context;Context*aiObjectContext=&context;
- std::map<unsigned,Unit*>units;std::atomic<bool>urgentAttackPending{false},urgentCombatPending{false};
+ ReactionEngine reactions;ReactionEngine*reactionEngine=&reactions;Unit*loose=nullptr;std::map<unsigned,Unit*>units;std::atomic<bool>urgentAttackPending{false},urgentCombatPending{false};
  Player*GetBot(){return bot;}bool IsRealPlayer(){return real;}static bool IsTank(Player*p){return p->tank;}
  Context*GetAiObjectContext(){return &context;}Unit*GetUnit(ObjectGuid g){return units.count(g)?units[g]:nullptr;}
  void PrepareForUrgentCombat();void Publish(const WorldPacket&packet){__PUBLISH__}
  __URGENT__
 };
 bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&){return false;}
+Unit*MoltenCorePackTankTarget(PlayerbotAI*a){return a->loose;}
 struct MoltenCorePositionAction{static bool GetPlan(PlayerbotAI*,EncounterPosition&);};
 __WAKE__
 __GETPLAN__
@@ -54,6 +57,19 @@ int main(){Group group;Player bot,tank;bot.group=tank.group=&group;Unit imp;imp.
  assert(bot.interrupts==1&&!bot.sit&&bot.stands==1&&!ai.isWaiting&&ai.aiInternalUpdateDelay==0&&ai.context.plan.resets==1&&!ai.HasUrgentCommand());
  EncounterPosition plan;assert(MoltenCorePositionAction::GetPlan(&ai,plan));
  imp.victim=&tank;assert(!MoltenCorePositionAction::GetPlan(&ai,plan));imp.victim=&bot;
+ // Native five-pack carrier wakes immediately, but collapse and patrol do not.
+ imp.entry=11671;ai.context.plan.value.spell=19771;ai.context.plan.value.source=bot.GetObjectGuid();
+ ai.urgentCombatPending=true;ai.aiInternalUpdateDelay=9000;ai.PrepareForUrgentCombat();
+ assert(ai.aiInternalUpdateDelay==0&&bot.interrupts==2&&ai.reactions.notifications==2);
+ assert(MoltenCorePositionAction::GetPlan(&ai,plan));imp.auras.insert(19951);
+ ai.urgentCombatPending=true;ai.PrepareForUrgentCombat();assert(bot.interrupts==2);
+ assert(!MoltenCorePositionAction::GetPlan(&ai,plan));imp.auras.clear();
+ imp.victim=&tank;assert(!MoltenCorePositionAction::GetPlan(&ai,plan));
+ // A cached off-tank gathering station cannot hide a newly loose assigned hound.
+ bot.tank=true;ai.context.plan.value.source=0;ai.loose=&imp;
+ assert(!MoltenCorePositionAction::GetPlan(&ai,plan));imp.victim=&bot;
+ assert(MoltenCorePositionAction::GetPlan(&ai,plan));bot.tank=false;ai.loose=nullptr;
+ ai.context.plan.value.source=0;
  ai.context.plan.value.spell=19364;imp.entry=11673;assert(MoltenCorePositionAction::GetPlan(&ai,plan));
  imp.alive=false;assert(!MoltenCorePositionAction::GetPlan(&ai,plan));imp.alive=true;imp.instance=2;assert(!MoltenCorePositionAction::GetPlan(&ai,plan));imp.instance=1;
  packet.bytes=15;ai.Publish(packet);assert(!ai.HasUrgentCommand());packet.bytes=16;

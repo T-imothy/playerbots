@@ -21,6 +21,7 @@ namespace ai
 
     Unit* MoltenCoreAssignedTankTarget(PlayerbotAI* ai);
     Unit* MoltenCorePackTankTarget(PlayerbotAI* ai);
+    bool MoltenCorePackStackRequired(PlayerbotAI* ai);
     bool PlanGeddonFormation(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan);
     bool PlanMajordomoFormation(PlayerbotAI* ai, EncounterPosition& plan);
     bool PlanGolemaggFormation(PlayerbotAI* ai, EncounterPosition& plan);

@@ -136,6 +136,7 @@ bool StopFollowAction::isUseful()
 
 bool FleeToMasterAction::Execute(Event& event)
 {
+    if (IsGenericRaidFleeBlocked()) return false;
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     Unit* fTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "master target"));
     bool canFollow = Follow(fTarget);
@@ -181,6 +182,7 @@ bool FleeToMasterAction::Execute(Event& event)
 
 bool FleeToMasterAction::isUseful()
 {
+    if (IsGenericRaidFleeBlocked()) return false;
     if (!ai->CanMove())
         return false;
 

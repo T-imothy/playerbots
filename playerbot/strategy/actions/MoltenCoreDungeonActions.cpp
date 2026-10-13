@@ -156,6 +156,15 @@ namespace
     }
 }
 
+bool ai::MoltenCorePackStackRequired(PlayerbotAI* ai)
+{
+    Player* bot=ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->GetMapId()!=409 || !bot->GetGroup() || ai->IsRealPlayer()) return false;
+    auto pack=MoltenCorePack(ai);
+    return !pack.empty() && pack.front()->GetEntry()==11671 && !MoltenCorePackTanks(ai,pack).empty();
+}
+
 Unit* ai::MoltenCorePackTankTarget(PlayerbotAI* ai)
 {
     auto pack = MoltenCorePack(ai);
@@ -189,12 +198,14 @@ bool ai::PlanMoltenCorePack(PlayerbotAI* ai, EncounterPosition& plan)
     Player* anchor = tanks.front();
     plan.active = true; plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
     plan.boss = pack.front()->GetObjectGuid(); plan.spell = 19771;
-    if (!ai->IsTank(bot) && pack.front()->GetEntry()==11669)
+    if (!ai->IsTank(bot))
         for (size_t i=0;i<pack.size();++i)
-            if (pack[i]->GetVictim()==bot)
+            if (pack[i]->GetVictim()==bot && !pack[i]->HasAura(19951))
             {
                 Player* tank=tanks[i%tanks.size()];
-                plan.boss=pack[i]->GetObjectGuid();plan.spell=20602;
+                plan.boss=pack[i]->GetObjectGuid();
+                plan.spell=pack[i]->GetEntry()==11669?20602:19771;
+                plan.source=bot->GetObjectGuid();
                 plan.destination={tank->GetPositionX(),tank->GetPositionY(),tank->GetPositionZ()};
                 if (ValidateEncounterDestination(ai,plan)) return true;
                 plan.active=false;return false;
@@ -202,9 +213,21 @@ bool ai::PlanMoltenCorePack(PlayerbotAI* ai, EncounterPosition& plan)
     if (pack.size()<2 && pack.front()->GetEntry()!=11669) {plan.active=false;return false;}
     if (ai->IsTank(bot))
     {
+        // Secure the assigned loose mob before gathering. Otherwise the
+        // formation multiplier blocks native reach/taunt while it attacks a
+        // healer, ranged member or pet outside the tank cluster.
+        Unit* assigned=MoltenCorePackTankTarget(ai);
+        if (assigned && assigned->GetVictim()!=bot) {plan.active=false;return false;}
         // Holding tank remains stationary; off-tanks bring their mobs to it.
         if (bot == anchor) { plan.active = false; return false; }
         plan.destination = {anchor->GetPositionX(), anchor->GetPositionY(), anchor->GetPositionZ()};
+    }
+    else if (pack.front()->GetEntry()==11671)
+    {
+        // Five-pack hounds have Serrated Bite, not the patrol's stomp/breath.
+        // The entire group stacks at the holding tank so melee AoE and equal
+        // health targeting work on the same controlled cluster.
+        plan.destination={anchor->GetPositionX(),anchor->GetPositionY(),anchor->GetPositionZ()};
     }
     else if (ai->IsRanged(bot) || ai->IsHeal(bot))
     {
@@ -950,8 +973,16 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         return MoltenCoreThreats(ai, current, threats);
     }
     Unit* boss = ai->GetUnit(plan.boss);
+    if (plan.spell==19771 && ai->IsTank(bot) && boss &&
+        (boss->GetEntry()==11671 || boss->GetEntry()==11669))
+    {
+        Unit* loose=MoltenCorePackTankTarget(ai);
+        if (loose && loose->GetVictim()!=bot) return false; // Invalidate an old gathering hold immediately.
+    }
     return boss && boss->IsInWorld() && bot->IsInMap(boss) && boss->IsAlive() && boss->IsInCombat() &&
-        (plan.spell!=20602 || (boss->GetEntry()==11669 && boss->GetVictim()==bot && !ai->IsTank(bot)));
+        ((plan.spell!=20602 && !(plan.spell==19771 && plan.source==bot->GetObjectGuid())) ||
+         ((boss->GetEntry()==11669 || boss->GetEntry()==11671) && !boss->HasAura(19951) &&
+          boss->GetVictim()==bot && !ai->IsTank(bot)));
 }
 
 bool MoltenCorePositionAction::isUseful()

@@ -378,7 +378,8 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
         return;
 
     PrepareForUrgentAttack(); // Explicit authorized orders outrank food/drink duration.
-    PrepareForUrgentCombat(); // Native imp aggro must not wait behind an AoE channel.
+    PrepareForUrgentCombat(); // A pack aggro carrier must not wait behind a channel.
+    PrepareForPartyCombat(); // Natural human/party pulls also outrank idle/rest duration.
 
     // Food/drink duration must not hide a nearby party pull from its healer.
     // Standing removes the sitting-only regeneration auras normally.
@@ -1233,19 +1234,26 @@ void PlayerbotAI::OnCombatStarted()
 
         // Stop follow movement on combat start
         if (!(HasStrategy("follow", BotState::BOT_STATE_COMBAT) || HasStrategy("wander", BotState::BOT_STATE_COMBAT)) &&
-            (HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)))
+            (HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) || HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)) &&
+            bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==FOLLOW_MOTION_TYPE)
         {
             StopMoving();
         }
 
         aiObjectContext->GetValue<std::list<ObjectGuid>>("attackers", 1)->Reset();
         aiObjectContext->GetValue<bool>("has attackers")->Reset();
+        // A pull invalidates idle target snapshots; every class sees the new
+        // enemies immediately instead of waiting for their cache interval.
+        aiObjectContext->GetValue<std::list<ObjectGuid>>("possible targets no los")->Reset();
+        aiObjectContext->GetValue<std::list<ObjectGuid>>("possible attack targets")->Reset();
 
         ChangeEngine(BotState::BOT_STATE_COMBAT);
-        if (bot->IsSitState())
-        {
-            ResetAIInternalUpdateDelay();
-        }
+        // Standing bots can still retain a long previous follow/rest action.
+        ResetAIInternalUpdateDelay();
+        isWaiting = false;
+        reactionEngine->NotifyPartyCombat();
+        if (bot->GetMapId()==409)
+            aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
     }
 }
 
@@ -1417,8 +1425,21 @@ void PlayerbotAI::PrepareForUrgentAttack()
         bot->SetStandState(UNIT_STAND_STATE_STAND);
     aiInternalUpdateDelay = 0;
     isWaiting = false;
+    reactionEngine->NotifyPartyCombat(); // Retire the previous follow/formation wait, not a native cast.
+    if (bot->GetMapId()==409) aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
     // Native cast readiness and GCD admission still apply. Never interrupt an
     // in-flight heal or mutate spells from the command-receiving world thread.
+}
+
+void PlayerbotAI::PrepareForPartyCombat()
+{
+    if (!bot || IsRealPlayer() || !HasRealPlayerMaster() || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || bot->HasCharmer() || IsStateActive(BotState::BOT_STATE_COMBAT) ||
+        IsStateActive(BotState::BOT_STATE_DEAD) || !ai::GetPartyCombatAnchor(this)) return;
+    if (bot->IsSitState()) bot->SetStandState(UNIT_STAND_STATE_STAND);
+    // This is the existing native transition. It does not issue an attack,
+    // consume rage/mana, bypass threat policy, or interrupt an in-flight heal.
+    OnCombatStarted();
 }
 
 void PlayerbotAI::PrepareForUrgentCombat()
@@ -1428,7 +1449,7 @@ void PlayerbotAI::PrepareForUrgentCombat()
         bot->IsBeingTeleported() || bot->HasCharmer() || bot->GetMapId()!=409 ||
         !bot->GetGroup() || IsTank(bot)) return;
     for (Unit* attacker : bot->getAttackers())
-        if (attacker && attacker->IsInWorld() && attacker->IsAlive() && attacker->GetEntry()==11669 &&
+        if (attacker && attacker->IsInWorld() && attacker->IsAlive() && (attacker->GetEntry()==11669 || (attacker->GetEntry()==11671 && !attacker->HasAura(19951))) &&
             attacker->GetVictim()==bot && bot->IsInMap(attacker) && !attacker->HasCharmer())
         {
             // Resolve the live native attacker on the owning map. The packet
@@ -1436,6 +1457,7 @@ void PlayerbotAI::PrepareForUrgentCombat()
             bot->InterruptNonMeleeSpells(false);
             if (bot->IsSitState()) bot->SetStandState(UNIT_STAND_STATE_STAND);
             aiInternalUpdateDelay=0;isWaiting=false;
+            reactionEngine->NotifyPartyCombat();
             aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
             return;
         }
