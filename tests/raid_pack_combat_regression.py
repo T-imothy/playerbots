@@ -29,7 +29,7 @@ enum{CLASS_WARRIOR=1,CLASS_MAGE=8,MAX_EFFECT_INDEX=3,SPELL_EFFECT_ATTACK_ME=1,SP
 struct SpellEntry{unsigned Effect[3]={},EffectApplyAuraName[3]={};int EffectBasePoints[3]={};};
 struct Map{bool raid=true;bool IsRaid(){return raid;}};
 struct Group{bool raid=true;bool IsRaidGroup(){return raid;}};
-struct Unit{virtual ~Unit()=default;virtual bool IsPlayer(){return false;}unsigned entry=0;unsigned GetEntry(){return entry;}
+struct Unit{virtual ~Unit()=default;virtual bool IsPlayer(){return false;}unsigned entry=0;unsigned GetEntry(){return entry;}bool collapsed=false;bool HasAura(unsigned id){return id==19951&&collapsed;}
  bool world=true,alive=true,combat=true,charmed=false,cc=false,hardCC=false,friendly=false;unsigned instance=1;float x=0,y=0,z=0;
  Unit*victim=nullptr;bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}float GetCombatReach(){return 1.5f;}Unit*GetVictim(){return victim;}};
@@ -88,6 +88,11 @@ int main(){
  ai.context.possible.value={2};assert(!ControlledRaidAoe(&ai));ai.context.possible.value={2,3};
  bot.tank=true;assert(!ControlledRaidAoe(&ai));bot.tank=false;
  two.cc=true;assert(!ControlledRaidAoe(&ai));two.cc=false;
+ // Collapsed regular hounds never turn off AoE for the surviving pack, but
+ // the same CC remains protected on every other creature entry.
+ nearby.x=0;nearby.entry=11671;nearby.collapsed=nearby.hardCC=true;ai.context.possible.value.push_back(5);
+ assert(ControlledRaidAoe(&ai));nearby.entry=11673;assert(!ControlledRaidAoe(&ai));
+ nearby.collapsed=nearby.hardCC=false;ai.context.possible.value={2,3};
  two.hardCC=true;assert(!ControlledRaidAoe(&ai));two.hardCC=false;
  two.combat=false;assert(!ControlledRaidAoe(&ai));two.combat=true;
  two.victim=&bot;assert(!ControlledRaidAoe(&ai));two.victim=&tank;

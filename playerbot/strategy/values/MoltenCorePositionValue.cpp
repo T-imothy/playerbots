@@ -76,7 +76,11 @@ void ai::AppendMoltenCoreGroundHazards(PlayerbotAI* ai, std::list<HazardPosition
             radius = std::max(float(bomb->GetGOInfo()->trap.diameter) * 0.5f, NativeEncounterSpellRadius(19428));
         }
         if (std::isfinite(radius) && radius > 0 && radius <= 25)
-            hazards.emplace_back(WorldPosition(object), radius + 1.0f);
+            // The trap's visual and trigger diameter are smaller than the
+            // native five-yard damage footprint. Leave room for the actor's
+            // body and for the next movement update, not merely its centre.
+            hazards.emplace_back(WorldPosition(object), radius +
+                (object->GetTypeId() == TYPEID_GAMEOBJECT ? 3.0f + bot->GetObjectBoundingRadius() : 1.0f));
     }
 }
 

@@ -118,6 +118,7 @@ namespace ai
         {
             Unit* unit = ai->GetUnit(guid);
             if (!unit || !unit->IsInWorld() || !unit->IsAlive() || !ai->GetBot()->IsInMap(unit)) continue;
+            if (ai->GetBot()->GetMapId()==409 && unit->GetEntry()==11671 && unit->HasAura(19951)) continue;
             float dx = x - unit->GetPositionX(), dy = y - unit->GetPositionY(), dz = z - unit->GetPositionZ();
             const float reach = radius + unit->GetCombatReach();
             if (dx * dx + dy * dy + dz * dz > reach * reach) continue;

@@ -1,0 +1,61 @@
+MC stack, pack damage and Magmadar positioning
+
+Scope: shared playerbots, Classic/TBC/Wrath. The global scheduler, Pull,
+Attack, follow, summon and recruitment behavior is unchanged by this release.
+
+Regular Core Hounds (11671) and Lava Surgers (12101) require the tank stack.
+Hunters no longer reserve minimum shooting distance there. Their native
+switch-to-melee trigger applies even when another tank holds the target;
+switching back to ranged is blocked while that encounter stack is required.
+Once the stack requirement ends, normal ranged restoration is available.
+Volley and melee attacks still require their native range/resource checks.
+Ancient Core Hound patrols (11673) retain their separate maximum-range policy.
+
+Regular hound damage targets the highest-health member of the engaged native
+pack. A pull/attack/mark on a <=20% dog does not keep it selected while another
+dog is above 20%. Above that threshold, two percentage points of hysteresis
+avoid unnecessary swing churn. Assist and area target values share this choice.
+Collapsed hounds (native 19951) are excluded from the AoE admission blockers;
+they are not counted as attackable targets and actual crowd control/unpulled
+neighbours remain protected. Native collapse/reignite mechanics are unchanged.
+
+Flame Imps (11669): retain the opening AoE threat wait, tank allocation and
+aggro-carrier return to tanks. Allocation includes all observed engaged imp
+packs, including a double pull. Melee stations clear the native ten-yard
+Fire Nova radius plus both combat reaches and a movement margin.
+In MC, Challenging Shout/Roar are reserved for recovering at least two loose
+imps. One eligible ready tank owns the overlapping attempt; an active native
+taunt aura prevents the next tank from spending its cooldown simultaneously.
+Native cooldown expiry/readiness allows subsequent recovery. Unpulled or
+controlled neighbours within the taunt area prevent the attempt. Single-target
+taunts remain available for one loose imp. Tank survival spells become eligible
+below 60% health through the existing native support dispatcher.
+
+Magmadar (11982): ranged damage/healing stations use the native learned spell
+range, including range talents and combat reaches. Frost and Frost/Arcane
+Classic PvE builds choose Frostbolt. Explicit Frost strategies take precedence
+for range selection; Classic Arcane Missiles is suppressed for these Frost
+rotations except against native frost-immune targets. Genuine Arcane builds,
+later expansion rotations and native immunity rules remain available.
+
+Ranged stations search the complete rear semicircle when a preferred lane is
+blocked, aim for eight yards between ranged players and require at least five.
+An already safe maximum-range station is retained. No path/LOS/terrain bypass
+is used. The tank keeps an established facing/holding point through fear and
+relocates nearby when ground fire covers the tank, intended boss centre or rear
+melee station. Cached frontal stations are invalidated when the boss turns.
+
+Lava Bomb 177704 / Conflagration 19428 uses its live native damage footprint,
+with an additional three-yard margin and the bot's body radius. Ground paths
+and cast admission continue to use the same live hazard list. Conflagration is
+not dispellable. Panic 19408 is dispellable and the tank receives dispel priority.
+Fear Ward and Berserker Rage remain learned, native spells. Stance preparation
+requires an actual observed Panic cast and a ready learned Rage; defensive
+stance is restored after the protection is active. No fixed fear timer or
+manufactured immunity is used. Native fear can still prevent a stance change.
+
+Verification executes actual policy/action bodies in all three expansion
+configurations, then compiles and runs the complete per-core CTest suites.
+Controlled boundary tests do not establish a live raid clear, native spell hit,
+client combat meter result or full terrain simulation. Deployment and world
+restart evidence are recorded separately from source/test completion.

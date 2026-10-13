@@ -7,6 +7,7 @@
 
 namespace ai
 {
+    bool MoltenCoreImpTauntAllowed(PlayerbotAI* ai, const std::string& name);
     // Native spell checks remain authoritative for learned ranks, range, mana,
     // cooldowns, immunities and crowd control. No leader command is required.
     class MoltenCoreSupportAction : public Action

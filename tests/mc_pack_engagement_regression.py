@@ -57,6 +57,7 @@ bool PlanMoltenCoreGiants(PlayerbotAI*,EncounterPosition&){return false;}
 bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&){return false;}
 Unit*MoltenCorePackTankTarget(PlayerbotAI*a){return a->loose;}Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*a){return a->loose;}
 unsigned replans=0;bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&p){++replans;p.destination.x=-20;return true;}
+bool PlanMagmadarFormation(PlayerbotAI*,Unit*,EncounterPosition&p){++replans;p.destination.x=-41;return true;}
 Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&){return false;}
 struct MoltenCorePositionAction{static bool GetPlan(PlayerbotAI*,EncounterPosition&);};
 __WAKE__

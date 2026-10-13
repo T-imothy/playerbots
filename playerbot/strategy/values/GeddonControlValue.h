@@ -8,6 +8,18 @@ namespace ai
         ObjectGuid boss, tank;
         encounter::Point tankPosition, rangedPosition;
     };
+    struct MagmadarControl
+    {
+        ObjectGuid boss, tank;
+        encounter::Point tankPosition;
+        float facing = 0;
+        time_t combatStart = 0;
+    };
+    class MagmadarControlValue : public ManualSetValue<MagmadarControl>
+    {
+    public:
+        MagmadarControlValue(PlayerbotAI* ai) : ManualSetValue<MagmadarControl>(ai, MagmadarControl(), "magmadar control") {}
+    };
     class RagnarosControlValue : public ManualSetValue<GeddonControl>
     {
     public:

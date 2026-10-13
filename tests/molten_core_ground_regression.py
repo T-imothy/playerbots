@@ -17,7 +17,7 @@ enum {TYPEID_UNIT,TYPEID_DYNAMICOBJECT,TYPEID_GAMEOBJECT,DYNAMIC_OBJECT_AREA_SPE
 struct WorldObject{virtual ~WorldObject()=default;unsigned type=TYPEID_UNIT,map=409,instance=1,phase=1;bool world=true;float x=0,y=0,z=0;
  bool IsInWorld(){return world;}unsigned GetTypeId(){return type;}float GetPositionZ(){return z;}};
 struct Unit:WorldObject{unsigned entry=12259;bool charmed=false,alive=true,combat=true;unsigned GetEntry(){return entry;}bool HasCharmer(){return charmed;}};
-struct Player:Unit{bool teleport=false;unsigned GetMapId(){return map;}bool IsAlive(){return alive;}bool IsBeingTeleported(){return teleport;}
+struct Player:Unit{float GetObjectBoundingRadius(){return 0.5f;}bool teleport=false;unsigned GetMapId(){return map;}bool IsAlive(){return alive;}bool IsBeingTeleported(){return teleport;}
  bool IsInMap(WorldObject*o){return o->world&&o->map==map&&o->instance==instance&&o->phase==phase;}};
 struct DynamicObject:WorldObject{DynamicObject(){type=TYPEID_DYNAMICOBJECT;}Unit*caster=nullptr;unsigned spell=19717,kind=DYNAMIC_OBJECT_AREA_SPELL,duration=5000;
  float radius=8;bool enemy=true,canAttack=true;
@@ -55,8 +55,8 @@ int main(){
  boss.instance=2;collect();assert(out.empty());boss.instance=1;fire.caster=nullptr;collect();assert(out.empty());fire.caster=&boss;
  // Fire remains dangerous while its native object exists, even after combat/caster death.
  boss.alive=boss.combat=bot.combat=false;collect();assert(out.size()==1);
- objects={&bomb};collect();assert(out.size()==1&&out.front().second==6);
- trapRadius=8;collect();assert(out.front().second==9);trapRadius=5;
+ objects={&bomb};collect();assert(out.size()==1&&out.front().second==8.5f);
+ trapRadius=8;collect();assert(out.front().second==11.5f);trapRadius=5;
  bomb.spawned=false;collect();assert(out.empty());bomb.spawned=true;bomb.info.trap.spellId=21158;collect();assert(out.empty());bomb.info.trap.spellId=19428;
  bomb.kind=0;collect();assert(out.empty());bomb.kind=GAMEOBJECT_TYPE_TRAP;bomb.entry=178088;collect();assert(out.empty());bomb.entry=177704;
  bomb.instance=2;collect();assert(out.empty());bomb.instance=1;

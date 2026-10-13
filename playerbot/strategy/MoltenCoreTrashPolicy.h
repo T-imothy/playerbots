@@ -3,6 +3,7 @@
 
 namespace ai
 {
+    bool MoltenCoreImpTauntAllowed(PlayerbotAI* ai, const std::string& name);
     inline bool MoltenCoreImpAoeOpening(PlayerbotAI* ai)
     {
         Player* bot=ai->GetBot();
@@ -69,6 +70,8 @@ namespace ai
 
     inline bool MoltenCoreTrashSpellAllowed(PlayerbotAI* ai, const std::string& name)
     {
+        if ((name=="challenging shout" || name=="challenging roar") &&
+            !MoltenCoreImpTauntAllowed(ai,name)) return false;
         // Majordomo requires single-target damage, including tank attacks:
         // neither cleave nor broad AoE may release another assigned sheep.
         Player* bot=ai->GetBot();

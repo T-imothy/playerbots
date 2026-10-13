@@ -20,7 +20,7 @@ template<class T>struct Cached{T value;T Get(){return value;}};
 struct Context{Cached<ObjectGuid>marked;Cached<std::list<ObjectGuid>>possible;template<class T>Cached<T>*GetValue(const char*){if constexpr(std::is_same_v<T,ObjectGuid>)return &marked;else return &possible;}};
 struct PlayerbotAI{Player*bot;Context context;std::map<unsigned,Unit*>units;time_t started=time(0)-12;time_t GetCombatStartTime(){return started;}Player*GetBot(){return bot;}Context*GetAiObjectContext(){return &context;}bool IsTank(Player*p){return p->tank;}Unit*GetUnit(unsigned g){return units.count(g)?units[g]:nullptr;}};
 struct{float sightDistance=60;}sPlayerbotAIConfig;
-namespace ai{struct PossibleAttackTargetsValue{static bool IsValid(Unit*u,Player*,float,bool,bool){return u->valid;}static bool HasBreakableCC(Unit*u,Player*){return u->cc;}static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}};
+namespace ai{bool MoltenCoreImpTauntAllowed(PlayerbotAI*,const std::string&){return true;}struct PossibleAttackTargetsValue{static bool IsValid(Unit*u,Player*,float,bool,bool){return u->valid;}static bool HasBreakableCC(Unit*u,Player*){return u->cc;}static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}};
 __METHODS__
 }
 int main(){using namespace ai;Player bot;PlayerbotAI a{&bot};Unit walker,guard,elemental;

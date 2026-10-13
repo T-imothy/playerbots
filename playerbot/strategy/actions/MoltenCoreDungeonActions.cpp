@@ -5,6 +5,7 @@
 #include "MoltenCoreGarrActions.h"
 #include "MoltenCoreLavaTrashActions.h"
 #include "playerbot/strategy/values/GeddonControlValue.h"
+#include "playerbot/strategy/values/HazardsValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "playerbot/ServerFacade.h"
@@ -19,33 +20,6 @@ using namespace ai;
 
 namespace
 {
-    bool PlanHunterStack(PlayerbotAI* ai, Unit* enemy, Player* anchor, EncounterPosition& plan)
-    {
-        Player* bot=ai->GetBot();
-        float maximum=0,minimum=0;
-        if (!ai->GetSpellRange("auto shot",&maximum,&minimum)) return false;
-        if (minimum<=0) return ValidateEncounterDestination(ai,plan);
-        const float reach=bot->GetCombatReach()+enemy->GetCombatReach();
-        // GetSpellRange already includes the caster's native melee allowance.
-        const float distance=minimum+std::max(0.0f,enemy->GetCombatReach()-bot->GetCombatReach())+1.0f;
-        if (distance>maximum+reach-1) return false;
-        const float radial=std::hypot(bot->GetPositionX()-enemy->GetPositionX(),bot->GetPositionY()-enemy->GetPositionY());
-        // Keep the raid clustered, while preserving native hunter minimum range.
-        if (radial>=distance-0.5f && radial<=maximum+reach-1 && bot->GetDistance(anchor)<=distance+3)
-        {
-            plan.destination={bot->GetPositionX(),bot->GetPositionY(),bot->GetPositionZ()};
-            if (ValidateEncounterDestination(ai,plan)) return true;
-        }
-        const float angle=enemy->GetDistance(anchor)>1 ? enemy->GetAngle(anchor) : enemy->GetOrientation()+float(M_PI);
-        for (float offset : {0.0f,0.35f,-0.35f,0.7f,-0.7f})
-        {
-            plan.destination={enemy->GetPositionX()+std::cos(angle+offset)*distance,
-                enemy->GetPositionY()+std::sin(angle+offset)*distance,enemy->GetPositionZ()};
-            if (ValidateEncounterDestination(ai,plan)) return true;
-        }
-        return false; // Generic native range/LOS recovery remains available.
-    }
-
     void PreserveMoltenCoreTank(PlayerbotAI* ai, Unit* enemy, std::vector<Player*>& tanks)
     {
         if (tanks.empty()) return;
@@ -163,7 +137,7 @@ namespace
         const auto* group = static_cast<Creature*>(anchor)->GetCreatureGroup();
         pack.erase(std::remove_if(pack.begin(), pack.end(), [anchor, group](Unit* unit) {
             return unit->GetEntry() != anchor->GetEntry() ||
-                (group ? static_cast<Creature*>(unit)->GetCreatureGroup() != group : unit->GetDistance(anchor) > 30);
+                (anchor->GetEntry() != 11669 && (group ? static_cast<Creature*>(unit)->GetCreatureGroup() != group : unit->GetDistance(anchor) > 30));
         }), pack.end());
         std::sort(pack.begin(), pack.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
         return pack;
@@ -194,7 +168,17 @@ bool ai::MoltenCorePackStackRequired(PlayerbotAI* ai)
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         bot->GetMapId()!=409 || !bot->GetGroup() || ai->IsRealPlayer()) return false;
     auto pack=MoltenCorePack(ai);
-    return !pack.empty() && pack.front()->GetEntry()==11671 && !MoltenCorePackTanks(ai,pack).empty();
+    if (!pack.empty() && pack.front()->GetEntry()==11671 && !MoltenCorePackTanks(ai,pack).empty()) return true;
+    for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
+    {
+        Unit* unit=ai->GetUnit(guid);
+        if (!unit || unit->GetEntry()!=12101 || !unit->IsInWorld() || !unit->IsAlive() ||
+            !unit->IsInCombat() || !bot->IsInMap(unit) || unit->HasCharmer()) continue;
+        Unit* victim=unit->GetVictim();
+        if (victim && victim->IsPlayer() && victim->IsInWorld() && victim->IsAlive() && bot->IsInMap(victim) &&
+            static_cast<Player*>(victim)->GetGroup()==bot->GetGroup() && ai->IsTank(static_cast<Player*>(victim))) return true;
+    }
+    return false;
 }
 
 Unit* ai::MoltenCorePackTankTarget(PlayerbotAI* ai)
@@ -256,16 +240,9 @@ bool ai::PlanMoltenCorePack(PlayerbotAI* ai, EncounterPosition& plan)
     }
     else if (pack.front()->GetEntry()==11671)
     {
-        // Five-pack hounds have Serrated Bite, not the patrol's stomp/breath.
-        // The group clusters at the holding tank for melee AoE and equal
-        // health targeting; hunters retain their native minimum shooting range.
+        // Every role stacks on the holding tank. Hunters switch to native
+        // melee instead of opening a charge lane to preserve shooting room.
         plan.destination={anchor->GetPositionX(),anchor->GetPositionY(),anchor->GetPositionZ()};
-        if (bot->getClass()==CLASS_HUNTER)
-        {
-            Unit* current=ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
-            Unit* enemy=std::find(pack.begin(),pack.end(),current)!=pack.end() ? current : pack.front();
-            if (!PlanHunterStack(ai,enemy,anchor,plan)) {plan.active=false;return false;}
-        }
     }
     else if (ai->IsRanged(bot) || ai->IsHeal(bot))
     {
@@ -285,7 +262,8 @@ bool ai::PlanMoltenCorePack(PlayerbotAI* ai, EncounterPosition& plan)
         // options remain available while the tanks and casters finish the pack.
         if (pack.front()->GetEntry() == 11669)
         {
-            const float distance = std::max(10.0f, NativeEncounterSpellRadius(20602) + 2);
+            const float distance = std::max(10.0f, NativeEncounterSpellRadius(20602) +
+                pack.front()->GetCombatReach() + bot->GetCombatReach() + 2);
             float angle = pack.front()->GetAngle(anchor) + float(M_PI);
             plan.destination = {pack.front()->GetPositionX() + std::cos(angle)*distance,
                 pack.front()->GetPositionY() + std::sin(angle)*distance, pack.front()->GetPositionZ()};
@@ -301,6 +279,52 @@ bool ai::PlanMoltenCorePack(PlayerbotAI* ai, EncounterPosition& plan)
     if (ValidateEncounterDestination(ai, plan)) return true;
     plan.active = false;
     return false;
+}
+
+bool ai::MoltenCoreImpTauntAllowed(PlayerbotAI* ai, const std::string& name)
+{
+    Player* bot=ai->GetBot();
+    if (!bot->IsInWorld() || bot->GetMapId()!=409) return true;
+    if (!bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        !bot->GetGroup() || !ai->IsTank(bot) || ai->IsRealPlayer()) return false;
+    const auto neighbours=ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get();
+    Player* selected=nullptr;
+    const char* selectedSpell=nullptr;
+    for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+    {
+        Player* tank=ref->getSource();
+        if (!tank || !tank->IsInWorld() || !tank->IsAlive() || tank->IsBeingTeleported() ||
+            tank->HasCharmer() || !bot->IsInMap(tank) || !ai->IsTank(tank) || !tank->GetPlayerbotAI() ||
+            tank->GetPlayerbotAI()->IsRealPlayer()) continue;
+        const char* ability=tank->getClass()==CLASS_WARRIOR ? "challenging shout" :
+            tank->getClass()==CLASS_DRUID ? "challenging roar" : nullptr;
+        if (!ability || !tank->GetPlayerbotAI()->CanCastSpell(ability,tank,0)) continue;
+        const float radius=NativeEncounterSpellRadius(tank->getClass()==CLASS_WARRIOR?1161:5209);
+        if (!std::isfinite(radius) || radius<=0) continue;
+        unsigned loose=0;bool safe=true;
+        for (ObjectGuid guid:neighbours)
+        {
+            Unit* enemy=ai->GetUnit(guid);
+            if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || !bot->IsInMap(enemy) ||
+                sServerFacade.IsFriendlyTo(bot,enemy) || tank->GetDistance(enemy)>radius-1) continue;
+            if (!enemy->IsInCombat() || enemy->HasCharmer() ||
+                PossibleAttackTargetsValue::HasBreakableCC(enemy,bot) ||
+                PossibleAttackTargetsValue::HasUnBreakableCC(enemy,bot) ||
+                enemy->HasAura(1161) || enemy->HasAura(5209)) {safe=false;break;}
+            if (enemy->GetEntry()!=11669) continue;
+            Unit* victim=enemy->GetVictim();
+            const bool held=victim && victim->IsPlayer() && victim->IsAlive() && victim->IsInWorld() &&
+                bot->IsInMap(victim) && static_cast<Player*>(victim)->GetGroup()==bot->GetGroup() &&
+                ai->IsTank(static_cast<Player*>(victim));
+            if (!held) ++loose;
+        }
+        // Single-target recovery remains available for one loose imp. Do not
+        // spend two long AoE cooldowns on a pack already forced onto a tank.
+        if (!safe || loose<2) continue;
+        if (!selected || tank->GetObjectGuid()<selected->GetObjectGuid())
+        {selected=tank;selectedSpell=ability;}
+    }
+    return selected==bot && selectedSpell && name==selectedSpell;
 }
 
 bool ai::MoltenCoreImpPack(PlayerbotAI* ai)
@@ -334,107 +358,156 @@ bool ai::MoltenCoreImpPack(PlayerbotAI* ai)
 
 namespace
 {
+    bool PlanMagmadarTank(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan)
+    {
+        Player* bot=ai->GetBot();
+        if (boss->GetVictim()!=bot || !ai->IsTank(bot)) return false;
+        const float melee=std::max(2.0f,boss->GetCombatReach()+bot->GetCombatReach()-1);
+        auto* value=ai->GetAiObjectContext()->GetValue<MagmadarControl>("magmadar control");
+        auto state=value->Get();
+        if (state.boss!=boss->GetObjectGuid() || state.tank!=bot->GetObjectGuid() ||
+            state.combatStart!=ai->GetCombatStartTime())
+        {
+            // Do not replace the native pull approach with a forward station.
+            // Once established, retain it through fear and knockback recovery.
+            if (bot->GetDistance(boss)>melee+3) {plan.active=false;return false;}
+            state.boss=boss->GetObjectGuid();state.tank=bot->GetObjectGuid();
+            state.combatStart=ai->GetCombatStartTime();
+            state.facing=boss->GetAngle(bot);
+            float x=0,y=0;unsigned count=0;
+            for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+            {
+                Player* member=ref->getSource();
+                if (!member || member==bot || !member->IsInWorld() || !member->IsAlive() ||
+                    member->IsBeingTeleported() || !bot->IsInMap(member) || ai->IsTank(member) ||
+                    member->GetDistance(boss)>100) continue;
+                x+=member->GetPositionX()-boss->GetPositionX();
+                y+=member->GetPositionY()-boss->GetPositionY();++count;
+            }
+            if (count && x*x+y*y>4) state.facing=std::atan2(y,x)+float(M_PI);
+            state.tankPosition={boss->GetPositionX()+std::cos(state.facing)*melee,
+                boss->GetPositionY()+std::sin(state.facing)*melee,boss->GetPositionZ()};
+        }
+        std::list<HazardPosition> fire;
+        AppendMoltenCoreGroundHazards(ai,fire);
+        const auto clearStation=[&](const encounter::Point& p) {
+            // Clear the tank, the boss's intended centre and the rear melee
+            // station. A safe tank standing beside a burning melee pile is
+            // not a safe holding position.
+            for (float back : {0.0f,melee,2*melee})
+                for (const auto& hazard:fire)
+                {
+                    const float x=p.x-std::cos(state.facing)*back-hazard.first.getX();
+                    const float y=p.y-std::sin(state.facing)*back-hazard.first.getY();
+                    if (std::fabs(p.z-hazard.first.getZ())<8 && x*x+y*y<hazard.second*hazard.second) return false;
+                }
+            return true;
+        };
+        plan.active=true;plan.spell=19272;plan.boss=boss->GetObjectGuid();
+        plan.map=bot->GetMapId();plan.instance=bot->GetInstanceId();
+        plan.destination=state.tankPosition;
+        if (clearStation(plan.destination) && ValidateEncounterDestination(ai,plan))
+        {value->Set(state);return true;}
+        // Relocate only to nearby native-walkable, fire-free stations. Retain
+        // the selected point across fear/facing changes instead of chasing a
+        // moving raid centroid on every update.
+        for (float distance : {8.0f,12.0f,18.0f,24.0f})
+            for (float offset : {0.0f,0.7f,-0.7f,1.4f,-1.4f})
+            {
+                const float angle=state.facing+offset;
+                plan.destination={boss->GetPositionX()+std::cos(angle)*(melee+distance),
+                    boss->GetPositionY()+std::sin(angle)*(melee+distance),boss->GetPositionZ()};
+                if (!clearStation(plan.destination) || !ValidateEncounterDestination(ai,plan)) continue;
+                state.tankPosition=plan.destination;value->Set(state);return true;
+            }
+        plan.active=false;return false;
+    }
+
     bool PlanMagmadarFormation(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan)
     {
-        Player* bot = ai->GetBot();
-        if (boss->GetVictim() == bot) return false;
-        const bool healer = ai->IsHeal(bot);
-        const bool ranged = ai->IsRanged(bot) || healer;
+        Player* bot=ai->GetBot();
+        if (boss->GetVictim()==bot) return PlanMagmadarTank(ai,boss,plan);
+        const bool healer=ai->IsHeal(bot);
+        const bool ranged=ai->IsRanged(bot)||healer;
         std::vector<Player*> members;
-        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+        for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
         {
-            Player* member = ref->getSource();
+            Player* member=ref->getSource();
             if (!member || !member->IsInWorld() || !member->IsAlive() || member->HasCharmer() ||
                 member->IsBeingTeleported() || !bot->IsInMap(member) || member==boss->GetVictim() ||
-                member->GetDistance(boss) > 100 || (ai->IsRanged(member) || ai->IsHeal(member)) != ranged ||
-                (ranged && ai->IsHeal(member) != healer)) continue;
+                member->GetDistance(boss)>100 || (ai->IsRanged(member)||ai->IsHeal(member))!=ranged) continue;
             members.push_back(member);
         }
-        std::sort(members.begin(), members.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
-        auto own = std::find(members.begin(), members.end(), bot);
-        if (own == members.end()) return false;
-        const size_t slot = std::distance(members.begin(), own);
-        float distance = std::max(2.0f, boss->GetCombatReach() + bot->GetCombatReach() - 1.0f);
-        float angle = boss->GetOrientation() + float(M_PI);
-        Unit* healingTarget = nullptr;
-        Unit* wardTarget = nullptr;
-        float healingRange = 0, wardRange = 0;
+        std::sort(members.begin(),members.end(),[](Player* a,Player* b){return a->GetObjectGuid()<b->GetObjectGuid();});
+        auto own=std::find(members.begin(),members.end(),bot);
+        if (own==members.end()) return false;
+        const size_t slot=std::distance(members.begin(),own);
+        const float rear=boss->GetOrientation()+float(M_PI);
+        float maximum=std::max(2.0f,boss->GetCombatReach()+bot->GetCombatReach()-1);
+        Unit* rangeTarget=boss;
         if (ranged)
         {
-            const char* spell = "frostbolt";
-            if (healer)
-            {
-                switch (bot->getClass())
-                {
-                    case CLASS_PRIEST: spell = "flash heal"; break;
-                    case CLASS_PALADIN: spell = "flash of light"; break;
-                    case CLASS_SHAMAN: spell = "healing wave"; break;
-                    case CLASS_DRUID: spell = "healing touch"; break;
-                    default: break;
-                }
-            }
-            else switch (bot->getClass())
-            {
-                case CLASS_HUNTER: spell = "auto shot"; break;
-                case CLASS_WARLOCK: spell = "shadow bolt"; break;
-                case CLASS_PRIEST: spell = "mind blast"; break;
-                case CLASS_DRUID: spell = "wrath"; break;
-                case CLASS_SHAMAN: spell = "lightning bolt"; break;
-                case CLASS_MAGE:
-                    spell = MagePrimaryDamageSpell(ai);
-                    break;
-                default: break;
-            }
-            Unit* victim = boss->GetVictim();
-            if (healer && victim && victim->IsPlayer()) healingTarget = victim;
-            float spellRange = ai->GetRange("spell"); ai->GetSpellRange(spell, &spellRange);
-            Unit* rangeTarget = healingTarget ? healingTarget : boss;
-            // Match native ranged admission, including learned-rank/talent
-            // range and both combat reaches; retain two yards of margin.
-            distance = std::max(10.0f, spellRange + bot->GetCombatReach() + rangeTarget->GetCombatReach() - 2);
-            if (healingTarget) healingRange = distance;
-            if (victim && victim->IsPlayer() && !ai->HasAura("fear ward", victim) &&
-                ai->CanCastSpell("fear ward", victim, 0, nullptr, true) && ai->GetSpellRange("fear ward", &wardRange))
-            {
-                wardTarget = victim;
-                wardRange += bot->GetCombatReach() + victim->GetCombatReach() - 2;
-            }
-            if (healingTarget)
-            {
-                // Distinct side slots retain range to the actual tank. They
-                // do not crowd all healers onto one of two identical points.
-                const size_t lanes = (members.size()+1)/2;
-                const float step = lanes > 1 ? std::min(float(M_PI)/9, float(M_PI)/3/float(lanes-1)) : 0;
-                angle = boss->GetAngle(healingTarget) + (slot % 2 ? 1.0f : -1.0f) *
-                    (float(M_PI)*5/12 + float(slot/2)*step);
-            }
-            else angle += (members.size()>1 ? float(slot)/float(members.size()-1)-0.5f : 0) * float(M_PI)*2/3;
+            if (healer && boss->GetVictim() && boss->GetVictim()->IsPlayer()) rangeTarget=boss->GetVictim();
+            float range=0;
+            if (!ai->GetSpellRange(MoltenCoreRangeSpell(ai,bot),&range) || !std::isfinite(range) || range<=0)
+            {plan.active=false;return false;}
+            maximum=range+bot->GetCombatReach()+rangeTarget->GetCombatReach()-2;
         }
-        else angle += (float(slot % 3)-1)*float(M_PI)/3; // rear-left, rear, rear-right
-        for (float offset : {0.0f,0.12f,-0.12f,0.24f,-0.24f,0.36f,-0.36f})
+        const auto separated=[&](const encounter::Point& p) {
+            float distance=100;
+            for (Player* member:members)
+                if (member!=bot) distance=std::min(distance,std::hypot(p.x-member->GetPositionX(),p.y-member->GetPositionY()));
+            return distance;
+        };
+        const auto outerRange=[&](float angle) {
+            if (rangeTarget==boss) return maximum;
+            const float x=rangeTarget->GetPositionX()-boss->GetPositionX();
+            const float y=rangeTarget->GetPositionY()-boss->GetPositionY();
+            const float z=rangeTarget->GetPositionZ()-boss->GetPositionZ();
+            const float projection=x*std::cos(angle)+y*std::sin(angle);
+            const float remainder=maximum*maximum-(x*x+y*y+z*z-projection*projection);
+            return remainder<0 ? 0.0f : projection+std::sqrt(remainder);
+        };
+        const float ownAngle=boss->GetAngle(bot);
+        const float radial=std::hypot(bot->GetPositionX()-boss->GetPositionX(),bot->GetPositionY()-boss->GetPositionY());
+        const encounter::Point here{bot->GetPositionX(),bot->GetPositionY(),bot->GetPositionZ()};
+        plan.active=true;plan.spell=19272;plan.boss=boss->GetObjectGuid();
+        plan.map=bot->GetMapId();plan.instance=bot->GetInstanceId();
+        // Keep a valid maximum-range rear station; do not drift inward after
+        // finding it, or move just because another bot arrived in its slot.
+        if (std::cos(ownAngle-boss->GetOrientation())<-0.05f && radial>=outerRange(ownAngle)-1.5f &&
+            bot->GetDistance(rangeTarget)<=maximum && (!ranged||separated(here)>=5))
         {
-            const float candidateAngle = angle+offset;
-            if (std::cos(candidateAngle-boss->GetOrientation()) > 0.0f) continue;
-            float candidateDistance = distance;
-            const auto withinFriendlyRange = [&](Unit* target, float maximum) {
-                if (!target) return true;
-                const float x=target->GetPositionX()-boss->GetPositionX();
-                const float y=target->GetPositionY()-boss->GetPositionY();
-                const float projection=x*std::cos(candidateAngle)+y*std::sin(candidateAngle);
-                const float remainder=maximum*maximum-(x*x+y*y-projection*projection);
-                if (remainder<0) return false;
-                const float outer=projection+std::sqrt(remainder);
-                if (outer<10) return false;
-                candidateDistance=std::min(candidateDistance,outer);
-                return true;
-            };
-            if (!withinFriendlyRange(healingTarget,healingRange) || !withinFriendlyRange(wardTarget,wardRange)) continue;
-            plan.destination={boss->GetPositionX()+std::cos(candidateAngle)*candidateDistance,
-                boss->GetPositionY()+std::sin(candidateAngle)*candidateDistance,boss->GetPositionZ()};
+            plan.destination=here;
             if (ValidateEncounterDestination(ai,plan)) return true;
         }
-        plan.active=false;
-        return false;
+        struct Candidate{encounter::Point point;float score;};
+        std::vector<Candidate> candidates;
+        const float preferred=rear+(members.size()>1 ? float(slot)/float(members.size()-1)-0.5f : 0)*float(M_PI)*0.85f;
+        // Search the full rear semicircle at usable spell range. A blocked
+        // preferred lane must not leave a caster parked close to the boss.
+        for (unsigned lane=0;lane<33;++lane)
+        {
+            const float angle=rear-float(M_PI)*0.49f+float(lane)/32*float(M_PI)*0.98f;
+            const float distance=outerRange(angle);
+            if (!std::isfinite(distance) || distance<2) continue;
+            encounter::Point point{boss->GetPositionX()+std::cos(angle)*distance,
+                boss->GetPositionY()+std::sin(angle)*distance,boss->GetPositionZ()};
+            const float spacing=separated(point);
+            if (ranged && spacing<5) continue;
+            const float preference=std::fabs(angle-preferred);
+            // Eight yards is the spacing goal; five is the admission minimum.
+            candidates.push_back({point,(ranged?std::min(8.0f,spacing):8.0f)*10-preference});
+        }
+        std::sort(candidates.begin(),candidates.end(),[](const Candidate& a,const Candidate& b){return a.score>b.score;});
+        unsigned checked=0;
+        for (const auto& candidate:candidates)
+        {
+            if (++checked>32) break;
+            plan.destination=candidate.point;
+            if (ValidateEncounterDestination(ai,plan)) return true;
+        }
+        plan.active=false;return false;
     }
 }
 
@@ -578,7 +651,7 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
     plan.active = true; plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
     plan.boss = selected->GetObjectGuid();
     if (selected->GetEntry() == 12056) return PlanGeddonFormation(ai,selected,plan);
-    if (selected->GetEntry() == 11982 && victim != bot)
+    if (selected->GetEntry() == 11982)
     {
         plan.spell = 19272;
         return PlanMagmadarFormation(ai, selected, plan);
@@ -592,8 +665,6 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
         plan.destination = {victim->GetPositionX(), victim->GetPositionY(), victim->GetPositionZ()};
         if (bot->GetDistance(victim) <= 3)
             plan.destination = {bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
-        if (bot->getClass()==CLASS_HUNTER &&
-            !PlanHunterStack(ai,selected,static_cast<Player*>(victim),plan)) {plan.active=false;return false;}
     }
     else
     {
@@ -992,17 +1063,23 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
         float highest = 0;
         for (Unit* hound : hounds)
             if (hound->GetDistance(anchor) <= 30) highest = std::max(highest, hound->GetHealthPercent());
-        // Five percentage points of tolerance avoids switching on every hit.
-        // Keep damage distributed amongst the highest-health band instead of
-        // sending the entire raid onto the same nearly-dead marked hound.
-        std::vector<Unit*> band;
+        // Marks and pull commands cannot pin a hound below twenty percent
+        // while another member of its native pack is still healthy. The same
+        // highest-health focus is used by assist/area target selection too.
+        Unit* focus=nullptr;
         for (Unit* hound : hounds)
-            if (hound->GetDistance(anchor) <= 30 && hound->GetHealthPercent() + 5.0f >= highest &&
-                (highest<=20.0f || hound->GetHealthPercent()>20.0f)) band.push_back(hound);
-        if (band.empty()) return nullptr;
-        if (std::find(band.begin(), band.end(), current) != band.end()) return current;
-        std::sort(band.begin(), band.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
-        return band[bot->GetGUIDLow() % band.size()];
+        {
+            if (hound->GetDistance(anchor)>30 || (highest>20.0f && hound->GetHealthPercent()<=20.0f)) continue;
+            if (!focus || hound->GetHealthPercent()>focus->GetHealthPercent() ||
+                (hound->GetHealthPercent()==focus->GetHealthPercent() && hound->GetObjectGuid()<focus->GetObjectGuid())) focus=hound;
+        }
+        // Above the release threshold, tolerate a small health difference to
+        // avoid wasting every swing on target churn. Never retain a <=20% dog
+        // while a higher-health dog remains.
+        if (focus && current && std::find(hounds.begin(),hounds.end(),current)!=hounds.end() &&
+            current->GetDistance(anchor)<=30 && current->GetHealthPercent()>20.0f &&
+            current->GetHealthPercent()+2.0f>=highest) return current;
+        return focus;
     }
     Unit* selected = nullptr;
     unsigned priority = 0;
@@ -1069,7 +1146,7 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         return PlanLavaTrashCarrier(ai, plan);
     }
     if (boss && boss->IsInWorld() && bot->IsInMap(boss) && boss->IsAlive() && boss->IsInCombat() &&
-        (boss->GetEntry()==11982 || boss->GetEntry()==11673) && boss->GetVictim()!=bot &&
+        boss->GetEntry()==11673 && boss->GetVictim()!=bot &&
         (plan.spell==19272 || plan.spell==19364))
     {
         const float station=std::atan2(plan.destination.y-boss->GetPositionY(),plan.destination.x-boss->GetPositionX());
@@ -1078,6 +1155,15 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
             ai->GetAiObjectContext()->GetValue<EncounterPosition>("molten core position")->Reset();
             return PlanMoltenCoreTrash(ai,plan);
         }
+    }
+    if (boss && boss->GetEntry()==11982 && plan.spell==19272 && boss->IsInWorld() &&
+        boss->IsAlive() && boss->IsInCombat() && bot->IsInMap(boss))
+    {
+        // Replan immediately after a fear turns the boss or a relocation
+        // leaves the cached station in the frontal half of the room.
+        if (boss->GetVictim()==bot || std::cos(std::atan2(plan.destination.y-boss->GetPositionY(),
+            plan.destination.x-boss->GetPositionX())-boss->GetOrientation())>0)
+            return PlanMagmadarFormation(ai,boss,plan);
     }
     if (plan.spell==19771 && ai->IsTank(bot) && boss &&
         (boss->GetEntry()==11671 || boss->GetEntry()==11669))
@@ -1270,6 +1356,23 @@ bool MoltenCoreSupportAction::Select(std::string& spell, Unit*& target)
     }
     if (ai->IsTank(bot))
     {
+        for (const char* name : {"challenging shout","challenging roar"})
+            if (MoltenCoreImpTauntAllowed(ai,name) && ready(name,bot)) return true;
+        // Native survival cooldowns supplement tank threat; Fire Nova remains
+        // an unavoidable risk for the tanks, so do not wait until near death.
+        const auto pack=MoltenCorePack(ai);
+        if (!pack.empty() && pack.front()->GetEntry()==11669 && bot->GetHealthPercent()<60)
+            for (const char* name : {"shield wall","last stand","frenzied regeneration","barkskin",
+#ifndef MANGOSBOT_ZERO
+                "divine protection",
+#endif
+#ifdef MANGOSBOT_TWO
+                "icebound fortitude","anti-magic shell",
+#endif
+            }) if (ready(name,bot)) return true;
+    }
+    if (ai->IsTank(bot))
+    {
         Unit* assigned = MoltenCoreAssignedTankTarget(ai);
         Unit* victim = assigned ? assigned->GetVictim() : nullptr;
         const bool otherTank = victim && victim->IsPlayer() && victim->IsAlive() &&
@@ -1364,6 +1467,34 @@ bool MoltenCoreSupportAction::Select(std::string& spell, Unit*& target)
     {
         Player* tank = static_cast<Player*>(boss->GetVictim());
         if (RaidMember(bot, tank) && !ai->HasAura("fear ward", tank) && ready("fear ward", tank)) return true;
+    }
+    if (boss->GetEntry()==11982)
+    {
+        Spell* panic=boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        const bool fearCast=panic && panic->m_spellInfo && panic->m_spellInfo->Id==19408 &&
+            panic->getState()!=SPELL_STATE_FINISHED;
+        if (bot->HasAura(19408) || (ai->IsTank(bot) && fearCast && !bot->HasAura(6346)))
+        {
+            if (ready("berserker rage",bot)) return true;
+            // Dance only in response to an actual cast and a ready learned
+            // Rage. Native stance/fear restrictions can still reject the cast.
+            if (fearCast && bot->getClass()==CLASS_WARRIOR && ai->IsTank(bot) &&
+                ai->HasSpell("berserker rage") && bot->IsSpellReady(18499) &&
+                !bot->HasAura(18499) && ready("berserker stance",bot)) return true;
+        }
+        if (ai->IsTank(bot) && bot->HasAura(18499) && bot->HasAura(2458) && ready("defensive stance",bot)) return true;
+        // Panic is magic-dispellable; Conflagration is not. Keep the tank first
+        // in the dispel order without guessing the boss's random fear timer.
+        Unit* victim=boss->GetVictim();
+        if (victim && victim->IsPlayer() && RaidMember(bot,static_cast<Player*>(victim)) &&
+            victim->HasAura(19408))
+            for (const char* name : {"dispel magic","cleanse"}) if (ready(name,victim)) return true;
+        for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+        {
+            Player* member=ref->getSource();
+            if (!RaidMember(bot,member) || !member->HasAura(19408)) continue;
+            for (const char* name : {"dispel magic","cleanse"}) if (ready(name,member)) return true;
+        }
     }
     // Counter an active priest heal, including a priest other than our DPS target.
     if (boss->GetEntry() == 12098)

@@ -35,7 +35,7 @@ struct Player:Unit{bool combat=false,transfer=false,same=true,tank=false;unsigne
 std::list<ObjectGuid>npcs;template<class T>struct Cached{T Get(){return npcs;}};struct Context{template<class T>Cached<T>*GetValue(const char*){static Cached<T>v;return &v;}};
 struct PlayerbotAI{Context context;Context*GetAiObjectContext(){return &context;}Player*bot;PlayerbotAI(Player*p):bot(p){}bool human=false,owned=true,movable=true,pvp=false;unsigned frost=0,nearCalls=0,repairs=0;std::set<std::string>ready,known;unsigned targets=1;
  Player*GetBot(){return bot;}bool IsRanged(Player*){return true;}bool IsRealPlayer(){return human;}bool HasRealPlayerMaster(){return owned;}bool CanMove(){return movable;}bool IsTank(Player*p){return p->tank;}bool HasSpell(const char*n){return known.count(n);}bool CanCastSpell(const char*n,Unit*,int){return ready.count(n);}bool IsInPvp(){return pvp;}std::map<unsigned,Unit*>units;Unit*GetUnit(unsigned id){return units.count(id)?units[id]:nullptr;}};
-struct AiFactory{static std::map<unsigned,int>GetPlayerSpecTabs(Player*p){return {{2,int(p->spells.count(999)?20:0)}};}};
+struct AiFactory{static std::map<unsigned,int>GetPlayerSpecTabs(Player*p){return {{0,int(p->spells.count(12042)?31:0)},{1,0},{2,int(p->spells.count(999)?20:0)}};}};
 struct Facade{bool IsFriendlyTo(Player*,Unit*u){return u->friendly;}}sServerFacade;
 struct{unsigned reactDelay=100;}sPlayerbotAIConfig;
 template<class T>T value(const char*){return npcs;}

@@ -202,8 +202,11 @@ int main(){
  add.map=second.map=&map;add.entry=second.entry=11671;add.guid=2;second.guid=3;
  add.health=20;second.health=70;ai.units={{2,&add},{3,&second}};ai.possible={2,3};
  ai.current=&add;ai.marked=&add;assert(mc.GetTarget()==&second);
- second.health=23;assert(mc.GetTarget()==&second); // leave a hound at 20%, even inside the five-point band
- add.health=22;assert(mc.GetTarget()==&add); // ordinary five-point hysteresis above 20%
+ second.health=23;assert(mc.GetTarget()==&second); // always release the <=20% dog
+ add.health=22;assert(mc.GetTarget()==&add); // two-point hysteresis above 20%
+ add.health=20;second.health=21;ai.commanded=2;assert(mc.GetTarget()==&second); // a pull/attack on the low dog cannot pin it
+ second.health=20;assert(mc.GetTarget()==&add); // all low: stable highest-health finish
+ add.health=22;second.health=23;ai.commanded=0;
  add.alive=false;assert(mc.GetTarget()==&second);
  ai.commanded=3;assert(mc.GetTarget()==&second);ai.commanded=0; // group Attack does not disable balancing
  ai.tank=true;assert(!mc.GetTarget());ai.tank=false;

@@ -52,6 +52,9 @@ bool ai::ControlledRaidAoe(PlayerbotAI* ai)
         const float dz = enemy->GetPositionZ() - center.coord_z;
         const float clearance = 12.0f + enemy->GetCombatReach();
         if (dx*dx + dy*dy + dz*dz > clearance*clearance) continue;
+        // A native collapsed pack hound is immune/faking death, not assigned
+        // crowd control. It must not disable AoE on the remaining live pack.
+        if (bot->GetMapId()==409 && enemy->GetEntry()==11671 && enemy->HasAura(19951)) continue;
         // Inspect the unfiltered neighbours too: sheeped or unpulled mobs must
         // not disappear from the safety decision merely because they cannot be selected.
         if (!enemy->IsInCombat() || enemy->HasCharmer() ||

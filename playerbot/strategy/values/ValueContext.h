@@ -430,6 +430,7 @@ namespace ai
                 creators["gt32"] = [](PlayerbotAI* ai) { return new GT32Value(ai); };
                 creators["manual bool"] = [](PlayerbotAI* ai) { return new BoolManualSetValue(ai); };
                 creators["geddon control"] = [](PlayerbotAI* ai) { return new GeddonControlValue(ai); };
+                creators["magmadar control"] = [](PlayerbotAI* ai) { return new MagmadarControlValue(ai); };
                 creators["ragnaros control"] = [](PlayerbotAI* ai) { return new RagnarosControlValue(ai); };
                 creators["garr control"] = [](PlayerbotAI* ai) { return new GarrControlValue(ai); };
                 creators["lava trash control"] = [](PlayerbotAI* ai) { return new LavaTrashControlValue(ai); };

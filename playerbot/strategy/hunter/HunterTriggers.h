@@ -2,6 +2,7 @@
 
 #include "playerbot/strategy/triggers/GenericTriggers.h"
 #include "HunterCombatPolicy.h"
+#include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 
 namespace ai
 {
@@ -230,7 +231,7 @@ namespace ai
         bool IsActive() override
         {
             Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
-            return ai->HasStrategy("close", BotState::BOT_STATE_COMBAT) && HunterAmmoReady(ai) &&
+            return !MoltenCorePackStackRequired(ai) && ai->HasStrategy("close", BotState::BOT_STATE_COMBAT) && HunterAmmoReady(ai) &&
                 MeleeCombatTarget(ai, target) && (HunterInShotRange(ai, target, 1.0f) ||
                 target->GetVictim() != bot || target->IsImmobilizedState());
         }
@@ -244,6 +245,9 @@ namespace ai
         {
             Unit* target = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
             if (!ai->HasStrategy("ranged", BotState::BOT_STATE_COMBAT) || !MeleeCombatTarget(ai, target)) return false;
+            // These MC stacks take precedence over shooting room, including
+            // when another tank holds the enemy. Native melee/Volley checks remain.
+            if (MoltenCorePackStackRequired(ai)) return true;
             if (!HunterAmmoReady(ai)) return !HunterAmmoReserve(ai);
             const auto bounds = HunterShotRange(ai, target);
             return target->GetVictim() == bot && !target->IsImmobilizedState() &&

@@ -79,6 +79,7 @@ namespace ai {
  struct MoltenCorePositionValue {Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
  bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
  // This fixture isolates the existing boss hazards; trash is checked separately.
+ unsigned magmadarReplans=0;bool PlanMagmadarFormation(PlayerbotAI*,Unit*,EncounterPosition& p){++magmadarReplans;p.destination={-41,0,0};return true;}
  bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&) { return false; }Unit*MoltenCorePackTankTarget(PlayerbotAI*){return nullptr;}Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*){return nullptr;}
  Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&){return false;}
  bool PlanMoltenCoreGiants(PlayerbotAI*,EncounterPosition&){return false;}bool MoltenCoreRecoveryTrash(unsigned){return true;}
@@ -171,6 +172,12 @@ int main(){
  ai.tank=false;assert(get());ai.tank=true;firesworn.victim=&other;assert(get());
  firesworn.victim=&bot;SpellEntry eruption;eruption.Id=20483;Spell massive;massive.m_spellInfo=&eruption;firesworn.cast=&massive;assert(get());
  firesworn.cast=nullptr;firesworn.auras={710};ai.tank=false;assert(!get());
+ // A fear-induced facing change invalidates a cached Magmadar front station
+ // before the ordinary two-second position-value refresh.
+ firesworn.auras.clear();boss.alive=boss.combat=bot.combat=true;boss.entry=11982;boss.x=0;
+ ai.context.cached.value.active=true;ai.context.cached.value.map=409;ai.context.cached.value.instance=1;
+ ai.context.cached.value.boss=boss.guid;ai.context.cached.value.spell=19272;ai.context.cached.value.destination={30,0,0};
+ assert(MoltenCorePositionAction::GetPlan(&ai,resolved)&&magmadarReplans==1&&resolved.destination.x==-41);
  std::cout<<"PASS: actual MC bomb lifetime after boss death, friendly carriers, phase/map/role, native radius and bounded paths\n";
 }
 '''.replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__METHODS__',methods)

@@ -28,10 +28,12 @@ stubs='Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool LavaTrashRe
 assert stubs in code;code=code.replace(stubs,'')
 from behavior_regression import block
 for signature in ('bool MoltenCoreGroupEnemy(', 'bool MoltenCoreRecoveryTrash('):code=code.replace(block(code,signature),'')
+# Replace the support fixture's small fire-position boundary with the native
+# route fixture's map-aware version; keep one common HazardPosition type.
+code=code.replace('struct WorldPosition{float x=0,y=0,z=0;float getX()const{return x;}float getY()const{return y;}float getZ()const{return z;}};',
+    'struct WorldPosition{unsigned map;float x,y,z;WorldPosition(unsigned m,float a,float b,float c):map(m),x(a),y(b),z(c){}WorldPosition(Unit*u):WorldPosition(u->map,u->x,u->y,u->z){}unsigned getMapId()const{return map;}float getX()const{return x;}float getY()const{return y;}float getZ()const{return z;}};')
 code+='''
 struct WorldObject{};
-struct WorldPosition{unsigned map;float x,y,z;WorldPosition(unsigned m,float a,float b,float c):map(m),x(a),y(b),z(c){}WorldPosition(Unit*u):WorldPosition(u->map,u->x,u->y,u->z){}unsigned getMapId()const{return map;}float getX()const{return x;}float getY()const{return y;}float getZ()const{return z;}};
-using HazardPosition=std::pair<WorldPosition,float>;
 unsigned now=1000;struct WorldTimer{static unsigned getMSTime(){return now;}static unsigned getMSTimeDiff(unsigned a,unsigned b){return b-a;}};
 namespace ai{
 bool MoltenCoreGroupEnemy(PlayerbotAI*,Unit*);bool MoltenCoreRecoveryTrash(unsigned);Unit*MoltenCoreTrashAggroTarget(PlayerbotAI*);

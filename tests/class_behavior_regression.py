@@ -30,6 +30,56 @@ using uint8=uint8_t;using uint32=uint32_t;
 struct Event{};
 '''
 
+# Actual hunter switch triggers and mage selection/dispatch guard. Native
+# stance/spell hit results remain server-owned; these tests exercise admission.
+rotation=r'''
+#include <set>
+#include <iostream>
+using ObjectGuid=unsigned;
+namespace BotState{enum{BOT_STATE_COMBAT};}
+enum{MOVE_RUN,SPELL_SCHOOL_MASK_FROST};
+struct Unit{Unit*victim=nullptr;bool immune=false;bool IsImmuneToDamage(int){return immune;}Unit*GetVictim(){return victim;}bool IsImmobilizedState(){return false;}float GetSpeed(int){return 1;}};
+struct Player:Unit{std::set<unsigned>spells;bool HasSpell(unsigned id){return spells.count(id);}float GetDistance(Unit*,bool,int){return 1;}};
+enum{DIST_CALC_NONE};
+struct PlayerbotAI{Player bot;Unit*target=nullptr;bool stack=false,pvp=false,ammo=true;std::set<std::string>strategies;std::map<unsigned,int>tabs={{0,31},{1,0},{2,20}};
+ Player*GetBot(){return &bot;}bool IsInPvp(){return pvp;}bool HasStrategy(const std::string&n,int){return strategies.count(n);}Unit*GetUnit(unsigned){return target;}};
+struct AiFactory{static std::map<unsigned,int>GetPlayerSpecTabs(Player*p);};
+PlayerbotAI*active;
+std::map<unsigned,int>AiFactory::GetPlayerSpecTabs(Player*){return active->tabs;}
+struct Trigger{PlayerbotAI*ai;Player*bot;Trigger(PlayerbotAI*a,const char*,int):ai(a),bot(a->GetBot()){}virtual bool IsActive(){return false;}};
+struct CastSpellAction{PlayerbotAI*ai;CastSpellAction(PlayerbotAI*a,const char*):ai(a){}virtual bool isUseful(){return true;}Unit*GetTarget(){return ai->target;}};
+bool MoltenCorePackStackRequired(PlayerbotAI*a){return a->stack;}bool HunterAmmoReady(PlayerbotAI*a){return a->ammo;}bool HunterAmmoReserve(PlayerbotAI*){return false;}
+bool MeleeCombatTarget(PlayerbotAI*,Unit*u){return u!=nullptr;}bool HunterInShotRange(PlayerbotAI*,Unit*,float){return false;}
+std::pair<float,float>HunterShotRange(PlayerbotAI*,Unit*){return {8,40};}
+#define AI_VALUE(T,n) unsigned(1)
+__METHODS__
+int main(){PlayerbotAI a;active=&a;Unit enemy,tank;a.target=&enemy;enemy.victim=&tank;a.strategies={"ranged"};
+ SwitchToMeleeTrigger melee(&a);SwitchToRangedTrigger ranged(&a);
+ assert(!melee.IsActive());a.stack=true;assert(melee.IsActive());a.strategies={"close"};assert(!ranged.IsActive());a.stack=false;assert(ranged.IsActive());
+ a.strategies={"arcane raid"};a.bot.spells={12042};CastArcaneMissilesAction missiles(&a);
+#ifdef MANGOSBOT_ZERO
+ assert(std::string(MagePrimaryDamageSpell(&a))=="frostbolt"&&!missiles.isUseful());
+ enemy.immune=true;assert(missiles.isUseful());enemy.immune=false;
+ a.bot.spells.clear();a.tabs={{0,20},{1,0},{2,31}};assert(std::string(MagePrimaryDamageSpell(&a))=="frostbolt"&&!missiles.isUseful());
+ a.tabs={{0,31},{1,20},{2,0}};assert(std::string(MagePrimaryDamageSpell(&a))=="arcane missiles"&&missiles.isUseful());
+ a.strategies={"arcane"};assert(missiles.isUseful()); // ordinary non-raid Arcane remains usable
+ a.strategies={"frost raid","arcane raid"};assert(std::string(MagePrimaryDamageSpell(&a))=="frostbolt"&&!missiles.isUseful());
+#else
+ assert(std::string(MagePrimaryDamageSpell(&a))=="arcane missiles"&&missiles.isUseful());
+#endif
+ a.strategies={"frost raid"};assert(std::string(MagePrimaryDamageSpell(&a))=="frostbolt");
+ std::cout<<"PASS: required hunter stacks use melee, ordinary ranged restoration survives, native Frost builds and selected Frost strategy sustain Frostbolt\n";
+}
+'''
+rotation_methods='\n'.join((block(source('strategy/hunter/HunterTriggers.h'),'class SwitchToMeleeTrigger')+';',
+    block(source('strategy/hunter/HunterTriggers.h'),'class SwitchToRangedTrigger')+';',
+    block(source('strategy/mage/MageCombatPolicy.h'),'inline bool ClassicMageFrostPrimary('),
+    block(source('strategy/mage/MageCombatPolicy.h'),'inline bool MageFrostRotation('),
+    block(source('strategy/mage/MageCombatPolicy.h'),'inline const char* MagePrimaryDamageSpell('),
+    block(source('strategy/mage/MageActions.h'),'class CastArcaneMissilesAction')+';'))
+for era in ('ZERO','ONE','TWO'):
+    run(common+rotation.replace('__METHODS__',rotation_methods),'MC stack and selected Frost rotation',('MANGOSBOT_'+era,))
+
 ammo = block(source('strategy/hunter/HunterActions.cpp'), 'bool HunterEquipAmmoAction::Execute')
 run(common + r'''
 enum {ITEM_SUBCLASS_WEAPON_GUN=1,ITEM_SUBCLASS_WEAPON_BOW,ITEM_SUBCLASS_WEAPON_CROSSBOW,ITEM_SUBCLASS_BULLET,ITEM_SUBCLASS_ARROW,ITEM_CLASS_PROJECTILE,PLAYER_AMMO_ID,EQUIP_ERR_OK=0};

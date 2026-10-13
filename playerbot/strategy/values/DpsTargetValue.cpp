@@ -5,6 +5,7 @@
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/MeleeCombatPolicy.h"
 #include "playerbot/strategy/actions/DungeonActions.h"
+#include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 
 using namespace ai;
 
@@ -45,6 +46,11 @@ ObjectGuid DpsTargetValue::Calculate()
     {
         DungeonAddTargetAction action(ai);
         if (Unit* target = action.GetTarget()) return target->GetObjectGuid();
+    }
+    if (bot->IsInWorld() && bot->GetMapId()==409 && !ai->IsTank(bot) && !ai->IsHeal(bot))
+    {
+        MoltenCorePriorityTargetAction priority(ai);
+        if (Unit* target=priority.GetTarget()) return target->GetObjectGuid();
     }
     Unit* rti = ai->GetUnit(RtiTargetValue::Calculate());
     if (rti && PossibleAttackTargetsValue::IsPossibleTarget(rti, bot, sPlayerbotAIConfig.sightDistance, true) &&
@@ -91,6 +97,11 @@ protected:
 
 ObjectGuid DpsAoeTargetValue::Calculate()
 {
+    if (bot->IsInWorld() && bot->GetMapId()==409 && !ai->IsTank(bot) && !ai->IsHeal(bot))
+    {
+        MoltenCorePriorityTargetAction priority(ai);
+        if (Unit* target=priority.GetTarget()) return target->GetObjectGuid();
+    }
     Unit* rti = ai->GetUnit(RtiTargetValue::Calculate());
     if (rti && PossibleAttackTargetsValue::IsPossibleTarget(rti, bot, sPlayerbotAIConfig.sightDistance, true) &&
         !MeleeCcCheck(ai).Protected(rti)) return rti->GetObjectGuid();

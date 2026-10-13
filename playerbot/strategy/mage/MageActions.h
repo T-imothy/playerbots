@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/strategy/values/EncounterPositionValue.h"
 #include "playerbot/strategy/values/AoeValues.h"
+#include "MageCombatPolicy.h"
 
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/actions/GenericActions.h"
@@ -54,6 +55,15 @@ namespace ai
     {
     public:
         CastArcaneMissilesAction(PlayerbotAI* ai) : CastSpellAction(ai, "arcane missiles") {}
+        bool isUseful() override
+        {
+#ifdef MANGOSBOT_ZERO
+            Unit* target=GetTarget();
+            if (MageFrostRotation(ai) && target &&
+                !target->IsImmuneToDamage(SPELL_SCHOOL_MASK_FROST)) return false;
+#endif
+            return CastSpellAction::isUseful();
+        }
     };
 
     class CastPyroblastAction : public CastSpellAction
