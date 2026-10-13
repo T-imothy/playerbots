@@ -18,6 +18,33 @@ using namespace ai;
 
 namespace
 {
+    bool PlanHunterStack(PlayerbotAI* ai, Unit* enemy, Player* anchor, EncounterPosition& plan)
+    {
+        Player* bot=ai->GetBot();
+        float maximum=0,minimum=0;
+        if (!ai->GetSpellRange("auto shot",&maximum,&minimum)) return false;
+        if (minimum<=0) return ValidateEncounterDestination(ai,plan);
+        const float reach=bot->GetCombatReach()+enemy->GetCombatReach();
+        // GetSpellRange already includes the caster's native melee allowance.
+        const float distance=minimum+std::max(0.0f,enemy->GetCombatReach()-bot->GetCombatReach())+1.0f;
+        if (distance>maximum+reach-1) return false;
+        const float radial=std::hypot(bot->GetPositionX()-enemy->GetPositionX(),bot->GetPositionY()-enemy->GetPositionY());
+        // Keep the raid clustered, while preserving native hunter minimum range.
+        if (radial>=distance-0.5f && radial<=maximum+reach-1 && bot->GetDistance(anchor)<=distance+3)
+        {
+            plan.destination={bot->GetPositionX(),bot->GetPositionY(),bot->GetPositionZ()};
+            if (ValidateEncounterDestination(ai,plan)) return true;
+        }
+        const float angle=enemy->GetDistance(anchor)>1 ? enemy->GetAngle(anchor) : enemy->GetOrientation()+float(M_PI);
+        for (float offset : {0.0f,0.35f,-0.35f,0.7f,-0.7f})
+        {
+            plan.destination={enemy->GetPositionX()+std::cos(angle+offset)*distance,
+                enemy->GetPositionY()+std::sin(angle+offset)*distance,enemy->GetPositionZ()};
+            if (ValidateEncounterDestination(ai,plan)) return true;
+        }
+        return false; // Generic native range/LOS recovery remains available.
+    }
+
     void PreserveMoltenCoreTank(PlayerbotAI* ai, Unit* enemy, std::vector<Player*>& tanks)
     {
         if (tanks.empty()) return;
@@ -229,9 +256,15 @@ bool ai::PlanMoltenCorePack(PlayerbotAI* ai, EncounterPosition& plan)
     else if (pack.front()->GetEntry()==11671)
     {
         // Five-pack hounds have Serrated Bite, not the patrol's stomp/breath.
-        // The entire group stacks at the holding tank so melee AoE and equal
-        // health targeting work on the same controlled cluster.
+        // The group clusters at the holding tank for melee AoE and equal
+        // health targeting; hunters retain their native minimum shooting range.
         plan.destination={anchor->GetPositionX(),anchor->GetPositionY(),anchor->GetPositionZ()};
+        if (bot->getClass()==CLASS_HUNTER)
+        {
+            Unit* current=ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
+            Unit* enemy=std::find(pack.begin(),pack.end(),current)!=pack.end() ? current : pack.front();
+            if (!PlanHunterStack(ai,enemy,anchor,plan)) {plan.active=false;return false;}
+        }
     }
     else if (ai->IsRanged(bot) || ai->IsHeal(bot))
     {
@@ -542,6 +575,8 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
         plan.destination = {victim->GetPositionX(), victim->GetPositionY(), victim->GetPositionZ()};
         if (bot->GetDistance(victim) <= 3)
             plan.destination = {bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+        if (bot->getClass()==CLASS_HUNTER &&
+            !PlanHunterStack(ai,selected,static_cast<Player*>(victim),plan)) {plan.active=false;return false;}
     }
     else
     {
