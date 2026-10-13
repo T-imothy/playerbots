@@ -15,6 +15,9 @@ rest_step=block(block(ai,'void PlayerbotAI::DoNextAction('),'if (ai::RaidRestInP
 methods+='\nvoid PlayerbotAI::RestSchedulerStep(){'+rest_step+'++ordinaryActions;}\n'
 code=r'''
 #include <cassert>
+#include <any>
+#include <map>
+#include <list>
 #include <cmath>
 #include <ctime>
 #include <string>
@@ -26,7 +29,7 @@ struct Group{bool raid=true;bool IsRaidGroup(){return raid;}};
 struct Spline{bool done=true;bool Finalized(){return done;}};
 constexpr unsigned UNIT_STAND_STATE_SIT=1,POWER_MANA=0;
 struct Config{float sightDistance=100;}sPlayerbotAIConfig;
-struct Unit{virtual ~Unit()=default;bool alive=true,world=true,moving=false;bool IsMoving(){return moving;}unsigned map=409;bool IsAlive(){return alive;}};
+struct Unit{bool IsInWorld(){return world;}virtual ~Unit()=default;bool alive=true,world=true,moving=false;bool IsMoving(){return moving;}unsigned map=409;bool IsAlive(){return alive;}};
 struct Player:Unit{Group group;bool grouped=true,transfer=false,charm=false,combat=false,casting=false,taxi=false;unsigned stand=0,mana=20,health=80;float x=20;Spline spline;Spline*movespline=&spline;
  bool IsSitState(){return stand==UNIT_STAND_STATE_SIT;}unsigned GetPower(unsigned){return mana;}unsigned GetMaxPower(unsigned){return 100;}unsigned GetHealth(){return health;}unsigned GetMaxHealth(){return 100;}bool IsWithinDistInMap(Unit*,float r){return x<=r;}
  bool IsInWorld(){return world;}bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}bool IsInCombat(){return combat;}Group*GetGroup(){return grouped?&group:nullptr;}
@@ -35,9 +38,9 @@ struct Player:Unit{Group group;bool grouped=true,transfer=false,charm=false,comb
 struct Formation{WorldLocation station;bool null=false;WorldLocation GetLocation(){return station;}static bool IsNullLocation(const WorldLocation&s){return s.mapid==0;}};
 struct EncounterPosition{};
 template<class T>struct Cached{T value{};unsigned resets=0;T Get(){return value;}void Set(T v){value=v;}void Reset(){++resets;}};
-struct Context{template<class T>Cached<T>*GetValue(const char*){static Cached<T>c;return &c;}};
+struct Context{std::map<std::string,std::any>cells;template<class T,class Q=int>Cached<T>*GetValue(const char*n,Q={}){auto[it,b]=cells.emplace(n,Cached<T>{});return std::any_cast<Cached<T>>(&it->second);}};
 struct ReactionEngine{unsigned wakes=0;void NotifyPartyCombat(){++wakes;}};
-struct PlayerbotAI{Player*bot;Unit target;Formation formation;Context context;Context*aiObjectContext=&context;ReactionEngine reaction;ReactionEngine*reactionEngine=&reaction;
+struct PlayerbotAI{ObjectGuid regroupDeadTarget=0;bool HasPendingCombatEngagement(){return party;}Player*bot;Unit target;Formation formation;Context context;Context*aiObjectContext=&context;ReactionEngine reaction;ReactionEngine*reactionEngine=&reaction;
  bool drink=false,food=false;bool HasAura(const char*n,Player*){return std::string(n)=="drink"?drink:food;}
  bool human=false,owned=true,mobile=true,jumping=false,follow=true,stay=false,guard=false,party=false,isWaiting=true;BotState state=BotState::BOT_STATE_NON_COMBAT;unsigned aiInternalUpdateDelay=15000,stops=0;
  PlayerbotAI(Player*b):bot(b){context.GetValue<ObjectGuid>("follow target")->value=1;context.GetValue<Formation*>("formation")->value=&formation;}
@@ -46,7 +49,7 @@ struct PlayerbotAI{Player*bot;Unit target;Formation formation;Context context;Co
  Context*GetAiObjectContext(){return &context;}Unit*GetUnit(unsigned id){return id?&target:nullptr;}bool IsSafe(Unit*u){return u&&u->world&&bot->IsInMap(u);}
  bool HasStrategy(const char*n,BotState s){return std::string(n)=="follow"?follow&&s==BotState::BOT_STATE_NON_COMBAT:std::string(n)=="stay"?stay:std::string(n)=="guard"?guard:false;}
  void PrepareForRaidRegroup();void OnCombatEnded();};
-namespace ai{bool RaidRestInProgress(PlayerbotAI*);bool RaidRegroupNeeded(PlayerbotAI*);Player*GetPartyCombatAnchor(PlayerbotAI*a){return a->party?a->bot:nullptr;}}
+namespace ai{struct WaitForAttackStrategy{static WaitForAttackStrategy*Get(PlayerbotAI*){return nullptr;}void ClearExplicitAttackOrder(){}};struct PullStrategy{static PullStrategy*Get(PlayerbotAI*){return nullptr;}void OnPullEnded(){}};bool RaidRestInProgress(PlayerbotAI*);bool RaidRegroupNeeded(PlayerbotAI*);Player*GetPartyCombatAnchor(PlayerbotAI*a){return a->party?a->bot:nullptr;}}
 __METHODS__
 int main(){Player bot;PlayerbotAI ai(&bot);
  assert(ai::RaidRegroupNeeded(&ai));ai.PrepareForRaidRegroup();assert(!ai.isWaiting&&ai.aiInternalUpdateDelay==0); // stationary master, stopped old generator
@@ -68,7 +71,7 @@ int main(){Player bot;PlayerbotAI ai(&bot);
  bot.casting=false;ai.state=BotState::BOT_STATE_COMBAT;ai.party=true;ai.PrepareForRaidRegroup();assert(ai.state==BotState::BOT_STATE_COMBAT);
  ai.party=false;ai.PrepareForRaidRegroup();assert(ai.state==BotState::BOT_STATE_NON_COMBAT&&ai.reaction.wakes==1&&ai.aiInternalUpdateDelay==0);
  for(unsigned fault=0;fault<11;++fault){bot.world=bot.alive=bot.grouped=bot.group.raid=true;bot.transfer=bot.charm=bot.combat=bot.casting=false;ai.human=ai.stay=ai.guard=ai.jumping=false;ai.owned=ai.mobile=ai.follow=true;
-  if(fault==0)bot.world=false;if(fault==1)bot.alive=false;if(fault==2)bot.transfer=true;if(fault==3)bot.charm=true;if(fault==4)bot.combat=true;if(fault==5)bot.group.raid=false;if(fault==6)ai.human=true;if(fault==7)ai.owned=false;if(fault==8)ai.stay=true;if(fault==9)ai.guard=true;if(fault==10)ai.mobile=false;
+  if(fault==0)bot.world=false;if(fault==1)bot.alive=false;if(fault==2)bot.transfer=true;if(fault==3)bot.charm=true;if(fault==4)bot.combat=true;if(fault==5)bot.grouped=false;if(fault==6)ai.human=true;if(fault==7)ai.owned=false;if(fault==8)ai.stay=true;if(fault==9)ai.guard=true;if(fault==10)ai.mobile=false;
   assert(!ai::RaidRegroupNeeded(&ai));}
  std::cout<<"PASS stationary raid regroup, arrived spline, no mana dependency, native resurrection/heal preservation, party combat and owner/control guards\n";
 }

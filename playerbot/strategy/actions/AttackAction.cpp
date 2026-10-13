@@ -10,6 +10,7 @@
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/generic/CombatStrategy.h"
+#include "playerbot/strategy/generic/PullStrategy.h"
 
 using namespace ai;
 
@@ -35,6 +36,8 @@ bool AttackMyTargetAction::Execute(Event& event)
         if (guid)
         {
             Unit* target = ai->GetUnit(guid);
+            if (event.getOwner() && IsTargetValid(requester, target))
+                if (PullStrategy* pull = PullStrategy::Get(ai)) pull->OnPullEnded();
             if (event.getOwner() && IsTargetValid(requester,target))
                 if (WaitForAttackStrategy* strategy=WaitForAttackStrategy::Get(ai))
                     strategy->AllowExplicitAttack(ai,requester,target);
@@ -77,6 +80,8 @@ bool AttackRTITargetAction::Execute(Event& event)
 
     if (rtiTarget && rtiTarget->IsInWorld() && rtiTarget->GetMapId() == bot->GetMapId())
     {
+        if (event.getOwner() && IsTargetValid(requester, rtiTarget))
+            if (PullStrategy* pull = PullStrategy::Get(ai)) pull->OnPullEnded();
         if (event.getOwner() && IsTargetValid(requester,rtiTarget))
             if (WaitForAttackStrategy* strategy=WaitForAttackStrategy::Get(ai))
                 strategy->AllowExplicitAttack(ai,requester,rtiTarget);

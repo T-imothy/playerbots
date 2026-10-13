@@ -261,6 +261,8 @@ float PullMultiplier::GetValue(Action* action)
     if (strategy && strategy->HasTarget())
     {
         if ((action->getName() == "pull my target") ||
+            (action->getName() == "attack my target") ||
+            (action->getName() == "attack rti target") ||
             (action->getName() == "pull rti target") ||
             (action->getName() == "reach pull") ||
             (action->getName() == "pull start") ||

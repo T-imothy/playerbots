@@ -22,7 +22,7 @@ bool CombatEndTrigger::IsActive()
     if (ai->IsStateActive(BotState::BOT_STATE_COMBAT))
     {
         // Check if any member of the group (near this bot) is getting attacked
-        return !AI_VALUE(bool, "has attackers");
+        return !ai->HasPendingCombatEngagement() && !AI_VALUE(bool, "has attackers");
     }
 
     return false;

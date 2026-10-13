@@ -13,7 +13,7 @@ header=(r/'playerbot/PlayerbotAI.h').read_text();decl=header.index('void Prepare
 methods='\n'.join([block(ai,'void PlayerbotAI::PrepareCompletedMovement('),block(ai,'void PlayerbotAI::PrepareForPartyCombat('),block(ai,'void PlayerbotAI::OnCombatStarted('),
  block(reaction,'void ReactionEngine::NotifyHazard('),block(reaction,'void ReactionEngine::NotifyPartyCombat('),block(reaction,'void ReactionEngine::StopReaction('),
  block(reaction,'bool ReactionEngine::Update('),block(reaction,'bool ReactionEngine::CanUpdateAIReaction('),
- block(reaction,'bool Reaction::Update('),block(reaction,'void Reaction::SetAction('),
+ block(reaction,'bool Reaction::Update('),block(reaction,'void Reaction::SetAction('),block(reaction,'const Reaction* ReactionEngine::GetReaction('),
  block(reach,'virtual bool isUseful() override').replace('virtual bool isUseful() override','bool ReachTargetAction::isUseful()'),
  block(ranged,'void RangedCombatStrategy::InitCombatTriggers(')])
 code=r'''
@@ -43,7 +43,7 @@ struct Context{Cached<time_t>start;Cached<PositionEntry>pos;Cached<std::list<Obj
  if constexpr(std::is_same_v<T,time_t>)return &start;else if constexpr(std::is_same_v<T,PositionEntry>)return &pos;
  else if constexpr(std::is_same_v<T,std::list<ObjectGuid>>)return &attackers;else if constexpr(std::is_same_v<T,bool>)return &hasAttackers;else return &plan;}};
 struct ReactionEngine;struct Action;
-struct PlayerbotAI{Player*bot;ReactionEngine*reactionEngine=nullptr;Context context;Context*aiObjectContext=&context;
+struct PlayerbotAI{Player*bot;ObjectGuid regroupDeadTarget=0;ReactionEngine*reactionEngine=nullptr;Context context;Context*aiObjectContext=&context;
  const Action*last=nullptr;const Action*GetLastExecutedAction(BotState){return last;}void PrepareCompletedMovement();
  bool human=false,owned=true,anchor=true,jumping=false,isWaiting=true,followNC=false,followC=false,stay=false;
  BotState state=BotState::BOT_STATE_NON_COMBAT;unsigned aiInternalUpdateDelay=15000,resetCount=0,stops=0,transitions=0,castQueries=0;
@@ -62,12 +62,13 @@ struct{unsigned reactDelay=100;}sPlayerbotAIConfig;
 struct ReactionEngine{PlayerbotAI*ai;unsigned aiReactionUpdateDelay=5000,searches=0,starts=0;Reaction ongoingReaction,incomingReaction;
  bool IsReacting(){return ongoingReaction.IsValid();}bool HasIncomingReaction(){return incomingReaction.IsValid();}
  bool FindReaction(bool){++searches;return false;}bool StartReaction(){++starts;ongoingReaction=incomingReaction;incomingReaction.Reset();return true;}
- void NotifyHazard();void NotifyPartyCombat();void StopReaction();bool CanUpdateAIReaction()const;bool Update(unsigned,bool,bool,bool&);};
+ const Reaction*GetReaction()const;void NotifyHazard();void NotifyPartyCombat();void StopReaction();bool CanUpdateAIReaction()const;bool Update(unsigned,bool,bool,bool&);};
 struct ReachTargetAction{PlayerbotAI*ai;Player*bot;Unit*target;float range=30;std::string spellName;Unit*GetTarget(){return target;}bool isUseful();};
 constexpr float ACTION_MOVE=10;
 struct NextAction{std::string name;float priority;NextAction(const char*n,float p):name(n),priority(p){}static NextAction*array(int,NextAction*a,void*){return a;}};
 struct TriggerNode{std::string name;NextAction*action;TriggerNode(const char*n,NextAction*a):name(n),action(a){}~TriggerNode(){delete action;}};
 struct RangedCombatStrategy{void InitCombatTriggers(std::list<TriggerNode*>&);};
+namespace ai{using ::Reaction;}
 __METHODS__
 int main(){Player bot;PlayerbotAI ai{&bot};ReactionEngine engine{&ai};ai.reactionEngine=&engine;
  MovementAction oldFollow;engine.ongoingReaction.SetAction(&oldFollow);

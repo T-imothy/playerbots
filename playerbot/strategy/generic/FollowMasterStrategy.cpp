@@ -12,8 +12,7 @@ void FollowMasterStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigge
 
     triggers.push_back(new TriggerNode(
         "update follow",
-        NextAction::array(0, new NextAction("follow", ai->HasRealPlayerMaster() && ai->GetBot()->GetGroup() &&
-            ai->GetBot()->GetGroup()->IsRaidGroup() ? ACTION_HIGH : ACTION_IDLE), NULL)));
+        NextAction::array(0, new NextAction("follow", ai->HasRealPlayerMaster() && ai->GetBot()->GetGroup() ? ACTION_HIGH : ACTION_IDLE), NULL)));
 }
 
 void FollowMasterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)

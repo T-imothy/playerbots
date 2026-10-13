@@ -60,10 +60,12 @@ int main(){Player bot,owner,other;Group group,foreign;bot.guid=2;owner.guid=1;ot
  strategy={};ai.context.combat.value=0;strategy.AllowExplicitAttack(&ai,&owner,&target);
  ai.context.combat.value=102;now=102;assert(!WaitForAttackStrategy::ShouldWait(&ai));
  ai.context.combat.value=103;now=103;assert(WaitForAttackStrategy::ShouldWait(&ai));
- strategy={};ai.context.combat.value=0;strategy.AllowExplicitAttack(&ai,&owner,&target);ai.context.combat.value=107;now=107;assert(WaitForAttackStrategy::ShouldWait(&ai));
+ strategy={};ai.context.combat.value=0;strategy.AllowExplicitAttack(&ai,&owner,&target);ai.context.combat.value=107;now=107;assert(!WaitForAttackStrategy::ShouldWait(&ai)); // approach/hit can start later than three seconds
  strategy={};strategy.AllowExplicitAttack(&ai,&owner,&target);target.entry=11669;assert(WaitForAttackStrategy::ShouldWait(&ai));ai.tank=true;assert(!WaitForAttackStrategy::ShouldWait(&ai));ai.tank=false; // imp hold survives an explicit order
  target.entry=1;ai.owner=&other;other.group=&group;assert(WaitForAttackStrategy::ShouldWait(&ai));ai.owner=&owner;
- target.combat=false;assert(WaitForAttackStrategy::ShouldWait(&ai));target.combat=true;target.alive=false;assert(WaitForAttackStrategy::ShouldWait(&ai));target.alive=true;
+ target.combat=false;assert(!WaitForAttackStrategy::ShouldWait(&ai)); // an explicit Attack authorizes approach before native aggro
+ time_t savedNow=now;now=strategy.orderedAt+16;assert(!strategy.HasExplicitAttackOrder(&ai,ai.context.combat.value));now=savedNow;
+ target.combat=true;target.alive=false;assert(WaitForAttackStrategy::ShouldWait(&ai));target.alive=true;
  ai.enabled=false;assert(!WaitForAttackStrategy::ShouldWait(&ai));ai.enabled=true;ai.context.combat.value=0;assert(!WaitForAttackStrategy::ShouldWait(&ai));
  ai.context.combat.value=now=200;strategy={};bot.map.raid=true;target.entry=12101;target.victim=&owner;owner.roleTank=true;
  assert(!WaitForAttackStrategy::ShouldWait(&ai)); // natural Surger pull already held by a raid tank

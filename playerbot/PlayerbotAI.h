@@ -724,6 +724,7 @@ public:
     void PrepareForUrgentHazard();
 
     void OnCombatStarted();
+    bool HasPendingCombatEngagement();
     void OnCombatEnded();
     void OnDeath();
     void OnResurrected();
@@ -780,6 +781,7 @@ private:
     void PrepareForUrgentAttack();
     void PrepareForUrgentCombat();
     void PrepareForRaidRegroup();
+    ObjectGuid regroupDeadTarget;
     void PrepareForPartyCombat();
     void PrepareCompletedMovement();
     bool ProcessPendingTransition();

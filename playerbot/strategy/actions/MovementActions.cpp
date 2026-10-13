@@ -2484,6 +2484,7 @@ void MovementAction::UpdateMovementState()
 
 bool MovementAction::Follow(Unit* target, float distance, float angle)
 {
+    SetDuration(sPlayerbotAIConfig.reactDelay);
     if (RaidRestInProgress(ai)) return false;
     if (!ai->IsSafe(target))
         return MoveTo2(target);
@@ -2719,7 +2720,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
     {
         Unit* currentTarget = sServerFacade.GetChaseTarget(bot);
         if (currentTarget && currentTarget->GetObjectGuid() == target->GetObjectGuid() && sServerFacade.GetChaseAngle(bot) == angle && sServerFacade.GetChaseOffset(bot) == distance && !RaidRegroupNeeded(ai))
-            return false;
+            return true;
     }
 
     mm.MoveFollow(target, distance, angle, true, sPlayerbotAIConfig.boostFollow);

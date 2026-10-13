@@ -6,7 +6,7 @@ r=Path(__file__).resolve().parents[1]
 source=(r/'playerbot/PlayerbotAI.cpp').read_text()
 actions=(r/'playerbot/strategy/actions/MoltenCoreDungeonActions.cpp').read_text()
 wake=block(source,'void PlayerbotAI::PrepareForUrgentCombat(')
-publish=block(source,'if (packet.GetOpcode()==SMSG_ATTACKSTART')
+publish=block(source,'if (((packet.GetOpcode()==SMSG_ATTACKSTART')
 getplan=block(actions,'bool MoltenCorePositionAction::GetPlan(')
 execute=block(actions,'bool MoltenCorePositionAction::Execute(')
 assert 'plan.spell == 19364' in execute and 'plan.spell == 20602' in execute
@@ -15,6 +15,8 @@ assert block(source,'void PlayerbotAI::UpdateAI(').index('PrepareForUrgentCombat
 urgent=block((r/'playerbot/PlayerbotAI.h').read_text(),'bool HasUrgentCommand()').replace(' override','')
 code=r'''
 #include <cassert>
+#include <any>
+#include <list>
 #include <atomic>
 #include <map>
 #include <set>
@@ -23,7 +25,7 @@ code=r'''
 #include <iostream>
 using uint32=unsigned;
 struct ObjectGuid{unsigned id=0;ObjectGuid(unsigned i=0):id(i){}bool IsEmpty(){return !id;}void Clear(){id=0;}operator unsigned()const{return id;}};
-constexpr unsigned SMSG_ATTACKSTART=1,UNIT_STAND_STATE_STAND=0;
+constexpr unsigned SMSG_ATTACKSTART=1,SMSG_ATTACKSTOP=2,UNIT_STAND_STATE_STAND=0;
 struct Group{};struct Unit{virtual ~Unit()=default;unsigned entry=11669,map=409,instance=1;float x=0,y=0,o=0;float GetPositionX(){return x;}float GetPositionY(){return y;}float GetOrientation(){return o;}bool world=true,alive=true,combat=true,charm=false;Unit*victim=nullptr;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charm;}unsigned GetEntry(){return entry;}
  ObjectGuid GetObjectGuid(){return 3;}
@@ -37,7 +39,7 @@ struct Player:Unit{bool transfer=false,tank=false,sit=true;unsigned guid=2,inter
 namespace encounter{struct Circle{};}
 struct EncounterPosition{bool active=true;unsigned map=409,instance=1,spell=20602;ObjectGuid boss=3,source;struct Point{float x=-20,y=0,z=0;}destination;};
 template<class T>struct Cached{T value;unsigned resets=0;T Get(){return value;}void Reset(){++resets;}};
-struct Context{Cached<EncounterPosition>plan;template<class T>Cached<T>*GetValue(const char*){return &plan;}};
+struct Context{Cached<EncounterPosition>plan;std::map<std::string,std::any>cells;template<class T,class Q=int>Cached<T>*GetValue(const char*n,Q={}){if constexpr(std::is_same_v<T,EncounterPosition>)return &plan;else{auto[it,b]=cells.emplace(n,Cached<T>{});return std::any_cast<Cached<T>>(&it->second);}}};
 struct WorldPacket{unsigned opcode=1,bytes=16,index=0;unsigned ids[2]={3,2};unsigned GetOpcode()const{return opcode;}unsigned size()const{return bytes;}
  void rpos(unsigned n){index=n;}WorldPacket&operator>>(ObjectGuid&g){g=ids[index++];return *this;}};
 struct ReactionEngine{unsigned notifications=0;void NotifyPartyCombat(){++notifications;}};
@@ -86,7 +88,11 @@ int main(){Group group;Player bot,tank;bot.group=tank.group=&group;Unit imp;imp.
   if(fault==0)bot.world=false;if(fault==1)bot.alive=false;if(fault==2)bot.transfer=true;if(fault==3)bot.charm=true;if(fault==4)bot.tank=true;if(fault==5)ai.real=true;if(fault==6)imp.entry=11502;
   unsigned before=bot.interrupts;ai.urgentCombatPending=true;ai.PrepareForUrgentCombat();assert(bot.interrupts==before&&!ai.HasUrgentCommand());
  }
- bot.map=0;packet.bytes=16;ai.Publish(packet);assert(!ai.HasUrgentCommand());
+ bot.map=0;packet.bytes=16;ai.Publish(packet);assert(ai.HasUrgentCommand());
+ unsigned outsideInterrupts=bot.interrupts;ai.aiInternalUpdateDelay=9000;ai.PrepareForUrgentCombat();
+ assert(!ai.HasUrgentCommand()&&ai.aiInternalUpdateDelay==0&&bot.interrupts==outsideInterrupts);
+ packet.opcode=SMSG_ATTACKSTOP;packet.bytes=6;ai.Publish(packet);assert(ai.HasUrgentCommand());
+ ai.PrepareForUrgentCombat();assert(!ai.HasUrgentCommand()&&bot.interrupts==outsideInterrupts);
  std::cout<<"PASS native imp wake/cast interruption, owner-map guards, Core Hound plan admission and stale aggro rejection\n";
 }
 '''.replace('__PUBLISH__',publish).replace('__URGENT__',urgent).replace('__WAKE__',wake).replace('__GETPLAN__',getplan)

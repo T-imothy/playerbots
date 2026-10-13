@@ -5,6 +5,8 @@
 #include "playerbot/strategy/actions/MovementActions.h"
 #include "playerbot/strategy/actions/AttackAction.h"
 #include "playerbot/strategy/actions/FollowActions.h"
+#include "playerbot/strategy/generic/PullStrategy.h"
+#include "playerbot/strategy/generic/CombatStrategy.h"
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 #include "playerbot/strategy/actions/MoltenCoreLavaTrashActions.h"
 #include "Movement/MoveSpline.h"
@@ -1231,6 +1233,7 @@ void PlayerbotAI::OnCombatStarted()
 {
     if(!IsStateActive(BotState::BOT_STATE_COMBAT))
     {
+        regroupDeadTarget = ObjectGuid();
         // Reset the combat start timestamp, unless Reset() kept it because the bot never left combat
         if (!aiObjectContext->GetValue<time_t>("combat start time")->Get())
             aiObjectContext->GetValue<time_t>("combat start time")->Set(time(0));
@@ -1270,6 +1273,12 @@ void PlayerbotAI::OnCombatEnded()
 {
     if (!IsStateActive(BotState::BOT_STATE_NON_COMBAT))
     {
+        if (ai::WaitForAttackStrategy* wait = ai::WaitForAttackStrategy::Get(this)) wait->ClearExplicitAttackOrder();
+        if (ai::PullStrategy* pull = ai::PullStrategy::Get(this)) pull->OnPullEnded();
+        aiObjectContext->GetValue<ObjectGuid>("attack target")->Set(ObjectGuid());
+        Unit* target = GetUnit(aiObjectContext->GetValue<ObjectGuid>("current target")->Get());
+        if (!target || !target->IsAlive()) aiObjectContext->GetValue<ObjectGuid>("current target")->Set(ObjectGuid());
+        aiObjectContext->GetValue<ObjectGuid>("dps target")->Reset();
         // Reset the combat start timestamp
         aiObjectContext->GetValue<time_t>("combat start time")->Set(0);
 
@@ -1453,6 +1462,8 @@ void PlayerbotAI::PrepareCompletedMovement()
         bot->IsTaxiFlying() || !bot->movespline || !bot->movespline->Finalized() ||
         bot->IsNonMeleeSpellCasted(false, false, true)) return;
     const Action* action=GetLastExecutedAction(GetState());
+    if (reactionEngine)
+        if (const ai::Reaction* reaction = reactionEngine->GetReaction()) action = reaction->GetAction();
     if (!action || !dynamic_cast<const MovementAction*>(action) || dynamic_cast<const AttackAction*>(action)) return;
     // Native travel estimates are no longer a reason to wait after arrival.
     // Spell/item actions retain their own waits and native cooldown checks.
@@ -1486,8 +1497,19 @@ void PlayerbotAI::PrepareForUrgentCombat()
 {
     const bool notified = urgentCombatPending.exchange(false,std::memory_order_acq_rel);
     if (!bot || IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() ||
-        bot->IsBeingTeleported() || bot->HasCharmer() || bot->GetMapId()!=409 ||
+        bot->IsBeingTeleported() || bot->HasCharmer() ||
         !bot->GetGroup() || !HasRealPlayerMaster()) return;
+    if (notified)
+    {
+        aiObjectContext->GetValue<std::list<ObjectGuid>>("attackers")->Reset();
+        aiObjectContext->GetValue<std::list<ObjectGuid>>("attackers", 1)->Reset();
+        aiObjectContext->GetValue<bool>("has attackers")->Reset();
+        aiObjectContext->GetValue<ObjectGuid>("follow target")->Reset();
+        ResetAIInternalUpdateDelay();
+        isWaiting = false;
+        reactionEngine->NotifyPartyCombat();
+    }
+    if (bot->GetMapId()!=409) return;
     Unit* danger = IsTank(bot) ? MoltenCoreAssignedTankTarget(this) : MoltenCoreTrashAggroTarget(this);
     if (danger && (!MoltenCoreRecoveryTrash(danger->GetEntry()) || (IsTank(bot) && danger->GetVictim() == bot))) danger = nullptr;
     if (!danger) { urgentRecoveryTarget.Clear(); return; }
@@ -1498,18 +1520,47 @@ void PlayerbotAI::PrepareForUrgentCombat()
         urgentRecoveryTarget = danger->GetObjectGuid();
         bot->InterruptNonMeleeSpells(false);
         if (bot->IsSitState()) bot->SetStandState(UNIT_STAND_STATE_STAND);
-        reactionEngine->NotifyPartyCombat();
+        if (!notified) reactionEngine->NotifyPartyCombat();
         aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
     }
     ResetAIInternalUpdateDelay();
     isWaiting = false;
 }
 
+bool PlayerbotAI::HasPendingCombatEngagement()
+{
+    if (!HasRealPlayerMaster() || IsRealPlayer() || !bot->GetGroup() ||
+        !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer()) return false;
+    Unit* current = GetUnit(aiObjectContext->GetValue<ObjectGuid>("current target")->Get());
+    if (current && current->IsInWorld() && current->IsAlive() && bot->IsInMap(current) &&
+        !sServerFacade.IsFriendlyTo(bot, current) && current->IsInCombat()) return true;
+    if (ai::PullStrategy* pull = ai::PullStrategy::Get(this))
+    {
+        Unit* target = pull->GetTarget();
+        if (pull->HasPullStarted() && target && target->IsInWorld() && target->IsAlive() && bot->IsInMap(target) &&
+            time(nullptr) - pull->GetPullStartTime() < pull->GetMaxPullTime()) return true;
+    }
+    if (ai::WaitForAttackStrategy* wait = ai::WaitForAttackStrategy::Get(this))
+        return wait->HasExplicitAttackOrder(this, GetCombatStartTime());
+    return false;
+}
+
 void PlayerbotAI::PrepareForRaidRegroup()
 {
     if (!bot || IsRealPlayer() || !HasRealPlayerMaster() || !bot->IsInWorld() || !bot->IsAlive() ||
-        bot->IsBeingTeleported() || bot->HasCharmer() || !bot->GetGroup() || !bot->GetGroup()->IsRaidGroup()) return;
-    if (IsStateActive(BotState::BOT_STATE_COMBAT) && !bot->IsInCombat() && !ai::GetPartyCombatAnchor(this))
+        bot->IsBeingTeleported() || bot->HasCharmer() || !bot->GetGroup() ||
+        bot->IsNonMeleeSpellCasted(false, false, true)) return;
+    const ObjectGuid guid = aiObjectContext->GetValue<ObjectGuid>("current target")->Get();
+    Unit* target = GetUnit(guid);
+    if (guid && (!target || !target->IsAlive()) && guid != regroupDeadTarget)
+    {
+        regroupDeadTarget = guid;
+        aiObjectContext->GetValue<std::list<ObjectGuid>>("attackers")->Reset();
+        aiObjectContext->GetValue<std::list<ObjectGuid>>("attackers", 1)->Reset();
+        aiObjectContext->GetValue<bool>("has attackers")->Reset();
+    }
+    if (IsStateActive(BotState::BOT_STATE_COMBAT) && !HasPendingCombatEngagement() &&
+        !aiObjectContext->GetValue<bool>("has attackers")->Get())
         OnCombatEnded();
     if (!ai::RaidRegroupNeeded(this)) return;
     ResetAIInternalUpdateDelay();
@@ -2158,19 +2209,18 @@ void PlayerbotAI::HandleCommand(uint32 type, const std::string& text, Player& fr
         chatCommands.push(cmd);
         if (fromPlayer.isRealPlayer() &&
             (type == CHAT_MSG_WHISPER || type == CHAT_MSG_PARTY || type == CHAT_MSG_RAID) &&
-            (filtered == "attack" || filtered == "attack rti"))
+            (filtered == "attack" || filtered == "attack rti" || filtered == "pull" || filtered == "pull rti" ||
+             filtered == "follow" || filtered == "stay" || filtered == "co +pull"))
             urgentAttackPending.store(true, std::memory_order_release);
     }
 }
 
 void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
 {
-    if (packet.GetOpcode()==SMSG_ATTACKSTART && packet.size()>=16 && bot->GetMapId()==409)
+    if (((packet.GetOpcode()==SMSG_ATTACKSTART && packet.size()>=16) || packet.GetOpcode()==SMSG_ATTACKSTOP) &&
+        !IsRealPlayer() && HasRealPlayerMaster() && bot->GetGroup())
     {
-        WorldPacket copy(packet);copy.rpos(0);
-        ObjectGuid attacker,victim;copy>>attacker>>victim;
-        // All raid bots observing a victim change get a wake request. Tanks
-        // resolve their own pickup assignment later on their owning map.
+        // Resolve units and refresh combat caches later on the owning map.
         urgentCombatPending.store(true,std::memory_order_release);
     }
     //if (packet.empty())
@@ -7295,6 +7345,9 @@ bool PlayerbotAI::AllowActive(ActivityType activityType)
 
 bool PlayerbotAI::AllowActivity(ActivityType activityType, bool checkNow)
 {
+    // Controlled companions already have the always-active native priority.
+    // Do not reuse a cached inactive result from before they were recruited.
+    if (HasRealPlayerMaster()) return true;
     if (!allowActiveCheckTimer[activityType])
         allowActiveCheckTimer[activityType] = time(NULL);
 

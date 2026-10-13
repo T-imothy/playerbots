@@ -15,7 +15,7 @@ using namespace ai;
 bool ai::RaidRestInProgress(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
-    if (!ai->HasRealPlayerMaster() || ai->IsRealPlayer() || !bot->GetGroup() || !bot->GetGroup()->IsRaidGroup() ||
+    if (!ai->HasRealPlayerMaster() || ai->IsRealPlayer() || !bot->GetGroup() ||
         !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         bot->IsInCombat() || !bot->IsSitState())
         return false;
@@ -33,7 +33,7 @@ bool ai::RaidRestInProgress(PlayerbotAI* ai)
 bool ai::RaidRegroupNeeded(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
-    if (!ai->HasRealPlayerMaster() || ai->IsRealPlayer() || !bot->GetGroup() || !bot->GetGroup()->IsRaidGroup() ||
+    if (!ai->HasRealPlayerMaster() || ai->IsRealPlayer() || !bot->GetGroup() ||
         !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         bot->IsInCombat() || ai->IsStateActive(BotState::BOT_STATE_COMBAT) || !ai->CanMove() ||
         !ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||

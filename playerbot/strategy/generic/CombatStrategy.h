@@ -99,6 +99,7 @@ namespace ai
         static uint8 GetWaitTime(PlayerbotAI* ai);
         void AllowExplicitAttack(PlayerbotAI* ai, Player* requester, Unit* target);
         bool HasExplicitAttackOrder(PlayerbotAI* ai, time_t combatStart);
+        void ClearExplicitAttackOrder() { orderedOwner = orderedTarget = ObjectGuid(); orderedAt = orderedCombatStart = 0; }
         static float GetSafeDistance() { return sPlayerbotAIConfig.fleeDistance; }
         static float GetSafeDistanceThreshold() { return 2.5f; }
         ReactStates GetPetReactState() const { return petReactState; }

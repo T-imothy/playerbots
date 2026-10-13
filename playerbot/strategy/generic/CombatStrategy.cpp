@@ -141,11 +141,12 @@ bool WaitForAttackStrategy::HasExplicitAttackOrder(PlayerbotAI* ai, time_t comba
     Unit* target=ai->GetUnit(orderedTarget);
     if (!orderedAt || !combatStart || !owner || owner->GetObjectGuid()!=orderedOwner ||
         !bot->GetGroup() || owner->GetGroup()!=bot->GetGroup() || !bot->IsInMap(owner) ||
-        !target || !target->IsInWorld() || !target->IsAlive() || !target->IsInCombat() ||
+        !target || !target->IsInWorld() || !target->IsAlive() ||
         !bot->IsInMap(target) || sServerFacade.IsFriendlyTo(bot,target) || (target->GetEntry()==11669 && !ai->IsTank(bot))) return false;
+    if (!target->IsInCombat() && time(0) - orderedAt > 15) return false;
     // Bind an order issued just before the pull to that first combat epoch.
     // A later pull or a changed controller cannot reuse the order.
-    if (!orderedCombatStart && combatStart>=orderedAt && combatStart<=orderedAt+3)
+    if (!orderedCombatStart && combatStart>=orderedAt && combatStart<=orderedAt+15)
         orderedCombatStart=combatStart;
     return orderedCombatStart && combatStart==orderedCombatStart;
 }
