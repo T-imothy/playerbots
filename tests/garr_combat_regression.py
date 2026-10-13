@@ -28,6 +28,8 @@ bool CasterDamageSpell(const SpellEntry* s){return s&&s->damage;}
 Unit* GarrBanishTarget(PlayerbotAI*);Unit* GarrFocusTarget(PlayerbotAI*);Unit* GarrTankTarget(PlayerbotAI*);
 bool GarrTankHandoff(PlayerbotAI*,Unit*);bool PlanGarrPosition(PlayerbotAI*,EncounterPosition&);
 bool GarrSpellAllowed(PlayerbotAI*,const std::string&,Unit*,const SpellEntry*);
+bool GarrEncounterActive(PlayerbotAI*);
+bool LavaTrashSpellAllowed(PlayerbotAI*,const std::string&,Unit*,const SpellEntry*){return true;}
 }
 '''
 native=(r/'playerbot/strategy/actions/MoltenCoreGarrActions.cpp').read_text()
@@ -71,6 +73,7 @@ int main(){
  for(unsigned i=0;i<8;i++){fire[i].guid=201+i;fire[i].entry=12099;fire[i].victim=&killTank;units.push_back(&fire[i]);}
  for(auto* brain:{&tankAI,&killAI,&parkAI,&mageAI,&meleeAI})brain->context.possible.value={1000};
  for(auto* brain:lockAI)brain->context.possible.value={1000};
+ assert(GarrEncounterActive(&mageAI));
  for(unsigned i=0;i<4;i++){
   Unit* target=GarrBanishTarget(lockAI[i]);assert(target==&fire[7-i]);
   EncounterPosition station;assert(PlanGarrPosition(lockAI[i],station)&&station.destination.x==warlocks[i].x&&station.destination.y==warlocks[i].y);
@@ -99,6 +102,7 @@ int main(){
  for(unsigned i=0;i<4;i++)fire[i].alive=false;
  assert(GarrFocusTarget(&mageAI)==&garr);assert(!GarrBanishTarget(lockAI[0]));
  garr.alive=false;assert(!GarrFocusTarget(&mageAI));
+ assert(GarrEncounterActive(&mageAI)); // Remaining native adds keep Garr's CC ownership exclusive.
  assert(!GarrSpellAllowed(lockAI[0],"banish",&fire[7],&damage)); // no post-kill renewal
  // Only the selected lock releases. The other three continue native renewals.
  for(int next=7;next>=4;--next){
@@ -117,6 +121,7 @@ int main(){
   fire[next].alive=false;
  }
  assert(!GarrFocusTarget(&mageAI));
+ assert(!GarrEncounterActive(&mageAI)); // A retained corpse cannot block later trash control.
  Unit trash;trash.guid=5000;trash.entry=11665;units.push_back(&trash);
  assert(!GarrSpellAllowed(lockAI[0],"banish",&trash,&damage));
  trash.entry=11666;assert(!GarrSpellAllowed(lockAI[0],"banish on cc",&trash,&damage));

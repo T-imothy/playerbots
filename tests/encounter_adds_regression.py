@@ -82,6 +82,7 @@ namespace ai {
   for(unsigned entry:{11664u,11663u})for(auto g:a->possible){auto* u=a->GetUnit(g);if(u&&u->entry==entry)return u;}return nullptr;
  }
  Unit* GarrFocusTarget(PlayerbotAI*) { return nullptr; } // Dedicated Garr fixture exercises its native controller.
+ Unit* LavaTrashFocusTarget(PlayerbotAI*) { return nullptr; } // Dedicated lava fixture exercises its native controller.
  struct MoltenCorePriorityTargetAction {Player* bot;PlayerbotAI* ai;Unit* GetTarget();bool isUseful();};
 }
 using namespace ai;

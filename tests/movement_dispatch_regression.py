@@ -46,7 +46,9 @@ struct WorldPosition {unsigned map=1;float x=0,y=0,z=0;
  std::vector<G3D::Vector3> toPointsArray(const std::vector<WorldPosition>& p){std::vector<G3D::Vector3> out;for(auto& point:p)out.push_back(point.getVector3());return out;}};
 using HazardPosition=std::pair<WorldPosition,float>;
 struct TravelPath {std::vector<WorldPosition> path;std::vector<WorldPosition> getPointPath(){return path;}};
-struct PlayerbotAI {std::list<HazardPosition> hazards;};
+struct PlayerbotAI {std::list<HazardPosition> hazards;bool lava=false,routeSafe=true;};
+bool LavaTrashCombatActive(PlayerbotAI*a){return a->lava;}
+bool LavaTrashRouteSafe(PlayerbotAI*a,const std::vector<WorldPosition>&){return a->routeSafe;}
 struct MovementAction {PlayerbotAI* ai;Unit* bot;Unit* mover;bool detour=false;float waited=0;
  Unit* GetMover(Unit*){return mover;}void WaitForReach(float distance){waited=distance;}
  bool GeneratePathAvoidingHazards(std::vector<WorldPosition>& path){if(detour&&path.size()>2){path[1].y=3;return true;}return false;}
@@ -91,6 +93,10 @@ int main(){
  assert(IsHazardSafeSegment({1,1,0,0},{1,3,0,0},ai.hazards));
  assert(!IsHazardSafeSegment({1,1,0,0},{1,-3,0,0},ai.hazards)); // Escape must not cut through the center.
  assert(IsHazardSafeSegment({2,-10,0,0},{2,10,0,0},ai.hazards));
+ ai.hazards.clear();ai.lava=true;ai.routeSafe=false;const auto priorClears=bot.motion.clears;
+ assert(!action.DispatchMovement(route,true,false)&&bot.motion.clears==priorClears);
+ ai.routeSafe=true;assert(action.DispatchMovement(route,true,false)&&bot.motion.paths>1); // MC validates and dispatches the actual normal route without a fire hazard.
+ ai.lava=false;
  Unit vehicle;action.mover=&vehicle;ai.hazards.clear();
  assert(action.DispatchMovement(route,true,false));assert(vehicle.motion.points==1);
  action.mover=nullptr;assert(!action.DispatchMovement(route,true,false));

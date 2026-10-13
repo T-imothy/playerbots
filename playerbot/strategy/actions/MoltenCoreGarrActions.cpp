@@ -1,5 +1,6 @@
 #include "playerbot/playerbot.h"
 #include "MoltenCoreGarrActions.h"
+#include "MoltenCoreLavaTrashActions.h"
 #include "playerbot/strategy/values/GarrControlValue.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/CasterCombatPolicy.h"
@@ -125,6 +126,12 @@ namespace
     }
 }
 
+bool ai::GarrEncounterActive(PlayerbotAI* ai)
+{
+    const auto encounter = Encounter(ai);
+    return encounter.boss && (encounter.boss->IsAlive() || !encounter.adds.empty());
+}
+
 Unit* ai::GarrBanishTarget(PlayerbotAI* ai)
 {
     auto encounter = Encounter(ai);
@@ -238,7 +245,10 @@ bool ai::GarrSpellAllowed(PlayerbotAI* ai, const std::string& name, Unit* target
     if (ai->GetBot()->GetMapId() != 409) return true;
     auto encounter = Encounter(ai);
     if (name == "banish" || name == "banish on cc")
-        return encounter.boss && target && target->GetEntry() == 12099 && target == GarrBanishTarget(ai);
+        return encounter.boss && (encounter.boss->IsAlive() || !encounter.adds.empty()) ? target && target->GetEntry() == 12099 && target == GarrBanishTarget(ai) :
+            target && target->GetEntry() == 12076 && target == LavaTrashBanishTarget(ai);
+    if ((!encounter.boss || (!encounter.boss->IsAlive() && encounter.adds.empty())) &&
+        !LavaTrashSpellAllowed(ai, name, target, spell)) return false;
     if (!encounter.boss || encounter.adds.empty()) return true;
     bool damage = CasterDamageSpell(spell);
     if (spell) for (uint32 effect : spell->Effect)

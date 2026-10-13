@@ -61,6 +61,7 @@ for era in ('ZERO','ONE','TWO'):
   subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
   subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 core=root.parent/'mangos-wotlk-behavior'
+if not core.exists():core=root.parent/'wotlk'
 native=(core/'src/game/AI/ScriptDevAI/scripts/northrend/ulduar/ulduar/boss_hodir.cpp').read_text()
 assert 'target->IsMoving() || target->HasAura(SPELL_TOASTY_FIRE)' in native
 assert 'RemoveAuraHolderFromStack(SPELL_BITING_COLD_AURA)' in native

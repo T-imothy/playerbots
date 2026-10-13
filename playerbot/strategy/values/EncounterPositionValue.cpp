@@ -8,6 +8,7 @@
 #include "playerbot/ServerFacade.h"
 #include "Spells/SpellMgr.h"
 #include "playerbot/strategy/actions/MovementPathSafety.h"
+#include "playerbot/strategy/actions/MoltenCoreLavaTrashActions.h"
 
 using namespace ai;
 
@@ -68,6 +69,7 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan, 
     // native normal route; incomplete/shortcut paths cannot establish safety.
     const auto path = destination.getPathStepFrom(WorldPosition(bot), bot, true);
     if (path.size() < 2 || path.size() > 256 || !destination.isPathTo(path, 1.0f, 2.0f)) return false;
+    if (plan.map == 409 && !LavaTrashRouteSafe(ai, path)) return false;
     WorldPosition previous(bot);
     for (const WorldPosition& waypoint : path)
     {

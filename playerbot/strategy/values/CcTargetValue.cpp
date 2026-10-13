@@ -6,6 +6,7 @@
 #include "playerbot/strategy/Action.h"
 #include "playerbot/strategy/values/RtiTargetValue.h"
 #include "playerbot/strategy/actions/MoltenCoreGarrActions.h"
+#include "playerbot/strategy/actions/MoltenCoreLavaTrashActions.h"
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
@@ -20,6 +21,7 @@ namespace
         // MC banish is encounter-owned, including sequential post-Garr cleanup.
         // Never fall back to arbitrary trash CC or a second assignment scheme.
         result = GarrBanishTarget(ai);
+        if (!result) result = LavaTrashBanishTarget(ai);
         return true;
     }
 }

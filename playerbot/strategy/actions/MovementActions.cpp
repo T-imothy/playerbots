@@ -3,6 +3,7 @@
 #include "EncounterSpellPolicy.h"
 #include "MovementActions.h"
 #include "MoltenCoreDungeonActions.h"
+#include "MoltenCoreLavaTrashActions.h"
 #include "MovementPathSafety.h"
 #include "MotionGenerators/MotionMaster.h"
 #include "MotionGenerators/MovementGenerator.h"
@@ -34,7 +35,8 @@ namespace
     {
         Player* bot = ai->GetBot();
         Creature* enemy = dynamic_cast<Creature*>(target);
-        if (!enemy || !enemy->IsFleeing() || !bot->GetGroup() ||
+        const bool moltenCombat = LavaTrashCombatActive(ai);
+        if (!enemy || (!enemy->IsFleeing() && !moltenCombat) || !bot->GetGroup() ||
             !ai->HasRealPlayerMaster() || bot->InBattleGround() || bot->GetTransport())
             return false;
 
@@ -55,12 +57,15 @@ namespace
             return true;
 
         WorldPosition previous(bot);
+        std::vector<WorldPosition> route;
         for (const auto& point : path.getPath())
         {
             WorldPosition next(bot->GetMapId(), point.x, point.y, point.z);
+            route.push_back(next);
             if (!IsHazardSafeSegment(previous, next, packs)) return true;
             previous = next;
         }
+        if (moltenCombat && !LavaTrashRouteSafe(ai, route)) return true;
         return false;
     }
 }
@@ -1071,6 +1076,7 @@ bool MovementAction::BuildSafeHazardPath(std::vector<WorldPosition>& path, Unit*
     }
     if (resolved.size() < 2)
         return false;
+    if (mover == bot && !LavaTrashRouteSafe(ai, resolved)) return false;
     path.swap(resolved);
     return true;
 }
@@ -1099,13 +1105,15 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 #endif
 
     bool useHazardPath = generatePath && !bot->IsFreeFlying() &&
-        !AI_VALUE(std::list<HazardPosition>, "hazards").empty();
+        (!AI_VALUE(std::list<HazardPosition>, "hazards").empty() ||
+         LavaTrashCombatActive(ai));
     if (useHazardPath)
     {
         GeneratePathAvoidingHazards(path);
         if (!BuildSafeHazardPath(path, mover))
             return false;
     }
+    if (mover == bot && !LavaTrashRouteSafe(ai, path)) return false;
 
     // Keep the existing movement intact until the replacement has been checked.
     MotionMaster& mm = *mover->GetMotionMaster();

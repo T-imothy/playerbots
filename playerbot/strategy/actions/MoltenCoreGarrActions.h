@@ -2,6 +2,7 @@
 #include "playerbot/strategy/values/EncounterPositionValue.h"
 namespace ai
 {
+    bool GarrEncounterActive(PlayerbotAI* ai);
     Unit* GarrBanishTarget(PlayerbotAI* ai);
     Unit* GarrFocusTarget(PlayerbotAI* ai);
     Unit* GarrTankTarget(PlayerbotAI* ai);

@@ -51,6 +51,7 @@ void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>& out){
 std::vector<encounter::Circle> whirlwinds;
 bool AQWhirlwindThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>& out){out=whirlwinds;return !out.empty();}
 bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&,bool requireWalkingPath=true);
+bool LavaTrashRouteSafe(PlayerbotAI*,const std::vector<WorldPosition>&){return true;}
 __HELPERS__
 }
 using namespace ai;

@@ -3,6 +3,7 @@
 #include "playerbot/strategy/MoltenCoreTrashPolicy.h"
 #include "MoltenCoreDungeonActions.h"
 #include "MoltenCoreGarrActions.h"
+#include "MoltenCoreLavaTrashActions.h"
 #include "playerbot/strategy/values/GeddonControlValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
@@ -500,6 +501,8 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
     if (PlanGolemaggFormation(ai, plan)) return true;
     if (PlanMajordomoFormation(ai, plan)) return true;
     if (PlanMoltenCorePack(ai, plan)) return true;
+    if (PlanLavaTrashCarrier(ai, plan)) return true;
+    if (PlanLavaTrashBanish(ai, plan)) return true;
     Unit* selected = nullptr;
     for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
     {
@@ -558,6 +561,11 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
         }
     }
     Unit* victim = selected->GetVictim();
+    // A threat reset must not rotate everybody's rear station around a caster
+    // who is briefly being chased. Its carrier goes to a tank above; tanks
+    // reacquire independently. Other bots keep their usable native cast spot.
+    if ((selected->GetEntry() == 11666 || selected->GetEntry() == 11667 || selected->GetEntry() == 11661 || selected->GetEntry() == 11673) &&
+        (!victim || !victim->IsPlayer() || !ai->IsTank(static_cast<Player*>(victim)))) return false;
     plan.active = true; plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
     plan.boss = selected->GetObjectGuid();
     if (selected->GetEntry() == 12056) return PlanGeddonFormation(ai,selected,plan);
@@ -583,7 +591,7 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
         plan.spell = selected->GetEntry() == 11667 || selected->GetEntry() == 11666 || selected->GetEntry() == 11661 ? 19630 : 19272;
         float angle = selected->GetOrientation() + float(M_PI);
         float distance = std::max(2.0f, selected->GetCombatReach() + bot->GetCombatReach() - 1.0f);
-        if (victim == bot)
+        if (victim == bot && ai->IsTank(bot))
         {
             // The hound faces its victim. Move the tank to the opposite side
             // of the raid, rather than merely turning the player's model.
@@ -678,6 +686,7 @@ namespace
         {
             Unit* enemy = ai->GetUnit(guid);
             if (RaidEnemy(bot, enemy) && !MoltenCoreBoss(enemy->GetEntry()) && enemy->GetDistance(bot) <= 50 &&
+                !LavaTrashReservedTarget(ai, enemy) &&
                 !PossibleAttackTargetsValue::HasBreakableCC(enemy, bot) &&
                 !PossibleAttackTargetsValue::HasUnBreakableCC(enemy, bot) && !enemy->HasAura(19951)) enemies.push_back(enemy);
         }
@@ -879,6 +888,8 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
     // A group attack on the small hound pack starts its native balanced-kill
     // routine. Explicit commands on other mobs remain authoritative.
     Unit* commanded = ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"));
+    if (!bossEntry)
+        if (Unit* focus = LavaTrashFocusTarget(ai)) return focus;
     if (valid(commanded) && (bossEntry || commanded->GetEntry()!=11671)) return nullptr;
     if (Unit* garr = GarrFocusTarget(ai)) return garr;
     Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
@@ -995,6 +1006,11 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         bot->GetMapId() != 409) return false;
     plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("molten core position")->Get();
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
+    if (plan.spell == 18647)
+    {
+        Unit* assigned = LavaTrashBanishTarget(ai);
+        return assigned && assigned->GetObjectGuid() == plan.boss;
+    }
     if (ai->IsTank(bot))
         if (Unit* assigned=MoltenCoreAssignedTankTarget(ai))
             if (assigned->GetVictim()!=bot) return false; // Reacquisition outranks every cached gathering station.
@@ -1014,6 +1030,15 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         return MoltenCoreThreats(ai, current, threats);
     }
     Unit* boss = ai->GetUnit(plan.boss);
+    if (boss && plan.spell == 19771 && !plan.source.IsEmpty() && plan.source != bot->GetObjectGuid() &&
+        (boss->GetEntry() == 12076 || boss->GetEntry() == 11665 || boss->GetEntry() == 11666 || boss->GetEntry() == 11667 ||
+         boss->GetEntry() == 11673 || boss->GetEntry() == 12101 || boss->GetEntry() == 11669 || boss->GetEntry() == 11671))
+    {
+        // Recovery belongs to this aggro carrier, not to a remembered rear
+        // station. Release the hold immediately after native tank pickup.
+        if (boss->GetVictim() != bot) return PlanMoltenCoreTrash(ai, plan);
+        return PlanLavaTrashCarrier(ai, plan);
+    }
     if (boss && boss->IsInWorld() && bot->IsInMap(boss) && boss->IsAlive() && boss->IsInCombat() &&
         (boss->GetEntry()==11982 || boss->GetEntry()==11673) && boss->GetVictim()!=bot &&
         (plan.spell==19272 || plan.spell==19364))
@@ -1179,6 +1204,9 @@ bool MoltenCoreSupportAction::Select(std::string& spell, Unit*& target)
     }
     if (Unit* add = GarrBanishTarget(ai))
         if (ready("banish", add)) return true;
+    if (!boss)
+        if (Unit* add = LavaTrashBanishTarget(ai))
+            if (ready("banish", add)) return true;
     if (!boss) return false;
     if (boss->GetEntry() == 11502 && boss->GetVictim() == bot && ai->IsTank(bot) && bot->GetHealthPercent() < 50)
         for (const char* name : {"shield wall", "last stand", "frenzied regeneration", "barkskin",

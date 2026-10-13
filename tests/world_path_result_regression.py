@@ -8,6 +8,7 @@ source=(r/p).read_text()
 if '--before' in sys.argv:
  source=subprocess.check_output(['git','-c','safe.directory='+r.as_posix(),'-C',str(r),'show','ae802751:'+p],text=True)
 method=block(source,'std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& startPos, std::unique_ptr<PathFinder>&')
+shared=block((r/'playerbot/WorldPosition.h').read_text(),'static bool isSharedNavmeshMap(')
 code=r'''
 #include <cassert>
 #include <vector>
@@ -27,6 +28,7 @@ struct PathFinder {bool result=true;PathType type=PATHFIND_NORMAL;PointsArray po
  bool calculate(Point,Point,bool force){assert(!force);++calls;return result;}
  PointsArray getPath(){return points;}PathType getPathType(){return type;}};
 struct WorldPosition {unsigned map=1;float x=0,y=0,z=0;bool water=true,los=true;
+ __SHARED__
  WorldPosition()=default;WorldPosition(unsigned m,float a,float b,float c):map(m),x(a),y(b),z(c){}
  unsigned getMapId()const{return map;}Point getVector3()const{return{x,y,z};}
  float distance(const WorldPosition& p)const{return std::sqrt((x-p.x)*(x-p.x)+(y-p.y)*(y-p.y)+(z-p.z)*(z-p.z));}
@@ -62,7 +64,7 @@ int main(){
  assert(path.size()==3&&path.back().x==1010);
  std::cout<<"PASS: failed/empty/incomplete native path results, strict normal paths and transport coordinates\n";
 }
-'''.replace('__METHOD__',method)
+'''.replace('__METHOD__',method).replace('__SHARED__',shared)
 with tempfile.TemporaryDirectory(prefix='mantech-world-path-') as tmp:
  tmp=Path(tmp);(tmp/'test.cpp').write_text(code)
  subprocess.run(['cl','/nologo','/EHsc','/std:c++17','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
