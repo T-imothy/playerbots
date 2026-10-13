@@ -22,7 +22,7 @@ struct Player{Map map;Pet pet;Map*GetMap(){return &map;}Pet*GetPet(){return &pet
 struct PlayerbotAI{bool move=true,stay=false;Unit target;bool CanMove(){return move;}bool HasStrategy(const char*,int){return stay;}int GetState(){return 0;}Unit*GetUnit(unsigned){return &target;}};
 struct Event{};
 struct MovementAction{PlayerbotAI*ai;Player*bot;std::string name;unsigned flees=0;
- std::string getName()const{return name;}bool IsGenericRaidFleeBlocked()const;bool isPossible();bool isUseful();bool Flee(Unit*){++flees;return true;}};
+ std::string getName(){return name;}bool IsGenericRaidFleeBlocked();bool isPossible();bool isUseful();bool Flee(Unit*){++flees;return true;}};
 struct FleeAction:MovementAction{bool Execute(Event&);};struct FleeWithPetAction:MovementAction{bool Execute(Event&);};struct RunAwayAction:MovementAction{bool Execute(Event&);};
 #define AI_VALUE(type,name) 1U
 __METHODS__

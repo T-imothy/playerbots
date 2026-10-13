@@ -80,7 +80,7 @@ void MovementAction::CreateWp(Player* wpOwner, float x, float y, float z, float 
         wpCreature->SetObjectScale(0.5f);
 }
 
-bool MovementAction::IsGenericRaidFleeBlocked() const
+bool MovementAction::IsGenericRaidFleeBlocked()
 {
     const std::string& name=getName();
     return bot->GetMap() && bot->GetMap()->IsRaid() &&
