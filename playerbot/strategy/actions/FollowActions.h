@@ -5,6 +5,7 @@
 
 namespace ai
 {
+    bool RaidRegroupNeeded(PlayerbotAI* ai);
 	class FollowAction : public MovementAction {
 	public:
 		FollowAction(PlayerbotAI* ai, std::string name = "follow") : MovementAction(ai, name) {}

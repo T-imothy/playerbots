@@ -246,7 +246,7 @@ bool ai::GarrSpellAllowed(PlayerbotAI* ai, const std::string& name, Unit* target
     auto encounter = Encounter(ai);
     if (name == "banish" || name == "banish on cc")
         return encounter.boss && (encounter.boss->IsAlive() || !encounter.adds.empty()) ? target && target->GetEntry() == 12099 && target == GarrBanishTarget(ai) :
-            target && target->GetEntry() == 12076 && target == LavaTrashBanishTarget(ai);
+            target && (target->GetEntry() == 12076 || target->GetEntry() == 12100) && target == LavaTrashBanishTarget(ai);
     if ((!encounter.boss || (!encounter.boss->IsAlive() && encounter.adds.empty())) &&
         !LavaTrashSpellAllowed(ai, name, target, spell)) return false;
     if (!encounter.boss || encounter.adds.empty()) return true;

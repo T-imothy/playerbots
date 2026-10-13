@@ -81,6 +81,7 @@ namespace ai {
  // This fixture isolates the existing boss hazards; trash is checked separately.
  bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&) { return false; }Unit*MoltenCorePackTankTarget(PlayerbotAI*){return nullptr;}Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*){return nullptr;}
  Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&){return false;}
+ bool PlanMoltenCoreGiants(PlayerbotAI*,EncounterPosition&){return false;}bool MoltenCoreRecoveryTrash(unsigned){return true;}
  bool RagnarosSameCluster(PlayerbotAI*,Player*){return false;}
  bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&){return false;}
  struct Event{};
@@ -130,6 +131,8 @@ int main(){
  // Existing Inferno uses its native damage spell radius, including cast start.
  ai.units[1]=&boss;ai.attackers={1};boss.alive=boss.combat=bot.combat=true;boss.auras={19695};
  assert(get()&&encounter::Distance2d(resolved.destination,{0,0,0})>=12);
+ boss.victim=&bot;ai.tank=false;assert(get()); // a hunter/caster victim must still leave Inferno
+ ai.tank=true;assert(!get());ai.tank=false;boss.victim=nullptr; // only the actual tank anchors
  boss.auras.clear();SpellEntry info;Spell cast;cast.m_spellInfo=&info;boss.cast=&cast;
  assert(get());cast.state=SPELL_STATE_FINISHED;assert(!get());boss.cast=nullptr;
  cast.state=SPELL_STATE_CASTING;cast.m_spellInfo=nullptr;boss.cast=&cast;assert(!get());boss.cast=nullptr;

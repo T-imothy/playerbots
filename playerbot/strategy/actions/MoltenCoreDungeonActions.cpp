@@ -453,6 +453,19 @@ bool ai::PlanGeddonFormation(PlayerbotAI* ai, Unit* boss, EncounterPosition& pla
         const float angle = boss->GetAngle(victim) + float(M_PI);
         state.rangedPosition = {boss->GetPositionX()+std::cos(angle)*30,
             boss->GetPositionY()+std::sin(angle)*30,boss->GetPositionZ()};
+        // The chosen room pads are preferences. Native map/path validation
+        // remains authoritative, and remote pulls retain their own anchor.
+        if (std::hypot(boss->GetPositionX()-643.981873f,boss->GetPositionY()+761.169434f) < 70)
+        {
+            EncounterPosition station; station.active = true; station.map = bot->GetMapId(); station.instance = bot->GetInstanceId();
+            station.boss = boss->GetObjectGuid(); station.spell = 19771;
+            station.destination = {643.981873f,-761.169434f,-208.743454f};
+            if (ValidateEncounterDestination(ai,station))
+            {
+                state.tankPosition = station.destination;
+                state.rangedPosition = {685.775574f,-731.014709f,-209.287491f};
+            }
+        }
         value->Set(state);
     }
     if (bot->HasAura(20475)) return false; // Native Living Bomb escape always wins.
@@ -466,12 +479,7 @@ bool ai::PlanGeddonFormation(PlayerbotAI* ai, Unit* boss, EncounterPosition& pla
         plan.destination = state.rangedPosition;
         // A low-range build may need a nearer point. Native spellbook range,
         // combat reaches and friendly healing reach remain authoritative.
-        const char* spell = ai->IsHeal(bot) ?
-            (bot->getClass()==CLASS_PALADIN?"flash of light":bot->getClass()==CLASS_SHAMAN?"healing wave":
-             bot->getClass()==CLASS_DRUID?"healing touch":"flash heal") :
-            (bot->getClass()==CLASS_HUNTER?"arcane shot":bot->getClass()==CLASS_WARLOCK?"shadow bolt":
-             bot->getClass()==CLASS_PRIEST?"mind blast":bot->getClass()==CLASS_SHAMAN?"lightning bolt":
-             bot->getClass()==CLASS_DRUID?"wrath":"fireball");
+        const char* spell = MoltenCoreRangeSpell(ai,bot);
         float range = 0;
         Unit* target = ai->IsHeal(bot) ? victim : boss;
         if (ai->GetSpellRange(spell,&range) && range > 5)
@@ -503,6 +511,7 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
     if (PlanMoltenCorePack(ai, plan)) return true;
     if (PlanLavaTrashCarrier(ai, plan)) return true;
     if (PlanLavaTrashBanish(ai, plan)) return true;
+    if (PlanMoltenCoreGiants(ai, plan)) return true;
     Unit* selected = nullptr;
     for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
     {
@@ -526,7 +535,7 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
         if (!unit || !unit->IsInWorld() || !bot->IsInMap(unit) || !unit->IsAlive() ||
             !unit->IsInCombat() || unit->HasCharmer() || sServerFacade.IsFriendlyTo(bot, unit) ||
             (unit->GetEntry() != 12101 && unit->GetEntry() != 11673 && unit->GetEntry() != 11666 &&
-             unit->GetEntry() != 11667 && unit->GetEntry() != 11661 && unit->GetEntry() != 12056 && unit->GetEntry() != 11982)) continue;
+             unit->GetEntry() != 11667 && unit->GetEntry() != 12100 && unit->GetEntry() != 11661 && unit->GetEntry() != 12056 && unit->GetEntry() != 11982)) continue;
         Unit* victim = unit->GetVictim();
         if (!victim || !victim->IsPlayer() || !victim->IsAlive() ||
             static_cast<Player*>(victim)->GetGroup() != bot->GetGroup()) continue;
@@ -564,7 +573,7 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
     // A threat reset must not rotate everybody's rear station around a caster
     // who is briefly being chased. Its carrier goes to a tank above; tanks
     // reacquire independently. Other bots keep their usable native cast spot.
-    if ((selected->GetEntry() == 11666 || selected->GetEntry() == 11667 || selected->GetEntry() == 11661 || selected->GetEntry() == 11673) &&
+    if ((selected->GetEntry() == 11666 || selected->GetEntry() == 11667 || selected->GetEntry() == 12100 || selected->GetEntry() == 11661 || selected->GetEntry() == 11673) &&
         (!victim || !victim->IsPlayer() || !ai->IsTank(static_cast<Player*>(victim)))) return false;
     plan.active = true; plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
     plan.boss = selected->GetObjectGuid();
@@ -588,7 +597,7 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
     }
     else
     {
-        plan.spell = selected->GetEntry() == 11667 || selected->GetEntry() == 11666 || selected->GetEntry() == 11661 ? 19630 : 19272;
+        plan.spell = selected->GetEntry() == 11667 || selected->GetEntry() == 11666 || selected->GetEntry() == 12100 || selected->GetEntry() == 11661 ? 19630 : 19272;
         float angle = selected->GetOrientation() + float(M_PI);
         float distance = std::max(2.0f, selected->GetCombatReach() + bot->GetCombatReach() - 1.0f);
         if (victim == bot && ai->IsTank(bot))
@@ -676,30 +685,50 @@ namespace
     {
         Player* bot = ai->GetBot();
         std::vector<Player*> tanks;
-        std::vector<Unit*> enemies;
+        std::vector<Unit*> enemies = MoltenCoreGroupTrash(ai);
         for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
             if (RaidMember(bot, ref->getSource()) && ai->IsTank(ref->getSource())) tanks.push_back(ref->getSource());
         std::sort(tanks.begin(), tanks.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
-        auto own = std::find(tanks.begin(), tanks.end(), bot);
-        if (own == tanks.end()) return nullptr;
-        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
-        {
-            Unit* enemy = ai->GetUnit(guid);
-            if (RaidEnemy(bot, enemy) && !MoltenCoreBoss(enemy->GetEntry()) && enemy->GetDistance(bot) <= 50 &&
-                !LavaTrashReservedTarget(ai, enemy) &&
-                !PossibleAttackTargetsValue::HasBreakableCC(enemy, bot) &&
-                !PossibleAttackTargetsValue::HasUnBreakableCC(enemy, bot) && !enemy->HasAura(19951)) enemies.push_back(enemy);
-        }
-        std::sort(enemies.begin(), enemies.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+        if (std::find(tanks.begin(), tanks.end(), bot) == tanks.end()) return nullptr;
+        enemies.erase(std::remove_if(enemies.begin(), enemies.end(), [&](Unit* enemy) {
+            return LavaTrashReservedTarget(ai, enemy) || enemy->HasAura(19951) ||
+                PossibleAttackTargetsValue::HasBreakableCC(enemy, bot) ||
+                PossibleAttackTargetsValue::HasUnBreakableCC(enemy, bot);
+        }), enemies.end());
+        std::map<Player*, unsigned> heldCount;
+        std::vector<Unit*> loose;
         Unit* held = nullptr;
-        for (size_t i = std::distance(tanks.begin(), own); i < enemies.size(); i += tanks.size())
+        for (Unit* enemy : enemies)
         {
-            Unit* victim = enemies[i]->GetVictim();
-            // Raid marks select DPS targets, never ownership of all trash.
-            // Recover assigned unheld/pet-held mobs without stealing a tank's mob.
-            if (!victim || !victim->IsAlive() || !victim->IsPlayer() ||
-                std::find(tanks.begin(), tanks.end(), victim) == tanks.end()) return enemies[i];
-            if (victim == bot) held = enemies[i];
+            Unit* victim = enemy->GetVictim();
+            auto owner = std::find(tanks.begin(), tanks.end(), victim);
+            if (owner == tanks.end()) loose.push_back(enemy);
+            else
+            {
+                ++heldCount[*owner];
+                if (victim == bot && !held) held = enemy;
+            }
+        }
+        // Allocate actual loose mobs to available tanks, preferring spare
+        // tanks before those already holding enemies. A stopped/stunned owner
+        // cannot leave a GUID-modulo slot vacant for the other three tanks.
+        std::set<Player*> rescuing;
+        for (Unit* enemy : loose)
+        {
+            Player* best = nullptr;
+            for (Player* tank : tanks)
+            {
+                PlayerbotAI* controller = tank->GetPlayerbotAI();
+                if (!controller || controller->IsRealPlayer() || !tank->CanReactInCombat() ||
+                    tank->IsImmobilizedState() || tank->GetDistance(enemy) > 100 || rescuing.count(tank)) continue;
+                if (!best || heldCount[tank] < heldCount[best] ||
+                    (heldCount[tank] == heldCount[best] &&
+                     (tank->GetDistance(enemy) < best->GetDistance(enemy) ||
+                      (tank->GetDistance(enemy) == best->GetDistance(enemy) && tank->GetObjectGuid() < best->GetObjectGuid())))) best = tank;
+            }
+            if (!best) continue;
+            rescuing.insert(best);
+            if (best == bot) return enemy;
         }
         return held;
     }
@@ -1011,6 +1040,7 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         Unit* assigned = LavaTrashBanishTarget(ai);
         return assigned && assigned->GetObjectGuid() == plan.boss;
     }
+    if (plan.spell == 18945) return PlanMoltenCoreGiants(ai, plan);
     if (ai->IsTank(bot))
         if (Unit* assigned=MoltenCoreAssignedTankTarget(ai))
             if (assigned->GetVictim()!=bot) return false; // Reacquisition outranks every cached gathering station.
@@ -1031,8 +1061,7 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     }
     Unit* boss = ai->GetUnit(plan.boss);
     if (boss && plan.spell == 19771 && !plan.source.IsEmpty() && plan.source != bot->GetObjectGuid() &&
-        (boss->GetEntry() == 12076 || boss->GetEntry() == 11665 || boss->GetEntry() == 11666 || boss->GetEntry() == 11667 ||
-         boss->GetEntry() == 11673 || boss->GetEntry() == 12101 || boss->GetEntry() == 11669 || boss->GetEntry() == 11671))
+        !ai->IsTank(bot) && MoltenCoreRecoveryTrash(boss->GetEntry()))
     {
         // Recovery belongs to this aggro carrier, not to a remembered rear
         // station. Release the hold immediately after native tank pickup.
@@ -1098,7 +1127,7 @@ bool MoltenCorePositionAction::Execute(Event& event)
             if (jump.Execute(event)) return true;
         }
     }
-    else if (plan.spell == 19196 || plan.spell == 19272 || plan.spell == 19364 || plan.spell == 19630 ||
+    else if (plan.spell == 18945 || plan.spell == 19196 || plan.spell == 19272 || plan.spell == 19364 || plan.spell == 19630 ||
         plan.spell == 19771 || plan.spell == 20602)
     {
         if (MoltenCoreThreats(ai, current, threats) || !PlanMoltenCoreTrash(ai, current)) return false;
@@ -1116,18 +1145,72 @@ bool MoltenCorePositionAction::Execute(Event& event)
     return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
 }
 
+std::vector<Unit*> ai::MoltenCoreGroupTrash(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    std::vector<Unit*> enemies;
+    if (!bot->GetGroup() || !bot->IsInWorld() || bot->GetMapId() != 409) return enemies;
+    const auto add = [&](Unit* enemy) {
+        if (MoltenCoreRecoveryTrash(enemy ? enemy->GetEntry() : 0) && MoltenCoreGroupEnemy(ai, enemy) &&
+            std::find(enemies.begin(), enemies.end(), enemy) == enemies.end()) enemies.push_back(enemy);
+    };
+    // Share native attacker identities across the raid. Per-bot 50-yard
+    // snapshots produced different allocations and missed fleeing mobs.
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (!member || !member->IsInWorld() || !bot->IsInMap(member) || member->IsBeingTeleported() || member->HasCharmer()) continue;
+        for (Unit* enemy : member->getAttackers()) add(enemy);
+        if (PlayerbotAI* controller = member->GetPlayerbotAI())
+            add(ai->GetUnit(controller->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get()));
+    }
+    for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get()) add(ai->GetUnit(guid));
+    std::sort(enemies.begin(), enemies.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+    return enemies;
+}
+
+bool ai::PlanMoltenCoreGiants(PlayerbotAI* ai, EncounterPosition& plan)
+{
+    Player* bot = ai->GetBot();
+    if (!ai->IsTank(bot) || !bot->GetGroup() || !bot->IsInWorld() || bot->GetMapId() != 409) return false;
+    std::vector<Unit*> giants;
+    for (Unit* enemy : MoltenCoreGroupTrash(ai))
+        if ((enemy->GetEntry() == 11658 || enemy->GetEntry() == 11659) && enemy->GetVictim() && enemy->GetVictim()->IsPlayer() &&
+            RaidMember(bot, static_cast<Player*>(enemy->GetVictim())) && ai->IsTank(static_cast<Player*>(enemy->GetVictim()))) giants.push_back(enemy);
+    if (giants.size() < 2) return false;
+    Unit* assigned = MoltenCoreAssignedTankTarget(ai);
+    if (!assigned || assigned->GetVictim() != bot || assigned == giants.front() ||
+        std::find(giants.begin(), giants.end(), assigned) == giants.end() || assigned->GetDistance(giants.front()) <= 5) return false;
+    Unit* anchor = giants.front();
+    Unit* tank = anchor->GetVictim();
+    const float angle = anchor->GetAngle(tank);
+    const float distance = std::max(anchor->GetDistance(tank), assigned->GetCombatReach() + bot->GetCombatReach() + 1.0f);
+    plan.active = true; plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
+    plan.boss = assigned->GetObjectGuid(); plan.source = tank->GetObjectGuid(); plan.spell = 18945;
+    plan.destination = {anchor->GetPositionX() + std::cos(angle)*distance,
+        anchor->GetPositionY() + std::sin(angle)*distance, anchor->GetPositionZ()};
+    if (ValidateEncounterDestination(ai, plan)) return true;
+    plan.active = false; return false;
+}
+
 Unit* ai::MoltenCoreAssignedTankTarget(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
-        bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || !ai->IsTank(bot) || ai->IsRealPlayer()) return nullptr;
-    // Direct commands remain available for a human-led alternative tactic.
+        bot->GetMapId() != 409 || !bot->GetGroup() || !ai->IsTank(bot) || ai->IsRealPlayer()) return nullptr;
+    Unit* boss = RaidBoss(ai);
+    // A raid Attack order chooses the DPS focus, not ownership of every trash
+    // mob. Native pickup and an established held mob outrank that focus.
+    if (!boss)
+    {
+        if (Unit* assigned = MoltenCorePackTankTarget(ai)) return assigned;
+        return MoltenCoreTrashTankTarget(ai);
+    }
+    // Dedicated boss tactics retain explicit human orders.
     Unit* commanded=ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("attack target")->Get());
     if (RaidEnemy(bot,commanded) && commanded->GetEntry()!=11671 && commanded->GetEntry()!=11669) return nullptr;
     if (Unit* assigned = GarrTankTarget(ai)) return assigned;
     if (Unit* assigned = MoltenCorePackTankTarget(ai)) return assigned;
-    Unit* boss = RaidBoss(ai);
-    if (!boss) return MoltenCoreTrashTankTarget(ai);
     std::vector<Player*> tanks;
     for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
     {

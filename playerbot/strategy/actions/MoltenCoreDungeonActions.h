@@ -20,6 +20,8 @@ namespace ai
     };
 
     Unit* MoltenCoreAssignedTankTarget(PlayerbotAI* ai);
+    std::vector<Unit*> MoltenCoreGroupTrash(PlayerbotAI* ai);
+    bool PlanMoltenCoreGiants(PlayerbotAI* ai, EncounterPosition& plan);
     Unit* MoltenCorePackTankTarget(PlayerbotAI* ai);
     bool MoltenCorePackStackRequired(PlayerbotAI* ai);
     bool PlanGeddonFormation(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan);

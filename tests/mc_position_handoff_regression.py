@@ -15,6 +15,7 @@ code=r'''
 using namespace ai;using uint32=unsigned;using int32=int;
 struct Spline{bool done=true;encounter::Point end;bool Finalized(){return done;}auto FinalDestination(){return end;}};
 struct Player{float x=0,y=0,z=0;Spline spline;Spline*movespline=&spline;
+ bool HasAura(unsigned){return false;}
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}float GetDistance(float a,float b,float c){return std::hypot(x-a,y-b);}};
 struct SpellEntry{unsigned Id=1;bool channel=false;int duration=0;};
 struct Spell{SpellEntry*m_spellInfo;unsigned cast=0;unsigned GetCastTime(){return cast;}};

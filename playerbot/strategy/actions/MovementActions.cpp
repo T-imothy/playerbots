@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "FollowActions.h"
 #include "EncounterSpellPolicy.h"
 #include "MovementActions.h"
 #include "MoltenCoreDungeonActions.h"
@@ -2716,7 +2717,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
     if (bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == FOLLOW_MOTION_TYPE)
     {
         Unit* currentTarget = sServerFacade.GetChaseTarget(bot);
-        if (currentTarget && currentTarget->GetObjectGuid() == target->GetObjectGuid() && sServerFacade.GetChaseAngle(bot) == angle && sServerFacade.GetChaseOffset(bot) == distance)
+        if (currentTarget && currentTarget->GetObjectGuid() == target->GetObjectGuid() && sServerFacade.GetChaseAngle(bot) == angle && sServerFacade.GetChaseOffset(bot) == distance && !RaidRegroupNeeded(ai))
             return false;
     }
 

@@ -4,6 +4,9 @@
 namespace ai
 {
     bool LavaTrashCombatActive(PlayerbotAI* ai);
+    bool MoltenCoreGroupEnemy(PlayerbotAI* ai, Unit* target);
+    bool MoltenCoreRecoveryTrash(uint32 entry);
+    Unit* MoltenCoreTrashAggroTarget(PlayerbotAI* ai);
     Unit* LavaTrashBanishTarget(PlayerbotAI* ai);
     Unit* LavaTrashFocusTarget(PlayerbotAI* ai);
     bool LavaTrashReservedTarget(PlayerbotAI* ai, Unit* target);

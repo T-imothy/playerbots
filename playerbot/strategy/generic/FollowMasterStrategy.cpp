@@ -12,12 +12,16 @@ void FollowMasterStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigge
 
     triggers.push_back(new TriggerNode(
         "update follow",
-        NextAction::array(0, new NextAction("follow", ACTION_IDLE), NULL)));
+        NextAction::array(0, new NextAction("follow", ai->HasRealPlayerMaster() && ai->GetBot()->GetGroup() &&
+            ai->GetBot()->GetGroup()->IsRaidGroup() ? ACTION_HIGH : ACTION_IDLE), NULL)));
 }
 
 void FollowMasterStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-    InitNonCombatTriggers(triggers);
+    triggers.push_back(new TriggerNode("out of free move range",
+        NextAction::array(0, new NextAction("check mount state", ACTION_HIGH), new NextAction("follow", ACTION_HIGH), NULL)));
+    triggers.push_back(new TriggerNode("update follow",
+        NextAction::array(0, new NextAction("follow", ACTION_IDLE), NULL)));
 }
 
 void FollowMasterStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)

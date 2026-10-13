@@ -779,6 +779,7 @@ private:
     void PrepareForUrgentTransition();
     void PrepareForUrgentAttack();
     void PrepareForUrgentCombat();
+    void PrepareForRaidRegroup();
     void PrepareForPartyCombat();
     void PrepareCompletedMovement();
     bool ProcessPendingTransition();
@@ -812,6 +813,7 @@ protected:
     std::atomic<bool> urgentTransitionPending{false};
     std::atomic<bool> urgentAttackPending{false};
     std::atomic<bool> urgentCombatPending{false};
+    ObjectGuid urgentRecoveryTarget;
     ObjectGuid raidPetGuid;
     uint32 raidPetNumber = 0;
     std::set<uint32> raidPetSuppressedSpells;

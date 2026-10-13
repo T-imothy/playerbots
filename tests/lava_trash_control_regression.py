@@ -26,12 +26,15 @@ code=code.replace('if constexpr(std::is_same_v<T,ai::GeddonControl>)','if conste
 code=code.replace('bool IsRealPlayer(){return real;}','bool IsRealPlayer(){return real;}bool owned=true;bool HasRealPlayerMaster(){return owned;}')
 stubs='Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool LavaTrashReservedTarget(PlayerbotAI*,Unit*){return false;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&){return false;}bool PlanLavaTrashBanish(PlayerbotAI*,EncounterPosition&){return false;}'
 assert stubs in code;code=code.replace(stubs,'')
+from behavior_regression import block
+for signature in ('bool MoltenCoreGroupEnemy(', 'bool MoltenCoreRecoveryTrash('):code=code.replace(block(code,signature),'')
 code+='''
 struct WorldObject{};
 struct WorldPosition{unsigned map;float x,y,z;WorldPosition(unsigned m,float a,float b,float c):map(m),x(a),y(b),z(c){}WorldPosition(Unit*u):WorldPosition(u->map,u->x,u->y,u->z){}unsigned getMapId()const{return map;}float getX()const{return x;}float getY()const{return y;}float getZ()const{return z;}};
 using HazardPosition=std::pair<WorldPosition,float>;
 unsigned now=1000;struct WorldTimer{static unsigned getMSTime(){return now;}static unsigned getMSTimeDiff(unsigned a,unsigned b){return b-a;}};
 namespace ai{
+bool MoltenCoreGroupEnemy(PlayerbotAI*,Unit*);bool MoltenCoreRecoveryTrash(unsigned);Unit*MoltenCoreTrashAggroTarget(PlayerbotAI*);
 bool garrActive=false;bool GarrEncounterActive(PlayerbotAI*){return garrActive;}
 enum class CasterArea{None,Ground};CasterArea CasterSpellArea(const std::string&name){return name=="blizzard"?CasterArea::Ground:CasterArea::None;}
 bool CasterDamageSpell(const SpellEntry*spell){return spell&&spell->damage;}
@@ -65,7 +68,7 @@ int main(){
  Player tank,casters[4],dps;Group group;tank.guid=10;tank.tank=true;group.Add(&tank);PlayerbotAI tankAI(&tank);
  std::vector<PlayerbotAI*>locks;for(unsigned i=0;i<4;++i){casters[i].guid=20+i;casters[i].cls=CLASS_WARLOCK;casters[i].ranged=true;casters[i].x=-20;group.Add(&casters[i]);locks.push_back(new PlayerbotAI(&casters[i]));locks.back()->learned={"banish"};}
  dps.guid=30;dps.ranged=true;dps.x=-20;group.Add(&dps);PlayerbotAI damageAI(&dps);
- Unit elemental[4],danger[2],unpulled,otherRaid;for(unsigned i=0;i<4;++i){elemental[i].guid=100+i;elemental[i].entry=12076;elemental[i].x=5+i;}
+ Unit elemental[4],danger[2],unpulled,otherRaid;for(unsigned i=0;i<4;++i){elemental[i].guid=100+i;elemental[i].entry=i%2?12100:12076;elemental[i].x=5+i;}
  for(unsigned i=0;i<2;++i){danger[i].guid=200+i;danger[i].entry=i?11667:11666;danger[i].x=5;danger[i].victim=&tank;}
  for(unsigned i=0;i<2;++i)elemental[i].victim=&tank;for(unsigned i=2;i<4;++i)elemental[i].combat=false;
  unpulled.guid=300;unpulled.entry=12076;unpulled.combat=false;unpulled.x=35;
@@ -73,7 +76,9 @@ int main(){
  units={&tank,&dps,&unpulled,&otherRaid};for(auto&caster:casters)units.push_back(&caster);for(auto&target:elemental)units.push_back(&target);for(auto&target:danger)units.push_back(&target);
  assert(LavaTrashBanishTarget(locks[0])==&elemental[0]);assert(LavaTrashBanishTarget(locks[1])==&elemental[1]);assert(!LavaTrashBanishTarget(locks[2])&&!LavaTrashBanishTarget(locks[3]));
  garrActive=true;assert(!LavaTrashBanishTarget(locks[0])&&!LavaTrashFocusTarget(&damageAI));garrActive=false;
- assert(LavaTrashReservedTarget(&tankAI,&elemental[0])&&!LavaTrashReservedTarget(&tankAI,&unpulled));
+ assert(LavaTrashReservedTarget(&tankAI,&elemental[0])&&LavaTrashReservedTarget(&tankAI,&elemental[1])&&!LavaTrashReservedTarget(&tankAI,&unpulled));
+ damageAI.context.attack.value=elemental[1].guid;locks[1]->context.attack.value=elemental[1].guid;
+ assert(LavaTrashBanishTarget(locks[1])==&elemental[1]); // Attack on a Reaver does not cancel its reservation.
  EncounterPosition station;assert(PlanLavaTrashBanish(locks[0],station)&&station.destination.x==casters[0].x); // cast from native usable range; do not reposition first
  SpellEntry damage;damage.damage=true;assert(!LavaTrashSpellAllowed(&damageAI,"frostbolt",&elemental[0],&damage));assert(!LavaTrashSpellAllowed(&damageAI,"fear",&danger[0],&damage));assert(!LavaTrashSpellAllowed(&damageAI,"blizzard",&danger[0],&damage));
  assert(LavaTrashFocusTarget(&damageAI)==&danger[0]);assert(LavaTrashSpellAllowed(&damageAI,"frostbolt",&danger[0],&damage));assert(!LavaTrashSpellAllowed(&damageAI,"frostbolt",&danger[1],&damage));
@@ -86,7 +91,7 @@ int main(){
  elemental[0].alive=false;assert(!LavaTrashBanishTarget(locks[1]));elemental[1].auras.clear();elemental[1].holders.clear();assert(LavaTrashFocusTarget(&damageAI)==&elemental[1]);
  // A dead/removed controller and ordinary reset cannot lose the release record.
  tank.world=false;assert(!LavaTrashBanishTarget(locks[0])&&!LavaTrashBanishTarget(locks[1]));tank.world=true;
- elemental[1].victim=&dps;damageAI.context.possible.value={elemental[1].guid};assert(PlanLavaTrashCarrier(&damageAI,station)&&station.destination.x==tank.x&&station.source==tank.guid);
+ elemental[1].victim=&dps;dps.attackers={&elemental[1]};damageAI.context.possible.value={elemental[1].guid};assert(PlanLavaTrashCarrier(&damageAI,station)&&station.destination.x==tank.x&&station.source==tank.guid);
  tank.alive=false;assert(!PlanLavaTrashCarrier(&damageAI,station));tank.alive=true;
  std::vector<WorldPosition>route{WorldPosition(409,0,0,0),WorldPosition(409,50,0,0)};assert(!LavaTrashRouteSafe(&damageAI,route));unpulled.combat=true;otherRaid.combat=true;assert(LavaTrashRouteSafe(&damageAI,route));
  assert(locks[0]->context.lava.value.allocation.released.count(100)&&locks[0]->context.lava.value.allocation.released.count(101));

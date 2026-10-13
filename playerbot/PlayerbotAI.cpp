@@ -4,6 +4,9 @@
 #include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
 #include "playerbot/strategy/actions/MovementActions.h"
 #include "playerbot/strategy/actions/AttackAction.h"
+#include "playerbot/strategy/actions/FollowActions.h"
+#include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
+#include "playerbot/strategy/actions/MoltenCoreLavaTrashActions.h"
 #include "Movement/MoveSpline.h"
 #include "playerbot/PartyCombatSupport.h"
 #include "BotPartyCommands.h"
@@ -383,6 +386,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
     PrepareForUrgentAttack(); // Explicit authorized orders outrank food/drink duration.
     PrepareForUrgentCombat(); // A pack aggro carrier must not wait behind a channel.
     PrepareForPartyCombat(); // Natural human/party pulls also outrank idle/rest duration.
+    PrepareForRaidRegroup(); // Do not retain the last fight's action wait while the raid is idle.
     PrepareCompletedMovement();
 
     // Food/drink duration must not hide a nearby party pull from its healer.
@@ -1277,6 +1281,12 @@ void PlayerbotAI::OnCombatEnded()
         }
 
         ChangeEngine(BotState::BOT_STATE_NON_COMBAT);
+        ResetAIInternalUpdateDelay();
+        isWaiting = false;
+        reactionEngine->NotifyPartyCombat();
+        aiObjectContext->GetValue<ObjectGuid>("follow target")->Reset();
+        if (bot->GetMapId() == 409)
+            aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
     }
 }
 
@@ -1474,23 +1484,36 @@ void PlayerbotAI::PrepareForPartyCombat()
 
 void PlayerbotAI::PrepareForUrgentCombat()
 {
-    if (!urgentCombatPending.exchange(false,std::memory_order_acq_rel)) return;
+    const bool notified = urgentCombatPending.exchange(false,std::memory_order_acq_rel);
     if (!bot || IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() ||
         bot->IsBeingTeleported() || bot->HasCharmer() || bot->GetMapId()!=409 ||
-        !bot->GetGroup() || IsTank(bot)) return;
-    for (Unit* attacker : bot->getAttackers())
-        if (attacker && attacker->IsInWorld() && attacker->IsAlive() && (attacker->GetEntry()==11669 || (attacker->GetEntry()==11671 && !attacker->HasAura(19951))) &&
-            attacker->GetVictim()==bot && bot->IsInMap(attacker) && !attacker->HasCharmer())
-        {
-            // Resolve the live native attacker on the owning map. The packet
-            // receiver only published a wake flag, never moved or cast.
-            bot->InterruptNonMeleeSpells(false);
-            if (bot->IsSitState()) bot->SetStandState(UNIT_STAND_STATE_STAND);
-            aiInternalUpdateDelay=0;isWaiting=false;
-            reactionEngine->NotifyPartyCombat();
-            aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
-            return;
-        }
+        !bot->GetGroup() || !HasRealPlayerMaster()) return;
+    Unit* danger = IsTank(bot) ? MoltenCoreAssignedTankTarget(this) : MoltenCoreTrashAggroTarget(this);
+    if (danger && (!MoltenCoreRecoveryTrash(danger->GetEntry()) || (IsTank(bot) && danger->GetVictim() == bot))) danger = nullptr;
+    if (!danger) { urgentRecoveryTarget.Clear(); return; }
+    // This polling fallback also covers missed visibility packets. Only the
+    // owner-map update resolves native victims or changes cast/movement state.
+    if (notified || urgentRecoveryTarget != danger->GetObjectGuid())
+    {
+        urgentRecoveryTarget = danger->GetObjectGuid();
+        bot->InterruptNonMeleeSpells(false);
+        if (bot->IsSitState()) bot->SetStandState(UNIT_STAND_STATE_STAND);
+        reactionEngine->NotifyPartyCombat();
+        aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
+    }
+    ResetAIInternalUpdateDelay();
+    isWaiting = false;
+}
+
+void PlayerbotAI::PrepareForRaidRegroup()
+{
+    if (!bot || IsRealPlayer() || !HasRealPlayerMaster() || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || bot->HasCharmer() || !bot->GetGroup() || !bot->GetGroup()->IsRaidGroup()) return;
+    if (IsStateActive(BotState::BOT_STATE_COMBAT) && !bot->IsInCombat() && !ai::GetPartyCombatAnchor(this))
+        OnCombatEnded();
+    if (!ai::RaidRegroupNeeded(this)) return;
+    ResetAIInternalUpdateDelay();
+    isWaiting = false;
 }
 
 void PlayerbotAI::RunOnOwningThread(Player* target, std::function<void(Player*)> action)
@@ -2146,7 +2169,9 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
     {
         WorldPacket copy(packet);copy.rpos(0);
         ObjectGuid attacker,victim;copy>>attacker>>victim;
-        if (victim==bot->GetObjectGuid()) urgentCombatPending.store(true,std::memory_order_release);
+        // All raid bots observing a victim change get a wake request. Tanks
+        // resolve their own pickup assignment later on their owning map.
+        urgentCombatPending.store(true,std::memory_order_release);
     }
     //if (packet.empty())
     //    return;

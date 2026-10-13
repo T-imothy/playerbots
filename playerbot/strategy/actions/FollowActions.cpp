@@ -8,8 +8,27 @@
 #include "playerbot/strategy/values/FreeMoveValues.h"
 #include "playerbot/TravelMgr.h"
 #include "playerbot/LootObjectStack.h"
+#include "Movement/MoveSpline.h"
 
 using namespace ai;
+
+bool ai::RaidRegroupNeeded(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!ai->HasRealPlayerMaster() || ai->IsRealPlayer() || !bot->GetGroup() || !bot->GetGroup()->IsRaidGroup() ||
+        !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->IsInCombat() || ai->IsStateActive(BotState::BOT_STATE_COMBAT) || !ai->CanMove() ||
+        !ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
+        ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT) ||
+        bot->IsNonMeleeSpellCasted(false, false, true) || ai->IsJumping() || bot->IsTaxiFlying() ||
+        (bot->movespline && !bot->movespline->Finalized())) return false;
+    Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("follow target")->Get());
+    Formation* formation = ai->GetAiObjectContext()->GetValue<Formation*>("formation")->Get();
+    if (!target || !ai->IsSafe(target) || !formation || !target->IsAlive() || !bot->IsInMap(target)) return false;
+    const WorldLocation station = formation->GetLocation();
+    return !Formation::IsNullLocation(station) && station.mapid == bot->GetMapId() &&
+        bot->GetDistance(station.coord_x, station.coord_y, station.coord_z) > 3.0f;
+}
 
 bool FollowAction::Execute(Event& event)
 {
@@ -106,7 +125,7 @@ bool FollowAction::isUseful()
 
     if (followTarget && sServerFacade.GetChaseTarget(bot) && sServerFacade.GetChaseTarget(bot)->GetObjectGuid() == followTarget->GetObjectGuid() && formation->GetAngle() == sServerFacade.GetChaseAngle(bot) && formation->GetOffset() == sServerFacade.GetChaseOffset(bot))
     {
-        return false;
+        return RaidRegroupNeeded(ai);
     }
 
     return true;

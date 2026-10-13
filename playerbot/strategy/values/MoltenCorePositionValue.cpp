@@ -151,7 +151,7 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
         // radius-zero channel. Living Bomb's explosion comes from its DBC trigger.
         // Holding tank keeps the encounter anchored; healers sustain it while
         // everyone else avoids native Inferno damage. Bombs still override this.
-        if (boss->GetVictim() != bot && (boss->HasAura(19695) || Casting(boss, 19695))) add(boss, NativeEncounterSpellRadius(19698));
+        if (!(ai->IsTank(bot) && boss->GetVictim() == bot) && (boss->HasAura(19695) || Casting(boss, 19695))) add(boss, NativeEncounterSpellRadius(19698));
         if (boss->HasAura(20478) || Casting(boss, 20478)) add(boss, NativeEncounterSpellRadius(20478));
     }
     else if (boss && boss->GetEntry() == 12264 && (ai->IsRanged(bot) || ai->IsHeal(bot)) && boss->GetVictim() != bot)
@@ -233,6 +233,11 @@ EncounterPosition MoltenCorePositionValue::Calculate()
         return plan;
     }
     const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+    if (bot->HasAura(20475) && std::hypot(here.x-690.709167f,here.y+766.988770f) < 100)
+    {
+        plan.active = true; plan.destination = {690.709167f,-766.988770f,-209.290512f};
+        if (ValidateEncounterDestination(ai,plan) && encounter::OutsideCircles(plan.destination,threats)) return plan;
+    }
     const auto candidates = encounter::EscapeCircles(here, threats);
     unsigned checked = 0;
     for (const auto& point : candidates)

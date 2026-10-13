@@ -22,7 +22,7 @@ code=r'''
 #include <string>
 #include <iostream>
 using uint32=unsigned;
-struct ObjectGuid{unsigned id=0;ObjectGuid(unsigned i=0):id(i){}bool IsEmpty(){return !id;}operator unsigned()const{return id;}};
+struct ObjectGuid{unsigned id=0;ObjectGuid(unsigned i=0):id(i){}bool IsEmpty(){return !id;}void Clear(){id=0;}operator unsigned()const{return id;}};
 constexpr unsigned SMSG_ATTACKSTART=1,UNIT_STAND_STATE_STAND=0;
 struct Group{};struct Unit{virtual ~Unit()=default;unsigned entry=11669,map=409,instance=1;float x=0,y=0,o=0;float GetPositionX(){return x;}float GetPositionY(){return y;}float GetOrientation(){return o;}bool world=true,alive=true,combat=true,charm=false;Unit*victim=nullptr;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charm;}unsigned GetEntry(){return entry;}
@@ -45,9 +45,13 @@ struct PlayerbotAI{Player*bot;bool real=false,isWaiting=true;unsigned aiInternal
  ReactionEngine reactions;ReactionEngine*reactionEngine=&reactions;Unit*loose=nullptr;std::map<unsigned,Unit*>units;std::atomic<bool>urgentAttackPending{false},urgentCombatPending{false};
  Player*GetBot(){return bot;}bool IsRealPlayer(){return real;}static bool IsTank(Player*p){return p->tank;}
  Context*GetAiObjectContext(){return &context;}Unit*GetUnit(ObjectGuid g){return units.count(g)?units[g]:nullptr;}
+ bool HasRealPlayerMaster(){return true;}void ResetAIInternalUpdateDelay(){aiInternalUpdateDelay=0;}ObjectGuid urgentRecoveryTarget;
  void PrepareForUrgentCombat();void Publish(const WorldPacket&packet){__PUBLISH__}
  __URGENT__
 };
+bool MoltenCoreRecoveryTrash(unsigned e){return e!=11502;}
+Unit*MoltenCoreTrashAggroTarget(PlayerbotAI*a){for(auto*u:a->bot->attackers)if(u->world&&u->alive&&!u->charm&&a->bot->IsInMap(u)&&u->victim==a->bot&&!u->HasAura(19951)&&MoltenCoreRecoveryTrash(u->entry))return u;return nullptr;}
+bool PlanMoltenCoreGiants(PlayerbotAI*,EncounterPosition&){return false;}
 bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&){return false;}
 Unit*MoltenCorePackTankTarget(PlayerbotAI*a){return a->loose;}Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*a){return a->loose;}
 unsigned replans=0;bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&p){++replans;p.destination.x=-20;return true;}
@@ -77,9 +81,9 @@ int main(){Group group;Player bot,tank;bot.group=tank.group=&group;Unit imp;imp.
  imp.victim=&tank;imp.o=3.14159265f;assert(MoltenCorePositionAction::GetPlan(&ai,plan)&&replans==1);imp.o=0;
  imp.alive=false;assert(!MoltenCorePositionAction::GetPlan(&ai,plan));imp.alive=true;imp.instance=2;assert(!MoltenCorePositionAction::GetPlan(&ai,plan));imp.instance=1;
  packet.bytes=15;ai.Publish(packet);assert(!ai.HasUrgentCommand());packet.bytes=16;
- packet.ids[1]=9;ai.Publish(packet);assert(!ai.HasUrgentCommand());packet.ids[1]=2;
+ packet.ids[1]=9;ai.Publish(packet);assert(ai.HasUrgentCommand());ai.urgentCombatPending=false;packet.ids[1]=2;
  for(unsigned fault=0;fault<7;++fault){bot.world=bot.alive=true;bot.transfer=bot.charm=bot.tank=false;bot.map=409;ai.real=false;imp.entry=11669;imp.victim=&bot;
-  if(fault==0)bot.world=false;if(fault==1)bot.alive=false;if(fault==2)bot.transfer=true;if(fault==3)bot.charm=true;if(fault==4)bot.tank=true;if(fault==5)ai.real=true;if(fault==6)imp.entry=11673;
+  if(fault==0)bot.world=false;if(fault==1)bot.alive=false;if(fault==2)bot.transfer=true;if(fault==3)bot.charm=true;if(fault==4)bot.tank=true;if(fault==5)ai.real=true;if(fault==6)imp.entry=11502;
   unsigned before=bot.interrupts;ai.urgentCombatPending=true;ai.PrepareForUrgentCombat();assert(bot.interrupts==before&&!ai.HasUrgentCommand());
  }
  bot.map=0;packet.bytes=16;ai.Publish(packet);assert(!ai.HasUrgentCommand());

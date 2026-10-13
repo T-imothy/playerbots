@@ -88,7 +88,7 @@ namespace
         if (combat && (!result.control.observedAt || WorldTimer::getMSTimeDiff(result.control.observedAt, now) >= 200))
         {
           result.control.observedElementals.clear(); result.control.observedPriorities.clear();
-          for (uint32 entry : {12076u, 11666u, 11667u})
+          for (uint32 entry : {12076u, 12100u, 11666u, 11667u})
           {
             // Scan actual native group combat, including CC targets omitted
             // from attackable values. No proximity-only target recruitment.
@@ -99,7 +99,7 @@ namespace
             for (Unit* unit : nearby)
             {
                 if (!Engaged(ai, unit)) continue;
-                (entry == 12076 ? result.control.observedElementals : result.control.observedPriorities).push_back(unit->GetObjectGuid());
+                ((entry == 12076 || entry == 12100) ? result.control.observedElementals : result.control.observedPriorities).push_back(unit->GetObjectGuid());
             }
           }
           result.control.observedAt = now;
@@ -173,7 +173,7 @@ Unit* ai::LavaTrashFocusTarget(PlayerbotAI* ai)
 
 bool ai::LavaTrashReservedTarget(PlayerbotAI* ai, Unit* target)
 {
-    if (!target || target->GetEntry() != 12076 || ai->GetBot()->GetMapId() != 409) return false;
+    if (!target || (target->GetEntry() != 12076 && target->GetEntry() != 12100) || ai->GetBot()->GetMapId() != 409) return false;
     return Read(ai).control.allocation.Reserved(target->GetGUIDLow());
 }
 
@@ -219,37 +219,60 @@ bool ai::LavaTrashSpellAllowed(PlayerbotAI* ai, const std::string& name, Unit* t
         damage = damage || effect == SPELL_EFFECT_WEAPON_DAMAGE || effect == SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL ||
             effect == SPELL_EFFECT_NORMALIZED_WEAPON_DMG || effect == SPELL_EFFECT_WEAPON_PERCENT_DAMAGE;
     if (!damage || !target || sServerFacade.IsFriendlyTo(ai->GetBot(), target)) return true;
-    if (trash.control.allocation.Reserved(target->GetGUIDLow()) && target->GetEntry() == 12076) return false;
+    if (trash.control.allocation.Reserved(target->GetGUIDLow()) && (target->GetEntry() == 12076 || target->GetEntry() == 12100)) return false;
     if (!ai->IsTank(ai->GetBot()))
     {
         Unit* focus = LavaTrashFocusTarget(ai);
-        if (focus && (target->GetEntry() == 12076 || target->GetEntry() == 11666 || target->GetEntry() == 11667) && target != focus) return false;
+        if (focus && (target->GetEntry() == 12076 || target->GetEntry() == 12100 || target->GetEntry() == 11666 || target->GetEntry() == 11667) && target != focus) return false;
     }
     return true;
+}
+
+bool ai::MoltenCoreGroupEnemy(PlayerbotAI* ai, Unit* target)
+{
+    return ai->GetBot()->GetGroup() && Engaged(ai, target);
+}
+
+bool ai::MoltenCoreRecoveryTrash(uint32 entry)
+{
+    // Bosses and their encounter adds retain their dedicated positioning.
+    // Ordinary raid trash uses native group engagement, not a short whitelist.
+    switch (entry)
+    {
+        case 12118: case 11982: case 12259: case 12057: case 12056:
+        case 12264: case 12098: case 11988: case 12018: case 11502:
+        case 12119: case 11661: case 12099: case 11662: case 11672:
+        case 11663: case 11664: case 12143: return false;
+        default: return true;
+    }
+}
+
+Unit* ai::MoltenCoreTrashAggroTarget(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->GetMapId() != 409 || !bot->GetGroup() || ai->IsTank(bot) || !ai->HasRealPlayerMaster()) return nullptr;
+    Unit* pursuer = nullptr;
+    // The native attacker set updates on victim changes; do not wait for a
+    // cached possible-target snapshot when a giant changes victims.
+    for (Unit* enemy : bot->getAttackers())
+        if (Engaged(ai, enemy) && enemy->GetVictim() == bot && MoltenCoreRecoveryTrash(enemy->GetEntry()) &&
+            !enemy->HasAura(19951) && !LavaTrashReservedTarget(ai, enemy) &&
+            !PossibleAttackTargetsValue::HasUnBreakableCC(enemy, bot) &&
+            (!pursuer || enemy->GetObjectGuid() < pursuer->GetObjectGuid())) pursuer = enemy;
+    return pursuer;
 }
 
 bool ai::PlanLavaTrashCarrier(PlayerbotAI* ai, EncounterPosition& plan)
 {
     Player* bot = ai->GetBot();
-    if (!bot->IsInCombat() || !bot->GetGroup() || ai->IsTank(bot) || !ai->HasRealPlayerMaster()) return false;
-    Unit* pursuer = nullptr;
-    for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
-    {
-        Unit* enemy = ai->GetUnit(guid);
-        if (!Engaged(ai, enemy) || enemy->GetVictim() != bot) continue;
-        switch (enemy->GetEntry())
-        {
-            case 12076: case 11665: case 11666: case 11667: case 11673: case 12101: case 11669: case 11671: break;
-            default: continue;
-        }
-        if (!pursuer || enemy->GetObjectGuid() < pursuer->GetObjectGuid()) pursuer = enemy;
-    }
+    Unit* pursuer = MoltenCoreTrashAggroTarget(ai);
     if (!pursuer) return false;
     Player* tank = nullptr;
     for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
     {
         Player* member = ref->getSource();
-        if (!Member(bot, member) || !ai->IsTank(member) || member->GetDistance(bot) > 60) continue;
+        if (!Member(bot, member) || !ai->IsTank(member) || !member->CanReactInCombat() || member->GetDistance(bot) > 60) continue;
         if (!tank || member->GetDistance(bot) < tank->GetDistance(bot) ||
             (member->GetDistance(bot) == tank->GetDistance(bot) && member->GetObjectGuid() < tank->GetObjectGuid())) tank = member;
     }
