@@ -12,6 +12,24 @@
 
 using namespace ai;
 
+bool ai::RaidRestInProgress(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!ai->HasRealPlayerMaster() || ai->IsRealPlayer() || !bot->GetGroup() || !bot->GetGroup()->IsRaidGroup() ||
+        !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->IsInCombat() || !bot->IsSitState())
+        return false;
+
+    // Drink/food are sitting auras after their instant cast. An idle formation
+    // correction must not cancel them and start another consumable every tick.
+    const bool drinking = bot->GetPower(POWER_MANA) < bot->GetMaxPower(POWER_MANA) && ai->HasAura("drink", bot);
+    const bool eating = bot->GetHealth() < bot->GetMaxHealth() && ai->HasAura("food", bot);
+    if ((!drinking && !eating) || !ai->GetMaster() || ai->GetMaster()->IsMoving() || GetPartyCombatAnchor(ai)) return false;
+    Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("follow target")->Get());
+    return target && ai->IsSafe(target) && target->IsAlive() && !target->IsMoving() &&
+        bot->IsWithinDistInMap(target, sPlayerbotAIConfig.sightDistance);
+}
+
 bool ai::RaidRegroupNeeded(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
@@ -21,7 +39,7 @@ bool ai::RaidRegroupNeeded(PlayerbotAI* ai)
         !ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
         ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT) ||
         bot->IsNonMeleeSpellCasted(false, false, true) || ai->IsJumping() || bot->IsTaxiFlying() ||
-        (bot->movespline && !bot->movespline->Finalized())) return false;
+        (bot->movespline && !bot->movespline->Finalized()) || RaidRestInProgress(ai)) return false;
     Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("follow target")->Get());
     Formation* formation = ai->GetAiObjectContext()->GetValue<Formation*>("formation")->Get();
     if (!target || !ai->IsSafe(target) || !formation || !target->IsAlive() || !bot->IsInMap(target)) return false;
@@ -32,6 +50,7 @@ bool ai::RaidRegroupNeeded(PlayerbotAI* ai)
 
 bool FollowAction::Execute(Event& event)
 {
+    if (RaidRestInProgress(ai)) return false;
     bool moved = false;
     Unit* followTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "follow target"));
     Formation* formation = AI_VALUE(Formation*, "formation");
@@ -60,7 +79,7 @@ bool FollowAction::Execute(Event& event)
 
 bool FollowAction::isUseful()
 {
-    if (!ai->CanMove())
+    if (!ai->CanMove() || RaidRestInProgress(ai))
         return false;
 
     float distance = 0;

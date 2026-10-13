@@ -2941,6 +2941,15 @@ void PlayerbotAI::DoNextAction(bool min)
         return;
     }
 
+    // A native sitting aura can outlast the consumable's estimated action wait.
+    // Do not restart the drink or apply idle stand/follow/buff actions mid-rest.
+    // Pull/transition notifications are serviced before this action scheduler.
+    if (ai::RaidRestInProgress(this))
+    {
+        SetAIInternalUpdateDelay(1000);
+        return;
+    }
+
     // if in combat but stuck with old data - clear targets
     if (currentEngine == engines[(uint8)BotState::BOT_STATE_NON_COMBAT] && sServerFacade.IsInCombat(bot))
     {

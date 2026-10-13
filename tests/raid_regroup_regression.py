@@ -4,11 +4,15 @@ import subprocess,tempfile
 from behavior_regression import block
 R=Path(__file__).resolve().parents[1]
 ai=(R/'playerbot/PlayerbotAI.cpp').read_text();follow=(R/'playerbot/strategy/actions/FollowActions.cpp').read_text()
-methods='\n'.join(block(s,n) for s,n in ((follow,'bool ai::RaidRegroupNeeded('),(ai,'void PlayerbotAI::OnCombatEnded('),(ai,'void PlayerbotAI::PrepareForRaidRegroup(')))
+methods='\n'.join(block(s,n) for s,n in ((follow,'bool ai::RaidRestInProgress('),(follow,'bool ai::RaidRegroupNeeded('),(ai,'void PlayerbotAI::OnCombatEnded('),(ai,'void PlayerbotAI::PrepareForRaidRegroup(')))
 assert 'RaidRegroupNeeded(ai)' in block(follow,'bool FollowAction::isUseful(')
+for method in ('bool FollowAction::isUseful(', 'bool FollowAction::Execute('): assert 'RaidRestInProgress(ai)' in block(follow,method)
+assert 'RaidRestInProgress(ai)' in block((R/'playerbot/strategy/actions/MovementActions.cpp').read_text(),'bool MovementAction::Follow(Unit* target, float distance, float angle)')
 assert 'RaidRegroupNeeded(ai)' in (R/'playerbot/strategy/triggers/RangeTriggers.h').read_text()
 assert '!RaidRegroupNeeded(ai)' in block((R/'playerbot/strategy/actions/MovementActions.cpp').read_text(),'bool MovementAction::Follow(Unit* target, float distance, float angle)')
 update=block(ai,'void PlayerbotAI::UpdateAI(');assert update.index('PrepareForRaidRegroup()')<update.index('if (!delayAlreadyAdvanced)')
+rest_step=block(block(ai,'void PlayerbotAI::DoNextAction('),'if (ai::RaidRestInProgress(this))')
+methods+='\nvoid PlayerbotAI::RestSchedulerStep(){'+rest_step+'++ordinaryActions;}\n'
 code=r'''
 #include <cassert>
 #include <cmath>
@@ -20,8 +24,11 @@ enum class BotState{BOT_STATE_NON_COMBAT,BOT_STATE_COMBAT};
 struct WorldLocation{unsigned mapid=409;float coord_x=0,coord_y=0,coord_z=0;};
 struct Group{bool raid=true;bool IsRaidGroup(){return raid;}};
 struct Spline{bool done=true;bool Finalized(){return done;}};
-struct Unit{virtual ~Unit()=default;bool alive=true,world=true;unsigned map=409;bool IsAlive(){return alive;}};
-struct Player:Unit{Group group;bool grouped=true,transfer=false,charm=false,combat=false,casting=false,taxi=false;float x=20;Spline spline;Spline*movespline=&spline;
+constexpr unsigned UNIT_STAND_STATE_SIT=1,POWER_MANA=0;
+struct Config{float sightDistance=100;}sPlayerbotAIConfig;
+struct Unit{virtual ~Unit()=default;bool alive=true,world=true,moving=false;bool IsMoving(){return moving;}unsigned map=409;bool IsAlive(){return alive;}};
+struct Player:Unit{Group group;bool grouped=true,transfer=false,charm=false,combat=false,casting=false,taxi=false;unsigned stand=0,mana=20,health=80;float x=20;Spline spline;Spline*movespline=&spline;
+ bool IsSitState(){return stand==UNIT_STAND_STATE_SIT;}unsigned GetPower(unsigned){return mana;}unsigned GetMaxPower(unsigned){return 100;}unsigned GetHealth(){return health;}unsigned GetMaxHealth(){return 100;}bool IsWithinDistInMap(Unit*,float r){return x<=r;}
  bool IsInWorld(){return world;}bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}bool IsInCombat(){return combat;}Group*GetGroup(){return grouped?&group:nullptr;}
  bool IsNonMeleeSpellCasted(bool,bool,bool){return casting;}bool IsTaxiFlying(){return taxi;}unsigned GetMapId(){return map;}bool IsInMap(Unit*u){return u->world&&u->map==map;}
  float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+b*b+c*c);}};
@@ -31,17 +38,30 @@ template<class T>struct Cached{T value{};unsigned resets=0;T Get(){return value;
 struct Context{template<class T>Cached<T>*GetValue(const char*){static Cached<T>c;return &c;}};
 struct ReactionEngine{unsigned wakes=0;void NotifyPartyCombat(){++wakes;}};
 struct PlayerbotAI{Player*bot;Unit target;Formation formation;Context context;Context*aiObjectContext=&context;ReactionEngine reaction;ReactionEngine*reactionEngine=&reaction;
+ bool drink=false,food=false;bool HasAura(const char*n,Player*){return std::string(n)=="drink"?drink:food;}
  bool human=false,owned=true,mobile=true,jumping=false,follow=true,stay=false,guard=false,party=false,isWaiting=true;BotState state=BotState::BOT_STATE_NON_COMBAT;unsigned aiInternalUpdateDelay=15000,stops=0;
  PlayerbotAI(Player*b):bot(b){context.GetValue<ObjectGuid>("follow target")->value=1;context.GetValue<Formation*>("formation")->value=&formation;}
- Player*GetBot(){return bot;}bool HasRealPlayerMaster(){return owned;}bool IsRealPlayer(){return human;}bool CanMove(){return mobile;}bool IsJumping(){return jumping;}
+ Player master;Player*GetMaster(){return &master;}unsigned ordinaryActions=0;void SetAIInternalUpdateDelay(unsigned d){aiInternalUpdateDelay=d;}void RestSchedulerStep();Player*GetBot(){return bot;}bool HasRealPlayerMaster(){return owned;}bool IsRealPlayer(){return human;}bool CanMove(){return mobile;}bool IsJumping(){return jumping;}
  bool IsStateActive(BotState s){return state==s;}void ChangeEngine(BotState s){state=s;}void ResetAIInternalUpdateDelay(){aiInternalUpdateDelay=0;}void StopMoving(){++stops;}
  Context*GetAiObjectContext(){return &context;}Unit*GetUnit(unsigned id){return id?&target:nullptr;}bool IsSafe(Unit*u){return u&&u->world&&bot->IsInMap(u);}
  bool HasStrategy(const char*n,BotState s){return std::string(n)=="follow"?follow&&s==BotState::BOT_STATE_NON_COMBAT:std::string(n)=="stay"?stay:std::string(n)=="guard"?guard:false;}
  void PrepareForRaidRegroup();void OnCombatEnded();};
-namespace ai{bool RaidRegroupNeeded(PlayerbotAI*);Player*GetPartyCombatAnchor(PlayerbotAI*a){return a->party?a->bot:nullptr;}}
+namespace ai{bool RaidRestInProgress(PlayerbotAI*);bool RaidRegroupNeeded(PlayerbotAI*);Player*GetPartyCombatAnchor(PlayerbotAI*a){return a->party?a->bot:nullptr;}}
 __METHODS__
 int main(){Player bot;PlayerbotAI ai(&bot);
  assert(ai::RaidRegroupNeeded(&ai));ai.PrepareForRaidRegroup();assert(!ai.isWaiting&&ai.aiInternalUpdateDelay==0); // stationary master, stopped old generator
+ // Active native rest remains seated through successive scheduler checks.
+ bot.stand=UNIT_STAND_STATE_SIT;ai.drink=true;
+ for(unsigned tick=0;tick<30;++tick){ai.aiInternalUpdateDelay=12000;ai.isWaiting=true;assert(ai::RaidRestInProgress(&ai));assert(!ai::RaidRegroupNeeded(&ai));ai.PrepareForRaidRegroup();assert(ai.aiInternalUpdateDelay==12000&&ai.isWaiting);ai.RestSchedulerStep();assert(ai.ordinaryActions==0&&ai.aiInternalUpdateDelay==1000);}
+ ai.master.moving=true;assert(!ai::RaidRestInProgress(&ai));ai.RestSchedulerStep();assert(ai.ordinaryActions==1);ai.master.moving=false;
+ ai.target.moving=true;assert(!ai::RaidRestInProgress(&ai));assert(ai::RaidRegroupNeeded(&ai));ai.target.moving=false;
+ ai.party=true;assert(!ai::RaidRestInProgress(&ai));ai.party=false;
+ bot.combat=true;assert(!ai::RaidRestInProgress(&ai));bot.combat=false;
+ bot.mana=100;assert(!ai::RaidRestInProgress(&ai));ai.RestSchedulerStep();assert(ai.ordinaryActions==2);assert(ai::RaidRegroupNeeded(&ai));
+ ai.drink=false;ai.food=true;assert(ai::RaidRestInProgress(&ai));bot.health=100;assert(!ai::RaidRestInProgress(&ai));
+ bot.health=80;bot.mana=20;ai.food=false;assert(!ai::RaidRestInProgress(&ai)); // seated without a rest aura is not pinned
+ ai.drink=true;bot.x=101;assert(!ai::RaidRestInProgress(&ai));bot.x=20;
+ bot.stand=0;ai.drink=false;bot.mana=0;assert(ai::RaidRegroupNeeded(&ai)); // empty mana never blocks regroup/pull
  bot.x=2;assert(!ai::RaidRegroupNeeded(&ai));bot.x=20;
  bot.spline.done=false;assert(!ai::RaidRegroupNeeded(&ai));bot.spline.done=true;
  bot.casting=true;ai.aiInternalUpdateDelay=9000;ai.PrepareForRaidRegroup();assert(ai.aiInternalUpdateDelay==9000&&bot.casting); // ongoing resurrection/heal

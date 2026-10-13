@@ -15,6 +15,7 @@
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
 #include "Entities/Transports.h"
+#include "Maps/MapManager.h"
 
 #include "playerbot/strategy/values/PositionValue.h"
 
@@ -96,9 +97,11 @@ bool SummonAction::Execute(Event& event)
 
 bool SummonAction::ExecuteImmediate(Event& event)
 {
+    failureReason = "summon_unavailable";
+    retryable = false;
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     if (!requester || !requester->IsInWorld() || requester->IsBeingTeleported())
-        return false;
+        return Refuse("requester_transfer", true);
 
     if (requester->GetSession()->GetSecurity() > SEC_PLAYER || sPlayerbotAIConfig.nonGmFreeSummon)
         return Teleport(requester, requester, bot);
@@ -260,41 +263,83 @@ bool SummonAction::TeleportForMaster(Player* requester, Player *summoner, Player
         !summoner->IsInWorld() || !player->IsInWorld() ||
         !summoner->GetSession() || !player->GetSession() ||
         summoner->GetSession()->isLogingOut() || player->GetSession()->isLogingOut())
-        return false;
+        return Refuse("invalid_summon_actor");
 
     // Never attach a passenger manually after starting a far teleport. That
     // mixes world coordinates with transport offsets before the worldport ACK.
     if (summoner->GetTransport() || summoner->IsTaxiFlying())
     {
         ai->TellPlayerNoFacing(requester, "Your destination is moving on a flight or transport. Summon me again after you disembark.");
-        return false;
+        return Refuse("requester_transport", true);
     }
 
     // A near teleport cannot transfer between two instances of the same map.
     // Let the regular instance-entry/transition system handle that case.
     if (summoner->GetMapId() == player->GetMapId() && summoner->GetMap() != player->GetMap() &&
         summoner->GetMap()->Instanceable())
-        return false;
+        return Refuse("different_instance");
     if (summoner->GetMap() != player->GetMap() && !summoner->GetMap()->CanEnter(player))
-        return false;
+        return Refuse("destination_not_allowed");
+
+    if (summoner->IsBeingTeleported() || player->IsBeingTeleported())
+        return Refuse("transfer", true);
+
+    if (requester == summoner)
+        PrepareRaidBinding(requester, player);
+    // Keep native admission authoritative. Temporarily blocked entries stay in
+    // the coordinator's bounded queue instead of losing the explicit request.
+    if (summoner->GetMapId() != player->GetMapId())
+    {
+        Map* destination = summoner->GetMap();
+        if (destination->IsRaid() && !player->IsGameMaster())
+        {
+            DungeonMap* raid = static_cast<DungeonMap*>(destination);
+            if (raid->GetPlayersCountExceptGMs() >= raid->GetMaxPlayers())
+                return Refuse("instance_full", true);
+            if (raid->GetInstanceData() && raid->GetInstanceData()->IsEncounterInProgress())
+                return Refuse("instance_combat", true);
+        }
+        if (const AreaTrigger* entry = sObjectMgr.GetMapEntranceTrigger(summoner->GetMapId()))
+        {
+            uint32 requirement = 0;
+#ifdef MANGOSBOT_TWO
+            const AreaLockStatus status = player->GetAreaTriggerLockStatus(entry, player->GetDifficulty(destination->IsRaid()), requirement);
+#else
+            const AreaLockStatus status = player->GetAreaTriggerLockStatus(entry, requirement);
+#endif
+            switch (status)
+            {
+                case AREA_LOCKSTATUS_OK: break;
+                case AREA_LOCKSTATUS_ZONE_IN_COMBAT: return Refuse("instance_combat", true);
+                case AREA_LOCKSTATUS_INSTANCE_IS_FULL: return Refuse("instance_full", true);
+                case AREA_LOCKSTATUS_HAS_BIND: return Refuse("lockout");
+                case AREA_LOCKSTATUS_TOO_LOW_LEVEL: return Refuse("too_low_level");
+                case AREA_LOCKSTATUS_RAID_LOCKED: return Refuse("raid_required");
+                case AREA_LOCKSTATUS_QUEST_NOT_COMPLETED: return Refuse("quest_required");
+                case AREA_LOCKSTATUS_MISSING_ITEM: return Refuse("item_required");
+                case AREA_LOCKSTATUS_TOO_MANY_INSTANCE: return Refuse("instance_limit");
+                default: return Refuse("entry_requirements");
+            }
+        }
+    }
 
     if (!summoner->IsBeingTeleported() && !player->IsBeingTeleported() && summoner != player)
     {
         float followAngle = GetFollowAngle();
-        for (double angle = followAngle - M_PI; angle <= followAngle + M_PI; angle += M_PI / 4)
+        for (unsigned point = 0; point <= 8; ++point)
         {
+            const double angle = followAngle - M_PI + point * M_PI / 4;
+            const float radius = point == 8 ? 0.0f : ai->GetRange("follow");
             uint32 mapId = summoner->GetMapId();
-            float x = summoner->GetPositionX() + cos(angle) * ai->GetRange("follow");
-            float y = summoner->GetPositionY() + sin(angle) * ai->GetRange("follow");
+            float x = summoner->GetPositionX() + cos(angle) * radius;
+            float y = summoner->GetPositionY() + sin(angle) * radius;
             float z = summoner->GetPositionZ();
-            summoner->UpdateGroundPositionZ(x, y, z);
+            if (point != 8) summoner->UpdateGroundPositionZ(x, y, z);
 
-            if (!summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
-            {
-                x = summoner->GetPositionX();
-                y = summoner->GetPositionY();
-                z = summoner->GetPositionZ();
-            }
+            // WMO height queries can select another floor beside the leader.
+            // Try the other nearby points, then the leader's known position.
+            if (!MapManager::IsValidMapCoord(mapId, x, y, z) ||
+                fabs(z - summoner->GetPositionZ()) > 3.0f) continue;
 
             if (summoner->IsWithinLOS(x, y, z + player->GetCollisionHeight(), true))
             {
@@ -308,7 +353,7 @@ bool SummonAction::TeleportForMaster(Player* requester, Player *summoner, Player
                 if (player->HasCharmer())
                 {
                     ai->TellPlayerNoFacing(requester, "The server could not release my controlling charm.");
-                    return false;
+                    return Refuse("controlled");
                 }
                 if (!player->TaxiFlightInterrupt() && player->IsTaxiFlying())
                     player->OnTaxiFlightEject();
@@ -318,12 +363,10 @@ bool SummonAction::TeleportForMaster(Player* requester, Player *summoner, Player
                 // teleport stops the summoned bot's combat; the requester stays in combat.
                 // TeleportTo owns access checks, pets and transfer state. True
                 // means accepted (possibly delayed), not a completed worldport.
-                if (requester == summoner)
-                    PrepareRaidBinding(requester, player);
                 if (!player->TeleportTo(mapId, x, y, z, summoner->GetOrientation()))
                 {
                     ai->TellPlayerNoFacing(requester, "The server refused the summon destination.");
-                    return false;
+                    return Refuse("native_teleport_refused");
                 }
                 CancelAutonomousQueues(bot);
                 if (!summoner->InBattleGround())
@@ -348,7 +391,7 @@ bool SummonAction::TeleportForMaster(Player* requester, Player *summoner, Player
 
     if(summoner != player)
         ai->TellPlayerNoFacing(requester, "Not enough place to summon");
-    return false;
+    return Refuse("no_landing_point");
 }
 
 bool SummonAction::Teleport(Player* requester, Player *summoner, Player *player)

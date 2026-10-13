@@ -718,7 +718,8 @@ void BotRecruitment::Update(uint32 diff)
         if (reason.empty() && limits::Expired(now,request.expires))
         {
             reason = Waiting(owner,bot);
-            if (reason.empty()) reason = request.started ? "arrival_not_confirmed" : "work_budget";
+            if (reason.empty()) reason = request.started ? "arrival_not_confirmed" :
+                (request.waitReason.empty() ? "work_budget" : request.waitReason);
             Report(request,"timed_out",reason);
             it = state.summons.erase(it); continue;
         }
@@ -760,7 +761,7 @@ void BotRecruitment::Update(uint32 diff)
         }
         // A completed but rejected/fallback transfer can be retried. Never
         // overwrite a pending native transfer or keep retrying a denied entry.
-        if (request.started && now < request.nextAttempt) { ++it; continue; }
+        if (now < request.nextAttempt) { ++it; continue; }
         if (request.attempts >= 3)
         { Report(request,"refused","arrival_not_confirmed"); it = state.summons.erase(it); continue; }
         if (teleports < 2)
@@ -783,7 +784,18 @@ void BotRecruitment::Update(uint32 diff)
             request.map = owner->GetMapId(); request.instance = owner->GetInstanceId();
             request.started = action.ExecuteImmediate(event);
             if (!request.started)
-            { Report(request,"refused","destination_or_summon_policy"); it = state.summons.erase(it); continue; }
+            {
+                reason = action.GetFailureReason();
+                if (reason != request.waitReason)
+                    sLog.outString("PLAYERBOT_SUMMON: bot %u requester %u destination map %u instance %u refused %s retryable %u",
+                        bot->GetGUIDLow(), owner->GetGUIDLow(), request.map, request.instance, reason.c_str(), action.CanRetry() ? 1u : 0u);
+                if (!action.CanRetry())
+                { Report(request,"refused",reason); it = state.summons.erase(it); continue; }
+                request.nextAttempt = now + 2;
+                if (reason != request.waitReason)
+                { request.waitReason = reason; Report(request,"summon_pending",reason); }
+                ++it; continue;
+            }
             WorldLocation const& destination = bot->GetTeleportDest();
             request.x = destination.coord_x; request.y = destination.coord_y; request.z = destination.coord_z;
             ++request.attempts;

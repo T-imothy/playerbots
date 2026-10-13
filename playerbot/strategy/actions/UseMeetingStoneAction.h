@@ -12,11 +12,17 @@ namespace ai
         bool isUsefulWhenStunned() override { return true; }
         virtual bool Execute(Event& event) override;
         bool ExecuteImmediate(Event& event);
+        const std::string& GetFailureReason() const { return failureReason; }
+        bool CanRetry() const { return retryable; }
         static void CancelAutonomousQueues(Player* bot);
         // World-thread only: public companions follow their human raid's save.
         static void PrepareRaidBinding(Player* requester, Player* bot);
 
     protected:
+        bool Refuse(const std::string& reason, bool temporary = false)
+        { failureReason = reason; retryable = temporary; return false; }
+        std::string failureReason = "summon_unavailable";
+        bool retryable = false;
         bool Teleport(Player* requester, Player *summoner, Player *player);
         bool TeleportForMaster(Player* requester, Player* summoner, Player* player);
         bool SummonUsingGos(Player* requester, Player *summoner, Player *player);

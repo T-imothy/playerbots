@@ -88,7 +88,7 @@ struct Player {
  uint32 id,level=43,cls=1,guild=0,team=0,mapId=1,instance=0;bool real=false,world=true,transfer=false,alive=true,combat=false,
  taxi=false,transport=false,charm=false,bg=false,bgQueue=false,afk=false,los=true;float distance=0;
  std::string name,talents="0-0-10";WorldSession session;AI ai;Social social;Group* group=nullptr;Group* invite=nullptr;
- float landingDistance=0;unsigned summons=0,queueCancellations=0,raidPreparations=0;WorldLocation destination;
+ float landingDistance=0;std::string summonFailure;bool summonRetryable=false;unsigned summonChecks=0;unsigned summons=0,queueCancellations=0,raidPreparations=0;WorldLocation destination;
  bool IsWithinDist3d(float,float,float,float r){return landingDistance<=r;}WorldLocation const& GetTeleportDest(){return destination;}
  DungeonMap map;LfgData lfg;PlayerbotHolder holder;unsigned gear=0;int health=50,maxHealth=100,mana=5,maxMana=100,otherPower=23;
  uint32 homeMap=0;unsigned departures=0;bool homeAccepted=true;
@@ -132,7 +132,7 @@ struct EventOwner {Player* p=nullptr;ObjectGuid guid;EventOwner(Player* b=nullpt
  Player* Get()const{auto it=players.find(guid.value);return it!=players.end()&&it->second==p?p:nullptr;}};
 struct Event {Player* owner;Event(std::string,std::string,Player* p):owner(p){}};
 struct WhoAction{explicit WhoAction(AI*){}std::string QuerySpec(std::string){return "Warrior (43 lvl), 100 GS (green)";}};
-struct SummonAction{static void PrepareRaidBinding(Player* owner,Player* p){assert(owner->group&&p->group==owner->group);++p->raidPreparations;}static void CancelAutonomousQueues(Player* p){++p->queueCancellations;p->bgQueue=false;p->session.m_lfgInfo.queued=false;p->lfg.state=0;}AI* ai;explicit SummonAction(AI* a):ai(a){}bool ExecuteImmediate(Event&){for(auto& x:players)if(&x.second->ai==ai){x.second->transfer=true;++x.second->summons;return true;}return false;}};
+struct SummonAction{static void PrepareRaidBinding(Player* owner,Player* p){assert(owner->group&&p->group==owner->group);++p->raidPreparations;}static void CancelAutonomousQueues(Player* p){++p->queueCancellations;p->bgQueue=false;p->session.m_lfgInfo.queued=false;p->lfg.state=0;}AI* ai;std::string failure;bool retry=false;const std::string& GetFailureReason(){return failure;}bool CanRetry(){return retry;}explicit SummonAction(AI* a):ai(a){}bool ExecuteImmediate(Event&){for(auto& x:players)if(&x.second->ai==ai){Player* p=x.second;++p->summonChecks;if(!p->summonFailure.empty()){failure=p->summonFailure;retry=p->summonRetryable;return false;}p->transfer=true;++p->summons;return true;}return false;}};
 }
 '''
 tests=r'''
@@ -393,6 +393,15 @@ int main(){
  command(p,"warrior summon 2");b.transfer=false;tick();assert(b.health==100&&b.mana==0&&b.otherPower==23);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.health=4;b.mana=2;b.landingDistance=100;
  command(p,"failed summon 2");for(int i=0;i<3;++i){b.transfer=false;tick(3);}assert(b.health==4&&b.mana==2);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.health=4;b.mana=2;b.summonFailure="instance_combat";b.summonRetryable=true;
+ command(p,"pending summon 2");assert(has("summon_pending instance_combat")&&b.summonChecks==1&&!b.transfer);
+ tick(0);assert(b.summonChecks==1);tick(1);assert(b.summonChecks==1);tick(1);assert(b.summonChecks==2);assert(b.health==4&&b.mana==2);
+ b.summonFailure.clear();tick(2);assert(b.summons==1&&b.transfer);b.transfer=false;tick();assert(has("arrived")&&b.health==100&&b.mana==100);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.health=4;b.mana=2;b.summonFailure="lockout";
+ command(p,"locked summon 2");assert(has("refused lockout")&&!b.transfer);tick(3);assert(b.summonChecks==1&&b.health==4&&b.mana==2);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.summonFailure="instance_full";b.summonRetryable=true;
+ command(p,"full summon 2");assert(has("summon_pending instance_full"));tick(45);assert(has("timed_out instance_full")&&b.summons==0);}
+
  std::cout<<"PASS: actual coordinator permissions, native-invite scheduling, stale/replaced invites, ownership, combat/death, session loss, transports, arrival, replay, cancellation, mixed 40-member capacity, bounded discovery/work\n";
 }
 '''

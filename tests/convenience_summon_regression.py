@@ -26,10 +26,20 @@ enum class BotState {BOT_STATE_NON_COMBAT};
 struct Session {bool logout=false;bool isLogingOut(){return logout;}};
 struct Motion {int clears=0;void Clear(){++clears;}void MovementExpired(){}};
 struct Player;
-struct Map {bool allowed=true,instanceable=true;bool CanEnter(Player*){return allowed;}bool Instanceable(){return instanceable;}};
+struct InstanceData{bool active=false;bool IsEncounterInProgress(){return active;}};
+enum AreaLockStatus{AREA_LOCKSTATUS_OK,AREA_LOCKSTATUS_ZONE_IN_COMBAT,AREA_LOCKSTATUS_INSTANCE_IS_FULL,AREA_LOCKSTATUS_HAS_BIND,AREA_LOCKSTATUS_TOO_LOW_LEVEL,AREA_LOCKSTATUS_RAID_LOCKED,AREA_LOCKSTATUS_QUEST_NOT_COMPLETED,AREA_LOCKSTATUS_MISSING_ITEM,AREA_LOCKSTATUS_TOO_MANY_INSTANCE,AREA_LOCKSTATUS_UNKNOWN_ERROR};
+struct AreaTrigger{};
+struct ObjectMgr{AreaTrigger entry;bool available=true;const AreaTrigger*GetMapEntranceTrigger(uint32){return available?&entry:nullptr;}}sObjectMgr;
+struct MapManager{static bool IsValidMapCoord(uint32,float x,float y,float z){return std::isfinite(x)&&std::isfinite(y)&&std::isfinite(z)&&std::abs(z)<17000;}};
+struct Map {bool raid=false;bool IsRaid(){return raid;}bool allowed=true,instanceable=true;bool CanEnter(Player*){return allowed;}bool Instanceable(){return instanceable;}};
+struct DungeonMap:Map{unsigned count=1,max=40;InstanceData data;unsigned GetPlayersCountExceptGMs(){return count;}unsigned GetMaxPlayers(){return max;}InstanceData*GetInstanceData(){return &data;}};
 struct Player {
  bool world=true,real=false,teleporting=false,transport=false,taxi=false,combat=false,charmed=false,alive=true;
  bool accepted=true,los=true,detachOnTeleport=false;uint32 mapId=0,instanceId=0;float x=0,y=0,z=0;int teleports=0,resurrections=0,bones=0;
+ AreaLockStatus lock=AREA_LOCKSTATUS_OK;unsigned checks=0,interruptions=0;bool wrongFloor=false;float landedX=0,landedZ=0;
+ bool IsGameMaster(){return false;}int GetDifficulty(bool){return 0;}
+ AreaLockStatus GetAreaTriggerLockStatus(const AreaTrigger*,uint32&){++checks;return lock;}
+ AreaLockStatus GetAreaTriggerLockStatus(const AreaTrigger*,int,uint32&){++checks;return lock;}
  Session session;Motion motion;Map* map=nullptr;
  bool isRealPlayer(){return real;}bool IsInWorld(){return world;}bool IsBeingTeleported(){return teleporting;}
  Session* GetSession(){return &session;}bool GetTransport(){return transport;}bool IsTaxiFlying(){return taxi;}
@@ -37,21 +47,21 @@ struct Player {
  bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}bool IsAlive(){return alive;}
  uint32 GetMapId(){return mapId;}uint32 GetInstanceId(){return instanceId;}Map* GetMap(){return map;}
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}float GetOrientation(){return 0.4f;}
- void UpdateGroundPositionZ(float,float,float&){}float GetCollisionHeight(){return 2;}
+ void UpdateGroundPositionZ(float,float,float& height){if(wrongFloor)height-=40;}float GetCollisionHeight(){return 2;}
  bool IsWithinLOS(float,float,float,bool){return los;}void ResurrectPlayer(float,bool){++resurrections;alive=true;}
  void SpawnCorpseBones(){++bones;}bool TaxiFlightInterrupt(){bool was=taxi;taxi=false;return was;}
  void OnTaxiFlightEject(){taxi=false;}void BreakCharmIncoming(){charmed=false;}void BreakCharmOutgoing(){}
- void InterruptNonMeleeSpells(bool){}Motion* GetMotionMaster(){return &motion;}
- bool TeleportTo(uint32,float,float,float,float){++teleports;teleporting=accepted;if(accepted&&detachOnTeleport)world=false;return accepted;}
+ void InterruptNonMeleeSpells(bool){++interruptions;}Motion* GetMotionMaster(){return &motion;}
+ bool TeleportTo(uint32,float a,float,float c,float){landedX=a;landedZ=c;++teleports;teleporting=accepted;if(accepted&&detachOnTeleport)world=false;return accepted;}
  bool IsWithinDist3d(float a,float b,float c,float r){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c))<=r;}
 };
 struct PositionEntry {PositionEntry(float,float,float,uint32){}};
 int positionWrites=0;
 #define SET_AI_VALUE2(type,name,key,value) (++positionWrites)
 struct PlayerbotAI {
- Player* bot;bool safe=true,stay=true;
+ Player* bot;bool safe=true,stay=true;float range=0;
  struct PendingSummonRevival {bool active=false;uint32 mapId=0,instanceId=0;float x=0,y=0,z=0;time_t expires=0;} pendingSummonRevival;
- bool IsRealPlayer(){return bot->real;}bool IsSafe(Player*){return safe;}float GetRange(const char*){return 0;}
+ bool IsRealPlayer(){return bot->real;}bool IsSafe(Player*){return safe;}float GetRange(const char*){return range;}
  void ChangeStrategy(const char*,BotState){}
  template<class... Args> void TellPlayerNoFacing(Args...){}
  bool HasStrategy(const char*,BotState){return stay;}
@@ -60,13 +70,14 @@ struct PlayerbotAI {
 struct Config {bool recruitmentRevive=true;} sPlayerbotAIConfig;
 struct Facade {bool UnitIsDead(Player* p){return !p->alive;}bool IsAlive(Player* p){return p->alive;}} sServerFacade;
 int bindingPreparations=0;
-struct SummonAction {Player* bot;PlayerbotAI* ai;float GetFollowAngle(){return 0;}bool Teleport(Player*,Player*,Player*);static void CancelAutonomousQueues(Player*){};static void PrepareRaidBinding(Player*,Player*){++bindingPreparations;};};
+struct SummonAction {std::string failureReason="summon_unavailable";bool retryable=false;
+ bool Refuse(const std::string&r,bool t=false){failureReason=r;retryable=t;return false;}Player* bot;PlayerbotAI* ai;float GetFollowAngle(){return 0;}bool Teleport(Player*,Player*,Player*);static void CancelAutonomousQueues(Player*){};static void PrepareRaidBinding(Player*,Player*){++bindingPreparations;};};
 __TELEPORT__
 __QUEUE__
 __COMPLETE__
 int main(){
- Map from,to;Player bot,leader;PlayerbotAI ai{&bot};SummonAction action{&bot,&ai};
- auto reset=[&](){from={};to={};bot=Player{};leader=Player{};bot.map=&from;leader.map=&to;leader.mapId=1;leader.real=true;ai.safe=true;ai.pendingSummonRevival={};positionWrites=0;sPlayerbotAIConfig.recruitmentRevive=true;};
+ DungeonMap from,to;Player bot,leader;PlayerbotAI ai{&bot};SummonAction action;action.bot=&bot;action.ai=&ai;
+ auto reset=[&](){from={};to={};action.failureReason="summon_unavailable";action.retryable=false;bot=Player{};leader=Player{};bot.map=&from;leader.map=&to;leader.mapId=1;leader.real=true;ai.safe=true;ai.range=0;ai.pendingSummonRevival={};positionWrites=0;sPlayerbotAIConfig.recruitmentRevive=true;};
  auto reject=[&](){assert(!action.Teleport(&leader,&leader,&bot));assert(bot.motion.clears==0 && positionWrites==0 && bot.resurrections==0);};
  reset();assert(action.Teleport(&leader,&leader,&bot));assert(bot.teleports==1 && bot.motion.clears==0 && positionWrites==2 && bindingPreparations==1);
  // Far teleport accepted with no world attachment must not reset follow.
@@ -75,7 +86,17 @@ int main(){
  // Pending same-map teleport also leaves cleanup to the acknowledgement path.
  reset();leader.map=&from;leader.mapId=0;assert(action.Teleport(&leader,&leader,&bot));
  assert(bot.IsInWorld() && bot.IsBeingTeleported() && bot.motion.clears==0);
- reset();bot.accepted=false;reject();assert(bot.teleports==1);
+ reset();ai.range=4;leader.wrongFloor=true;leader.x=30;leader.z=-200;assert(action.Teleport(&leader,&leader,&bot));assert(bot.landedX==leader.x&&bot.landedZ==leader.z); // fallback preserves leader's WMO floor
+ reset();to.raid=true;to.count=40;reject();assert(action.failureReason=="instance_full"&&action.retryable&&bot.teleports==0&&bot.interruptions==0);
+ to.count=39;assert(action.Teleport(&leader,&leader,&bot)); // normal native entry once a slot opens
+ reset();to.raid=true;to.data.active=true;reject();assert(action.failureReason=="instance_combat"&&action.retryable&&bot.teleports==0);
+ to.data.active=false;assert(action.Teleport(&leader,&leader,&bot));
+ for(auto status:{AREA_LOCKSTATUS_HAS_BIND,AREA_LOCKSTATUS_TOO_LOW_LEVEL,AREA_LOCKSTATUS_RAID_LOCKED,AREA_LOCKSTATUS_QUEST_NOT_COMPLETED,AREA_LOCKSTATUS_MISSING_ITEM,AREA_LOCKSTATUS_TOO_MANY_INSTANCE,AREA_LOCKSTATUS_UNKNOWN_ERROR}){
+  reset();bot.lock=status;reject();assert(!action.retryable&&bot.teleports==0&&bot.interruptions==0);}
+ reset();bot.lock=AREA_LOCKSTATUS_ZONE_IN_COMBAT;reject();assert(action.retryable&&action.failureReason=="instance_combat");
+ reset();bot.lock=AREA_LOCKSTATUS_INSTANCE_IS_FULL;reject();assert(action.retryable&&action.failureReason=="instance_full");
+ reset();leader.map=&from;leader.mapId=0;bot.lock=AREA_LOCKSTATUS_HAS_BIND;from.raid=true;from.count=40;from.data.active=true;assert(action.Teleport(&leader,&leader,&bot)&&bot.checks==0); // same-map summon must not re-admit an occupant
+ reset();bot.accepted=false;reject();assert(bot.teleports==1&&action.failureReason=="native_teleport_refused"&&!action.retryable);
  reset();bot.alive=false;bot.accepted=false;reject();assert(!ai.pendingSummonRevival.active);
  reset();bot.real=true;reject();
  reset();bot.teleporting=true;reject();
@@ -127,8 +148,9 @@ int main(){
 '''.replace('__TELEPORT__', block(source, 'bool SummonAction::TeleportForMaster(').replace('SummonAction::TeleportForMaster(', 'SummonAction::Teleport(', 1)).replace(
     '__QUEUE__', block(ai_source, 'void PlayerbotAI::QueueSummonRevival(')).replace(
     '__COMPLETE__', block(ai_source, 'void PlayerbotAI::CompleteSummonRevival('))
-with tempfile.TemporaryDirectory(prefix='mantech-convenience-summon-') as tmp:
-    tmp = Path(tmp)
-    (tmp / 'test.cpp').write_text(code)
-    subprocess.run(['cl', '/nologo', '/std:c++17', '/EHsc', '/W3', 'test.cpp', '/Fe:test.exe'], cwd=tmp, check=True)
-    subprocess.run([str(tmp / 'test.exe')], cwd=tmp, check=True)
+for era in ('ZERO','ONE','TWO'):
+    with tempfile.TemporaryDirectory(prefix='mantech-convenience-summon-') as tmp:
+        tmp = Path(tmp)
+        (tmp / 'test.cpp').write_text(code)
+        subprocess.run(['cl', '/nologo', '/std:c++17', '/EHsc', '/W3', '/DMANGOSBOT_'+era, 'test.cpp', '/Fe:test.exe'], cwd=tmp, check=True)
+        subprocess.run([str(tmp / 'test.exe')], cwd=tmp, check=True)

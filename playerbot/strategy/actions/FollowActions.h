@@ -5,6 +5,7 @@
 
 namespace ai
 {
+    bool RaidRestInProgress(PlayerbotAI* ai);
     bool RaidRegroupNeeded(PlayerbotAI* ai);
 	class FollowAction : public MovementAction {
 	public:
