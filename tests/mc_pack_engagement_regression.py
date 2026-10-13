@@ -48,7 +48,7 @@ struct PlayerbotAI{Player*bot;bool real=false,isWaiting=true;unsigned aiInternal
  __URGENT__
 };
 bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&){return false;}
-Unit*MoltenCorePackTankTarget(PlayerbotAI*a){return a->loose;}
+Unit*MoltenCorePackTankTarget(PlayerbotAI*a){return a->loose;}Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*a){return a->loose;}
 unsigned replans=0;bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&p){++replans;p.destination.x=-20;return true;}
 struct MoltenCorePositionAction{static bool GetPlan(PlayerbotAI*,EncounterPosition&);};
 __WAKE__

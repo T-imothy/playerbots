@@ -9,6 +9,7 @@ reach=(r/'playerbot/strategy/actions/ReachTargetActions.h').read_text()
 ranged=(r/'playerbot/strategy/generic/RangedCombatStrategy.cpp').read_text()
 update=block(ai,'void PlayerbotAI::UpdateAI(')
 assert update.index('updateLock.owns_lock()')<update.index('PrepareForPartyCombat()')<update.index('if (!delayAlreadyAdvanced)')
+header=(r/'playerbot/PlayerbotAI.h').read_text();decl=header.index('void PrepareForUrgentHazard();');assert header.rfind('public:',0,decl)>header.rfind('private:',0,decl)
 methods='\n'.join([block(ai,'void PlayerbotAI::PrepareCompletedMovement('),block(ai,'void PlayerbotAI::PrepareForPartyCombat('),block(ai,'void PlayerbotAI::OnCombatStarted('),
  block(reaction,'void ReactionEngine::NotifyHazard('),block(reaction,'void ReactionEngine::NotifyPartyCombat('),block(reaction,'void ReactionEngine::StopReaction('),
  block(reaction,'bool ReactionEngine::Update('),block(reaction,'bool ReactionEngine::CanUpdateAIReaction('),

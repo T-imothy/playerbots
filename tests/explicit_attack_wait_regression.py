@@ -20,11 +20,11 @@ enum{SEC_PLAYER=0};enum class PlayerbotSecurityLevel{PLAYERBOT_SECURITY_ALLOW_AL
 namespace BotState{enum{BOT_STATE_COMBAT};}
 time_t now=100;time_t fakeTime(time_t*){return now;}
 #define time fakeTime
-struct Group{};struct PlayerbotAI;struct WaitForAttackStrategy;
+struct Map{bool raid=false;bool IsRaid(){return raid;}};struct Group{};struct PlayerbotAI;struct WaitForAttackStrategy;
 struct Unit{virtual ~Unit()=default;bool world=true,alive=true,combat=true,friendly=false;unsigned guid=3,entry=1,instance=1;
- bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}unsigned GetEntry(){return entry;}unsigned GetObjectGuid(){return guid;}};
+ Unit*victim=nullptr;Unit*GetVictim(){return victim;}virtual bool IsPlayer(){return false;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}unsigned GetEntry(){return entry;}unsigned GetObjectGuid(){return guid;}};
 struct Session{unsigned security=0;unsigned GetSecurity(){return security;}};
-struct Player:Unit{bool real=true,transfer=false,charm=false;Group*group=nullptr;PlayerbotAI*ai=nullptr;Session session;
+struct Player:Unit{Map map;Map*GetMap(){return &map;}bool roleTank=false;bool IsPlayer()override{return true;}bool real=true,transfer=false,charm=false;Group*group=nullptr;PlayerbotAI*ai=nullptr;Session session;
  bool isRealPlayer(){return real;}Group*GetGroup(){return group;}bool IsInMap(Unit*u){return u&&u->instance==instance;}
  bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}Session*GetSession(){return &session;}PlayerbotAI*GetPlayerbotAI(){return ai;}};
 template<class T>struct Cached{T value{};T Get(){return value;}};
@@ -32,10 +32,10 @@ struct AiObjectContext{Cached<time_t>combat;Cached<uint8>wait;Cached<ObjectGuid>
  template<class T>Cached<T>*GetValue(const char*){if constexpr(std::is_same_v<T,time_t>)return &combat;
  else if constexpr(std::is_same_v<T,uint8>)return &wait;else return &target;}};
 struct Security{bool allowed=true;bool CheckLevelFor(PlayerbotSecurityLevel,bool,Player*){return allowed;}};
-struct PlayerbotAI{Player*bot,*owner;AiObjectContext context;Security security;bool enabled=true,human=false,tank=false;WaitForAttackStrategy*strategy=nullptr;std::map<unsigned,Unit*>units;
+struct PlayerbotAI{Player*bot,*owner;AiObjectContext context;Security security;bool healer=false;bool IsHeal(Player*){return healer;}bool enabled=true,human=false,tank=false;WaitForAttackStrategy*strategy=nullptr;std::map<unsigned,Unit*>units;
  PlayerbotAI(Player*b,Player*o):bot(b),owner(o){b->ai=this;context.wait.value=10;context.combat.value=100;context.target.value=3;}
  Player*GetBot(){return bot;}Player*GetMaster(){return owner;}Security*GetSecurity(){return &security;}bool HasRealPlayerMaster(){return owner&&owner->real;}
- bool IsRealPlayer(){return human;}bool IsTank(Player*){return tank;}AiObjectContext*GetAiObjectContext(){return &context;}bool HasStrategy(const char*,int){return enabled;}
+ bool IsRealPlayer(){return human;}bool IsTank(Player*p){return p==bot?tank:p->roleTank;}AiObjectContext*GetAiObjectContext(){return &context;}bool HasStrategy(const char*,int){return enabled;}
  time_t GetCombatStartTime(){return context.combat.value;}Unit*GetUnit(unsigned id){return units.count(id)?units[id]:nullptr;}
  template<class T>T*GetStrategy(const char*,int){return enabled?static_cast<T*>(strategy):nullptr;}};
 struct WaitForAttackStrategy{ObjectGuid orderedOwner=0,orderedTarget=0;time_t orderedAt=0,orderedCombatStart=0;
@@ -65,6 +65,12 @@ int main(){Player bot,owner,other;Group group,foreign;bot.guid=2;owner.guid=1;ot
  target.entry=1;ai.owner=&other;other.group=&group;assert(WaitForAttackStrategy::ShouldWait(&ai));ai.owner=&owner;
  target.combat=false;assert(WaitForAttackStrategy::ShouldWait(&ai));target.combat=true;target.alive=false;assert(WaitForAttackStrategy::ShouldWait(&ai));target.alive=true;
  ai.enabled=false;assert(!WaitForAttackStrategy::ShouldWait(&ai));ai.enabled=true;ai.context.combat.value=0;assert(!WaitForAttackStrategy::ShouldWait(&ai));
+ ai.context.combat.value=now=200;strategy={};bot.map.raid=true;target.entry=12101;target.victim=&owner;owner.roleTank=true;
+ assert(!WaitForAttackStrategy::ShouldWait(&ai)); // natural Surger pull already held by a raid tank
+ owner.roleTank=false;assert(WaitForAttackStrategy::ShouldWait(&ai));owner.roleTank=true;owner.group=&foreign;assert(WaitForAttackStrategy::ShouldWait(&ai));owner.group=&group;
+ target.entry=11669;assert(WaitForAttackStrategy::ShouldWait(&ai)); // requested imp damage hold survives tank control
+ ai.healer=true;assert(!WaitForAttackStrategy::ShouldWait(&ai));ai.healer=false;ai.tank=true;assert(!WaitForAttackStrategy::ShouldWait(&ai));ai.tank=false;
+ target.entry=11673;assert(!WaitForAttackStrategy::ShouldWait(&ai));bot.map.raid=false;assert(WaitForAttackStrategy::ShouldWait(&ai));
  std::cout<<"PASS native explicit Attack: timed gate released only for authorized current pull; normal wait, imp wait, native permissions and later pulls preserved\n";
 }
 '''.replace('__ACCESS__',access).replace('__METHODS__',methods)

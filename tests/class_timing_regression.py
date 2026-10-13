@@ -21,13 +21,13 @@ struct Event{};
 '''
 wait=src('generic/CombatStrategy.cpp')
 run(common+r'''
-struct Unit {virtual ~Unit(){};float health=100;float GetHealthPercent(){return health;}};
-using ObjectGuid=Unit*;struct PlayerbotAI;struct Player:Unit {PlayerbotAI*ai=nullptr;PlayerbotAI*GetPlayerbotAI(){return ai;}bool grouped=true;void* GetGroup(){return grouped?this:nullptr;}};
+struct Unit {virtual ~Unit(){};bool IsPlayer(){return false;}bool IsInWorld(){return true;}bool IsAlive(){return true;}bool IsInCombat(){return true;}unsigned GetEntry(){return 1;}Unit*GetVictim(){return nullptr;}float health=100;float GetHealthPercent(){return health;}};
+struct Map{bool IsRaid(){return false;}};using ObjectGuid=Unit*;struct PlayerbotAI;struct Player:Unit {Map map;Map*GetMap(){return &map;}bool IsBeingTeleported(){return false;}bool HasCharmer(){return false;}bool IsInMap(Unit*){return true;}PlayerbotAI*ai=nullptr;PlayerbotAI*GetPlayerbotAI(){return ai;}bool grouped=true;void* GetGroup(){return grouped?this:nullptr;}};
 struct Value{Unit* target=nullptr;Unit* Get(){return target;}};
 struct AiObjectContext {Value v;template<class T>Value* GetValue(const char*){return &v;}};
 enum class BotState{BOT_STATE_COMBAT};
 struct PlayerbotAI {Player bot;PlayerbotAI(){bot.ai=this;}Unit*GetUnit(Unit*u){return u;}AiObjectContext ctx;bool strategy=true,master=true;time_t start=time(nullptr);uint8 wait=10;
- bool HasStrategy(const char*,BotState){return strategy;}Player* GetBot(){return &bot;}AiObjectContext* GetAiObjectContext(){return &ctx;}bool HasRealPlayerMaster(){return master;}};
+ bool IsTank(Player*){return false;}bool IsHeal(Player*){return false;}bool IsRealPlayer(){return false;}bool HasStrategy(const char*,BotState){return strategy;}Player* GetBot(){return &bot;}AiObjectContext* GetAiObjectContext(){return &ctx;}bool HasRealPlayerMaster(){return master;}};
 struct Facade{bool friendly=false;bool IsFriendlyTo(Unit* a,Unit* b){return a==b||friendly;}}sServerFacade;
 struct Config{float lowHealth=40;}sPlayerbotAIConfig;
 #define AI_VALUE(type,key) (ai->start)

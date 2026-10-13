@@ -79,7 +79,7 @@ namespace ai {
  struct MoltenCorePositionValue {Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
  bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
  // This fixture isolates the existing boss hazards; trash is checked separately.
- bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&) { return false; }Unit*MoltenCorePackTankTarget(PlayerbotAI*){return nullptr;}
+ bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&) { return false; }Unit*MoltenCorePackTankTarget(PlayerbotAI*){return nullptr;}Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*){return nullptr;}
  bool RagnarosSameCluster(PlayerbotAI*,Player*){return false;}
  bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&){return false;}
  struct Event{};

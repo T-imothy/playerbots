@@ -173,6 +173,24 @@ bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
                 }
             }
 
+              if (bot->GetMap()->IsRaid() && bot->IsInWorld() && bot->IsAlive() &&
+                  !bot->IsBeingTeleported() && !bot->HasCharmer() && !ai->IsRealPlayer())
+              {
+                  // Healers and tanks must support a live raid pull immediately.
+                  // Damage still uses native threat/resource checks; the separate
+                  // Flame Imp opening remains enforced for damage and AoE.
+                  if (ai->IsHeal(bot) || ai->IsTank(bot)) return false;
+                  if (target && target->IsInWorld() && target->IsAlive() && target->IsInCombat() &&
+                      bot->IsInMap(target) && target->GetEntry()!=11669)
+                      if (Unit* victim=target->GetVictim())
+                          if (victim->IsPlayer() && victim->IsInWorld() && victim->IsAlive() && bot->IsInMap(victim))
+                          {
+                              Player* tank=static_cast<Player*>(victim);
+                              if (!tank->IsBeingTeleported() && !tank->HasCharmer() &&
+                                  tank->GetGroup()==bot->GetGroup() && ai->IsTank(tank)) return false;
+                          }
+              }
+
             if (!enemyPlayer)
             {
                 // Check if bot is currently in combat

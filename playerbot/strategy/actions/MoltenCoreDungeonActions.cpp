@@ -960,6 +960,9 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         bot->GetMapId() != 409) return false;
     plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("molten core position")->Get();
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
+    if (ai->IsTank(bot))
+        if (Unit* assigned=MoltenCoreAssignedTankTarget(ai))
+            if (assigned->GetVictim()!=bot) return false; // Reacquisition outranks every cached gathering station.
     if (plan.spell == 20475 && !plan.source.IsEmpty())
     {
         Unit* carrier = plan.source == bot->GetObjectGuid() ? bot : ai->GetUnit(plan.source);

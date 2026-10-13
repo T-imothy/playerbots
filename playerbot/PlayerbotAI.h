@@ -721,6 +721,7 @@ public:
 
     bool IsStateActive(BotState state) const;
     time_t GetCombatStartTime() const;
+    void PrepareForUrgentHazard();
 
     void OnCombatStarted();
     void OnCombatEnded();
@@ -779,7 +780,6 @@ private:
     void PrepareForUrgentAttack();
     void PrepareForUrgentCombat();
     void PrepareForPartyCombat();
-    void PrepareForUrgentHazard();
     void PrepareCompletedMovement();
     bool ProcessPendingTransition();
     void ClearPendingTransition(uint32 expectedTriggerId = 0, bool stopMovement = false);
