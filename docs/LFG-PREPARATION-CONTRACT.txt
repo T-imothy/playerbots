@@ -1,0 +1,152 @@
+Core/addon LFG preparation contract: arrival_diag_v1 + receipt_v1
+Applies identically to Classic, TBC and WotLK.
+This handoff describes the tested source contract; consult release-result.json
+for compiled, published and deployed revisions. Source alone is not deployment.
+
+1. Existing v1 remains supported
+
+  recruit v1 <id> status <bot_guid>
+  recruit v1 <id> summon <bot_guid>
+  recruit v1 <id> prepare <bot_guid> <action>
+
+Their ordinary PBRECRUIT 1 replies keep the existing payload and result strings.
+In particular, arrival rejection is still "refused not_arrived", status is still
+"joined not_nearby" / "joined requester_transfer" / "joined bot_transfer", and
+successful preparation still returns its existing result text. No diagnostic
+chat line is sent unless an extension operation below is explicitly requested.
+Server logs record bounded preparation diagnostics even for an ordinary v1 call.
+
+2. Capability negotiation (read-only, new unique request ID)
+
+  recruit v1 <cap_id> capabilities 0
+
+  PBRECRUIT 1 <cap_id> 0 complete arrival_diag_v1=1;receipt_v1=1;epoch=<epoch>;receipt_seconds=600;prepare_receipts=process
+
+The epoch is an opaque decimal token (1-32 digits) for this server process.
+Do not convert it to a Lua number; preserve it as a string.
+An old core replies unsupported_operation; remain on the ordinary v1 fallback.
+Do not assume capabilities from the addon or client expansion version.
+
+3. Explicit opt-in requests
+
+  recruit v1 <id> status_diag <bot_guid> <epoch>
+  recruit v1 <id> summon_diag <bot_guid> <epoch>
+  recruit v1 <id> prepare_diag <bot_guid> <action> <epoch>
+
+Actions: gear, food, potions, consumes, reagents, ammo (unchanged).
+These yield the existing PBRECRUIT 1 result, followed by one side-channel line:
+
+  PBRECRUIT_DIAG 1 <id> <owner_guid> <bot_guid> <operation> <stage> <condition> <distance_or_na> <limit> <owner_map_or_na> <owner_instance_or_na> <bot_map_or_na> <bot_instance_or_na> <mutation>
+
+There are exactly 15 whitespace-separated tokens, including the prefix/version.
+operation is canonical status, summon or prepare, without the _diag suffix.
+Distances are native server yards, formatted with six decimal places, or na.
+The limit is currently 10.000000. IDs are decimal; absent measurements use na.
+An arriving player can be visibly nearby while the server reports a transition,
+instance mismatch or blocked LOS. Do not infer readiness from an inspect window.
+
+Arrival conditions:
+  ok, requester_not_in_world, bot_not_in_world, requester_transferring,
+  bot_transferring, bot_dead, different_map, different_instance, too_far,
+  no_line_of_sight.
+The same evaluator is used by status and versioned preparation. Different native
+map objects count as incompatible even if their cached map/instance IDs match.
+Distance/LOS are never queried on unavailable, transferring or incompatible
+objects; LOS is not queried after a failed distance check. Native control,
+identity and preparation-policy rejection tokens can also appear as condition.
+Readiness is a snapshot at the original request's handling time. Replaying that
+ID returns the original snapshot. Use a NEW status/status_diag ID to measure
+current readiness again; do not treat a recovered old status as a fresh check.
+
+Stages:
+  current_readiness       = current position/arrival readiness, not gear READY.
+  accepted_landing        = successful historical summon at the accepted point.
+  pre_mutation_refused    = rejected before entering the preparation mutator.
+  mutation_complete      = native preparation callback completed.
+  mutation_uncertain     = callback entered but returned a refusal afterwards.
+  no_mutation_complete   = native successful no-op before a mutation callback.
+  not_evaluated          = other pending/terminal transaction state.
+
+mutation: none, completed, uncertain.
+For pre_mutation_refused + none, this attempt made no gear/supply changes.
+mutation_uncertain MUST NOT be automatically rerolled or marked READY, even if
+the ordinary v1 result says refused. Do not equate native completion of one step
+with whole-bot readiness; preserve per-step records and the remaining checks.
+
+For accepted_landing, the map/instance fields identify the accepted summon
+destination, and distance is na. They do not describe the leader's later
+position. Poll status_diag for current readiness before preparing. Movement by
+the leader cannot retroactively turn a completed summon into a failed summon.
+
+Example (legacy refusal retained, exact failed condition available):
+  PBRECRUIT 1 gear32 12345 refused not_arrived
+  PBRECRUIT_DIAG 1 gear32 7206 12345 prepare pre_mutation_refused no_line_of_sight 6.250000 10.000000 0 0 0 0 none
+
+4. Lost acknowledgements and read-only receipt recovery
+
+  recruit v1 <query_id> receipt <bot_guid> <original_id> <epoch>
+
+query_id must be new and distinct from original_id. A found receipt sends:
+  the original PBRECRUIT 1 result using ORIGINAL_ID;
+  its original PBRECRUIT_DIAG line using ORIGINAL_ID (when available);
+  PBRECRUIT 1 <query_id> <bot_guid> complete receipt_found
+
+Replay of query_id repeats these recovery messages without mutation.
+The result is looked up only in the requester's own GUID namespace, and the
+target bot GUID must match. receipt_bot_mismatch is a confirmed query rejection.
+
+  PBRECRUIT 1 <query_id> <bot_guid> unknown receipt_missing
+
+Missing means UNKNOWN, not a confirmed refusal and not proof the original never
+executed. Keep uncertain gear isolated; do not automatically send a new gear ID.
+A pending queued original receipt is also not a confirmed outcome.
+
+5. Replay/cancellation/restart rules
+
+Every request ID is unique within the owner's namespace across all operations.
+Replay the same ID only with the same operation, bot, arguments and epoch.
+Changing them yields id_conflict; it does not alter the saved original receipt.
+Confirmed refusal is replayed as that refusal even after readiness improves.
+A later retry of a CONFIRMED refusal therefore uses a NEW ID.
+
+Versioned preparation decisions are retained for this process, including
+confirmed refusals and uncertain callback results. Completed IDs cannot mutate
+again after the ordinary 600-second receipt cache expires. Retention is bounded:
+8192 preparation IDs globally, 4096 per owner. At capacity, new preparation is
+refused receipt_limit before mutation; old decisions are not evicted to reroll.
+Status, discovery, summon and query receipts retain the ordinary 600-second TTL.
+Manual .bot preparation still has its existing separate 60-second reuse policy.
+
+Records are not durable across a realm restart. A stale extension epoch yields
+refused epoch_changed without entering the mutator. This says the RETRY did not
+mutate; it does not establish the original outcome before the restart. Negotiate
+the new epoch for new work, keep unresolved old work uncertain, and do not change
+the epoch on an old gear request and automatically resend it. Ordinary v1 has no
+epoch fence; retain the addon's existing conservative unknown-result handling.
+
+  recruit v1 <cancel_id> cancel <bot_guid_or_0>
+
+Existing cancellation affects that owner's pending invites/summons. A transfer
+already started may finish (transfer_may_complete). Cancellation never undoes
+completed preparation; its receipt remains queryable. Stop sending further
+preparation commands after cancelling a client build. Already dispatched gear
+must be reconciled from its original receipt; cancellation is not proof of a
+refusal. A bot refusal does not cancel unrelated bot requests in the coordinator.
+
+6. Policy and diagnostics
+
+No distance, LOS, ownership, GUID, membership, leadership, instance-entry or
+native preparation safety restriction was widened or removed. The versioned
+10-yard/LOS rule is a builder readiness fence, not a technical prerequisite of
+the gear factory: legacy manual preparation already permits remote preparation.
+That difference is preserved pending evidence for a separately reviewed policy
+change. Current status is location readiness; supplies additionally retain
+combat/control/transport checks, and gear retains its existing combat policy.
+
+Server log: PLAYERBOT_RECRUIT_DIAG: <same diagnostic payload>
+Correlate request ID, owner GUID, bot GUID and canonical operation. Logs are
+bounded to 32 events/second globally and 8/owner/second. Replay and idle polling
+ticks do not repeatedly log the same outcome. Stored receipts retain diagnostics
+even when logging is rate-limited. No bot names, credentials or inventory dumps
+are needed. The old Drarnem incident cannot be assigned an exact condition
+retroactively; new failures expose the actual server decision.

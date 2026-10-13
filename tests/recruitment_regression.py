@@ -66,7 +66,7 @@ struct DungeonMap:Map{unsigned count=1,max=40;InstanceData data;
  InstanceData* GetInstanceData(){return &data;}};
 struct MapEntry{bool instanced=false;bool Instanceable()const{return instanced;}};
 struct MapStore{MapEntry entry;bool missing=false;MapEntry const* LookupEntry(uint32){return missing?nullptr:&entry;}}sMapStore;
-struct Log{template<class... T>void outString(const char*,T...){}}sLog;
+struct Log{unsigned diagnostics=0;template<class... T>void outString(const char* format,T...){if(std::string(format)=="PLAYERBOT_RECRUIT_DIAG: %s")++diagnostics;}}sLog;
 struct WorldLocation{uint32 mapid=409;float coord_x=0,coord_y=0,coord_z=0;};
 struct LfgData {int state=LFG_STATE_NONE;int GetState(){return state;}};
 class PlayerbotHolder {public:std::string ProcessBotCommand(std::string,ObjectGuid,ObjectGuid,bool,uint32,uint32);};
@@ -86,8 +86,8 @@ struct Group {ObjectGuid leader,assistant;unsigned count=1;bool raid=false,bg=fa
 std::vector<std::unique_ptr<Group>> groups;
 struct Player {
  uint32 id,level=43,cls=1,guild=0,team=0,mapId=1,instance=0;bool real=false,world=true,transfer=false,alive=true,combat=false,
- taxi=false,transport=false,charm=false,bg=false,bgQueue=false,afk=false,los=true;float distance=0;
- std::string name,talents="0-0-10";WorldSession session;AI ai;Social social;Group* group=nullptr;Group* invite=nullptr;
+ taxi=false,transport=false,charm=false,bg=false,bgQueue=false,afk=false,los=true,separateMap=false;float distance=0;unsigned distanceChecks=0,losChecks=0;
+ std::string name,talents="0-0-10",applyResult="random gear equipped";WorldSession session;AI ai;Social social;Group* group=nullptr;Group* invite=nullptr;
  float landingDistance=0;std::string summonFailure;bool summonRetryable=false;unsigned summonChecks=0;unsigned summons=0,queueCancellations=0,raidPreparations=0;WorldLocation destination;
  bool IsWithinDist3d(float,float,float,float r){return landingDistance<=r;}WorldLocation const& GetTeleportDest(){return destination;}
  DungeonMap map;LfgData lfg;PlayerbotHolder holder;unsigned gear=0;int health=50,maxHealth=100,mana=5,maxMana=100,otherPower=23;
@@ -109,8 +109,8 @@ struct Player {
  bool IsInWorld(){return world;}bool IsBeingTeleported(){return transfer;}bool IsBeingTeleportedFar(){return transfer;}bool HasCharmer(){return charm;}
  uint32 GetMapId(){return mapId;}uint32 GetInstanceId(){return instance;}void* GetTransport(){return transport?this:nullptr;}
  bool IsTaxiFlying(){return taxi;}bool IsInCombat(){return combat;}bool IsAlive(){return alive;}
- Map* GetMap(){static Map same;return mapId==1?&same:&map;}float GetDistance(Player*){return distance;}
- bool IsWithinLOSInMap(Player*){return los;}const char* GetName(){return name.c_str();}unsigned getClass(){return cls;}
+ Map* GetMap(){static Map same;return mapId==1&&!separateMap?&same:&map;}float GetDistance(Player* other){++distanceChecks;assert(world&&other->world&&!transfer&&!other->transfer&&alive&&mapId==other->mapId&&instance==other->instance&&GetMap()==other->GetMap());return distance;}
+ bool IsWithinLOSInMap(Player* other){++losChecks;assert(world&&other->world&&!transfer&&!other->transfer&&GetMap()==other->GetMap());return los;}const char* GetName(){return name.c_str();}unsigned getClass(){return cls;}
  uint32 GetLevel(){return level;}bool isAFK(){return afk;}void ToggleAFK(){afk=!afk;}
  void UninviteFromGroup(){invite=nullptr;}PlayerbotHolder* GetPlayerbotMgr(){return &holder;}
 };
@@ -151,10 +151,10 @@ void WorldSession::HandleGroupAcceptOpcode(WorldPacket&){
 }
 std::string PlayerbotHolder::ProcessBotCommand(std::string cmd,ObjectGuid bg,ObjectGuid og,bool,uint32,uint32){
  Player* b=sObjectMgr.GetPlayer(bg);Player* o=sObjectMgr.GetPlayer(og);
- return ai::BotRecruitment::Prepare(o,b,cmd,"",[&](){++b->gear;return "random gear equipped";});
+ return ai::BotRecruitment::Prepare(o,b,cmd,"",[&](){++b->gear;return b->applyResult;});
 }
 void reset(){players.clear();groups.clear();messages.clear();fakeNow+=100;sWorld.defer=false;sWorld.callbacks.clear();
- auto& s=State();s.incoming.clear();s.invites.clear();s.managedInvites.clear();s.summons.clear();s.reservations.clear();s.receipts.clear();s.preparation.clear();s.discoveryTime.clear();s.nextDiscovery=0;s.elapsed=0;sPlayerbotAIConfig.allowGuildBots=false;sPlayerbotAIConfig.recruitmentRevive=true;sWorld.cross=false;sMapStore.missing=false;sMapStore.entry.instanced=false;}
+ auto& s=State();s.incoming.clear();s.invites.clear();s.managedInvites.clear();s.summons.clear();s.reservations.clear();s.receipts.clear();s.preparationReceipts.clear();s.preparation.clear();s.preparationTrace=nullptr;s.explicitPreparation=false;sLog.diagnostics=0;s.diagnosticWork=0;s.diagnosticOwnerWork.clear();s.diagnosticSecond=0;s.discoveryTime.clear();s.nextDiscovery=0;s.elapsed=0;sPlayerbotAIConfig.allowGuildBots=false;sPlayerbotAIConfig.recruitmentRevive=true;sWorld.cross=false;sMapStore.missing=false;sMapStore.entry.instanced=false;}
 void tick(unsigned seconds=0){fakeNow+=seconds;ai::BotRecruitment::Update(250);}
 void invite(Player& p,Player& b){WorldPacket packet;packet<<b.name;p.session.HandleGroupInviteOpcode(packet);}
 void command(Player& p,std::string args){assert(ai::BotRecruitment::HandleCommand(&p,"recruit v1 "+args));tick();}
@@ -402,7 +402,62 @@ int main(){
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.summonFailure="instance_full";b.summonRetryable=true;
  command(p,"full summon 2");assert(has("summon_pending instance_full"));tick(45);assert(has("timed_out instance_full")&&b.summons==0);}
 
- std::cout<<"PASS: actual coordinator permissions, native-invite scheduling, stale/replaced invites, ownership, combat/death, session loss, transports, arrival, replay, cancellation, mixed 40-member capacity, bounded discovery/work\n";
+ // Opt-in arrival diagnostics execute the real coordinator and safety guards.
+ reset();{Player p(1,true),b(2);b.ai.master=&p;Group g;g.leader=p.GetObjectGuid();p.group=b.group=&g;
+ command(p,"caps capabilities 0");assert(has("complete arrival_diag_v1=1;receipt_v1=1;epoch="+State().epoch));
+ b.distance=10;command(p,"near status_diag 2 "+State().epoch);assert(has("PBRECRUIT 1 near 2 arrived ok"));assert(has("PBRECRUIT_DIAG 1 near 1 2 status current_readiness ok 10.000000 10.000000 1 0 1 0 none"));
+ b.distance=10.01f;command(p,"far prepare_diag 2 gear "+State().epoch);assert(has("PBRECRUIT 1 far 2 refused not_arrived"));assert(has("prepare pre_mutation_refused too_far 10.010000 10.000000"));assert(b.gear==0);
+ b.distance=0;command(p,"far prepare_diag 2 gear "+State().epoch);assert(b.gear==0); // A confirmed refusal requires a NEW ID after recovery.
+ command(p,"new prepare_diag 2 gear "+State().epoch);assert(b.gear==1&&has("prepare mutation_complete ok 0.000000 10.000000 1 0 1 0 completed"));
+ messages.clear();command(p,"new prepare_diag 2 gear "+State().epoch);assert(b.gear==1&&has("complete random gear equipped"));
+ tick(limits::ReceiptSeconds+1);messages.clear();command(p,"new prepare_diag 2 gear "+State().epoch);assert(b.gear==1&&has("complete random gear equipped"));
+ messages.clear();command(p,"recover receipt 2 new "+State().epoch);assert(b.gear==1&&has("PBRECRUIT 1 new 2 complete random gear equipped")&&has("PBRECRUIT_DIAG 1 new")&&has("PBRECRUIT 1 recover 2 complete receipt_found"));
+ messages.clear();command(p,"recover receipt 2 new "+State().epoch);assert(b.gear==1&&has("PBRECRUIT 1 new 2 complete random gear equipped"));
+ command(p,"missing receipt 2 never_seen "+State().epoch);assert(has("unknown receipt_missing")&&b.gear==1);
+ command(p,"wrong receipt 3 new "+State().epoch);assert(has("refused receipt_bot_mismatch"));
+ command(p,"epoch prepare_diag 2 gear 0");assert(has("refused epoch_changed")&&b.gear==1);
+ command(p,"new prepare_diag 2 gear 0");command(p,"new prepare_diag 2 gear "+State().epoch);assert(b.gear==1&&has("complete random gear equipped")); // bad epoch cannot overwrite receipt
+ }
+ for(unsigned fault=0;fault<9;++fault){reset();Player p(1,true),b(2);b.ai.master=&p;Group g;g.leader=p.GetObjectGuid();p.group=b.group=&g;
+  const char* expected="";
+  if(fault==0){p.world=false;expected="requester_not_in_world";}if(fault==1){b.world=false;expected="bot_not_in_world";}
+  if(fault==2){p.transfer=true;expected="requester_transferring";}if(fault==3){b.transfer=true;expected="bot_transferring";}
+  if(fault==4){b.alive=false;expected="bot_dead";}if(fault==5){b.mapId=2;expected="different_map";}
+  if(fault==6){b.instance=99;expected="different_instance";}if(fault==7){b.los=false;expected="no_line_of_sight";}
+  if(fault==8){b.separateMap=true;expected="different_instance";}
+  auto arrival=EvaluateArrival(&p,&b);assert(std::string(limits::ArrivalReason(arrival.condition))==expected);
+  if(fault!=7)assert(!b.distanceChecks&&!b.losChecks);
+  command(p,"denied prepare_diag 2 gear "+State().epoch);assert(b.gear==0&&has("refused not_arrived")&&has(std::string("pre_mutation_refused ")+expected));
+  messages.clear();command(p,"check status_diag 2 "+State().epoch);assert(has(std::string("current_readiness ")+expected));
+ }
+ reset();{Player p(1,true),b(2);b.ai.master=&p;Group g;g.leader=p.GetObjectGuid();p.group=b.group=&g;b.los=false;
+ command(p,"legacy prepare 2 gear");assert(has("PBRECRUIT 1 legacy 2 refused not_arrived")&&!has("PBRECRUIT_DIAG")&&!b.gear);
+ command(p,"status status 2");assert(has("PBRECRUIT 1 status 2 joined not_nearby")&&!has("PBRECRUIT_DIAG"));
+ }
+ reset();{Player p(1,true),b(2);b.ai.master=&p;Group g;g.leader=p.GetObjectGuid();p.group=b.group=&g;
+ command(p,"landing summon_diag 2 "+State().epoch);b.transfer=false;b.distance=50;b.landingDistance=0;tick();
+ assert(has("PBRECRUIT 1 landing 2 arrived ok")&&has("summon accepted_landing ok"));
+ command(p,"current status_diag 2 "+State().epoch);assert(has("joined not_nearby")&&has("status current_readiness too_far"));
+ command(p,"gear prepare_diag 2 gear "+State().epoch);assert(!b.gear&&has("pre_mutation_refused too_far"));
+ }
+ reset();{Player p(1,true),other(3,true),b(2);b.ai.master=&other;command(p,"owned prepare_diag 2 gear "+State().epoch);assert(!b.gear&&has("other_controller"));
+ b.ai.master=&p;Player conflict(4);conflict.name=b.name;command(p,"identity prepare_diag 2 gear "+State().epoch);assert(!b.gear&&has("name_identity_conflict"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.combat=true;command(p,"supply prepare_diag 2 food "+State().epoch);assert(!b.gear&&has("pre_mutation_refused combat")&&has("1 0 1 0 none"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.applyResult="refused: after_partial_work";command(p,"uncertain prepare_diag 2 gear "+State().epoch);
+ assert(b.gear==1&&has("mutation_uncertain after_partial_work")&&has("1 0 1 0 uncertain"));messages.clear();command(p,"uncertain prepare_diag 2 gear "+State().epoch);assert(b.gear==1&&has("mutation_uncertain"));assert(!State().explicitPreparation&&!State().preparationTrace);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;command(p,"finished prepare_diag 2 gear "+State().epoch);messages.clear();command(p,"stop cancel 2");assert(b.gear==1&&has("cancelled completed_work_kept"));command(p,"saved receipt 2 finished "+State().epoch);assert(b.gear==1&&has("PBRECRUIT 1 finished 2 complete random gear equipped"));}
+ reset();{Player p(1,true),far(2),near(3);far.ai.master=near.ai.master=&p;far.distance=50;command(p,"failed prepare_diag 2 gear "+State().epoch);command(p,"other prepare_diag 3 gear "+State().epoch);assert(!far.gear&&near.gear==1);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;command(p,"transfer summon_diag 2 "+State().epoch);command(p,"cancel cancel 2");b.transfer=false;tick();assert(has("cancelled transfer_may_complete")&&!b.gear);
+ command(p,"old receipt 2 transfer "+State().epoch);assert(has("PBRECRUIT 1 transfer 2 cancelled transfer_may_complete"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=50;for(unsigned i=0;i<30;++i)command(p,"log"+std::to_string(i)+" prepare 2 gear");assert(sLog.diagnostics==limits::DiagnosticEventsPerPlayerPerSecond&&!b.gear);
+ unsigned logs=sLog.diagnostics;for(unsigned i=0;i<20;++i)tick();assert(sLog.diagnostics==logs);}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;
+ for(unsigned i=0;i<limits::MaxPreparationReceiptsPerPlayer;++i)State().preparationReceipts[{1,"kept"+std::to_string(i)}]={"prepare 2 gear","PBRECRUIT 1 kept 2 complete random gear equipped",0};
+ command(p,"bounded prepare_diag 2 gear "+State().epoch);assert(!b.gear&&has("refused receipt_limit")&&has("pre_mutation_refused receipt_limit"));}
+ reset();{std::vector<std::unique_ptr<Player>> owners,bots;for(unsigned o=0;o<5;++o){owners.emplace_back(new Player(100+o,true));bots.emplace_back(new Player(200+o));bots.back()->ai.master=owners.back().get();bots.back()->distance=50;
+ for(unsigned i=0;i<10;++i)command(*owners.back(),"diag"+std::to_string(i)+" prepare "+std::to_string(200+o)+" gear");}
+ assert(sLog.diagnostics==limits::DiagnosticEventsPerSecond);}
+ std::cout<<"PASS: actual coordinator permissions, native invitations, summon/arrival separation, structured readiness, pre-mutation refusal, lost ACK recovery, retained replay, cancellation, v1 compatibility and bounded diagnostics\n";
 }
 '''
 policy=(root/'playerbot/RecruitmentPolicy.h').read_text().replace('#pragma once','')

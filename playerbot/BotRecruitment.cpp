@@ -16,6 +16,7 @@
 #include <set>
 #include <sstream>
 #include <cctype>
+#include <iomanip>
 
 using namespace ai;
 namespace limits = ai::RecruitmentPolicy;
@@ -34,7 +35,11 @@ namespace
         Group* invitation = nullptr;
         Group* membership = nullptr;
         EventOwner ownerIdentity, botIdentity;
-        std::string id, operation, arguments;
+        std::string id, operation, arguments, epoch;
+        bool diagnostics = false;
+        bool arrivalEvaluated = false;
+        limits::ArrivalResult arrival;
+        std::string diagnosticStage, diagnosticReason, mutation = "none";
         uint64 expires = 0;
         unsigned size = 40;
         uint32 map = 0, instance = 0;
@@ -51,11 +56,18 @@ namespace
     {
         std::string payload, response;
         uint64 expires;
+        std::string diagnostic;
+        std::string recoveryResponse, recoveryDiagnostic;
     };
     struct Reservation
     {
         ObjectGuid owner;
         uint64 expires;
+    };
+    struct PreparationTrace
+    {
+        bool entered = false;
+        std::string refusal;
     };
     struct Service
     {
@@ -66,11 +78,19 @@ namespace
         std::map<uint32, Request> invites, summons;
         std::map<uint32, Reservation> reservations;
         std::map<std::pair<uint32, std::string>, Receipt> receipts;
+        // Terminal preparation decisions stay replayable for this process.
+        // Never evict a gear receipt and allow the same ID to reroll equipment.
+        std::map<std::pair<uint32, std::string>, Receipt> preparationReceipts;
         std::map<std::string, Receipt> preparation;
         std::map<uint32, uint64> discoveryTime;
         uint32 elapsed = 0;
         uint64 nextDiscovery = 0;
         bool explicitPreparation = false;
+        PreparationTrace* preparationTrace = nullptr;
+        const std::string epoch = std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+        uint64 diagnosticSecond = 0;
+        unsigned diagnosticWork = 0;
+        std::map<uint32, unsigned> diagnosticOwnerWork;
         uint64 preparationSecond = 0;
         unsigned gearWork = 0, supplyWork = 0;
         std::map<uint32, unsigned> playerPreparationWork;
@@ -116,28 +136,89 @@ namespace
     }
     std::string Payload(Request const& request)
     {
-        return request.operation + " " + std::to_string(request.bot.GetCounter()) + " " + request.arguments;
+        return request.operation + " " + std::to_string(request.bot.GetCounter()) + " " + request.arguments +
+            (request.epoch.empty() ? "" : " diag_epoch=" + request.epoch);
     }
     std::string Response(Request const& request, const std::string& status, const std::string& reason)
     {
         return "PBRECRUIT 1 " + request.id + " " + std::to_string(request.bot.GetCounter()) +
             " " + status + " " + reason;
     }
+    std::string Diagnostic(Request const& request, const std::string& status, const std::string& reason)
+    {
+        std::string stage = request.diagnosticStage;
+        if (stage.empty()) stage = request.operation == "prepare" ? "pre_mutation_refused" : request.operation == "status" ? "current_readiness" :
+            request.operation == "summon" && status == "arrived" ? "accepted_landing" : "not_evaluated";
+        std::string condition = request.diagnosticReason;
+        if (condition.empty()) condition = request.arrivalEvaluated && !request.arrival.Ready() ?
+            limits::ArrivalReason(request.arrival.condition) : request.diagnosticStage == "pre_mutation_refused" ? reason :
+            request.arrivalEvaluated ? "ok" : reason;
+        for (char& c : condition) if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') c = '_';
+        if (condition.empty()) condition = "unknown";
+        if (condition.size() > 96) condition.resize(96);
+        auto location = [](bool known, uint32 value) { return known ? std::to_string(value) : "na"; };
+        std::ostringstream out;
+        out << "PBRECRUIT_DIAG 1 " << (request.id.empty() ? "-" : request.id) << " " << request.owner.GetCounter()
+            << " " << request.bot.GetCounter() << " " << request.operation << " " << stage << " " << condition << " ";
+        if (request.arrival.distanceKnown) out << std::fixed << std::setprecision(6) << request.arrival.distance;
+        else out << "na";
+        out << " " << std::fixed << std::setprecision(6) << request.arrival.limit
+            << " " << location(request.arrival.requesterLocationKnown, request.arrival.requesterMap)
+            << " " << location(request.arrival.requesterLocationKnown, request.arrival.requesterInstance)
+            << " " << location(request.arrival.botLocationKnown, request.arrival.botMap)
+            << " " << location(request.arrival.botLocationKnown, request.arrival.botInstance)
+            << " " << request.mutation;
+        return out.str();
+    }
+    void LogDiagnostic(Request const& request, const std::string& diagnostic)
+    {
+        Service& state = State();
+        if (state.diagnosticSecond != Now())
+        {
+            state.diagnosticSecond = Now(); state.diagnosticWork = 0; state.diagnosticOwnerWork.clear();
+        }
+        if (state.diagnosticWork >= limits::DiagnosticEventsPerSecond) return;
+        unsigned& count = state.diagnosticOwnerWork[request.owner.GetCounter()];
+        if (count >= limits::DiagnosticEventsPerPlayerPerSecond) return;
+        ++count; ++state.diagnosticWork;
+        sLog.outString("PLAYERBOT_RECRUIT_DIAG: %s", diagnostic.c_str());
+    }
+    void Replay(Player* owner, Receipt const& receipt, bool diagnostics)
+    {
+        if (!receipt.recoveryResponse.empty()) Tell(owner,receipt.recoveryResponse);
+        if (!receipt.recoveryDiagnostic.empty()) Tell(owner,receipt.recoveryDiagnostic);
+        Tell(owner, receipt.response);
+        if (diagnostics && !receipt.diagnostic.empty()) Tell(owner, receipt.diagnostic);
+    }
+    void RejectUncached(Request request, Player* owner, const std::string& reason)
+    {
+        request.diagnosticStage = "pre_mutation_refused"; request.diagnosticReason = reason;
+        const std::string diagnostic = Diagnostic(request,"refused",reason);
+        Tell(owner,Response(request,"refused",reason));
+        if (request.diagnostics) Tell(owner,diagnostic);
+        if (request.operation == "prepare" || request.diagnostics) LogDiagnostic(request,diagnostic);
+    }
     void Report(Request const& request, const std::string& status, const std::string& reason)
     {
         std::string response = Response(request, status, reason);
+        std::string diagnostic = Diagnostic(request, status, reason);
         if (!request.id.empty())
         {
             auto it = State().receipts.find({request.owner.GetCounter(), request.id});
             if (it != State().receipts.end())
-                it->second.response = response;
+            { it->second.response = response; it->second.diagnostic = diagnostic; }
+            auto retained = State().preparationReceipts.find({request.owner.GetCounter(), request.id});
+            if (retained != State().preparationReceipts.end())
+            { retained->second.response = response; retained->second.diagnostic = diagnostic; }
             Tell(Find(request.owner), response);
+            if (request.diagnostics) Tell(Find(request.owner), diagnostic);
         }
         else
         {
             Player* bot = Find(request.bot);
             Tell(Find(request.owner), std::string(bot ? bot->GetName() : "Bot") + ": " + status + " (" + reason + ")");
         }
+        if (request.operation == "prepare" || request.diagnostics) LogDiagnostic(request, diagnostic);
     }
     std::string Identity(Player* owner, Player* bot)
     {
@@ -157,6 +238,7 @@ namespace
     {
         std::string reason = Identity(owner, bot);
         if (!reason.empty()) return reason;
+        if (sObjectMgr.GetPlayer(bot->GetName()) != bot) return "name_identity_conflict";
         Group* group = Party(bot);
         if (group && group != Party(owner)) return "external_group";
         Player* master = bot->GetPlayerbotAI()->GetMaster();
@@ -279,13 +361,33 @@ namespace
             bot->GetGUIDLow(), owner->GetMapId(), owner->GetInstanceId(), owner->GetGUIDLow());
         return true;
     }
-    bool Arrived(Player* owner, Player* bot)
+    limits::ArrivalResult EvaluateArrival(Player* owner, Player* bot)
     {
-        return owner->IsInWorld() && !owner->IsBeingTeleported() && bot->IsInWorld() &&
-            !bot->IsBeingTeleported() && bot->GetMap() == owner->GetMap() &&
-            limits::Arrived(bot->IsInWorld(), bot->IsBeingTeleported(), bot->IsAlive(),
-                bot->GetMapId(), bot->GetInstanceId(), owner->GetMapId(), owner->GetInstanceId(),
-                bot->GetDistance(owner), bot->GetMap() == owner->GetMap() && bot->IsWithinLOSInMap(owner));
+        limits::ArrivalResult result;
+        const bool ownerWorld = owner && owner->IsInWorld(), botWorld = bot && bot->IsInWorld();
+        const bool ownerTransfer = owner && owner->IsBeingTeleported(), botTransfer = bot && bot->IsBeingTeleported();
+        if (ownerWorld && !ownerTransfer)
+        { result.requesterLocationKnown = true; result.requesterMap = owner->GetMapId(); result.requesterInstance = owner->GetInstanceId(); }
+        if (botWorld && !botTransfer)
+        { result.botLocationKnown = true; result.botMap = bot->GetMapId(); result.botInstance = bot->GetInstanceId(); }
+        using C = limits::ArrivalCondition;
+        if (!ownerWorld) result.condition = C::RequesterNotInWorld;
+        else if (!botWorld) result.condition = C::BotNotInWorld;
+        else if (ownerTransfer) result.condition = C::RequesterTransferring;
+        else if (botTransfer) result.condition = C::BotTransferring;
+        else if (!bot->IsAlive()) result.condition = C::BotDead;
+        else if (result.botMap != result.requesterMap) result.condition = C::DifferentMap;
+        else if (result.botInstance != result.requesterInstance || bot->GetMap() != owner->GetMap()) result.condition = C::DifferentInstance;
+        else
+        {
+            // No distance or LOS access until both native objects are usable
+            // and belong to the same map object and instance.
+            result.distance = bot->GetDistance(owner);
+            result.distanceKnown = std::isfinite(result.distance);
+            if (!result.distanceKnown || result.distance > result.limit) result.condition = C::TooFar;
+            else if (!bot->IsWithinLOSInMap(owner)) result.condition = C::NoLineOfSight;
+        }
+        return result;
     }
     bool Number(std::string const& text, uint32& value)
     {
@@ -305,7 +407,30 @@ namespace
         Service& state = State();
         Player* owner = Find(request.owner);
         Player* bot = Find(request.bot);
-        if (!Connected(owner) || request.ownerIdentity.Get() != owner) return;
+        if (!Connected(owner) || request.ownerIdentity.Get() != owner)
+        {
+            if (request.operation == "prepare") LogDiagnostic(request,Diagnostic(request,"refused","requester_session_changed"));
+            return;
+        }
+        if (!request.epoch.empty() && request.epoch != state.epoch)
+        {
+            RejectUncached(request,owner,"epoch_changed");
+            return;
+        }
+        if (!request.id.empty())
+        {
+            auto key = std::make_pair(request.owner.GetCounter(), request.id);
+            auto retained = state.preparationReceipts.find(key);
+            auto previous = state.receipts.find(key);
+            const Receipt* receipt = retained != state.preparationReceipts.end() ? &retained->second :
+                previous != state.receipts.end() ? &previous->second : nullptr;
+            if (receipt)
+            {
+                if (receipt->payload == Payload(request)) Replay(owner,*receipt,request.diagnostics);
+                else RejectUncached(request,owner,"id_conflict");
+                return;
+            }
+        }
         if (request.bot && request.botIdentity.Get() != bot)
         { Report(request,"refused","bot_session_changed"); return; }
         if (request.entryMap && (Party(owner) != request.membership ||
@@ -321,20 +446,43 @@ namespace
         if (!request.id.empty())
         {
             auto key = std::make_pair(request.owner.GetCounter(), request.id);
-            auto previous = state.receipts.find(key);
-            if (previous != state.receipts.end())
-            {
-                Tell(owner, previous->second.payload == Payload(request) ? previous->second.response : Response(request, "refused", "id_conflict"));
-                return;
-            }
             unsigned count = 0;
             for (auto const& receipt : state.receipts) if (receipt.first.first == key.first) ++count;
             if (state.receipts.size() >= limits::MaxReceipts || count >= limits::MaxReceiptsPerPlayer)
             {
-                Tell(owner, Response(request, "refused", "receipt_limit"));
+                RejectUncached(request, owner, "receipt_limit");
                 return;
             }
+            if (request.operation == "prepare")
+            {
+                unsigned retained = 0;
+                for (auto const& receipt : state.preparationReceipts) if (receipt.first.first == key.first) ++retained;
+                if (state.preparationReceipts.size() >= limits::MaxPreparationReceipts || retained >= limits::MaxPreparationReceiptsPerPlayer)
+                { RejectUncached(request,owner,"receipt_limit"); return; }
+                state.preparationReceipts[key] = {Payload(request),Response(request,"pending","queued"),0};
+            }
             state.receipts[key] = {Payload(request), Response(request, "pending", "queued"), Now() + limits::ReceiptSeconds};
+        }
+        if (request.operation == "capabilities")
+        {
+            if (!owner->isRealPlayer() || request.bot || !request.arguments.empty()) { Report(request,"refused","syntax"); return; }
+            Report(request,"complete","arrival_diag_v1=1;receipt_v1=1;epoch=" + state.epoch + ";receipt_seconds=600;prepare_receipts=process"); return;
+        }
+        if (request.operation == "receipt")
+        {
+            auto key = std::make_pair(request.owner.GetCounter(),request.arguments);
+            auto retained = state.preparationReceipts.find(key); auto previous = state.receipts.find(key);
+            const Receipt* receipt = retained != state.preparationReceipts.end() ? &retained->second :
+                previous != state.receipts.end() ? &previous->second : nullptr;
+            if (!receipt) { Report(request,"unknown","receipt_missing"); return; }
+            std::istringstream payload(receipt->payload); std::string operation; uint32 guid = 0; payload >> operation >> guid;
+            if (guid != request.bot.GetCounter()) { Report(request,"refused","receipt_bot_mismatch"); return; }
+            const std::string recovered = receipt->response, detail = receipt->diagnostic;
+            Replay(owner,*receipt,true); Report(request,"complete","receipt_found");
+            auto current = state.receipts.find({request.owner.GetCounter(),request.id});
+            if (current != state.receipts.end())
+            { current->second.recoveryResponse = recovered; current->second.recoveryDiagnostic = detail; }
+            return;
         }
         if (request.operation == "cancel")
         {
@@ -419,12 +567,19 @@ namespace
         {
             if (!Identity(owner,bot).empty()) { Report(request,"refused","not_available_bot"); return; }
             if (reason == "existing")
-                Report(request, Arrived(owner,bot) ? "arrived" : "joined", Arrived(owner,bot) ? "ok" :
+            {
+                request.arrival = EvaluateArrival(owner,bot); request.arrivalEvaluated = true;
+                Report(request, request.arrival.Ready() ? "arrived" : "joined", request.arrival.Ready() ? "ok" :
                     (Waiting(owner,bot).empty() ? "not_nearby" : Waiting(owner,bot)));
+            }
             else Report(request,reason.empty() ? "eligible" : "refused",reason.empty() ? "ok" : reason);
             return;
         }
-        if (!reason.empty()) { Report(request,reason == "existing" ? "joined" : "refused",reason); return; }
+        if (!reason.empty())
+        {
+            if (request.operation == "prepare") request.diagnosticStage = "pre_mutation_refused";
+            Report(request,reason == "existing" ? "joined" : "refused",reason); return;
+        }
         if (request.operation == "reserve" || request.operation == "invite")
         {
             auto reservation = state.reservations.find(bot->GetGUIDLow());
@@ -479,18 +634,33 @@ namespace
         }
         if (request.operation == "prepare")
         {
-            if (!Arrived(owner,bot)) { Report(request,"refused","not_arrived"); return; }
+            request.arrival = EvaluateArrival(owner,bot); request.arrivalEvaluated = true;
+            request.diagnosticStage = "pre_mutation_refused";
+            if (!request.arrival.Ready()) { Report(request,"refused","not_arrived"); return; }
             if (request.arguments != "gear" && request.arguments != "food" && request.arguments != "potions" &&
                 request.arguments != "consumes" && request.arguments != "reagents" && request.arguments != "ammo") { Report(request,"refused","unsupported_preparation"); return; }
             // Explicit IDs provide replay safety; no implicit legacy deduplication here.
-            state.explicitPreparation = true;
+            PreparationTrace trace;
+            struct Scope
+            {
+                Service& state; bool oldExplicit; PreparationTrace* oldTrace;
+                Scope(Service& s, PreparationTrace& t) : state(s), oldExplicit(s.explicitPreparation), oldTrace(s.preparationTrace)
+                { state.explicitPreparation = true; state.preparationTrace = &t; }
+                ~Scope() { state.explicitPreparation = oldExplicit; state.preparationTrace = oldTrace; }
+            } scope(state,trace);
             PlayerbotHolder* holder = owner->GetPlayerbotMgr();
             if (!holder) holder = &sRandomPlayerbotMgr;
             std::string result = holder->ProcessBotCommand(request.arguments,request.bot,request.owner,
                 false,owner->GetSession()->GetAccountId(),owner->GetGuildId());
-            state.explicitPreparation = false;
-            Report(request,result.find("refused:") == 0 || result == "Not in your guild or account" ||
-                result == "Can not control alt-bots with this command." ? "refused" : "complete",result); return;
+            const bool refused = result.find("refused:") == 0 || result == "Not in your guild or account" ||
+                result == "Can not control alt-bots with this command.";
+            request.mutation = trace.entered ? (refused ? "uncertain" : "completed") : "none";
+            request.diagnosticStage = trace.entered ? (refused ? "mutation_uncertain" : "mutation_complete") :
+                (refused ? "pre_mutation_refused" : "no_mutation_complete");
+            request.diagnosticReason = trace.refusal.empty() ? (refused ?
+                (result.find("refused:") == 0 ? result.substr(8) : result) : "ok") : trace.refusal;
+            while (!request.diagnosticReason.empty() && request.diagnosticReason[0] == ' ') request.diagnosticReason.erase(0,1);
+            Report(request,refused ? "refused" : "complete",result); return;
         }
         Report(request,"refused","unsupported_operation");
     }
@@ -615,10 +785,14 @@ bool BotRecruitment::HandleCommand(Player* owner, const std::string& command)
     if (command.size() > 240 || version != "v1" || id.empty() || id.size() > 32 ||
         id.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)
     { Tell(owner,"PBRECRUIT 1 - 0 refused syntax"); return true; }
+    const bool diagnostics = operation == "status_diag" || operation == "prepare_diag" || operation == "summon_diag";
+    if (diagnostics) operation.erase(operation.size()-5);
     if (operation != "discover" && operation != "status" && operation != "reserve" &&
-        operation != "invite" && operation != "summon" && operation != "prepare" && operation != "cancel")
+        operation != "invite" && operation != "summon" && operation != "prepare" && operation != "cancel" &&
+        operation != "capabilities" && operation != "receipt")
     { Tell(owner,"PBRECRUIT 1 " + id + " 0 refused unsupported_operation"); return true; }
     Request request; request.owner = owner->GetObjectGuid(); request.id = id; request.operation = operation;
+    request.diagnostics = diagnostics;
     if (operation != "discover")
     {
         uint32 number;
@@ -628,6 +802,18 @@ bool BotRecruitment::HandleCommand(Player* owner, const std::string& command)
     }
     std::getline(input,request.arguments);
     if (!request.arguments.empty() && request.arguments[0] == ' ') request.arguments.erase(0,1);
+    if (diagnostics || operation == "receipt")
+    {
+        std::istringstream args(request.arguments); std::string argument, extra;
+        if (operation == "prepare" || operation == "receipt") args >> argument;
+        args >> request.epoch;
+        if (request.epoch.empty() || request.epoch.size() > 32 || args >> extra ||
+            request.epoch.find_first_not_of("0123456789") != std::string::npos ||
+            (operation == "receipt" && (argument.empty() || argument == request.id || argument.size()>32 ||
+                argument.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)))
+        { Tell(owner,Response(request,"refused","syntax")); return true; }
+        request.arguments = argument;
+    }
     request.ownerIdentity = EventOwner(owner);
     request.botIdentity = EventOwner(Find(request.bot));
     request.expires = Now() + limits::InviteSeconds;
@@ -746,6 +932,10 @@ void BotRecruitment::Update(uint32 diff)
             bot->IsWithinDist3d(request.x,request.y,request.z,10.0f);
         if (landed)
         {
+            request.diagnosticStage = "accepted_landing"; request.diagnosticReason = "ok";
+            request.arrival.requesterLocationKnown = request.arrival.botLocationKnown = true;
+            request.arrival.requesterMap = request.arrival.botMap = request.map;
+            request.arrival.requesterInstance = request.arrival.botInstance = request.instance;
             // Refill only after this explicit request reaches its accepted
             // destination. Failed requests and replayed receipts cannot heal.
             bot->SetHealth(bot->GetMaxHealth());
@@ -830,11 +1020,16 @@ std::string BotRecruitment::Prepare(Player* owner, Player* bot, const std::strin
     const std::string& parameter, const std::function<std::string()>& apply)
 {
     const bool gear = command == "gear" || command == "equip";
+    auto refuse = [&](const std::string& reason)
+    {
+        if (State().preparationTrace) State().preparationTrace->refusal = reason;
+        return "refused: " + reason;
+    };
     std::string reason = PreparationReason(owner,bot,gear);
-    if (!reason.empty()) return "refused: " + reason;
+    if (!reason.empty()) return refuse(reason);
     // No distance restriction for manual preparation. Pending summons must finish.
     auto summon = State().summons.find(bot->GetGUIDLow());
-    if (summon != State().summons.end()) return "refused: summon_pending";
+    if (summon != State().summons.end()) return refuse("summon_pending");
     auto restoreGearResources = [&](const std::string& response)
     {
         // Repeated legacy gear commands reuse equipment work, but must retain
@@ -857,7 +1052,7 @@ std::string BotRecruitment::Prepare(Player* owner, Player* bot, const std::strin
     auto old = State().preparation.find(key);
     if (!State().explicitPreparation && old != State().preparation.end() && old->second.expires > Now())
         return restoreGearResources(old->second.response);
-    if (State().preparation.size() >= limits::MaxReceipts) return "refused: busy";
+    if (State().preparation.size() >= limits::MaxReceipts) return refuse("busy");
     if (State().preparationSecond != Now())
     {
         State().preparationSecond = Now();
@@ -866,10 +1061,11 @@ std::string BotRecruitment::Prepare(Player* owner, Player* bot, const std::strin
     }
     unsigned& work = gear ? State().gearWork : State().supplyWork;
     unsigned& playerWork = State().playerPreparationWork[owner->GetGUIDLow()];
-    if (work >= (gear ? 2u : 32u) || playerWork >= 8) return "refused: preparation_rate_limit";
+    if (work >= (gear ? 2u : 32u) || playerWork >= 8) return refuse("preparation_rate_limit");
     ++work; ++playerWork;
     if ((command == "gear" || command == "equip") && !sRandomItemMgr.GetPlayerSpecId(bot))
-        return "refused: unsupported_spec";
+        return refuse("unsupported_spec");
+    if (State().preparationTrace) State().preparationTrace->entered = true;
     std::string result = restoreGearResources(apply());
     if (result.find("refused:") != 0)
         State().preparation[key] = {"",result,Now() + limits::LegacyPreparationSeconds};

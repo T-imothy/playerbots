@@ -1,5 +1,11 @@
 # Bot recruitment, summons and preparation
 
+The optional arrival diagnostics, receipt recovery, current-readiness versus
+historical-summon distinction and preparation replay rules are specified in
+[LFG-PREPARATION-CONTRACT.txt](LFG-PREPARATION-CONTRACT.txt). Existing ordinary
+PBRECRUIT v1 payloads and result strings are retained. This extension does not
+relax the current versioned 10-yard/LOS policy or redesign batch scheduling.
+
 ## Compatibility and scope
 
 The current Group Builder (addon baseline `fb3b759`, version 0.8.0) uses ordinary `who`/`summon` whispers, native invitations, talent/strategy commands and six `.bot` preparation commands. These legacy paths remain supported. The optional `recruit v1` interface is **not consumed by 0.8.0**. No addon files or native dungeon/boss mechanics are changed by this work.
@@ -14,7 +20,7 @@ Composition, explicit human role assignments, selected existing bots, activity c
 - Convenience `summon` requests are bounded and preserve native teleport checks. Explicit convenience summons proceed while the requester, bot, or both are in combat. Taxi/transport, charm and active transfers still defer until the native transition is safe; ownership, queue and instance-entry checks remain enforced. Acceptance and arrival are separate statuses. Arrival can be acknowledged in combat; gear preparation is also permitted in combat, while supply and talent changes retain their separate combat checks. Arrival requires completed transition, matching map AND instance, alive, within 10 yards and line of sight. Same-map/different-instance shortcuts are refused. Native summon responses, warlock rituals, meeting-stone ritual interaction and recent teleport acknowledgement safeguards are preserved.
 - Deferred convenience revival now also records the destination instance. `AiPlayerbot.Recruitment.Revive = 1` preserves the prior allowed revival policy; setting 0 refuses dead convenience summons. Native resurrection/summon rules are unchanged. The existing `NonGmFreeSummon`, innkeeper, faction, guild, level and gear-score settings remain authoritative.
 - The six gear/supply commands and their aliases validate bot identity, controller, world/transition state and pending summons. `gear`/`equip` work in combat, including their HP/mana refill; supply and talent changes continue to reject combat. Manual preparation has **no newly invented distance/map requirement**. Structured preparation additionally requires arrival. No GM privileges are granted. Supply factories use the bot's level rather than the requester's level, and report storage/missing-data failures. Existing adequate supplies and inapplicable class/ammo operations are documented successful no-ops. Reagents for explicit supply requests derive from learned non-generic class spells in the actual expansion; reusable spell totems retain the existing checks.
-- Legacy preparation repeats with the same requester, bot, command, parameter, level and talent link replay their response for 60 seconds. Structured IDs replay for 10 minutes. Unsupported gear spec detection occurs before equipment destruction. Gear still uses the existing spec-aware factory; this does not redesign gear scoring.
+- Legacy preparation repeats with the same requester, bot, command, parameter, level and talent link replay their response for 60 seconds. Ordinary structured receipts replay for 10 minutes; versioned preparation decisions now remain replayable for the server process within bounded retention. Unsupported gear spec detection occurs before equipment destruction. Gear still uses the existing spec-aware factory; this does not redesign gear scoring.
 - Talent inspection no longer reapplies talents, modifies public notes or invokes auto-learning. The first named build (stored spec number 1 / index 0) is reported correctly, and unset spec numbers no longer underflow. Missing premade paths use the class-indexed base spec. Guild/public-note writes tolerate a missing guild/member record. Mutating talent commands retain authorization and now reject unsafe preparation states.
 
 ## Exact optional interface
