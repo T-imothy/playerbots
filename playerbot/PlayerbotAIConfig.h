@@ -191,6 +191,7 @@ public:
     uint32 diagnosticsMaxFailureKeys = 2048;
     std::string diagnosticsLogFile = "PlayerbotDiagnostics.log";
     bool combatDiagnosticsEnabled = false;
+    bool combatDiagnosticsRaidOnly = false;
     uint32 combatDiagnosticsSampleRate = 16;
     uint32 combatDiagnosticsClassMask = 0xFFE;
     uint32 combatDiagnosticsTraceBot = 0;

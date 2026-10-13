@@ -265,6 +265,7 @@ bool PlayerbotAIConfig::Initialize()
     diagnosticsMaxFailureKeys = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.Diagnostics.MaxFailureKeys", 2048));
     diagnosticsLogFile = config.GetStringDefault("AiPlayerbot.Diagnostics.LogFile", "PlayerbotDiagnostics.log");
     combatDiagnosticsEnabled = config.GetBoolDefault("AiPlayerbot.CombatDiagnostics.Enabled", false);
+    combatDiagnosticsRaidOnly = config.GetBoolDefault("AiPlayerbot.CombatDiagnostics.RaidOnly", false);
     combatDiagnosticsSampleRate = std::max<int32>(1, config.GetIntDefault("AiPlayerbot.CombatDiagnostics.SampleRate", 16));
     combatDiagnosticsClassMask = uint32(config.GetIntDefault("AiPlayerbot.CombatDiagnostics.ClassMask", 4094)) & 4094;
     combatDiagnosticsTraceBot = std::max<int32>(0, config.GetIntDefault("AiPlayerbot.CombatDiagnostics.TraceBot", 0));

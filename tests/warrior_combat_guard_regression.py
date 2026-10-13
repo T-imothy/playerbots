@@ -39,14 +39,17 @@ warrior=root/'playerbot/strategy/warrior'
 arms=(warrior/'ArmsWarriorStrategy.cpp').read_text(encoding='utf-8')
 fury=(warrior/'FuryWarriorStrategy.cpp').read_text(encoding='utf-8')
 protection=(warrior/'ProtectionWarriorStrategy.cpp').read_text(encoding='utf-8')
+def preprocess(source,era):
+ with tempfile.TemporaryDirectory(prefix='warrior-era-') as td:
+  p=Path(td)/'strategy.cpp';p.write_text(re.sub(r'^#include.*$', '', source, flags=re.M))
+  return subprocess.run(['cl','/nologo','/EP','/D'+era,str(p)],check=True,capture_output=True,text=True).stdout
 for era in ['MANGOSBOT_ZERO','MANGOSBOT_ONE','MANGOSBOT_TWO']:
- a=arms.split('#ifdef '+era,1)[1].split('#endif',1)[0]
- cc=block(a,'void ArmsWarriorCcStrategy::InitCombatTriggers(')
+ a=preprocess(arms,era);cc=block(a,'void ArmsWarriorCcStrategy::InitCombatTriggers(')
  assert all('"'+n+'"' in cc for n in ['pummel','pummel on enemy healer','shield bash'])
-w=fury.split('#ifdef MANGOSBOT_TWO',1)[1].split('#endif',1)[0]
+w=preprocess(fury,'MANGOSBOT_TWO')
 assert all('"'+n+'"' in block(w,'void FuryWarriorAoeStrategy::InitCombatTriggers(') for n in ['whirlwind','bloodthirst'])
 assert 'new TriggerNode' not in block(w,'void FuryWarriorAoeStrategy::InitNonCombatTriggers(')
-w=protection.split('#ifdef MANGOSBOT_TWO',1)[1].split('#endif',1)[0]
+w=preprocess(protection,'MANGOSBOT_TWO')
 assert re.search(r'"lose aggro",\s*NextAction::array\(0, new NextAction\("taunt"',w)
 assert 'DEBUFF_TRIGGER(MortalStrike' not in (warrior/'WarriorTriggers.h').read_text(encoding='utf-8')
 assert 'CAN_CAST_TRIGGER(MortalStrike' in (warrior/'WarriorTriggers.h').read_text(encoding='utf-8')

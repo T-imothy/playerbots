@@ -73,6 +73,8 @@ int main(){
  for(auto* brain:lockAI)brain->context.possible.value={1000};
  for(unsigned i=0;i<4;i++){
   Unit* target=GarrBanishTarget(lockAI[i]);assert(target==&fire[7-i]);
+  EncounterPosition station;assert(PlanGarrPosition(lockAI[i],station)&&station.destination.x==warlocks[i].x&&station.destination.y==warlocks[i].y);
+  warlocks[i].los=false;assert(PlanGarrPosition(lockAI[i],station)&&std::hypot(station.destination.x,station.destination.y)>=19);warlocks[i].los=true;
   target->auras.insert(710);target->holders[710].caster=warlocks[i].guid;
   assert(!GarrBanishTarget(lockAI[i])); // never cancel a working banish
   Unit* assigned=nullptr;assert(GarrBanishAssignment(lockAI[i],"banish",assigned)&&!assigned);

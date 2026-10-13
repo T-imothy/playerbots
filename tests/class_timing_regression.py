@@ -22,16 +22,16 @@ struct Event{};
 wait=src('generic/CombatStrategy.cpp')
 run(common+r'''
 struct Unit {virtual ~Unit(){};float health=100;float GetHealthPercent(){return health;}};
-struct Player:Unit {bool grouped=true;void* GetGroup(){return grouped?this:nullptr;}};
+using ObjectGuid=Unit*;struct PlayerbotAI;struct Player:Unit {PlayerbotAI*ai=nullptr;PlayerbotAI*GetPlayerbotAI(){return ai;}bool grouped=true;void* GetGroup(){return grouped?this:nullptr;}};
 struct Value{Unit* target=nullptr;Unit* Get(){return target;}};
 struct AiObjectContext {Value v;template<class T>Value* GetValue(const char*){return &v;}};
 enum class BotState{BOT_STATE_COMBAT};
-struct PlayerbotAI {Player bot;AiObjectContext ctx;bool strategy=true,master=true;time_t start=time(nullptr);uint8 wait=10;
+struct PlayerbotAI {Player bot;PlayerbotAI(){bot.ai=this;}Unit*GetUnit(Unit*u){return u;}AiObjectContext ctx;bool strategy=true,master=true;time_t start=time(nullptr);uint8 wait=10;
  bool HasStrategy(const char*,BotState){return strategy;}Player* GetBot(){return &bot;}AiObjectContext* GetAiObjectContext(){return &ctx;}bool HasRealPlayerMaster(){return master;}};
 struct Facade{bool friendly=false;bool IsFriendlyTo(Unit* a,Unit* b){return a==b||friendly;}}sServerFacade;
 struct Config{float lowHealth=40;}sPlayerbotAIConfig;
 #define AI_VALUE(type,key) (ai->start)
-struct WaitForAttackStrategy{static bool ShouldWait(PlayerbotAI*);static uint8 GetWaitTime(PlayerbotAI* ai){return ai->wait;}};
+struct WaitForAttackStrategy{static WaitForAttackStrategy*Get(PlayerbotAI*){static WaitForAttackStrategy s;return &s;}bool HasExplicitAttackOrder(PlayerbotAI*,time_t){return false;}static bool ShouldWait(PlayerbotAI*);static uint8 GetWaitTime(PlayerbotAI* ai){return ai->wait;}};
 enum class ActionThreatType{ACTION_THREAT_NONE,ACTION_THREAT_SINGLE};
 struct Action {virtual ~Action(){};std::string name="attack";Unit* patient=nullptr;ActionThreatType threat=ActionThreatType::ACTION_THREAT_SINGLE;
  virtual Unit* GetTarget(){return patient;}std::string& getName(){return name;}ActionThreatType getThreatType(){return threat;}};
@@ -81,14 +81,21 @@ int main(){Player b;CastPreparationAction a;a.bot=&b;assert(!a.isUseful());
 #endif
 }
 ''','Preparation learned cooldowns, native reset pool and glyph',era)
-# Era-specific strategy contracts: these catch active passive-talents and missing fillers.
-wl=src('warlock/AfflictionWarlockStrategy.cpp').split('#ifdef MANGOSBOT_TWO')
-assert 'new NextAction("siphon life"' in wl[0] and 'new NextAction("siphon life"' not in wl[1]
-assert 'new NextAction("amplify curse"' not in src('warlock/WarlockStrategy.cpp').split('#ifdef MANGOSBOT_TWO')[1]
-hunter=src('hunter/HunterStrategy.cpp').split('#ifdef MANGOSBOT_TWO')
-assert 'new NextAction("steady shot", ACTION_NORMAL)' in block(hunter[1],'NextAction** HunterStrategy::GetDefaultCombatActions')
+# Preprocess real era branches; a textual split at a nested #ifdef selects the
+# wrong expansion once shared guards are added inside Classic functions.
+def era_source(path,era):
+ import re
+ with tempfile.TemporaryDirectory(prefix='class-era-') as td:
+  p=Path(td)/'source.cpp';p.write_text(re.sub(r'^#include.*$', '', src(path), flags=re.M))
+  return subprocess.run(['cl','/nologo','/EP','/DMANGOSBOT_'+era,str(p)],check=True,capture_output=True,text=True).stdout
+classic_wl=era_source('warlock/AfflictionWarlockStrategy.cpp','ZERO')
+wrath_wl=era_source('warlock/AfflictionWarlockStrategy.cpp','TWO')
+assert 'new NextAction("siphon life"' in classic_wl and 'new NextAction("siphon life"' not in wrath_wl
+assert 'new NextAction("amplify curse"' not in era_source('warlock/WarlockStrategy.cpp','TWO')
+hunter=[era_source('hunter/HunterStrategy.cpp',e) for e in ('ZERO','ONE','TWO')]
+assert 'new NextAction("steady shot", ACTION_NORMAL)' in block(hunter[2],'NextAction** HunterStrategy::GetDefaultCombatActions')
 assert 'new NextAction("steady shot", ACTION_NORMAL)' not in hunter[0]
 assert 'new NextAction("unholy blight"' not in src('deathknight/GenericDKStrategy.cpp')
 print('PASS expansion-specific passive talent and hunter filler contracts')
 
-assert 'new NextAction("auto shot", ACTION_NORMAL + 1)' in block(hunter[1],'NextAction** HunterStrategy::GetDefaultCombatActions')
+assert 'new NextAction("auto shot", ACTION_NORMAL + 1)' in block(hunter[2],'NextAction** HunterStrategy::GetDefaultCombatActions')

@@ -9,8 +9,8 @@ reach=(r/'playerbot/strategy/actions/ReachTargetActions.h').read_text()
 ranged=(r/'playerbot/strategy/generic/RangedCombatStrategy.cpp').read_text()
 update=block(ai,'void PlayerbotAI::UpdateAI(')
 assert update.index('updateLock.owns_lock()')<update.index('PrepareForPartyCombat()')<update.index('if (!delayAlreadyAdvanced)')
-methods='\n'.join([block(ai,'void PlayerbotAI::PrepareForPartyCombat('),block(ai,'void PlayerbotAI::OnCombatStarted('),
- block(reaction,'void ReactionEngine::NotifyPartyCombat('),block(reaction,'void ReactionEngine::StopReaction('),
+methods='\n'.join([block(ai,'void PlayerbotAI::PrepareCompletedMovement('),block(ai,'void PlayerbotAI::PrepareForPartyCombat('),block(ai,'void PlayerbotAI::OnCombatStarted('),
+ block(reaction,'void ReactionEngine::NotifyHazard('),block(reaction,'void ReactionEngine::NotifyPartyCombat('),block(reaction,'void ReactionEngine::StopReaction('),
  block(reaction,'bool ReactionEngine::Update('),block(reaction,'bool ReactionEngine::CanUpdateAIReaction('),
  block(reaction,'bool Reaction::Update('),block(reaction,'void Reaction::SetAction('),
  block(reach,'virtual bool isUseful() override').replace('virtual bool isUseful() override','bool ReachTargetAction::isUseful()'),
@@ -29,7 +29,8 @@ enum {UNIT_STAND_STATE_STAND=0,IDLE_MOTION_TYPE=0,FOLLOW_MOTION_TYPE=1,POINT_MOT
 struct PositionEntry{PositionEntry(float=0,float=0,float=0,unsigned=0){}};struct EncounterPosition{};
 struct MotionMaster{int type=FOLLOW_MOTION_TYPE;int GetCurrentMovementGeneratorType(){return type;}};
 struct Unit{virtual ~Unit()=default;};
-struct Player:Unit{bool world=true,alive=true,transfer=false,charm=false,sit=true,taxi=false,stopped=true,casting=true,los=true;unsigned mana=0,stands=0;float distance=70;MotionMaster motion;
+struct Spline{bool done=false;bool Finalized(){return done;}};
+struct Player:Unit{Spline spline;Spline*movespline=&spline;bool world=true,alive=true,transfer=false,charm=false,sit=true,taxi=false,stopped=true,casting=true,los=true;unsigned mana=0,stands=0;float distance=70;MotionMaster motion;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}
  bool IsSitState(){return sit;}void SetStandState(unsigned s){assert(s==0);sit=false;++stands;}unsigned GetMapId(){return 409;}
  float GetPositionX(){return 0;}float GetPositionY(){return 0;}float GetPositionZ(){return 0;}MotionMaster*GetMotionMaster(){return &motion;}
@@ -40,8 +41,9 @@ struct Context{Cached<time_t>start;Cached<PositionEntry>pos;Cached<std::list<Obj
  template<class T,class Q=int>Cached<T>*GetValue(const char*,Q={}){
  if constexpr(std::is_same_v<T,time_t>)return &start;else if constexpr(std::is_same_v<T,PositionEntry>)return &pos;
  else if constexpr(std::is_same_v<T,std::list<ObjectGuid>>)return &attackers;else if constexpr(std::is_same_v<T,bool>)return &hasAttackers;else return &plan;}};
-struct ReactionEngine;
+struct ReactionEngine;struct Action;
 struct PlayerbotAI{Player*bot;ReactionEngine*reactionEngine=nullptr;Context context;Context*aiObjectContext=&context;
+ const Action*last=nullptr;const Action*GetLastExecutedAction(BotState){return last;}void PrepareCompletedMovement();
  bool human=false,owned=true,anchor=true,jumping=false,isWaiting=true,followNC=false,followC=false,stay=false;
  BotState state=BotState::BOT_STATE_NON_COMBAT;unsigned aiInternalUpdateDelay=15000,resetCount=0,stops=0,transitions=0,castQueries=0;
  bool IsRealPlayer(){return human;}bool HasRealPlayerMaster(){return owned;}Player*GetBot(){return bot;}bool IsJumping(){return jumping;}
@@ -51,7 +53,7 @@ struct PlayerbotAI{Player*bot;ReactionEngine*reactionEngine=nullptr;Context cont
  void StopMoving(){++stops;bot->stopped=true;}void PrepareForPartyCombat();void OnCombatStarted();
  bool CanCastSpell(const std::string&,Unit*,int,void*,bool,bool,bool){++castQueries;return bot->mana>0;}};
 namespace ai{Player*GetPartyCombatAnchor(PlayerbotAI*a){return a->anchor?a->bot:nullptr;}}
-struct Action{virtual ~Action()=default;bool useful=true;unsigned duration=8000;virtual bool isUseful(){return useful;}unsigned GetDuration(){return duration;}};
+struct Action{virtual ~Action()=default;bool useful=true;unsigned duration=8000;std::string name;std::string getName(){return name;}virtual bool isUseful(){return useful;}unsigned GetDuration(){return duration;}};
 struct MovementAction:Action{};struct AttackAction:MovementAction{};
 struct Reaction{Action*action=nullptr;unsigned duration=0;bool IsValid()const{return action;}bool IsActive()const{return action&&duration>100;}
  Action*GetAction()const{return action;}void Reset(){action=nullptr;duration=0;}void SetDuration(unsigned n){duration=n;}void SetAction(Action*);bool Update(unsigned);};
@@ -59,7 +61,7 @@ struct{unsigned reactDelay=100;}sPlayerbotAIConfig;
 struct ReactionEngine{PlayerbotAI*ai;unsigned aiReactionUpdateDelay=5000,searches=0,starts=0;Reaction ongoingReaction,incomingReaction;
  bool IsReacting(){return ongoingReaction.IsValid();}bool HasIncomingReaction(){return incomingReaction.IsValid();}
  bool FindReaction(bool){++searches;return false;}bool StartReaction(){++starts;ongoingReaction=incomingReaction;incomingReaction.Reset();return true;}
- void NotifyPartyCombat();void StopReaction();bool CanUpdateAIReaction()const;bool Update(unsigned,bool,bool,bool&);};
+ void NotifyHazard();void NotifyPartyCombat();void StopReaction();bool CanUpdateAIReaction()const;bool Update(unsigned,bool,bool,bool&);};
 struct ReachTargetAction{PlayerbotAI*ai;Player*bot;Unit*target;float range=30;std::string spellName;Unit*GetTarget(){return target;}bool isUseful();};
 constexpr float ACTION_MOVE=10;
 struct NextAction{std::string name;float priority;NextAction(const char*n,float p):name(n),priority(p){}static NextAction*array(int,NextAction*a,void*){return a;}};
@@ -94,6 +96,18 @@ int main(){Player bot;PlayerbotAI ai{&bot};ReactionEngine engine{&ai};ai.reactio
   if(f==0)ai.owned=false;if(f==1)ai.jumping=true;if(f==2)bot.taxi=true;
   assert(engine.Update(50,false,false,found)&&engine.IsReacting());}
  ai.owned=true;ai.jumping=bot.taxi=false;engine.ongoingReaction.Reset();
+ ai.last=&oldFollow;bot.spline.done=true;bot.casting=false;ai.aiInternalUpdateDelay=8000;ai.PrepareCompletedMovement();assert(ai.aiInternalUpdateDelay==0);
+ ai.last=&nativeCast;ai.aiInternalUpdateDelay=8000;ai.PrepareCompletedMovement();assert(ai.aiInternalUpdateDelay==8000);
+ ai.last=&oldFollow;bot.casting=true;ai.PrepareCompletedMovement();assert(ai.aiInternalUpdateDelay==8000);
+ bot.casting=false;bot.spline.done=false;ai.PrepareCompletedMovement();assert(ai.aiInternalUpdateDelay==8000);
+ // A finalized spline releases a retained moving flag; real travel does not.
+ bot.stopped=false;bot.spline.done=true;engine.aiReactionUpdateDelay=0;engine.ongoingReaction.SetAction(&oldFollow);
+ engine.Update(50,false,false,found);assert(!engine.IsReacting());bot.spline.done=false;
+ MovementAction escape;escape.name="molten core safe position";engine.incomingReaction.SetAction(&escape);
+ engine.NotifyHazard();engine.NotifyHazard();assert(engine.HasIncomingReaction());
+ engine.Update(50,false,false,found);assert(engine.IsReacting());
+ engine.NotifyHazard();assert(engine.IsReacting()); // repeated in-fire frames cannot starve escape
+ engine.ongoingReaction.SetAction(&nativeCast);engine.NotifyHazard();assert(!engine.IsReacting());
  // Execute the actual native unqualified reach admission with no mana.
  Unit enemy;bot.casting=false;ai.stay=false;bot.distance=70;ReachTargetAction approach{&ai,&bot,&enemy};
  assert(approach.isUseful()&&ai.castQueries==0);approach.spellName="frostbolt";assert(!approach.isUseful()&&ai.castQueries==1);

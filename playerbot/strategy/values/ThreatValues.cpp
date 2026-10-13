@@ -157,7 +157,13 @@ uint8 ThreatValue::Calculate(Unit* target)
 
     // return high threat if tank has no threat
     if (target->IsInCombat() && maxThreat == 0 && !fleeing)
+    {
+        // One loose imp must not report every uninvolved caster as its aggro
+        // carrier. Pack admission still enforces the opening, CC and pull guards.
+        if (qualifier=="aoe" && bot->GetMapId()==409 && target->GetEntry()==11669 && botThreat<=0)
+            return 0;
         return 100;
+    }
 
     // return low threat if mob if fleeing
     if (fleeing || maxThreat == 0)

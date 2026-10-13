@@ -36,6 +36,7 @@ namespace ai
 
         void Reset();
         void NotifyPartyCombat();
+        void NotifyHazard();
         bool Update(uint32 elapsed, bool minimal, bool isStunned, bool& reactionFound);
         bool IsReacting() const { return ongoingReaction.IsValid(); }
         bool HasIncomingReaction() const { return incomingReaction.IsValid(); }

@@ -47,16 +47,17 @@ struct Player:Unit{bool teleport=false,tank=false,healer=false,flying=false,tran
 struct WorldLocation{float coord_x=0,coord_y=0,coord_z=0;};
 struct WorldPosition{unsigned map;float x,y,z;WorldPosition(unsigned m,float a,float b,float c):map(m),x(a),y(b),z(c){}
  WorldPosition(Player*p):map(p->GetMapId()),x(p->x),y(p->y),z(p->z){}unsigned getMapId()const{return map;}
+ float distance(const WorldPosition&p)const{return std::hypot(x-p.x,y-p.y);}
  float getX()const{return x;}float getY()const{return y;}float getZ()const{return z;}};
 using HazardPosition=std::pair<WorldPosition,float>;
 template<class T>struct Cached{T value;unsigned resets=0;T Get(){return value;}void Reset(){++resets;}};
 struct Context{Cached<WorldLocation>center;Cached<std::list<ObjectGuid>>possible;Cached<std::list<HazardPosition>>hazards;Cached<int>position;
  template<class T>Cached<T>*GetValue(const char*){if constexpr(std::is_same_v<T,WorldLocation>)return &center;
  else if constexpr(std::is_same_v<T,std::list<ObjectGuid>>)return &possible;else if constexpr(std::is_same_v<T,std::list<HazardPosition>>)return &hazards;else return &position;}};
-struct PlayerbotAI{Player*bot;Context context;bool real=false;unsigned stops=0;time_t start=time(0)-5;ObjectGuid raidPetGuid=0;unsigned raidPetNumber=0;std::set<unsigned>raidPetSuppressedSpells;
+struct PlayerbotAI{Player*bot;Context context;bool movable=true;bool CanMove(){return movable;}bool real=false;unsigned stops=0,wakes=0;time_t start=time(0)-5;ObjectGuid raidPetGuid=0;unsigned raidPetNumber=0;std::set<unsigned>raidPetSuppressedSpells;
  std::map<ObjectGuid,Unit*>units;Player*GetBot(){return bot;}bool IsRealPlayer(){return real;}bool IsHeal(Player*p){return p->healer;}bool IsTank(Player*p){return p->tank;}
  time_t GetCombatStartTime(){return start;}float GetRange(const char*){return 40;}Context*GetAiObjectContext(){return &context;}
- Unit*GetUnit(ObjectGuid id){return units.count(id)?units[id]:nullptr;}void StopMoving(){++stops;}void UpdateRaidPetThreat();};
+ Unit*GetUnit(ObjectGuid id){return units.count(id)?units[id]:nullptr;}void StopMoving(){++stops;}void PrepareForUrgentHazard(){++wakes;}void UpdateRaidPetThreat();};
 struct Facade{std::map<unsigned,SpellEntry>spells;bool IsFriendlyTo(Player*,Unit*u){return u->friendly;}
  const SpellEntry*LookupSpellInfo(unsigned id){auto i=spells.find(id);return i==spells.end()?nullptr:&i->second;}}sServerFacade;
 namespace ai{ Unit* MoltenCoreNukeTarget(PlayerbotAI*){return nullptr;} bool MoltenCoreBossBurn(PlayerbotAI*){return false;}
@@ -112,9 +113,9 @@ int main(){
  assert(!RaidPetThreatBlocked(&ai,&growl));bot.map.raid=true;ai.real=true;assert(!RaidPetThreatBlocked(&ai,&growl));ai.real=false;
  Spline spline;bot.movespline=&spline;bot.x=-10;assert(!StopMoltenCoreUnsafeTravel(&ai));
  liveFire={{{409,0,0,0},3}};assert(StopMoltenCoreUnsafeTravel(&ai)&&ai.stops==1);assert(ai.context.hazards.resets==1&&ai.context.position.resets==1);
- bot.x=1;spline.destination.x=10;assert(!StopMoltenCoreUnsafeTravel(&ai)); // escape from inside remains legal
- spline.destination.x=-10;assert(StopMoltenCoreUnsafeTravel(&ai));bot.transport=true;assert(!StopMoltenCoreUnsafeTravel(&ai));bot.transport=false;
- bot.teleport=true;assert(!StopMoltenCoreUnsafeTravel(&ai));bot.teleport=false;spline.done=true;assert(!StopMoltenCoreUnsafeTravel(&ai));
+ bot.x=1;spline.destination.x=10;assert(StopMoltenCoreUnsafeTravel(&ai)&&ai.wakes==1&&ai.stops==1); // wake stationary casts without stopping an outward spline
+ spline.destination.x=-10;assert(StopMoltenCoreUnsafeTravel(&ai)&&ai.stops==2);ai.movable=false;assert(!StopMoltenCoreUnsafeTravel(&ai));ai.movable=true;bot.transport=true;assert(!StopMoltenCoreUnsafeTravel(&ai));bot.transport=false;
+ bot.teleport=true;assert(!StopMoltenCoreUnsafeTravel(&ai));bot.teleport=false;spline.done=true;assert(StopMoltenCoreUnsafeTravel(&ai));bot.x=10;assert(!StopMoltenCoreUnsafeTravel(&ai));
  std::cout<<"PASS: self-centred two-target DPS Whirlwind, tank-controlled raid AoE, CC/unpulled exclusion, pet taunt suppression/restoration and newly spawned fire on active splines\n";
 }
 '''.replace('__METHODS__',methods).replace('GetValue<EncounterPosition>', 'GetValue<int>')

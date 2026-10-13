@@ -85,10 +85,26 @@ bool ai::StopMoltenCoreUnsafeTravel(PlayerbotAI* ai)
     Player* bot = ai->GetBot();
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId() != 409 || bot->IsBeingTeleported() ||
         bot->HasCharmer() || ai->IsRealPlayer() || bot->GetTransport() || bot->IsFreeFlying() ||
-        !bot->movespline || bot->movespline->Finalized()) return false;
+        !bot->movespline || !ai->CanMove()) return false;
     std::list<HazardPosition> fire;
     AppendMoltenCoreGroundHazards(ai, fire);
     if (fire.empty()) return false;
+    const WorldPosition here(bot);
+    for (const auto& hazard : fire)
+        if (here.distance(hazard.first)<hazard.second)
+        {
+            if (!bot->movespline->Finalized())
+            {
+                const auto next=bot->movespline->CurrentDestination();
+                const WorldPosition destination(bot->GetMapId(),next.x,next.y,next.z);
+                if (!IsHazardSafeSegment(here,destination,fire)) ai->StopMoving();
+            }
+            ai->PrepareForUrgentHazard();
+            ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Reset();
+            ai->GetAiObjectContext()->GetValue<EncounterPosition>("molten core position")->Reset();
+            return true;
+        }
+    if (bot->movespline->Finalized()) return false;
     // Fire can spawn after a native chase/path was admitted. Validate the
     // current native spline segment again, rather than waiting to reach the trap.
     const auto next = bot->movespline->CurrentDestination();
@@ -174,7 +190,11 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
                 firesworn->HasCharmer() ||
                 firesworn->HasAura(710) || firesworn->HasAura(18647)) continue;
             if (Casting(firesworn, 20483)) add(firesworn, NativeEncounterSpellRadius(20483));
-            else if (Casting(firesworn, 19497) || firesworn->GetHealthPercent() <= 25.0f)
+            // Normal Eruption is cast on native death. Its holding tank must
+            // anchor the isolated add; retreating from a living threat circle
+            // only drags that same circle farther across the room.
+            else if ((Casting(firesworn, 19497) || firesworn->GetHealthPercent() <= 25.0f) &&
+                !(firesworn->GetVictim()==bot && ai->IsTank(bot)))
                 add(firesworn, NativeEncounterSpellRadius(19497));
         }
 
@@ -217,7 +237,7 @@ EncounterPosition MoltenCorePositionValue::Calculate()
     unsigned checked = 0;
     for (const auto& point : candidates)
     {
-        if (++checked > 8) break; // Bound native path queries per cached decision.
+        if (++checked > 32) break; // Cover complete near rings; retain a bounded native path search.
         plan.active = true; plan.destination = point;
         if (ValidateEncounterDestination(ai, plan) && encounter::OutsideCircles(plan.destination, threats)) return plan;
     }

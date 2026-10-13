@@ -2,6 +2,9 @@
 #include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
+#include "playerbot/strategy/actions/MovementActions.h"
+#include "playerbot/strategy/actions/AttackAction.h"
+#include "Movement/MoveSpline.h"
 #include "playerbot/PartyCombatSupport.h"
 #include "BotPartyCommands.h"
 #include "BotIncidentHistory.h"
@@ -380,6 +383,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
     PrepareForUrgentAttack(); // Explicit authorized orders outrank food/drink duration.
     PrepareForUrgentCombat(); // A pack aggro carrier must not wait behind a channel.
     PrepareForPartyCombat(); // Natural human/party pulls also outrank idle/rest duration.
+    PrepareCompletedMovement();
 
     // Food/drink duration must not hide a nearby party pull from its healer.
     // Standing removes the sitting-only regeneration auras normally.
@@ -1429,6 +1433,31 @@ void PlayerbotAI::PrepareForUrgentAttack()
     if (bot->GetMapId()==409) aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
     // Native cast readiness and GCD admission still apply. Never interrupt an
     // in-flight heal or mutate spells from the command-receiving world thread.
+}
+
+void PlayerbotAI::PrepareCompletedMovement()
+{
+    if (!aiInternalUpdateDelay || !bot->IsInWorld() || !bot->IsAlive() || IsRealPlayer() ||
+        !HasRealPlayerMaster() || bot->IsBeingTeleported() || bot->HasCharmer() || IsJumping() ||
+        bot->IsTaxiFlying() || !bot->movespline || !bot->movespline->Finalized() ||
+        bot->IsNonMeleeSpellCasted(false, false, true)) return;
+    const Action* action=GetLastExecutedAction(GetState());
+    if (!action || !dynamic_cast<const MovementAction*>(action) || dynamic_cast<const AttackAction*>(action)) return;
+    // Native travel estimates are no longer a reason to wait after arrival.
+    // Spell/item actions retain their own waits and native cooldown checks.
+    ResetAIInternalUpdateDelay();
+    isWaiting=false;
+}
+
+void PlayerbotAI::PrepareForUrgentHazard()
+{
+    // Owning-map update only; native fear/root and spell readiness still apply.
+    if (!bot || IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || bot->HasCharmer()) return;
+    bot->InterruptNonMeleeSpells(false);
+    reactionEngine->NotifyHazard();
+    ResetAIInternalUpdateDelay();
+    isWaiting=false;
 }
 
 void PlayerbotAI::PrepareForPartyCombat()

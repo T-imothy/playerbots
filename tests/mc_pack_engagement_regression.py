@@ -24,7 +24,7 @@ code=r'''
 using uint32=unsigned;
 struct ObjectGuid{unsigned id=0;ObjectGuid(unsigned i=0):id(i){}bool IsEmpty(){return !id;}operator unsigned()const{return id;}};
 constexpr unsigned SMSG_ATTACKSTART=1,UNIT_STAND_STATE_STAND=0;
-struct Group{};struct Unit{virtual ~Unit()=default;unsigned entry=11669,map=409,instance=1;bool world=true,alive=true,combat=true,charm=false;Unit*victim=nullptr;
+struct Group{};struct Unit{virtual ~Unit()=default;unsigned entry=11669,map=409,instance=1;float x=0,y=0,o=0;float GetPositionX(){return x;}float GetPositionY(){return y;}float GetOrientation(){return o;}bool world=true,alive=true,combat=true,charm=false;Unit*victim=nullptr;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charm;}unsigned GetEntry(){return entry;}
  std::set<unsigned>auras;bool HasAura(unsigned id){return auras.count(id);}Unit*GetVictim(){return victim;}virtual bool IsPlayer(){return false;}};
 struct Player:Unit{bool transfer=false,tank=false,sit=true;unsigned guid=2,interrupts=0,stands=0;Group*group=nullptr;std::vector<Unit*>attackers;
@@ -34,7 +34,7 @@ struct Player:Unit{bool transfer=false,tank=false,sit=true;unsigned guid=2,inter
  void SetStandState(unsigned){sit=false;++stands;}void InterruptNonMeleeSpells(bool f){assert(!f);++interrupts;}
  auto const&getAttackers(){return attackers;}};
 namespace encounter{struct Circle{};}
-struct EncounterPosition{bool active=true;unsigned map=409,instance=1,spell=20602;ObjectGuid boss=3,source;};
+struct EncounterPosition{bool active=true;unsigned map=409,instance=1,spell=20602;ObjectGuid boss=3,source;struct Point{float x=-20,y=0,z=0;}destination;};
 template<class T>struct Cached{T value;unsigned resets=0;T Get(){return value;}void Reset(){++resets;}};
 struct Context{Cached<EncounterPosition>plan;template<class T>Cached<T>*GetValue(const char*){return &plan;}};
 struct WorldPacket{unsigned opcode=1,bytes=16,index=0;unsigned ids[2]={3,2};unsigned GetOpcode()const{return opcode;}unsigned size()const{return bytes;}
@@ -49,6 +49,7 @@ struct PlayerbotAI{Player*bot;bool real=false,isWaiting=true;unsigned aiInternal
 };
 bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&){return false;}
 Unit*MoltenCorePackTankTarget(PlayerbotAI*a){return a->loose;}
+unsigned replans=0;bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&p){++replans;p.destination.x=-20;return true;}
 struct MoltenCorePositionAction{static bool GetPlan(PlayerbotAI*,EncounterPosition&);};
 __WAKE__
 __GETPLAN__
@@ -71,6 +72,7 @@ int main(){Group group;Player bot,tank;bot.group=tank.group=&group;Unit imp;imp.
  assert(MoltenCorePositionAction::GetPlan(&ai,plan));bot.tank=false;ai.loose=nullptr;
  ai.context.plan.value.source=0;
  ai.context.plan.value.spell=19364;imp.entry=11673;assert(MoltenCorePositionAction::GetPlan(&ai,plan));
+ imp.victim=&tank;imp.o=3.14159265f;assert(MoltenCorePositionAction::GetPlan(&ai,plan)&&replans==1);imp.o=0;
  imp.alive=false;assert(!MoltenCorePositionAction::GetPlan(&ai,plan));imp.alive=true;imp.instance=2;assert(!MoltenCorePositionAction::GetPlan(&ai,plan));imp.instance=1;
  packet.bytes=15;ai.Publish(packet);assert(!ai.HasUrgentCommand());packet.bytes=16;
  packet.ids[1]=9;ai.Publish(packet);assert(!ai.HasUrgentCommand());packet.ids[1]=2;

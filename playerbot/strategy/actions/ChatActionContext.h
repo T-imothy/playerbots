@@ -115,6 +115,7 @@ namespace ai
                 creators["repop"] = [](PlayerbotAI* ai) { return new RepopAction(ai); };
                 creators["teleport"] = [](PlayerbotAI* ai) { return new TeleportAction(ai); };
                 creators["taxi"] = [](PlayerbotAI* ai) { return new TaxiAction(ai); };
+                creators["raid repair"] = [](PlayerbotAI* ai) { return new RaidRepairAction(ai); };
                 creators["repair"] = [](PlayerbotAI* ai) { return new RepairAllAction(ai); };
                 creators["use"] = [](PlayerbotAI* ai) { return new UseAction(ai); };
                 creators["item count"] = [](PlayerbotAI* ai) { return new TellItemCountAction(ai); };

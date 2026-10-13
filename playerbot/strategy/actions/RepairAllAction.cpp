@@ -90,3 +90,49 @@ bool RepairAllAction::Execute(Event& event)
     ai->TellPlayerNoFacing(requester, "Cannot find any npc to repair at");
     return false;
 }
+
+Creature* RaidRepairAction::GetRepairNpc()
+{
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->IsInCombat() || ai->IsRealPlayer() || !ai->HasRealPlayerMaster() ||
+        !bot->GetGroup() || !bot->GetGroup()->IsRaidGroup() || !bot->GetMoney()) return nullptr;
+    for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+        if (Player* member=ref->getSource())
+            if (member->IsInWorld() && bot->IsInMap(member) && member->IsInCombat()) return nullptr;
+    bool damaged=false;
+    for (uint8 slot=EQUIPMENT_SLOT_START;slot<EQUIPMENT_SLOT_END;++slot)
+        if (Item* item=bot->GetItemByPos(INVENTORY_SLOT_BAG_0,slot))
+            if (item->GetUInt32Value(ITEM_FIELD_MAXDURABILITY) &&
+                item->GetUInt32Value(ITEM_FIELD_DURABILITY)<item->GetUInt32Value(ITEM_FIELD_MAXDURABILITY)) damaged=true;
+    if (!damaged) return nullptr;
+    Creature* best=nullptr;
+    for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("nearest npcs")->Get())
+    {
+        Unit* unit=ai->GetUnit(guid);
+        if (!unit || unit->GetTypeId()!=TYPEID_UNIT || !unit->IsInWorld() || !unit->IsAlive() ||
+            !bot->IsInMap(unit) || unit->HasCharmer() || !unit->HasFlag(UNIT_NPC_FLAGS,UNIT_NPC_FLAG_REPAIR) ||
+            !sServerFacade.IsFriendlyTo(bot,unit) || bot->GetDistance(unit)>30) continue;
+        Creature* npc=static_cast<Creature*>(unit);
+        if (!best || bot->GetDistance(npc)<bot->GetDistance(best)) best=npc;
+    }
+    return best;
+}
+
+bool RaidRepairAction::isUseful()
+{
+    return MovementAction::isUseful() && GetRepairNpc();
+}
+
+bool RaidRepairAction::Execute(Event& event)
+{
+    Creature* npc=GetRepairNpc();
+    if (!npc || !ai->CanMove()) return false;
+    if (!bot->GetNPCIfCanInteractWith(npc->GetObjectGuid(),UNIT_NPC_FLAG_REPAIR))
+        return MoveNear(npc,INTERACTION_DISTANCE-1.0f);
+    // Existing native repair action pays normal costs; no item, gold,
+    // durability, cooldown or in-combat repair shortcut is introduced.
+    RepairAllAction repair(ai);
+    const bool repaired=repair.Execute(event);
+    SetDuration(sPlayerbotAIConfig.reactDelay);
+    return repaired;
+}

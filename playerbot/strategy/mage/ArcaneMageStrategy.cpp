@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "MageMultipliers.h"
 #include "ArcaneMageStrategy.h"
+#include "MageCombatPolicy.h"
 
 using namespace ai;
 
@@ -32,6 +33,11 @@ ArcaneMageStrategy::ArcaneMageStrategy(PlayerbotAI* ai) : MageStrategy(ai)
 
 NextAction** ArcaneMageStrategy::GetDefaultCombatActions()
 {
+    // Classic's Arcane Power/Frost raid hybrid has more Arcane talent points,
+    // but its sustained spell remains Frostbolt. Later Arcane Blast builds keep
+    // their expansion-specific rotation below.
+    if (ClassicMageFrostPrimary(ai))
+        return NextAction::array(0, new NextAction("frostbolt", ACTION_IDLE), NULL);
     return NextAction::array(0, new NextAction("arcane missiles", ACTION_IDLE), NULL);
 }
 

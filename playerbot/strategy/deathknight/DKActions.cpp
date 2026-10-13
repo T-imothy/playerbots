@@ -11,12 +11,13 @@ bool CastPestilenceAction::isUseful()
 #ifdef MANGOSBOT_TWO
     if (!CastSpellAction::isUseful()) return false;
     Unit* source = GetTarget();
-    if (!MeleeCombatTarget(ai, source) || SafeMeleeTargetCount(ai, 10.0f, source) == 0) return false;
+    if (!MeleeCombatTarget(ai, source)) return false;
     Aura* plague = ai->GetAura(55078, source, true);
     Aura* fever = ai->GetAura(55095, source, true);
     if (!plague && !fever) return false;
     if (bot->HasAura(63334) && ((plague && plague->GetHolder()->GetAuraDuration() < 3000) ||
         (fever && fever->GetHolder()->GetAuraDuration() < 3000))) return true;
+    if (SafeMeleeTargetCount(ai, 10.0f, source) == 0) return false;
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
     {
         Unit* target = ai->GetUnit(guid);

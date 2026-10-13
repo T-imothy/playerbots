@@ -31,7 +31,7 @@ struct Aura { unsigned stacks=0; unsigned GetStackAmount(){return stacks;} };
 struct PlayerbotAI;
 struct Unit {virtual ~Unit()=default;virtual bool IsPlayer(){return false;}bool charmed=false;bool HasCharmer(){return charmed;}
  unsigned entry=0,phase=1;ObjectGuid guid;bool world=true,alive=true,combat=true;Map* map=nullptr;
- float health=100; float GetHealthPercent(){return health;} float GetCombatReach(){return 1.5f;}
+ float GetOrientation(){return 0;}float health=100; float GetHealthPercent(){return health;} float GetCombatReach(){return 1.5f;}
  float x=0,y=0,z=0;std::set<unsigned> auras;Unit* victim=nullptr;Spell* cast=nullptr;
  unsigned GetEntry(){return entry;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}
  bool IsInCombat(){return combat;}Map* GetMap(){return map;}ObjectGuid GetObjectGuid(){return guid;}
@@ -58,7 +58,7 @@ namespace ai {
 struct WorldPosition {float x,y,z; float getX()const{return x;} float getY()const{return y;} float getZ()const{return z;}};
 using HazardPosition=std::pair<WorldPosition,float>;
 using namespace ai;
-template<class T>struct Cached {T value;T Get(){return value;}};
+template<class T>struct Cached {T value;T Get(){return value;}void Reset(){value=T{};}};
 struct Context {Cached<EncounterPosition> cached;Cached<std::list<ObjectGuid>> attackers;
  template<class T>Cached<T>* GetValue(const char*){if constexpr(std::is_same_v<T,EncounterPosition>)return &cached;else return &attackers;}};
 struct PlayerbotAI {Player* bot=nullptr;Context context;std::list<ObjectGuid> attackers;std::map<unsigned,Unit*> units;
@@ -79,7 +79,7 @@ namespace ai {
  struct MoltenCorePositionValue {Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
  bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
  // This fixture isolates the existing boss hazards; trash is checked separately.
- bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&) { return false; }
+ bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&) { return false; }Unit*MoltenCorePackTankTarget(PlayerbotAI*){return nullptr;}
  bool RagnarosSameCluster(PlayerbotAI*,Player*){return false;}
  bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&){return false;}
  struct Event{};
@@ -120,7 +120,7 @@ int main(){
  other.alive=false;assert(!get());other.alive=true;
  other.x=60;assert(!get());other.x=1;
  other.z=20;assert(!get());other.z=0;
- ai.validPath=false;ai.checked=0;assert(!get()&&ai.checked<=8);ai.validPath=true;
+ ai.validPath=false;ai.checked=0;assert(!get()&&ai.checked<=32);ai.validPath=true;
  bot.teleport=true;assert(!get());bot.teleport=false;
  bot.charmed=true;assert(!get());bot.charmed=false;
  bot.mapId=0;assert(!get());bot.mapId=409;
@@ -160,7 +160,13 @@ int main(){
  ground.clear();assert(!MoltenCorePositionAction::GetPlan(&ai,resolved)&&!movement.Execute(event));
  assert(!get()); // no stale movement hold after the native area expires
  ground={{{0,0,0},9}};assert(get());ai.canMove=false;assert(!movement.Execute(event));ai.canMove=true;
- ai.validPath=false;ai.checked=0;assert(!get()&&ai.checked<=8);ai.validPath=true;ground.clear();
+ ai.validPath=false;ai.checked=0;assert(!get()&&ai.checked<=32);ai.validPath=true;ground.clear();
+ // A living low-health Firesworn must not kite its own holding tank.
+ Unit firesworn;firesworn.entry=12099;firesworn.guid=7;firesworn.map=&map;firesworn.health=25;firesworn.victim=&bot;
+ ai.units[7]=&firesworn;ai.attackers={7};ai.tank=true;assert(!get());
+ ai.tank=false;assert(get());ai.tank=true;firesworn.victim=&other;assert(get());
+ firesworn.victim=&bot;SpellEntry eruption;eruption.Id=20483;Spell massive;massive.m_spellInfo=&eruption;firesworn.cast=&massive;assert(get());
+ firesworn.cast=nullptr;firesworn.auras={710};ai.tank=false;assert(!get());
  std::cout<<"PASS: actual MC bomb lifetime after boss death, friendly carriers, phase/map/role, native radius and bounded paths\n";
 }
 '''.replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__METHODS__',methods)

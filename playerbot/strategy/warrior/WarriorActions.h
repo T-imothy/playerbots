@@ -20,7 +20,20 @@ namespace ai
     BUFF_ACTION_U(CastBerserkerStanceAction, "berserker stance", bot->GetShapeshiftForm() != FORM_BERSERKERSTANCE && CastBuffSpellAction::isUseful());
 
     // shouts
-    MELEE_ACTION_U(CastBattleShoutTauntAction, "battle shout", CastSpellAction::isUseful()); // useful to rebuff
+    class CastBattleShoutTauntAction : public CastMeleeSpellAction
+    {
+    public:
+        CastBattleShoutTauntAction(PlayerbotAI* ai) : CastMeleeSpellAction(ai,"battle shout") {}
+        bool isUseful() override
+        {
+            if (!ai->IsTank(bot) || !bot->IsInCombat() || !MeleeOpportunity(ai)) return false;
+            // Native direct threat attacks take precedence over repeat shout threat.
+            Unit* target=GetTarget();
+            for (const char* name : {"shield slam","revenge","bloodthirst","mortal strike","sunder armor"})
+                if (ai->HasSpell(name) && ai->CanCastSpell(name,target,0)) return false;
+            return CastMeleeSpellAction::isUseful();
+        }
+    };
     MELEE_DEBUFF_ACTION_R(CastDemoralizingShoutAction, "demoralizing shout", 8.0f); // low range debuff
     MELEE_ACTION(CastChallengingShoutAction, "challenging shout");
     MELEE_DEBUFF_ACTION_R(CastIntimidatingShoutAction, "intimidating shout", 8.0f);
@@ -78,6 +91,12 @@ namespace ai
     {
     public:
         CastWhirlwindAction(PlayerbotAI* ai) : CastSafeMeleeAreaAction(ai, "whirlwind", 8.0f) { range = radius; }
+        ActionThreatType getThreatType() override
+        {
+            // Single-target Whirlwind follows normal single-target threat,
+            // rather than the 50-percent uncontrolled-area cutoff.
+            return SafeMeleeTargetCount(ai,radius)==1 ? ActionThreatType::ACTION_THREAT_SINGLE : ActionThreatType::ACTION_THREAT_AOE;
+        }
 
     protected:
         // Validate the hostile victim; native spell targets still centre Whirlwind on the caster.

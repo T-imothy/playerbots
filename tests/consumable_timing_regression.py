@@ -45,6 +45,7 @@ struct PlayerbotAI{Player bot;bool cheat=true,cast=true;uint32 casts=0,delay=0;
  bool HasCheat(BotCheatMask){return cheat;}Player* GetBot(){return &bot;}void StopMoving(){bot.moving=false;}void InterruptSpell(){}void Unmount(){}
  bool HasRealPlayerMaster(){return true;}void SetAIInternalUpdateDelay(uint32 n){delay=n;}
  bool CastSpell(int,Player*);void AddAura(Player*,int){}};
+bool NeedsPartyCombatSupport(PlayerbotAI*ai){return ai->bot.combat;}
 struct UseAction{PlayerbotAI* ai;Player* bot;std::string name;uint32 duration=0;std::list<Item*> items;bool native=false;
  UseAction(PlayerbotAI* a):ai(a),bot(&a->bot){}virtual bool Execute(Event&){native=true;return true;}virtual uint32 GetItemId(){return 0;}void SetDuration(float n){duration=(uint32)n;}};
 #define AI_VALUE(type,key) (std::string(key).find("duration")!=std::string::npos?12000:0)

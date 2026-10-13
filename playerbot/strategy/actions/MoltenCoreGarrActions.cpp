@@ -191,6 +191,17 @@ bool ai::PlanGarrPosition(PlayerbotAI* ai, EncounterPosition& plan)
             for (Unit* add : encounter.adds) if (add->GetGUIDLow() == own->second) target = add;
             float range = 0;
             if (!target || !ai->GetSpellRange("banish", &range) || range <= 5) return false;
+            const float dx=bot->GetPositionX()-target->GetPositionX(),dy=bot->GetPositionY()-target->GetPositionY();
+            const float dz=bot->GetPositionZ()-target->GetPositionZ();
+            if (dx*dx+dy*dy+dz*dz<=(range-2)*(range-2) && bot->IsWithinLOSInMap(target))
+            {
+                plan.active=true;plan.map=bot->GetMapId();plan.instance=bot->GetInstanceId();
+                plan.boss=encounter.boss->GetObjectGuid();plan.spell=19771;
+                plan.destination={bot->GetPositionX(),bot->GetPositionY(),bot->GetPositionZ()};
+                // Banish from an already legal safe station. Do not require
+                // another parking move before the first control cast.
+                if (ValidateEncounterDestination(ai,plan,false)) return true;
+            }
             const float distance = std::min(20.0f, range - 3);
             x = target->GetPositionX() - std::cos(angle)*distance;
             y = target->GetPositionY() - std::sin(angle)*distance;

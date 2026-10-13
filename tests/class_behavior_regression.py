@@ -105,12 +105,20 @@ int main(){PlayerbotAI ai;WOtFTrigger trigger(&ai);Holder holder{0};ai.bot.holde
 
 boost = block(source('strategy/triggers/GenericTriggers.cpp'), 'bool BoostTrigger::IsActive')
 run(common + r'''
-enum class BotState{BOT_STATE_COMBAT};struct Player{bool ready=true;bool IsSpellReady(uint32){return ready;}};
-struct PlayerbotAI{Player bot;uint32 id=10;bool known=true,combat=true,master=false;uint8 balance=50;bool HasSpell(uint32){return known;}bool IsStateActive(BotState){return combat;}bool HasRealPlayerMaster(){return master;}};
+#include <list>
+#include <type_traits>
+using ObjectGuid=unsigned;constexpr unsigned MINUTE=60,IN_MILLISECONDS=1000;
+struct SpellEntry{unsigned RecoveryTime=0;};struct Unit{bool IsAlive(){return true;}bool IsPlayer(){return false;}unsigned GetEntry(){return 11982;}unsigned GetMapId(){return 409;}};
+struct Map{bool IsRaid(){return true;}bool IsDungeon(){return true;}};
+struct Facade{SpellEntry spell;const SpellEntry*LookupSpellInfo(unsigned){return &spell;}}sServerFacade;
+struct ObjectMgr{bool IsEncounter(unsigned,unsigned){return true;}}sObjectMgr;
+enum class BotState{BOT_STATE_COMBAT};struct Player{Map map;Map*GetMap(){return &map;}bool ready=true;bool IsSpellReady(uint32){return ready;}};
+struct PlayerbotAI{Player bot;uint32 id=10;bool known=true,combat=true,master=false;uint8 balance=50;Unit unit;Unit*GetUnit(unsigned){return &unit;}bool HasSpell(uint32){return known;}bool IsStateActive(BotState){return combat;}bool HasRealPlayerMaster(){return master;}};
 struct BuffTrigger{bool useful=true;bool IsActive(){return useful;}};
 struct BoostTrigger:BuffTrigger{PlayerbotAI* ai;Player* bot;std::string spell="test";int balance=100;bool IsActive();};
 #define AI_VALUE2(type,key,name) (ai->id)
-#define AI_VALUE(type,key) (ai->balance)
+template<class T>T getValue(PlayerbotAI*ai){if constexpr(std::is_same_v<T,uint8>)return ai->balance;else return {1};}
+#define AI_VALUE(type,key) getValue<type>(ai)
 ''' + boost + r'''
 int main(){PlayerbotAI ai;BoostTrigger trigger;trigger.ai=&ai;trigger.bot=&ai.bot;assert(trigger.IsActive());ai.bot.ready=false;assert(!trigger.IsActive());ai.bot.ready=true;ai.id=0;assert(!trigger.IsActive());ai.id=1;ai.known=false;assert(!trigger.IsActive());ai.known=true;ai.combat=false;assert(!trigger.IsActive());ai.combat=true;ai.balance=150;assert(!trigger.IsActive());ai.master=true;assert(trigger.IsActive());}
 ''', 'boost trigger cooldown/capability gating without changing combat or balance policy')

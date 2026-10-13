@@ -4,6 +4,7 @@
 #include "ReactionEngine.h"
 #include "actions/MovementActions.h"
 #include "actions/AttackAction.h"
+#include "Movement/MoveSpline.h"
 #include <iomanip>
 
 using namespace ai;
@@ -183,6 +184,19 @@ void ReactionEngine::StopReaction()
     // ...
 }
 
+void ReactionEngine::NotifyHazard()
+{
+    aiReactionUpdateDelay=0;
+    // A trap remains under the bot during its escape. Repeated wakeups must
+    // preserve that pending/running escape, or it never reaches StartReaction.
+    auto escape = [](Action* action) {
+        return action && dynamic_cast<MovementAction*>(action) &&
+            (action->getName()=="molten core safe position" || action->getName()=="move away from hazard");
+    };
+    if (!escape(incomingReaction.GetAction())) incomingReaction.Reset();
+    if (!escape(ongoingReaction.GetAction())) ongoingReaction.Reset();
+}
+
 void ReactionEngine::NotifyPartyCombat()
 {
     aiReactionUpdateDelay = 0U;
@@ -208,7 +222,7 @@ bool ReactionEngine::Update(uint32 elapsed, bool minimal, bool isStunned, bool& 
     if (ai->HasRealPlayerMaster() && !ai->IsJumping() && !ai->GetBot()->IsTaxiFlying())
         if (Action* action = ongoingReaction.GetAction())
             if (dynamic_cast<MovementAction*>(action) && !dynamic_cast<AttackAction*>(action) &&
-                (ai->GetBot()->IsStopped() || !action->isUseful()))
+                (ai->GetBot()->IsStopped() || (ai->GetBot()->movespline && ai->GetBot()->movespline->Finalized()) || !action->isUseful()))
                 StopReaction();
 
     // Can update reaction?

@@ -42,7 +42,7 @@ struct Motion {int kind=0;int GetCurrentMovementGeneratorType(){return kind;}};
 struct ThreatManager {std::map<Player*,float> values;float getThreat(Player* p){return values[p];}};
 struct Unit {
  virtual ~Unit()=default;ObjectGuid guid{1,false};bool world=true,alive=true,friendly=false,combat=true;
- unsigned map=409,instance=1,phase=1;Unit* target=nullptr;Motion motion;ThreatManager threat;
+ unsigned entry=0;unsigned GetEntry(){return entry;}unsigned map=409,instance=1,phase=1;Unit* target=nullptr;Motion motion;ThreatManager threat;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}unsigned GetMapId(){return map;}
  bool IsInMap(Unit* u){return world&&u->world&&map==u->map&&instance==u->instance
 #ifndef MANGOSBOT_ZERO
@@ -102,6 +102,10 @@ int main(){
  ai.selected=&enemy;aoeCluster={enemy.guid};assert(relative.Calculate()==79);
  aoeCluster.clear();assert(relative.Calculate()==0);ai.selected=nullptr;
  enemy.threat.values[&tank]=0;assert(relative.Calculate(&enemy)==100);
+ enemy.entry=11669;enemy.threat.values[&bot]=0;assert(relative.Calculate(&enemy)==0);
+ enemy.threat.values[&bot]=1;assert(relative.Calculate(&enemy)==100); // actual imp carrier still returns to tank
+ enemy.threat.values[&bot]=0;relative.qualifier="current target";assert(relative.Calculate(&enemy)==100);relative.qualifier="aoe";
+ enemy.entry=0;enemy.threat.values[&bot]=79;
  enemy.combat=false;assert(relative.Calculate(&enemy)==0);enemy.combat=true;
  enemy.motion.kind=FLEEING_MOTION_TYPE;assert(relative.Calculate(&enemy)==0);
  enemy.threat.values[&tank]=100;assert(relative.Calculate(&enemy)==0);enemy.motion.kind=0;

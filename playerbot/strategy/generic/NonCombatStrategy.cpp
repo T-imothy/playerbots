@@ -7,6 +7,11 @@ using namespace ai;
 
 void NonCombatStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    // A nearby portable or ordinary repair NPC is normal raid upkeep. The
+    // action itself requires the whole local group out of combat and damaged
+    // real equipment; it never leaves the raid to seek a distant vendor.
+    triggers.push_back(new TriggerNode("very often",
+        NextAction::array(0,new NextAction("raid repair",ACTION_HIGH+2),NULL)));
     triggers.push_back(new TriggerNode(
         "very often",
         NextAction::array(0, new NextAction("check mount state", 1.0f), new NextAction("check values", 1.0f), NULL)));

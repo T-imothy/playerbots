@@ -64,6 +64,8 @@ bool CombatDiagnostics::Select(PlayerbotAI* ai)
         return false;
     Player* bot = ai->GetBot();
     if (!bot || !bot->IsInWorld() || ai->IsRealPlayer()) return false;
+    if (sPlayerbotAIConfig.combatDiagnosticsRaidOnly &&
+        (!ai->HasRealPlayerMaster() || !bot->GetMap()->IsRaid())) return false;
     if (!(sPlayerbotAIConfig.combatDiagnosticsClassMask & (uint32(1) << bot->getClass()))) return false;
     // Explicit bot trace includes every observed event until the interval cap.
     if (sPlayerbotAIConfig.combatDiagnosticsTraceBot == bot->GetGUIDLow()) return true;

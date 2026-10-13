@@ -7,6 +7,8 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "playerbot/ServerFacade.h"
+#include "Movement/MoveSpline.h"
+#include "playerbot/strategy/mage/MageCombatPolicy.h"
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
@@ -45,6 +47,7 @@ namespace
             case CLASS_PRIEST:return "mind blast";
             case CLASS_SHAMAN:return "lightning bolt";
             case CLASS_DRUID:return "wrath";
+            case CLASS_MAGE:return MagePrimaryDamageSpell(ai);
             default:return "frostbolt";
         }
     }
@@ -67,6 +70,7 @@ namespace
         encounter::Point best;
         // Rear lanes avoid the native frontal breath. Healers solve their
         // range against the actual holding tank, rather than the hound centre.
+        for (float margin : {0.0f,4.0f,8.0f,12.0f})
         for (float offset : {180.0f,140.0f,220.0f,110.0f,250.0f})
         {
             const float angle=hound->GetOrientation()+offset*float(M_PI)/180;
@@ -77,7 +81,7 @@ namespace
             const float projection=vx*ux+vy*uy;
             const float discriminant=legal*legal-vx*vx-vy*vy-vz*vz+projection*projection;
             if (discriminant<0) continue;
-            const float distance=projection+std::sqrt(discriminant);
+            const float distance=projection+std::sqrt(discriminant)-margin;
             if (!std::isfinite(distance) || distance<=5) continue;
             plan.destination={hound->GetPositionX()+ux*distance,
                 hound->GetPositionY()+uy*distance,hound->GetPositionZ()};
@@ -272,8 +276,8 @@ bool ai::MoltenCoreImpPack(PlayerbotAI* ai)
         bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsRealPlayer() || ai->IsHeal(bot)) return false;
     Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
     if (!target || !target->IsInWorld() || !bot->IsInMap(target) || !target->IsAlive() ||
-        !target->IsInCombat() || target->GetEntry() != 11669) return false;
-    unsigned imps = 0;
+        !target->IsInCombat() || (target->GetEntry() != 11669 && target->GetEntry()!=12101)) return false;
+    unsigned imps = 0,held = 0;
     for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
     {
         Unit* enemy = ai->GetUnit(guid);
@@ -286,12 +290,12 @@ bool ai::MoltenCoreImpPack(PlayerbotAI* ai)
         if (enemy->GetEntry() == 11669 && enemy->GetDistance(target) <= 8)
         {
             Unit* victim = enemy->GetVictim();
-            if (!victim || !victim->IsPlayer() || !ai->IsTank(static_cast<Player*>(victim)) ||
-                static_cast<Player*>(victim)->GetGroup() != bot->GetGroup()) return false;
+            if (victim && victim->IsPlayer() && victim->IsAlive() && bot->IsInMap(victim) &&
+                ai->IsTank(static_cast<Player*>(victim)) && static_cast<Player*>(victim)->GetGroup()==bot->GetGroup()) ++held;
             ++imps;
         }
     }
-    return imps >= 3 && ai->GetCombatStartTime() && time(0) - ai->GetCombatStartTime() >= 10;
+    return imps >= 3 && held > 0 && ai->GetCombatStartTime() && time(0) - ai->GetCombatStartTime() >= 10;
 }
 
 namespace
@@ -299,7 +303,7 @@ namespace
     bool PlanMagmadarFormation(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan)
     {
         Player* bot = ai->GetBot();
-        if (boss->GetVictim() == bot || ai->IsTank(bot)) return false;
+        if (boss->GetVictim() == bot) return false;
         const bool healer = ai->IsHeal(bot);
         const bool ranged = ai->IsRanged(bot) || healer;
         std::vector<Player*> members;
@@ -307,7 +311,7 @@ namespace
         {
             Player* member = ref->getSource();
             if (!member || !member->IsInWorld() || !member->IsAlive() || member->HasCharmer() ||
-                member->IsBeingTeleported() || !bot->IsInMap(member) || ai->IsTank(member) ||
+                member->IsBeingTeleported() || !bot->IsInMap(member) || member==boss->GetVictim() ||
                 member->GetDistance(boss) > 100 || (ai->IsRanged(member) || ai->IsHeal(member)) != ranged ||
                 (ranged && ai->IsHeal(member) != healer)) continue;
             members.push_back(member);
@@ -343,8 +347,7 @@ namespace
                 case CLASS_DRUID: spell = "wrath"; break;
                 case CLASS_SHAMAN: spell = "lightning bolt"; break;
                 case CLASS_MAGE:
-                    if (ai->HasStrategy("fire raid", BotState::BOT_STATE_COMBAT)) spell = "fireball";
-                    else if (ai->HasStrategy("arcane raid", BotState::BOT_STATE_COMBAT)) spell = "arcane missiles";
+                    spell = MagePrimaryDamageSpell(ai);
                     break;
                 default: break;
             }
@@ -371,13 +374,13 @@ namespace
                 angle = boss->GetAngle(healingTarget) + (slot % 2 ? 1.0f : -1.0f) *
                     (float(M_PI)*5/12 + float(slot/2)*step);
             }
-            else angle += (members.size()>1 ? float(slot)/float(members.size()-1)-0.5f : 0) * float(M_PI)*4/3;
+            else angle += (members.size()>1 ? float(slot)/float(members.size()-1)-0.5f : 0) * float(M_PI)*2/3;
         }
         else angle += (float(slot % 3)-1)*float(M_PI)/3; // rear-left, rear, rear-right
         for (float offset : {0.0f,0.12f,-0.12f,0.24f,-0.24f,0.36f,-0.36f})
         {
             const float candidateAngle = angle+offset;
-            if (std::cos(candidateAngle-boss->GetOrientation()) > 0.5f) continue;
+            if (std::cos(candidateAngle-boss->GetOrientation()) > 0.0f) continue;
             float candidateDistance = distance;
             const auto withinFriendlyRange = [&](Unit* target, float maximum) {
                 if (!target) return true;
@@ -525,7 +528,7 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
     plan.active = true; plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
     plan.boss = selected->GetObjectGuid();
     if (selected->GetEntry() == 12056) return PlanGeddonFormation(ai,selected,plan);
-    if (selected->GetEntry() == 11982 && victim != bot && !ai->IsTank(bot))
+    if (selected->GetEntry() == 11982 && victim != bot)
     {
         plan.spell = 19272;
         return PlanMagmadarFormation(ai, selected, plan);
@@ -555,7 +558,7 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
                 Player* member = ref->getSource();
                 if (!member || member == bot || !member->IsInWorld() || !member->IsAlive() ||
                     !bot->IsInMap(member) || member->IsBeingTeleported() || ai->IsTank(member) ||
-                    member->GetDistance(selected) > 40) continue;
+                    member->GetDistance(selected) > (selected->GetEntry()==11982?100:40)) continue;
                 x += member->GetPositionX(); y += member->GetPositionY(); ++count;
             }
             if (!count) { plan.active = false; return false; }
@@ -973,6 +976,17 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         return MoltenCoreThreats(ai, current, threats);
     }
     Unit* boss = ai->GetUnit(plan.boss);
+    if (boss && boss->IsInWorld() && bot->IsInMap(boss) && boss->IsAlive() && boss->IsInCombat() &&
+        (boss->GetEntry()==11982 || boss->GetEntry()==11673) && boss->GetVictim()!=bot &&
+        (plan.spell==19272 || plan.spell==19364))
+    {
+        const float station=std::atan2(plan.destination.y-boss->GetPositionY(),plan.destination.x-boss->GetPositionX());
+        if (std::cos(station-boss->GetOrientation())>0.0f)
+        {
+            ai->GetAiObjectContext()->GetValue<EncounterPosition>("molten core position")->Reset();
+            return PlanMoltenCoreTrash(ai,plan);
+        }
+    }
     if (plan.spell==19771 && ai->IsTank(bot) && boss &&
         (boss->GetEntry()==11671 || boss->GetEntry()==11669))
     {
@@ -988,8 +1002,14 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 bool MoltenCorePositionAction::isUseful()
 {
     EncounterPosition plan;
-    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f ||
-        !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+    if (!GetPlan(ai,plan)) return false;
+    if (bot->GetDistance(plan.destination.x,plan.destination.y,plan.destination.z)>1.5f) return true;
+    if (!bot->movespline || bot->movespline->Finalized()) return false;
+    // Only stop an actual spline continuing beyond the station. A retained
+    // generator or movement flag must not monopolize every reaction frame.
+    const auto end=bot->movespline->FinalDestination();
+    return std::hypot(end.x-plan.destination.x,end.y-plan.destination.y)>1.5f ||
+        std::fabs(end.z-plan.destination.z)>1.5f;
 }
 
 bool MoltenCorePositionAction::ShouldReactionInterruptCast() const
@@ -1394,8 +1414,7 @@ bool ai::PlanGolemaggFormation(PlayerbotAI* ai, EncounterPosition& plan)
              bot->getClass()==CLASS_DRUID?"wrath":"frostbolt");
         if (!healer && bot->getClass()==CLASS_MAGE)
         {
-            if (ai->HasStrategy("fire raid", BotState::BOT_STATE_COMBAT)) spell="fireball";
-            else if (ai->HasStrategy("arcane raid", BotState::BOT_STATE_COMBAT)) spell="arcane missiles";
+            spell=MagePrimaryDamageSpell(ai);
         }
         if (healer)
         {

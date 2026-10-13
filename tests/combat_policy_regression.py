@@ -44,6 +44,8 @@ using BuffTrigger=Trigger;
 struct CastSpellAction {PlayerbotAI* ai;Player* bot;CastSpellAction(PlayerbotAI* a):ai(a),bot(&a->bot){}
  virtual bool isUseful(){return ai->eligible;}Unit* GetTarget(){return ai->target;}};
 struct CastPestilenceAction:CastSpellAction {using CastSpellAction::CastSpellAction;bool isUseful()override;};
+bool MeleeCombatTarget(PlayerbotAI*ai,Unit*u){return u&&u->world&&u->alive&&u->map==ai->bot.map;}
+unsigned SafeMeleeTargetCount(PlayerbotAI*ai,float,Unit*){return unsigned(ai->targets.size());}
 __RUNES__
 __MAGE__
 __SPREAD__

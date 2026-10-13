@@ -17,7 +17,9 @@ void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         case CLASS_PALADIN: area = "consecration"; break;
         case CLASS_SHAMAN: area = "chain lightning"; break;
         case CLASS_DRUID: area = ai->IsRanged(ai->GetBot()) ? "hurricane" : "swipe"; break;
-#ifndef MANGOSBOT_ZERO
+#ifdef MANGOSBOT_ZERO
+        case CLASS_WARLOCK: area = "rain of fire"; break;
+#else
         case CLASS_WARLOCK: area = "seed of corruption"; break;
 #endif
 #ifdef MANGOSBOT_TWO
@@ -27,7 +29,7 @@ void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
         default: break;
     }
     if (area) triggers.push_back(new TriggerNode("molten core imp pack",
-        NextAction::array(0, new NextAction(area, 40.0f), NULL)));
+        NextAction::array(0, new NextAction(area, ACTION_HIGH + 8), NULL)));
     // Below emergency healing and hazard movement, above ordinary rotations.
     triggers.push_back(new TriggerNode("molten core support",
         NextAction::array(0, new NextAction("molten core support", ACTION_DISPEL + 5), NULL)));

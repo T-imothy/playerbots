@@ -20,10 +20,10 @@ using uint32=uint32_t;using uint64=uint64_t;using int32=int32_t;
 enum SpellCastResult {SPELL_CAST_OK=255,SPELL_FAILED_NOT_READY=42};
 const char* GetSpellCastResultString(SpellCastResult){return "core_reason";}
 struct Guid{uint64 GetRawValue(){return 123;}};
-class Unit{public:virtual ~Unit(){} Guid GetObjectGuid(){return {};}int* GetMap(){static int x;return &x;}int GetReactionTo(Unit*){return 4;}};
+class Unit{public:virtual ~Unit(){} Guid GetObjectGuid(){return {};}struct Map{bool raid=true;bool IsRaid(){return raid;}};Map map;Map* GetMap(){return &map;}int GetReactionTo(Unit*){return 4;}};
 class Player:public Unit{public:uint32 guid=42,klass=1;bool world=true;bool IsInWorld(){return world;}uint32 GetGUIDLow(){return guid;}uint32 getClass(){return klass;}uint32 GetLevel(){return 60;}bool IsInCombat(){return true;}uint32 GetMapId(){return 0;}uint32 GetInstanceId(){return 1;}Unit* GetPet(){return nullptr;}bool IsFriendlyTo(Unit*){return false;}float GetDistance(Unit*){return 3;}};
-class PlayerbotAI{public:Player bot;bool human=false;Player* GetBot(){return &bot;}bool IsRealPlayer(){return human;}static bool IsTank(Player*){return false;}static bool IsHeal(Player*){return false;}bool IsRanged(Player*){return false;}};
-struct Config{bool combatDiagnosticsEnabled=false,diagnosticsEnabled=true;uint32 combatDiagnosticsSampleRate=2,combatDiagnosticsClassMask=4094,combatDiagnosticsTraceBot=0,combatDiagnosticsMaxKeys=4,combatDiagnosticsMaxTraces=2,combatDiagnosticsMaxFileMB=1;std::string GetTimestampStr(){return "TEST";}}sPlayerbotAIConfig;
+class PlayerbotAI{public:Player bot;bool human=false,owned=true;bool HasRealPlayerMaster(){return owned;}Player* GetBot(){return &bot;}bool IsRealPlayer(){return human;}static bool IsTank(Player*){return false;}static bool IsHeal(Player*){return false;}bool IsRanged(Player*){return false;}};
+struct Config{bool combatDiagnosticsRaidOnly=false,combatDiagnosticsEnabled=false,diagnosticsEnabled=true;uint32 combatDiagnosticsSampleRate=2,combatDiagnosticsClassMask=4094,combatDiagnosticsTraceBot=0,combatDiagnosticsMaxKeys=4,combatDiagnosticsMaxTraces=2,combatDiagnosticsMaxFileMB=1;std::string GetTimestampStr(){return "TEST";}}sPlayerbotAIConfig;
 struct CoreConfig{std::string GetStringDefault(const char*){return "";}}sConfig;
 '''
 test = r'''
@@ -33,6 +33,9 @@ int main(){PlayerbotAI ai;
  sPlayerbotAIConfig.combatDiagnosticsEnabled=true;int selected=0;
  for(int i=0;i<100;++i) selected+=ai::CombatDiagnostics::Select(&ai);assert(selected==50);
  ai.human=true;assert(!ai::CombatDiagnostics::Select(&ai));ai.human=false;
+ sPlayerbotAIConfig.combatDiagnosticsRaidOnly=true;ai.owned=false;assert(!ai::CombatDiagnostics::Select(&ai));ai.owned=true;
+ ai.bot.map.raid=false;assert(!ai::CombatDiagnostics::Select(&ai));ai.bot.map.raid=true;
+ sPlayerbotAIConfig.combatDiagnosticsRaidOnly=false;
  sPlayerbotAIConfig.combatDiagnosticsClassMask=1<<9;assert(!ai::CombatDiagnostics::Select(&ai));
  sPlayerbotAIConfig.combatDiagnosticsClassMask=4094;sPlayerbotAIConfig.combatDiagnosticsTraceBot=42;
  assert(ai::CombatDiagnostics::Select(&ai));
