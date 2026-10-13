@@ -95,7 +95,16 @@ namespace ai
             Aura* stacks = ai->GetAura(36032, bot);
             return !stacks || stacks->GetStackAmount() < 4;
         }
+#elif defined(MANGOSBOT_ONE)
+        bool IsActive() override;
 #endif
+    };
+
+    class ArcaneBlastFullTrigger : public BuffTrigger
+    {
+    public:
+        ArcaneBlastFullTrigger(PlayerbotAI* ai) : BuffTrigger(ai, "arcane blast") {}
+        bool IsActive() override;
     };
 
     class CounterspellInterruptSpellTrigger : public InterruptSpellTrigger

@@ -79,3 +79,25 @@ bool NoImprovedScorchDebuffTrigger::IsActive()
 
     return false;
 }
+
+#ifdef MANGOSBOT_ONE
+bool ArcaneBlastTrigger::IsActive()
+{
+    Unit* target = GetTarget();
+    return ai->HasSpell("arcane blast") && target && target->IsAlive() &&
+        (!ai->HasAura(spell, target, true, checkIsOwner) ||
+         AI_VALUE2(uint8, "mana", "self target") > sPlayerbotAIConfig.mediumMana);
+}
+#endif
+
+bool ArcaneBlastFullTrigger::IsActive()
+{
+#ifdef MANGOSBOT_ONE
+    Unit* target = GetTarget();
+    return ai->HasSpell("arcane blast") && target && target->IsAlive() &&
+        ai->HasAura(spell, target, true, checkIsOwner) &&
+        AI_VALUE2(uint8, "mana", "self target") <= sPlayerbotAIConfig.mediumMana;
+#else
+    return false;
+#endif
+}

@@ -14,6 +14,7 @@
 #include "RememberTaxiAction.h"
 #include "TradeStatusAction.h"
 #include "InventoryChangeFailureAction.h"
+#include "BuyFailedAction.h"
 #include "LootAction.h"
 #include "QuestAction.h"
 #include "LeaveGroupAction.h"
@@ -51,8 +52,8 @@ namespace ai
                 creators["accept invitation"] = [](PlayerbotAI* ai) { return new AcceptInvitationAction(ai); };
                 creators["give leader in dungeon"] = [](PlayerbotAI* ai) { return new GiveLeaderAction(ai, "I don't know this dungeon, lead the way!"); };
                 creators["leader"] = [](PlayerbotAI* ai) { return new PassLeadershipToMasterAction(ai); };
-                creators["tell not enough money"] = [](PlayerbotAI* ai) { return new TellMasterAction(ai, "Not enough money"); };
-                creators["tell not enough reputation"] = [](PlayerbotAI* ai) { return new TellMasterAction(ai, "Not enough reputation"); };
+                creators["tell buy failed"] = [](PlayerbotAI* ai) { return new BuyFailedAction(ai); };
+                creators["buy failed"] = [](PlayerbotAI* ai) { return new BuyFailedAction(ai); };
                 creators["tell cannot equip"] = [](PlayerbotAI* ai) { return new InventoryChangeFailureAction(ai); };
                 creators["talk to quest giver"] = [](PlayerbotAI* ai) { return new TalkToQuestGiverAction(ai); };
                 creators["accept quest"] = [](PlayerbotAI* ai) { return new AcceptQuestAction(ai); };

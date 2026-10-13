@@ -706,8 +706,8 @@ void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
     BotIncidentHistory::Flush();
 #ifdef MEMORY_MONITOR
-    sMemoryMonitor.Print();
     sMemoryMonitor.LogCount(sConfig.GetStringDefault("LogsDir") + "/" + "memory.csv");
+    sMemoryMonitor.SampleDiagnostics();
 #endif
 
     if (!sPlayerbotAIConfig.randomBotAutologin || !sPlayerbotAIConfig.enabled)

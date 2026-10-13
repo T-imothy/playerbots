@@ -7,6 +7,7 @@ from behavior_regression import block
 root = Path(__file__).resolve().parents[1] / 'playerbot/strategy'
 dk = (root / 'deathknight/DKTriggers.h').read_text()
 mage = block((root / 'mage/MageTriggers.h').read_text(), 'class ArcaneBlastTrigger') + ';'
+mage += '\n#ifdef MANGOSBOT_ONE\n' + block((root / 'mage/MageTriggers.cpp').read_text(), 'bool ArcaneBlastTrigger::IsActive()') + '\n#endif'
 runes = '#ifdef MANGOSBOT_TWO\n' + block(dk, 'class EmpowerRuneWeaponTrigger') + ';\n#endif'
 spread = block((root / 'deathknight/DKActions.cpp').read_text(), 'bool CastPestilenceAction::isUseful(')
 code = r'''
@@ -31,16 +32,17 @@ struct Player:Unit {bool combat=true,glyph=false;unsigned runic=0;int cooldown[6
 struct PlayerbotAI {Player bot;Unit* target=nullptr;bool eligible=true,known=true,castable=true;
  uint8 mana=100;Aura* blast=nullptr;std::map<int,Unit*> units;std::list<int> targets;
  bool HasSpell(std::string){return known;}bool CanCastSpell(std::string,Player*,uint8){return castable;}
+ bool HasAura(std::string,Unit*,bool,bool){return blast && blast->stacks>=3;}
  Aura* GetAura(int id,Unit* unit,bool own=false){if(id==36032)return blast;
  if(!unit || (own && !unit->owned))return nullptr;return id==55078?unit->plague:unit->fever;}
  Unit* GetUnit(int guid){return units.count(guid)?units[guid]:nullptr;}
 };
 #define AI_VALUE(type,name) (ai->targets)
 #define AI_VALUE2(type,name,qualifier) (ai->mana)
-struct Config{uint8 lowMana=20;}sPlayerbotAIConfig;
+struct Config{uint8 lowMana=20,mediumMana=40;}sPlayerbotAIConfig;
 struct Trigger {PlayerbotAI* ai;Player* bot;Trigger(PlayerbotAI* a,std::string,int=1):ai(a),bot(&a->bot){}
  virtual bool IsActive(){return true;}};
-using BuffTrigger=Trigger;
+struct BuffTrigger:Trigger{std::string spell;bool checkIsOwner=false;BuffTrigger(PlayerbotAI*a,std::string n):Trigger(a,n),spell(n){}Unit*GetTarget(){return bot;}};
 struct CastSpellAction {PlayerbotAI* ai;Player* bot;CastSpellAction(PlayerbotAI* a):ai(a),bot(&a->bot){}
  virtual bool isUseful(){return ai->eligible;}Unit* GetTarget(){return ai->target;}};
 struct CastPestilenceAction:CastSpellAction {using CastSpellAction::CastSpellAction;bool isUseful()override;};
@@ -78,7 +80,12 @@ int main(){
  ai.bot.glyph=false;assert(!pestilence.isUseful());
 #else
  assert(!pestilence.isUseful()); // No Wrath disease/rune behavior in the older builds.
- ai.known=false;ai.mana=0;assert(blast.IsActive()); // Original BuffTrigger behavior retained.
+ ai.known=false;ai.mana=0;
+#ifdef MANGOSBOT_ZERO
+ assert(blast.IsActive()); // Classic retains original BuffTrigger behavior.
+#else
+ assert(!blast.IsActive()); // TBC uses the merged native mana/stack trigger.
+#endif
 #endif
  std::cout<<"PASS: actual expansion-gated rune/mana/disease ownership and spread predicates\n";
 }

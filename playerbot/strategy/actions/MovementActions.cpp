@@ -787,6 +787,10 @@ TravelPath MovementAction::ResolveMovePath(const WorldPosition& startPosition, c
     // transfer can send a bot through disconnected dungeon geometry.
     if (outMovePath.empty())
     {
+        if (mover == bot)
+            ai->StopMoving();
+        else
+            mover->InterruptMoving(true);
         lastMove.clear();
         return TravelPath();
     }
