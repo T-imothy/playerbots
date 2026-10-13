@@ -33,9 +33,11 @@ bool ai::RaidRestInProgress(PlayerbotAI* ai)
 bool ai::RaidRegroupNeeded(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
+    // The owning AI has already checked actual enemies and pending pull
+    // intent. Native combat grace alone must not delay idle formation.
     if (!ai->HasRealPlayerMaster() || ai->IsRealPlayer() || !bot->GetGroup() ||
         !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
-        bot->IsInCombat() || ai->IsStateActive(BotState::BOT_STATE_COMBAT) || !ai->CanMove() ||
+        ai->IsStateActive(BotState::BOT_STATE_COMBAT) || !ai->CanMove() ||
         !ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
         ai->HasStrategy("stay", BotState::BOT_STATE_NON_COMBAT) || ai->HasStrategy("guard", BotState::BOT_STATE_NON_COMBAT) ||
         bot->IsNonMeleeSpellCasted(false, false, true) || ai->IsJumping() || bot->IsTaxiFlying() ||

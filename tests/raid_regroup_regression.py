@@ -70,8 +70,10 @@ int main(){Player bot;PlayerbotAI ai(&bot);
  bot.casting=true;ai.aiInternalUpdateDelay=9000;ai.PrepareForRaidRegroup();assert(ai.aiInternalUpdateDelay==9000&&bot.casting); // ongoing resurrection/heal
  bot.casting=false;ai.state=BotState::BOT_STATE_COMBAT;ai.party=true;ai.PrepareForRaidRegroup();assert(ai.state==BotState::BOT_STATE_COMBAT);
  ai.party=false;ai.PrepareForRaidRegroup();assert(ai.state==BotState::BOT_STATE_NON_COMBAT&&ai.reaction.wakes==1&&ai.aiInternalUpdateDelay==0);
+ bot.combat=true;assert(ai::RaidRegroupNeeded(&ai));bot.combat=false; // native combat grace cannot hold an ended AI fight
  for(unsigned fault=0;fault<11;++fault){bot.world=bot.alive=bot.grouped=bot.group.raid=true;bot.transfer=bot.charm=bot.combat=bot.casting=false;ai.human=ai.stay=ai.guard=ai.jumping=false;ai.owned=ai.mobile=ai.follow=true;
-  if(fault==0)bot.world=false;if(fault==1)bot.alive=false;if(fault==2)bot.transfer=true;if(fault==3)bot.charm=true;if(fault==4)bot.combat=true;if(fault==5)bot.grouped=false;if(fault==6)ai.human=true;if(fault==7)ai.owned=false;if(fault==8)ai.stay=true;if(fault==9)ai.guard=true;if(fault==10)ai.mobile=false;
+  ai.state=BotState::BOT_STATE_NON_COMBAT;
+  if(fault==0)bot.world=false;if(fault==1)bot.alive=false;if(fault==2)bot.transfer=true;if(fault==3)bot.charm=true;if(fault==4)ai.state=BotState::BOT_STATE_COMBAT;if(fault==5)bot.grouped=false;if(fault==6)ai.human=true;if(fault==7)ai.owned=false;if(fault==8)ai.stay=true;if(fault==9)ai.guard=true;if(fault==10)ai.mobile=false;
   assert(!ai::RaidRegroupNeeded(&ai));}
  std::cout<<"PASS stationary raid regroup, arrived spline, no mana dependency, native resurrection/heal preservation, party combat and owner/control guards\n";
 }

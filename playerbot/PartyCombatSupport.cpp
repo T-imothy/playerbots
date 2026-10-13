@@ -11,6 +11,11 @@ Player* ai::GetPartyCombatAnchor(PlayerbotAI* ai)
 
     Player* best = nullptr;
     bool bestIsTank = false;
+    const auto liveEnemy = [bot](Unit* enemy)
+    {
+        return enemy && enemy->IsInWorld() && enemy->IsAlive() && enemy->IsInCombat() &&
+            bot->IsInMap(enemy) && !sServerFacade.IsFriendlyTo(bot, enemy);
+    };
     for (const auto& slot : group->GetMemberSlots())
     {
         Player* member = sObjectMgr.GetPlayer(slot.guid);
@@ -22,6 +27,14 @@ Player* ai::GetPartyCombatAnchor(PlayerbotAI* ai)
 #ifdef MANGOSBOT_TWO
         if (!(bot->GetPhaseMask() & member->GetPhaseMask())) continue;
 #endif
+
+        // Native combat flags can outlive the final enemy. They alone must
+        // not restart the AI fight or pull a healer away from idle formation.
+        bool engaged = liveEnemy(member->GetVictim());
+        if (!engaged)
+            for (Unit* attacker : member->getAttackers())
+                if (liveEnemy(attacker)) { engaged = true; break; }
+        if (!engaged) continue;
 
         const bool tank = ai->IsTank(member);
         if (!best || (tank && !bestIsTank) ||
