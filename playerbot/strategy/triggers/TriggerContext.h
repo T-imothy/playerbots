@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/actions/ClassicRaidActions.h"
 
 #include "HealthTriggers.h"
 #include "playerbot/strategy/actions/EncounterCastActions.h"
@@ -313,6 +314,14 @@ namespace ai
                 creators["solarian priority target"] = [](PlayerbotAI* ai) { return new SolarianPriorityTargetTrigger(ai); };
                 creators["dungeon priority add"] = [](PlayerbotAI* ai) { return new DungeonAddTargetTrigger(ai); };
                 creators["boss seek cover"] = [](PlayerbotAI* ai) { return new BossCoverTrigger(ai); };
+                creators["classic raid pause"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid pause"); };
+                creators["classic raid egg hazard"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid egg hazard"); };
+                creators["classic raid cloak"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid cloak"); };
+                creators["classic raid emergency"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid emergency"); };
+                creators["classic raid position"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid position"); };
+                creators["classic raid target"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid target"); };
+                creators["classic raid support"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid support"); };
+                creators["classic raid control"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid control"); };
                 creators["ossirian crystal"] = [](PlayerbotAI* ai) { return new OssirianCrystalTrigger(ai); };
                 creators["hakkar acquire poison"] = [](PlayerbotAI* ai) { return new HakkarPoisonTrigger(ai); };
                 creators["avoid rotating beam"] = [](PlayerbotAI* ai) { return new RotatingBeamTrigger(ai); };

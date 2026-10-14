@@ -37,6 +37,8 @@ namespace ai
 #endif
     private:
         void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitCombatTriggers(std::list<TriggerNode*>& triggers) override;
+        void InitDeadTriggers(std::list<TriggerNode*>& triggers) override;
     };
 
     class WarsongStrategy : public Strategy

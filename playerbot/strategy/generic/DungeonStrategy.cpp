@@ -2,11 +2,20 @@
 #include "playerbot/playerbot.h"
 #include "DungeonStrategy.h"
 #include "DungeonMultipliers.h"
+#include "playerbot/strategy/actions/ClassicRaidActions.h"
 
 using namespace ai;
 
 void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#ifdef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("classic raid egg hazard", NextAction::array(0, new NextAction("move away from hazard", 110.0f), NULL)));
+    triggers.push_back(new TriggerNode("classic raid pause", NextAction::array(0, new NextAction("classic raid pause", ACTION_EMERGENCY + 3), NULL)));
+    triggers.push_back(new TriggerNode("classic raid position", NextAction::array(0, new NextAction("classic raid position", ACTION_MOVE + 5), NULL)));
+    triggers.push_back(new TriggerNode("classic raid target", NextAction::array(0, new NextAction("classic raid target", 90.0f), NULL)));
+    triggers.push_back(new TriggerNode("classic raid support", NextAction::array(0, new NextAction("classic raid support", ACTION_DISPEL + 4), NULL)));
+    triggers.push_back(new TriggerNode("classic raid control", NextAction::array(0, new NextAction("classic raid control", 102.0f), NULL)));
+#endif
     triggers.push_back(new TriggerNode("fight own inner demon",
         NextAction::array(0, new NextAction("fight own inner demon", 63.0f), NULL)));
     triggers.push_back(new TriggerNode("avoid rotating beam",
@@ -84,6 +93,9 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#ifdef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("classic raid cloak", NextAction::array(0, new NextAction("classic raid cloak", ACTION_HIGH), NULL)));
+#endif
     triggers.push_back(new TriggerNode("solarian burst position",
         NextAction::array(0, new NextAction("solarian burst position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("magtheridon cube",
@@ -137,6 +149,11 @@ void DungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
+#ifdef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("classic raid egg hazard", NextAction::array(0, new NextAction("move away from hazard", 110.0f), NULL)));
+    triggers.push_back(new TriggerNode("classic raid pause", NextAction::array(0, new NextAction("classic raid pause", ACTION_EMERGENCY + 3), NULL)));
+    triggers.push_back(new TriggerNode("classic raid emergency", NextAction::array(0, new NextAction("classic raid position", ACTION_EMERGENCY + 2), NULL)));
+#endif
     triggers.push_back(new TriggerNode("avoid rotating beam",
         NextAction::array(0, new NextAction("avoid rotating beam", 108.0f), NULL)));
     triggers.push_back(new TriggerNode("vashj core relay",
@@ -177,6 +194,9 @@ void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+#ifdef MANGOSBOT_ZERO
+    multipliers.push_back(new PreserveClassicRaidPlan(ai));
+#endif
     multipliers.push_back(new PreserveRotatingBeamMultiplier(ai));
     multipliers.push_back(new PreserveVashjCoreMultiplier(ai));
     multipliers.push_back(new PreserveHeiganDanceMultiplier(ai));
@@ -195,6 +215,9 @@ void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 
 void DungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
 {
+#ifdef MANGOSBOT_ZERO
+    multipliers.push_back(new PreserveClassicRaidPlan(ai));
+#endif
     multipliers.push_back(new PreserveRotatingBeamMultiplier(ai));
     multipliers.push_back(new PreserveVashjCoreMultiplier(ai));
     multipliers.push_back(new PreserveHeiganDanceMultiplier(ai));

@@ -9,6 +9,19 @@ using namespace ai;
 
 void ai::AppendNativeEncounterActorHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards)
 {
+#ifdef MANGOSBOT_ZERO
+    Player* bot = ai->GetBot();
+    if (bot->GetMapId() == 249 && bot->IsInWorld() && bot->IsAlive() && bot->IsInCombat() &&
+        bot->GetGroup() && !bot->IsBeingTeleported() && !bot->HasCharmer() && !ai->IsRealPlayer() &&
+        ai->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT))
+    {
+        // Upstream Onyxia egg entrances, verified against the native Classic
+        // 176511 egg clusters. Route admission as well as emergency escape
+        // keeps bots away; ordinary casts at a clear station are preserved.
+        hazards.emplace_back(WorldPosition(249, -36.0f, -164.0f, -90.0f), 6.0f);
+        hazards.emplace_back(WorldPosition(249, -34.0f, -262.0f, -90.0f), 6.0f);
+    }
+#endif
 #ifndef MANGOSBOT_ZERO
     Player* bot = ai->GetBot();
     const uint32 map = bot->GetMapId();

@@ -12,10 +12,19 @@ fixture=fixture.replace('float panicRadius=8;float NativeEncounterSpellRadius(un
 fixture=fixture.replace('Unit*GetVictim(){return victim;}', 'unsigned created=0;unsigned GetUInt32Value(unsigned){return created;}Unit*GetVictim(){return victim;}')
 fixture=fixture.replace('void Add(Player*p){', 'bool IsMember(ObjectGuid g){for(auto&r:refs)if(r.p->guid==g)return true;return false;}void Add(Player*p){')
 fixture=fixture.replace('__METHODS__','')
+fixture=fixture.replace('WorldPosition(Unit*u):', 'WorldPosition(unsigned,float a,float b,float c):x(a),y(b),z(c){}WorldPosition(Unit*u):')
 fixture+='\nenum{UNIT_CREATED_BY_SPELL=777};\nnamespace ai{void AppendNativeEncounterActorHazards(PlayerbotAI*,std::list<HazardPosition>&);}\n'
 fixture+=block((root/'playerbot/strategy/values/NativeEncounterActorHazards.cpp').read_text(),'void ai::AppendNativeEncounterActorHazards(')
 fixture+=r'''
 int main(){
+#ifdef MANGOSBOT_ZERO
+ {Player bot;bot.map=249;PlayerbotAI ai(&bot);Group group;group.Add(&bot);
+  std::list<HazardPosition> h;AppendNativeEncounterActorHazards(&ai,h);assert(h.size()==2);
+  bot.alive=false;h.clear();AppendNativeEncounterActorHazards(&ai,h);assert(h.empty());bot.alive=true;
+  bot.combat=false;AppendNativeEncounterActorHazards(&ai,h);assert(h.empty());bot.combat=true;
+  ai.dungeon=false;AppendNativeEncounterActorHazards(&ai,h);assert(h.empty());ai.dungeon=true;
+  bot.map=409;AppendNativeEncounterActorHazards(&ai,h);assert(h.empty());}
+#endif
  struct Row{unsigned map,boss,actor,aura,payload,ownerSpell;float padding;};
  const Row rows[]={
   {534,17968,18095,31945,31943,0,2},{546,17770,17990,31690,34168,31692,1},

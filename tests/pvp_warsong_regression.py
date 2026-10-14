@@ -180,11 +180,11 @@ int main(){
   bg.type=BATTLEGROUND_RB;bg.actual=BATTLEGROUND_WS;assert(IsBattlegroundFlagCarrier(&bot));assert(v.Calculate().goal==G::Capture);
 #endif
   bg.type=BATTLEGROUND_WS;bg.states[enemy]=0;bg.carriers[enemy]=0;bg.states[own]=1;bg.carriers[own]=enemyFC.guid;
-  enemyFC.x=bot.x+30;context->GetValue<Unit*>("enemy flag carrier")->Set(&enemyFC);
+  enemyFC.x=bot.x+30;context->GetValue<ObjectGuid>("enemy flag carrier")->Set(enemyFC.guid);
   context->GetValue<std::list<ObjectGuid>>("enemy player targets")->Set({enemyFC.guid});
-  context->GetValue<Unit*>("enemy player target")->Set(&enemyFC);
+  context->GetValue<ObjectGuid>("enemy player target")->Set(enemyFC.guid);
   AttackEnemyFlagCarrierAction attack{&bot,context,&a};assert(attack.isUseful());
-  context->GetValue<Unit*>("current target")->Set(&enemyFC);assert(!attack.isUseful());context->GetValue<Unit*>("current target")->Set(nullptr);
+  context->GetValue<ObjectGuid>("current target")->Set(enemyFC.guid);assert(!attack.isUseful());context->GetValue<ObjectGuid>("current target")->Set(0);
   enemyFC.alive=false;assert(!attack.isUseful());enemyFC.alive=true;
   bg.carriers[enemy]=bot.guid;assert(!attack.isUseful());bg.carriers[enemy]=0;
   enemyFC.map=1;assert(!attack.isUseful());enemyFC.map=489;

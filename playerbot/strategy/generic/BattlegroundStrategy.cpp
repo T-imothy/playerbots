@@ -33,7 +33,13 @@ void BattlegroundStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigge
 
     triggers.push_back(new TriggerNode(
         "bg active",
-        NextAction::array(0, new NextAction("check mount state", 2.0f), new NextAction("bg move to objective", 1.0f), NULL)));
+        NextAction::array(0, new NextAction("check mount state", 2.0f), new NextAction("bg move to objective",
+#ifdef MANGOSBOT_ZERO
+            ACTION_MOVE + 5
+#else
+            1.0f
+#endif
+        ), NULL)));
 
     triggers.push_back(new TriggerNode(
         "very often",
@@ -58,6 +64,23 @@ void BattlegroundStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigge
     /*triggers.push_back(new TriggerNode(
         "player has flag",
         NextAction::array(0, new NextAction("bg move to objective", 90.0f), NULL)));*/
+}
+
+void BattlegroundStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
+{
+#ifdef MANGOSBOT_ZERO
+    // Captures/ended status must remain available during native PvP combat.
+    triggers.push_back(new TriggerNode("bg active", NextAction::array(0, new NextAction("bg check flag", ACTION_HIGH), NULL)));
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("bg check objective", 10.0f), NULL)));
+    triggers.push_back(new TriggerNode("bg ended", NextAction::array(0, new NextAction("bg leave", ACTION_HIGH), NULL)));
+#endif
+}
+void BattlegroundStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
+{
+#ifdef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("bg active", NextAction::array(0, new NextAction("bg reset objective force", ACTION_HIGH), NULL)));
+    triggers.push_back(new TriggerNode("bg ended", NextAction::array(0, new NextAction("bg leave", ACTION_HIGH), NULL)));
+#endif
 }
 
 void WarsongStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &triggers)

@@ -602,6 +602,9 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
     // Battleground switch
     if (player->InBattleGround())
     {
+#ifdef MANGOSBOT_ZERO
+        combatEngine->addStrategy("battleground");
+#endif
         BattleGroundTypeId bgType = player->GetBattleGroundTypeId();
 
 #ifdef MANGOSBOT_TWO
@@ -1316,6 +1319,9 @@ Engine* AiFactory::createDeadEngine(Player* player, PlayerbotAI* const facade, A
 {
     Engine* deadEngine = new Engine(facade, AiObjectContext, BotState::BOT_STATE_DEAD);
     AddDefaultDeadStrategies(player, facade, deadEngine);
+#ifdef MANGOSBOT_ZERO
+    if (player->InBattleGround()) deadEngine->addStrategy("battleground");
+#endif
     return deadEngine;
 }
 

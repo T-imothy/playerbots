@@ -1,0 +1,91 @@
+Classic BG and raid adapters (2026-10-14)
+
+Scope: Classic only. WSG, AB, AV and six instance raids outside Molten Core:
+Onyxia, BWL, ZG, AQ20, AQ40, Naxxramas. World bosses and UBRS are not part of
+this package. TBC/Wrath registration does not activate these new handlers.
+
+Donor: mod-playerbots, GPL v2 or later, revision
+79bd428115c8f33b74b13de23b133d49c3f75c60.
+Compared src/Ai/Base/Strategy/BattlegroundStrategy.cpp and src/Ai/Raid/{Ony,
+Bwl,Aq20,Naxx}, including their action, trigger and multiplier implementations.
+This is a native adaptation of useful gaps, not a wholesale engine transplant.
+The audited donor has no dedicated ZG/AQ40 module and its Naxx rules are Wrath
+rules. Its commented-out Patchwerk rules are not advertised as active tactics.
+
+BG mapping
+----------
+Common donor objective/death/combat/ended hooks: added Classic combat and dead
+engine registration; capture/ended checks remain available in combat. AB/AV
+objectives refresh at most every ten seconds without rerolling native jobs.
+Native failed selections retain a usable previous objective. An active native
+cast/banner channel is preserved; refresh is not an engagement delay.
+WSG: retained native deterministic flag-state/team-job planner, flag carrier
+pursuit/protection, buffs and captures. AB: retained native node admission,
+banner interaction, routes and jobs. AV: retained native nodes, captains,
+generals, mines and routes; the baseline unmarked allied-NPC engagement fix
+remains included. Wrath-only BGs, vehicles and queues are not imported.
+
+Raid mapping
+------------
+Onyxia: retained native deep-breath spell-target geometry, whelp handling,
+fireball spread and flank/tail avoidance. Added egg-entrance exclusion and an
+explicit emergency escape trigger, verified against native egg clusters;
+native learned Fear Ward support. No Wrath phase HP thresholds imported.
+
+BWL: retained native Razorgore phase admission, add priority, suppression
+devices, Burning Adrenaline, Firemaw stack cover/taunts, Ebonroc tank swaps,
+Flamegor/Chromaggus Tranq/dispels, Hourglass Sand, Nefarian class-call policies
+and flanks. Added subgroup-elected native fire-resistance provider, native
+owned Onyxia Scale Cloak equip, Wild Magic Ice Block, and separated Wyrmguard
+tank lanes/ranged clearance. No free cloaks, direct aura grants, forced object
+state or marking permissions bypass. A human resistance provider is observed
+and never controlled. Full walking routes must clear local lane exclusions.
+
+AQ20: donor's active strategy is Ossirian crystal use. Retained our native
+crystal lifecycle/interaction, Moam mana drain, Ayamiss rescue/add targeting
+and other existing boss escape/target rules. Added ordinary ranged distance,
+spacing and spare-tank melee positioning for its boss whitelist.
+
+ZG/AQ40: retained native Thekal trio balancing, Hakkar poison, Jin'do visibility
+and add targeting, Twin Emperor physical/caster targeting, Viscidus pure-frost
+and shatter admission, C'thun rotating beam, native boss cast escape and other
+existing policies. Added ordinary formation rules. No nonexistent donor module
+is claimed, and no additional native boss script lifecycle changes are included.
+
+Naxx: retained native Heigan dance, Noth teleport phases, Maexxna rescue,
+Anub swarm escape, Grobbulus injection/cloud escape, Gluth Decimate targeting,
+Sapphiron cover, Thaddius charge separation and Kel'Thuzad burst handling.
+Added add priorities, safe flank/ranged formation, Grobbulus tank circuit,
+Gluth boss/chow lanes and learned slows, native Tranq and specific dispels,
+Thaddius ledge transition through normal validated jump machinery, KT native
+Frostbolt interrupts, Loatheb five-bot spore assembly with tank/healer exclusion
+and damage admission, and four melee Horsemen corners/mark relief/healer lanes.
+Far Horsemen are obtained from the native active instance roster and approached
+with bounded walking legs, not a fake teleport or a changed threat table.
+
+Classic control differs from Wrath: Faerlina's 16506 Worshipper uses native
+possessed Widow's Embrace, not an uncontrolled Wrath sacrifice. 16505 Followers
+are killed first. Razuvious uses priests and native 16803 Understudies, not
+Wrath obedience crystals. Learned native Shield Wall (29061) and Taunt (29060)
+alternate on actual aura/victim/readiness state; only one owned student is
+elected to spend its wall. Owned worshippers must actually arrive inside native
+Embrace radius/LOS. Native ownership, cooldown and CheckCast remain decisive.
+Managed autocast is disabled through ordinary ownership-checked packets once
+per charm. Healers can heal owned students. Damage/AoE guards reserve available
+Classic control actors without blocking friendly healing or native tank taunts.
+
+Boundaries and verification
+--------------------------
+The new raid whitelist excludes map 409. No MC-specific source, Garr or Geddon
+routine is changed. Existing encounter emergency actions retain precedence;
+ordinary positioning preserves active casts/channels. Death, transfer, changed
+map/instance, real players and invalid charm ownership reject stale work.
+Native floor, full path, LOS, spell range and inventory admission remain in use.
+No SQL, addon protocol, recruitment identity/ownership or GM command change.
+
+New regression fixtures execute actual policy/admission/controller bodies with
+native-shaped mocks and refusal cases. They are not live raid simulations.
+Existing native CTest plus focused strategy regressions and native compilation
+are required before staging. This document does not assert live clears or that
+every boss has a complete donor-specific routine. Deployment, restart and live
+performance verification are separate release steps and receipts.

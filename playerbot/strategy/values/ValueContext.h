@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/actions/ClassicRaidActions.h"
 
 #include "ActiveSpellValue.h"
 #include "BotReliabilityValue.h"
@@ -137,6 +138,7 @@ namespace ai
                 creators["aran flame wreath"] = [](PlayerbotAI* ai) { return new AranFlameWreathValue(ai); };
                 creators["boss cast position"] = [](PlayerbotAI* ai) { return new BossCastPositionValue(ai); };
                 creators["boss cover position"] = [](PlayerbotAI* ai) { return new BossCoverPositionValue(ai); };
+                creators["classic raid plan"] = [](PlayerbotAI* ai) { return new ClassicRaidPlanValue(ai); };
                 creators["ossirian crystal position"] = [](PlayerbotAI* ai) { return new OssirianPositionValue(ai); };
                 creators["hakkar poison position"] = [](PlayerbotAI* ai) { return new HakkarPositionValue(ai); };
                 creators["akilzon storm position"] = [](PlayerbotAI* ai) { return new AkilzonStormPositionValue(ai); };

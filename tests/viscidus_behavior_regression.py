@@ -11,7 +11,7 @@ code=r'''
 #include <set>
 #include <string>
 #include <iostream>
-using uint32=unsigned;
+using uint32=unsigned;using ObjectGuid=unsigned;
 enum{CLASS_MAGE=8,CLASS_SHAMAN=7,CLASS_DEATH_KNIGHT=6,SPELL_SCHOOL_MASK_FROST=16};
 struct SpellEntry{unsigned id,school=16;};unsigned GetSpellSchoolMask(const SpellEntry*s){return s->school;}
 struct Unit{unsigned entry=15299,guid=1,phase=1;bool world=true,alive=true,combat=true,charm=false,valid=true,cc=false;std::set<std::pair<unsigned,unsigned>>auras;
@@ -27,7 +27,8 @@ struct PlayerbotAI{Player*bot;Unit*target=nullptr;bool real=false,heal=false,tan
  bool IsRealPlayer(){return real;}bool IsHeal(Player*){return heal;}bool IsTank(Player*){return tank;}
  bool CanCastSpell(unsigned,Unit*u,unsigned mask,bool learned){assert(mask==0&&learned&&u==target);return canCast;}
  bool CastSpell(unsigned id,Unit*u,void*,bool wait,unsigned*duration){assert(!wait&&u==target);last=id;*duration=1500;return castResult;}
- template<class T>T value(std::string key){assert(key=="current target");return target;}
+ template<class T>T value(std::string key){assert(key=="current target");return target?target->guid:0;}
+ Unit*GetUnit(ObjectGuid id){return target&&target->guid==id?target:nullptr;}
  template<class T>T qualified(std::string key,std::string name){assert(key=="spell cast useful"&&(name=="frostbolt"||name=="frost shock"||name=="icy touch"));return allowed;}};
 struct Facade{std::map<unsigned,SpellEntry>spells;const SpellEntry*LookupSpellInfo(unsigned id){return spells.count(id)?&spells[id]:nullptr;}}sServerFacade;
 struct Config{float sightDistance=60;}sPlayerbotAIConfig;
@@ -73,7 +74,9 @@ for signature in ('bool PossibleAttackTargetsValue::HasBreakableCC(', 'bool Poss
     assert block(cc,signature).split('{',1)[1].strip().startswith('if (IsViscidusShatterTarget(target, player)) return false;')
 assert 'IsCcTarget(target, player)' in block(cc,'bool PossibleAttackTargetsValue::IsPossibleTarget(')
 for era in ('classic','tbc','wotlk'):
-    native=(root.parent/f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_viscidus.cpp').read_text()
+    repo=root.parent/era
+    if not repo.exists():repo=root.parent/f'mangos-{era}-behavior'
+    native=(repo/'src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_viscidus.cpp').read_text()
     assert 'procData.spell->GetSchoolMask() == SPELL_SCHOOL_MASK_FROST' in native
     assert 'procData.attType == BASE_ATTACK || procData.attType == OFF_ATTACK' in native
 print('PASS: actual native hit counters and explicit CC assignments remain intact')

@@ -1,4 +1,5 @@
 #pragma once
+#include "playerbot/strategy/actions/ClassicRaidActions.h"
 
 #include "GenericActions.h"
 #include "EncounterCastActions.h"
@@ -404,6 +405,13 @@ namespace ai
                 creators["solarian priority target"] = [](PlayerbotAI* ai) { return new SolarianPriorityTargetAction(ai); };
                 creators["dungeon priority add"] = [](PlayerbotAI* ai) { return new DungeonAddTargetAction(ai); };
                 creators["boss seek cover"] = [](PlayerbotAI* ai) { return new BossCoverAction(ai); };
+                creators["classic raid pause"] = [](PlayerbotAI* ai) { return new ClassicRaidPauseAction(ai); };
+                creators["classic raid cloak"] = [](PlayerbotAI* ai) { return new ClassicRaidCloakAction(ai); };
+                creators["classic raid position"] = [](PlayerbotAI* ai) { return new ClassicRaidPositionAction(ai); };
+                creators["classic raid target"] = [](PlayerbotAI* ai) { return new ClassicRaidTargetAction(ai); };
+                creators["classic raid support"] = [](PlayerbotAI* ai) { return new ClassicRaidSupportAction(ai); };
+                creators["classic raid control"] = [](PlayerbotAI* ai) { return new ClassicRaidControlAction(ai); };
+                creators["bg reset objective force"] = [](PlayerbotAI* ai) { return new BGTactics(ai, "reset objective"); };
                 creators["ossirian crystal"] = [](PlayerbotAI* ai) { return new OssirianCrystalAction(ai); };
                 creators["hakkar acquire poison"] = [](PlayerbotAI* ai) { return new HakkarPoisonAction(ai); };
                 creators["avoid rotating beam"] = [](PlayerbotAI* ai) { return new RotatingBeamAction(ai); };

@@ -1,0 +1,1106 @@
+#include "playerbot/playerbot.h"
+#include "ClassicRaidActions.h"
+#include "EncounterSpellPolicy.h"
+#include "ReachTargetActions.h"
+#include "GenericSpellActions.h"
+#include "MovementPathSafety.h"
+#include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "playerbot/strategy/values/PositionValue.h"
+#include "MotionGenerators/PathFinder.h"
+#include "Movement/MoveSpline.h"
+#include "AI/ScriptDevAI/include/sc_instance.h"
+#include "Entities/Totem.h"
+
+using namespace ai;
+
+namespace
+{
+    bool Ready(PlayerbotAI* ai)
+    {
+#ifdef MANGOSBOT_ZERO
+        Player* bot = ai->GetBot();
+        return bot->IsInWorld() && bot->IsAlive() && bot->IsInCombat() && !bot->IsBeingTeleported() &&
+            !bot->HasCharmer() && !ai->IsRealPlayer() && bot->GetGroup() && classicraid::Map(bot->GetMapId());
+#else
+        return false;
+#endif
+    }
+    bool Live(Player* bot, Unit* unit)
+    {
+        return unit && unit->IsInWorld() && unit->IsAlive() && bot->IsInMap(unit) && !unit->HasCharmer();
+    }
+    bool Member(Player* bot, Player* player)
+    {
+        return Live(bot, player) && player->GetGroup() == bot->GetGroup() && !player->IsBeingTeleported();
+    }
+    bool Engaged(Player* bot, Unit* unit)
+    {
+        if (!Live(bot, unit) || !unit->IsInCombat() || sServerFacade.IsFriendlyTo(bot, unit)) return false;
+        Unit* victim = unit->GetVictim();
+        if (victim && victim->IsInWorld() && bot->IsInMap(victim))
+        {
+            if (victim->IsPlayer() && Member(bot, static_cast<Player*>(victim))) return true;
+            Unit* owner = victim->GetMaster();
+            if (owner && owner->IsPlayer() && Member(bot, static_cast<Player*>(owner))) return true;
+        }
+        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* player = ref->getSource();
+            if (!Member(bot, player)) continue;
+            if (player->GetVictim() == unit || unit->getAttackers().count(player)) return true;
+        }
+        return false;
+    }
+    std::vector<Player*> Members(PlayerbotAI* ai, bool tanks = false)
+    {
+        std::vector<Player*> members;
+        Player* bot = ai->GetBot();
+        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+            if (Member(bot, ref->getSource()) && (!tanks || ai->IsTank(ref->getSource()))) members.push_back(ref->getSource());
+        std::sort(members.begin(), members.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+        return members;
+    }
+    Unit* FindBoss(PlayerbotAI* ai, uint32 entry)
+    {
+        if (!Ready(ai) || !classicraid::Boss(ai->GetBot()->GetMapId(), entry)) return nullptr;
+        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets", "100:1")->Get())
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (unit && unit->GetEntry() == entry && Engaged(ai->GetBot(), unit)) return unit;
+        }
+        return nullptr;
+    }
+    bool Attackable(PlayerbotAI* ai, Unit* unit)
+    {
+        Player* bot = ai->GetBot();
+        return Engaged(bot, unit) && PossibleAttackTargetsValue::IsValid(unit, bot,
+            sPlayerbotAIConfig.sightDistance, false, true) && !PossibleAttackTargetsValue::HasBreakableCC(unit, bot) &&
+            !PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot);
+    }
+    bool Spore(PlayerbotAI* ai, Unit* unit)
+    {
+        Player* bot = ai->GetBot();
+        if (!Live(bot, unit) || bot->GetMapId() != 533 || unit->GetEntry() != 16286 ||
+            unit->GetUInt32Value(UNIT_CREATED_BY_SPELL) != 29234 || ai->IsTank(bot) || ai->IsHeal(bot)) return false;
+        Unit* owner = ai->GetUnit(unit->GetSpawnerGuid());
+        return owner && owner->GetEntry() == 16011 && Engaged(bot, owner) &&
+            PossibleAttackTargetsValue::IsPossibleTarget(unit, bot, sPlayerbotAIConfig.sightDistance, false) &&
+            !PossibleAttackTargetsValue::HasBreakableCC(unit, bot);
+    }
+    std::vector<Player*> SporeRecipients(PlayerbotAI* ai, Unit* spore, bool& assembled)
+    {
+        std::vector<Player*> recipients;
+        const float radius = NativeEncounterSpellRadius(29232);
+        assembled = radius > 1 && radius <= 30;
+        for (Player* member : Members(ai))
+        {
+            // Humans choose their own spores; never wait for them to obey a bot plan.
+            if (ai->IsTank(member) || ai->IsHeal(member))
+            { if (member->GetDistance(spore) < radius) assembled = false; continue; }
+            if (member->HasAura(29232) || !member->GetPlayerbotAI() || member->GetPlayerbotAI()->IsRealPlayer()) continue;
+            if (recipients.size() < 5) recipients.push_back(member);
+        }
+        if (recipients.empty()) assembled = false;
+        for (Player* member : recipients) if (member->GetDistance(spore) >= radius - 1) assembled = false;
+        return recipients;
+    }
+    unsigned Stacks(Player* player, Unit* boss)
+    {
+        const uint32 mark = classicraid::HorsemanMark(boss->GetEntry());
+        const SpellAuraHolder* holder = mark ? player->GetSpellAuraHolder(mark) : nullptr;
+        return holder ? holder->GetStackAmount() : 0;
+    }
+    // Existing native mechanic handlers outrank an ordinary formation. Never
+    // countermand cover, polarity/injection, dance, a beam, crystal or poison.
+    bool SpecialPosition(PlayerbotAI* ai)
+    {
+        const uint32 map = ai->GetBot()->GetMapId();
+        if (map == 249) return ai->GetAiObjectContext()->GetValue<EncounterPosition>("onyxia position")->Get().active;
+        if (map == 469 && ai->GetAiObjectContext()->GetValue<EncounterPosition>("blackwing lair position")->Get().active) return true;
+        if (map == 533 && (ai->GetAiObjectContext()->GetValue<EncounterPosition>("naxxramas position")->Get().active ||
+            ai->GetAiObjectContext()->GetValue<EncounterPosition>("heigan dance position")->Get().active)) return true;
+        if ((map == 469 || map == 533) && ai->GetAiObjectContext()->GetValue<EncounterPosition>("boss cover position")->Get().active) return true;
+        if (IsBossEscapeMap(map) && ai->GetAiObjectContext()->GetValue<EncounterPosition>("boss cast position")->Get().active) return true;
+        if (map == 531 && ai->GetAiObjectContext()->GetValue<EncounterPosition>("rotating beam position")->Get().active) return true;
+        if (map == 509 && ai->GetAiObjectContext()->GetValue<EncounterPosition>("ossirian crystal position")->Get().active) return true;
+        return map == 309 && ai->GetAiObjectContext()->GetValue<EncounterPosition>("hakkar poison position")->Get().active;
+    }
+    float Range(PlayerbotAI* ai, Unit* enemy)
+    {
+        Player* bot = ai->GetBot();
+        const char* spell = ai->IsHeal(bot) ? "flash heal" : nullptr;
+        if (!spell)
+            switch (bot->getClass())
+            {
+                case CLASS_MAGE: spell = "frostbolt"; break;
+                case CLASS_WARLOCK: spell = "shadow bolt"; break;
+                case CLASS_HUNTER: spell = "auto shot"; break;
+                case CLASS_PRIEST: spell = "mind blast"; break;
+                case CLASS_DRUID: spell = ai->IsHeal(bot) ? "healing touch" : "wrath"; break;
+                case CLASS_SHAMAN: spell = ai->IsHeal(bot) ? "healing wave" : "lightning bolt"; break;
+                case CLASS_PALADIN: spell = "flash of light"; break;
+            }
+        if (ai->IsHeal(bot))
+            switch (bot->getClass())
+            {
+                case CLASS_DRUID: spell = "healing touch"; break;
+                case CLASS_SHAMAN: spell = "healing wave"; break;
+                case CLASS_PALADIN: spell = "flash of light"; break;
+            }
+        float range = ai->GetRange("spell");
+        if (spell) ai->GetSpellRange(spell, &range);
+        return std::isfinite(range) ? std::max(8.0f, std::min(45.0f, range) - 2.0f) : 28.0f;
+    }
+    bool PositionLegal(PlayerbotAI* ai, Unit* anchor, EncounterPosition& position, float range)
+    {
+        if (!ValidateEncounterDestination(ai, position)) return false;
+        const auto& p = position.destination;
+        return anchor->GetDistance(p.x, p.y, p.z) <= range &&
+            anchor->IsWithinLOS(p.x, p.y, p.z + ai->GetBot()->GetCollisionHeight(), true);
+    }
+    bool LocalCircleRoute(PlayerbotAI* ai, const EncounterPosition& p, const std::vector<encounter::Circle>& circles)
+    {
+        Player* bot = ai->GetBot();
+        PathFinder path(bot);
+        if (!path.calculate(p.destination.x, p.destination.y, p.destination.z, false) ||
+            path.getPathType() != PATHFIND_NORMAL || path.getPath().size() < 2 || path.getPath().size() > 256) return false;
+        std::list<HazardPosition> avoid;
+        for (const auto& circle : circles)
+            avoid.emplace_back(WorldPosition(bot->GetMapId(), circle.center.x, circle.center.y, circle.center.z), circle.radius);
+        WorldPosition previous(bot);
+        for (const auto& step : path.getPath())
+        {
+            WorldPosition point(bot->GetMapId(), step.x, step.y, step.z);
+            if (!IsHazardSafeSegment(previous, point, avoid)) return false;
+            previous = point;
+        }
+        return true;
+    }
+    bool SubmitControlledSpell(Player* bot, Unit* charm, uint32 id, Unit* target)
+    {
+        const SpellEntry* spell = sServerFacade.LookupSpellInfo(id);
+        if (!spell || !charm->HasSpell(id) || !charm->IsSpellReady(*spell) || charm->IsNonMeleeSpellCasted(false)) return false;
+        SpellCastTargets targets;
+        if (IsSpellRequireTarget(spell)) targets.setUnitTarget(target);
+        WorldPacket packet(CMSG_PET_CAST_SPELL);
+        packet << charm->GetObjectGuid();
+#ifdef MANGOSBOT_TWO
+        packet << uint8(0) << id << uint8(0);
+#else
+        packet << id;
+#endif
+        packet << targets;
+        bot->GetSession()->HandlePetCastSpellOpcode(packet);
+        return true; // Submission only. Native ownership/CheckCast/cooldown decide the result.
+    }
+    bool ControlledInRadius(PlayerbotAI* ai, Unit* charm, Unit* boss, float radius)
+    {
+        if (!std::isfinite(radius) || radius <= 1 || radius > 40) return false;
+        if (charm->IsWithinDistInMap(boss, radius - 1) && charm->IsWithinLOSInMap(boss)) return true;
+        if (charm->movespline && !charm->movespline->Finalized()) return false;
+        const float angle = boss->GetAngle(charm);
+        float x = boss->GetPositionX() + radius * 0.5f * std::cos(angle);
+        float y = boss->GetPositionY() + radius * 0.5f * std::sin(angle);
+        float z = boss->GetPositionZ();
+        charm->UpdateAllowedPositionZ(x, y, z);
+        if (!std::isfinite(z) || std::fabs(z - boss->GetPositionZ()) > 8) return false;
+        PathFinder path(charm);
+        if (!path.calculate(x, y, z, false) || path.getPathType() != PATHFIND_NORMAL ||
+            path.getPath().size() < 2 || path.getPath().size() > 256) return false;
+        const auto hazards = ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Get();
+        WorldPosition previous(charm);
+        for (const auto& step : path.getPath())
+        {
+            WorldPosition point(charm->GetMapId(), step.x, step.y, step.z);
+            if (!IsHazardSafeSegment(previous, point, hazards)) return false;
+            previous = point;
+        }
+        charm->GetMotionMaster()->MovePoint(28732, x, y, z, FORCED_MOVEMENT_RUN, true);
+        return false; // Wait for actual native arrival before spending the worshipper.
+    }
+    Unit* ControlledRelief(PlayerbotAI* ai)
+    {
+        const SpellEntry* wall = sServerFacade.LookupSpellInfo(29061);
+        if (!wall) return nullptr;
+        Unit* selected = nullptr;
+        for (Player* owner : Members(ai))
+        {
+            if (!owner->GetPlayerbotAI() || owner->GetPlayerbotAI()->IsRealPlayer()) continue;
+            Unit* student = owner->GetCharm();
+            if (!student || student->GetEntry() != 16803 || !student->IsInWorld() || !student->IsAlive() ||
+                !owner->IsInMap(student) || !student->HasCharmer(owner->GetObjectGuid()) ||
+                !student->HasSpell(29061) || student->IsNonMeleeSpellCasted(false) ||
+                (!student->HasAura(29061) && !student->IsSpellReady(*wall))) continue;
+            if (!selected || student->GetObjectGuid() < selected->GetObjectGuid()) selected = student;
+        }
+        return selected;
+    }
+    bool RingPosition(PlayerbotAI* ai, Unit* boss, float x, float y, float radius, uint32 tag, EncounterPosition& p)
+    {
+        Player* bot = ai->GetBot();
+        if (std::hypot(bot->GetPositionX() - x, bot->GetPositionY() - y) > 80) return false;
+        p.active = true; p.map = bot->GetMapId(); p.instance = bot->GetInstanceId();
+        p.boss = boss->GetObjectGuid(); p.spell = tag;
+        auto valid = [&]() {
+            if (tag == 28217 && boss->GetDistance(p.destination.x, p.destination.y, p.destination.z) < 15) return false;
+            if (!ValidateEncounterDestination(ai, p)) return false;
+            return tag != 28217 || LocalCircleRoute(ai, p,
+                {{{boss->GetPositionX(), boss->GetPositionY(), boss->GetPositionZ()}, 15}});
+        };
+        if (bot->movespline && !bot->movespline->Finalized())
+        {
+            const auto end = bot->movespline->FinalDestination();
+            if (std::fabs(std::hypot(end.x - x, end.y - y) - radius) < 2)
+            {
+                p.destination = {end.x, end.y, end.z};
+                if (valid()) return true; // keep a valid in-flight leg rather than changing it every tick.
+            }
+        }
+        const float a = std::atan2(bot->GetPositionY() - y, bot->GetPositionX() - x);
+        const int nearest = int(std::round(a / (M_PI_F / 4)));
+        for (unsigned step = 1; step <= 8; ++step)
+        {
+            const float next = (nearest + int(step)) * (M_PI_F / 4);
+            p.destination = {x + radius * std::cos(next), y + radius * std::sin(next), bot->GetPositionZ()};
+            if (valid()) return true;
+        }
+        p.active = false; return false;
+    }
+    const char* ResistanceDuty(PlayerbotAI* ai)
+    {
+        if (!Ready(ai) || ai->GetBot()->GetMapId() != 469) return nullptr;
+        bool fire = false;
+        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets", "100:1")->Get())
+        {
+            Unit* enemy = ai->GetUnit(guid);
+            if (!Engaged(ai->GetBot(), enemy)) continue;
+            const uint32 entry = enemy->GetEntry();
+            fire |= entry == 12435 || entry == 13020 || entry == 12017 || entry == 11983 || entry == 11981;
+        }
+        if (!fire) return nullptr;
+        Player* bot = ai->GetBot();
+        const uint8 subgroup = bot->GetGroup()->GetMemberGroup(bot->GetObjectGuid());
+        for (uint8 cls : {uint8(CLASS_PALADIN), uint8(CLASS_SHAMAN)})
+        {
+            Player* provider = nullptr;
+            bool providerActive = false;
+            const uint32 paladin[] = {19891, 19899, 19900};
+            const uint32 shaman[] = {8184, 10537, 10538};
+            const uint32* ranks = cls == CLASS_PALADIN ? paladin : shaman;
+            for (Player* member : Members(ai))
+            {
+                if (member->getClass() != cls || member->GetGroup()->GetMemberGroup(member->GetObjectGuid()) != subgroup) continue;
+                bool active = false;
+                for (unsigned i = 0; i < 3; ++i)
+                    active |= member->GetSpellAuraHolder(ranks[i], member->GetObjectGuid()) != nullptr;
+                if (cls == CLASS_SHAMAN)
+                    if (Totem* totem = member->GetTotem(TOTEM_SLOT_WATER))
+                        for (unsigned i = 0; i < 3; ++i) active |= totem->GetUInt32Value(UNIT_CREATED_BY_SPELL) == ranks[i];
+                // Observe human providers but never make them cast or switch.
+                if (active && (!member->GetPlayerbotAI() || member->GetPlayerbotAI()->IsRealPlayer())) return nullptr;
+                if (!member->GetPlayerbotAI() || member->GetPlayerbotAI()->IsRealPlayer()) continue;
+                const SpellEntry* learned = nullptr;
+                for (unsigned i = 0; i < 3; ++i)
+                    if (member->HasSpell(ranks[i])) learned = sServerFacade.LookupSpellInfo(ranks[i]);
+                if (!learned || (!active && member->GetPower(POWER_MANA) < Spell::CalculatePowerCost(learned, member))) continue;
+                if (!active && member->hasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)) continue;
+                if (!provider || (active && !providerActive) || (active == providerActive && member->GetObjectGuid() < provider->GetObjectGuid()))
+                { provider = member; providerActive = active; }
+            }
+            if (provider) return provider == bot ? (cls == CLASS_PALADIN ? "fire resistance aura" : "fire resistance totem") : nullptr;
+        }
+        return nullptr;
+    }
+}
+
+ClassicRaidPlan ClassicRaidPlanValue::Calculate()
+{
+    ClassicRaidPlan plan;
+    if (!Ready(ai)) return plan;
+    auto nearby = AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1");
+    if (bot->GetMapId() == 533)
+        if (auto* instance = dynamic_cast<ScriptedInstance*>(bot->GetMap()->GetInstanceData()))
+            if (instance->GetData(8) == IN_PROGRESS)
+                for (uint32 entry : {16062u, 16063u, 16064u, 16065u})
+                    if (Unit* horseman = instance->GetSingleCreatureFromStorage(entry, true))
+                        if (Engaged(bot, horseman) && std::find(nearby.begin(), nearby.end(), horseman->GetObjectGuid()) == nearby.end())
+                            nearby.push_back(horseman->GetObjectGuid());
+    Unit* boss = nullptr;
+    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
+    std::vector<Unit*> horsemen;
+    for (ObjectGuid guid : nearby)
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || !classicraid::Boss(bot->GetMapId(), unit->GetEntry()) || !Engaged(bot, unit)) continue;
+        if (classicraid::HorsemanMark(unit->GetEntry())) horsemen.push_back(unit);
+        if (!boss || unit == current || (boss != current && unit->GetObjectGuid() < boss->GetObjectGuid())) boss = unit;
+    }
+    if (!boss) return plan;
+    if (horsemen.size() > 4) return plan;
+    if (bot->GetMapId() == 533)
+    {
+        Unit* feugen = FindBoss(ai, 15930);
+        Unit* stalagg = FindBoss(ai, 15929);
+        if (!Attackable(ai, feugen)) feugen = nullptr;
+        if (!Attackable(ai, stalagg)) stalagg = nullptr;
+        if (feugen || stalagg)
+        {
+            const auto members = Members(ai, ai->IsTank(bot));
+            const auto self = std::find(members.begin(), members.end(), bot);
+            const size_t slot = self == members.end() ? 0 : size_t(self - members.begin());
+            boss = slot % 2 ? stalagg : feugen;
+            if (!boss) boss = feugen ? feugen : stalagg;
+            if (feugen && stalagg && !ai->IsTank(bot) && !ai->IsHeal(bot) &&
+                std::fabs(feugen->GetHealthPercent() - stalagg->GetHealthPercent()) > 15)
+                boss = feugen->GetHealthPercent() > stalagg->GetHealthPercent() ? feugen : stalagg;
+            if (!ai->IsHeal(bot) && Attackable(ai, boss)) plan.target = boss->GetObjectGuid();
+        }
+    }
+    // Classic has four melee Horsemen, including Mograine. Their actual marks
+    // select relief; no Wrath back-corner ranged tank or invented immunity.
+    if (!horsemen.empty())
+    {
+        std::sort(horsemen.begin(), horsemen.end(), [](Unit* a, Unit* b) { return a->GetEntry() < b->GetEntry(); });
+        const auto members = Members(ai, ai->IsTank(bot));
+        const auto self = std::find(members.begin(), members.end(), bot);
+        const size_t slot = self == members.end() ? 0 : size_t(self - members.begin());
+        Unit* assigned = horsemen[slot % horsemen.size()];
+        if (ai->IsTank(bot))
+        {
+            Unit* held = nullptr;
+            for (Unit* horseman : horsemen)
+                if (horseman->GetVictim() == bot) { held = horseman; previousHorseman = horseman->GetObjectGuid(); }
+            if (held) assigned = held; // Never abandon before a real replacement taunt lands.
+            else if (!previousHorseman.IsEmpty())
+            {
+                unsigned marks[4] = {}; int previous = -1;
+                for (unsigned i = 0; i < horsemen.size(); ++i)
+                { marks[i] = Stacks(bot, horsemen[i]); if (horsemen[i]->GetObjectGuid() == previousHorseman) previous = int(i); }
+                const int next = classicraid::ReliefCorner(marks, unsigned(horsemen.size()), previous);
+                if (next >= 0) assigned = horsemen[next];
+            }
+            Unit* victim = assigned->GetVictim();
+            const bool hasTank = victim && victim->IsPlayer() && Member(bot, static_cast<Player*>(victim)) && ai->IsTank(static_cast<Player*>(victim));
+            unsigned heldCount = 0;
+            if (hasTank) for (Unit* horseman : horsemen) heldCount += horseman->GetVictim() == victim ? 1 : 0;
+            const bool waiting = !held && (Stacks(bot, assigned) >= 3 ||
+                (hasTank && heldCount <= 1 && Stacks(static_cast<Player*>(victim), assigned) < 3));
+            if (waiting)
+            {
+                // Keep relief outside this corner's native mark until needed.
+                // Already-safe waiting consumes no action or cast updates.
+                const float nativeRadius = NativeEncounterSpellRadius(classicraid::HorsemanMark(assigned->GetEntry()));
+                if (nativeRadius > 0 && nativeRadius <= 60)
+                {
+                    EncounterPosition p; p.active = true; p.map = 533; p.instance = bot->GetInstanceId();
+                    p.boss = assigned->GetObjectGuid(); p.spell = classicraid::HorsemanMark(assigned->GetEntry());
+                    plan.boss = p.boss; plan.holdDamage = true;
+                    const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+                    const std::vector<encounter::Circle> marks{{{assigned->GetPositionX(), assigned->GetPositionY(), assigned->GetPositionZ()}, nativeRadius + 2}};
+                    if (encounter::OutsideCircles(here, marks)) p.destination = here;
+                    else
+                    {
+                        unsigned checks = 0;
+                        for (auto point : encounter::EscapeCircles(here, marks))
+                        {
+                            if (++checks > 8) break;
+                            p.destination = point;
+                            if (ValidateEncounterDestination(ai, p)) break;
+                        }
+                    }
+                    if (encounter::OutsideCircles(p.destination, marks) && ValidateEncounterDestination(ai, p)) plan.position = p;
+                    return plan;
+                }
+            }
+        }
+        else
+        {
+            if (ai->IsHeal(bot))
+            {
+                std::vector<Player*> healers;
+                for (Player* member : Members(ai)) if (ai->IsHeal(member)) healers.push_back(member);
+                const auto selfHealer = std::find(healers.begin(), healers.end(), bot);
+                const unsigned home = selfHealer == healers.end() ? 0 : unsigned(selfHealer - healers.begin()) % unsigned(horsemen.size());
+                assigned = horsemen[home];
+                if (Stacks(bot, assigned) >= 3)
+                {
+                    unsigned marks[4] = {};
+                    for (unsigned i = 0; i < horsemen.size(); ++i) marks[i] = Stacks(bot, horsemen[i]);
+                    const int next = classicraid::ReliefCorner(marks, unsigned(horsemen.size()), int(home));
+                    if (next >= 0) { assigned = horsemen[next]; goto chosen; }
+                }
+                else goto chosen;
+            }
+            // Focus Korth'azz, then Mograine, before the two chain/void bosses.
+            for (uint32 entry : {16064u, 16062u, 16065u, 16063u})
+                for (Unit* horseman : horsemen)
+                    if (horseman->GetEntry() == entry && Stacks(bot, horseman) < 3) { assigned = horseman; goto chosen; }
+            // All available marks are high: leave all live mark radii to reset.
+            {
+                EncounterPosition p; p.active = true; p.map = 533; p.instance = bot->GetInstanceId();
+                std::vector<encounter::Circle> marks;
+                for (Unit* horseman : horsemen)
+                    marks.push_back({{horseman->GetPositionX(), horseman->GetPositionY(), horseman->GetPositionZ()},
+                        std::max(45.0f, NativeEncounterSpellRadius(classicraid::HorsemanMark(horseman->GetEntry()))) + 2});
+                const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+                unsigned checks = 0;
+                for (auto point : encounter::EscapeCircles(here, marks))
+                {
+                    if (++checks > 8) break;
+                    p.destination = point;
+                    if (encounter::OutsideCircles(point, marks) && ValidateEncounterDestination(ai, p))
+                    { plan.position = p; plan.emergency = true; plan.holdDamage = true; return plan; }
+                }
+            }
+        }
+chosen:
+        boss = assigned;
+        if (!ai->IsHeal(bot)) plan.target = boss->GetObjectGuid();
+        if (ai->IsTank(bot) && boss->GetVictim() == bot)
+        {
+            EncounterPosition p; p.active = true; p.map = 533; p.instance = bot->GetInstanceId();
+            p.boss = boss->GetObjectGuid(); p.spell = classicraid::HorsemanMark(boss->GetEntry());
+            p.destination.z = bot->GetPositionZ();
+            if (classicraid::Corner(boss->GetEntry(), p.destination.x, p.destination.y))
+            {
+                const float dx = p.destination.x - bot->GetPositionX(), dy = p.destination.y - bot->GetPositionY();
+                const float distance = std::hypot(dx, dy);
+                if (distance > 55) { p.destination.x = bot->GetPositionX() + dx * 55 / distance; p.destination.y = bot->GetPositionY() + dy * 55 / distance; }
+                if (ValidateEncounterDestination(ai, p)) plan.position = p;
+            }
+            plan.boss = boss->GetObjectGuid();
+            return plan;
+        }
+        if (bot->GetDistance(boss) > 45)
+        {
+            EncounterPosition p; p.active = true; p.map = 533; p.instance = bot->GetInstanceId();
+            p.boss = boss->GetObjectGuid(); p.spell = classicraid::HorsemanMark(boss->GetEntry());
+            const float dx = boss->GetPositionX() - bot->GetPositionX(), dy = boss->GetPositionY() - bot->GetPositionY();
+            const float distance = std::hypot(dx, dy);
+            const float leg = std::min(55.0f, std::max(0.0f, distance - 25));
+            if (distance > 1)
+            {
+                p.destination = {bot->GetPositionX() + dx * leg / distance, bot->GetPositionY() + dy * leg / distance, bot->GetPositionZ()};
+                if (ValidateEncounterDestination(ai, p)) plan.position = p;
+            }
+            plan.boss = boss->GetObjectGuid();
+            return plan;
+        }
+    }
+    plan.boss = boss->GetObjectGuid();
+    const uint32 entry = boss->GetEntry();
+    if (entry == 15931 && boss->GetVictim() == bot && !SpecialPosition(ai))
+    {
+        EncounterPosition p;
+        if (RingPosition(ai, boss, 3281.23f, -3310.38f, 35.0f, 28137, p)) plan.position = p;
+        return plan;
+    }
+    if (entry == 15932)
+    {
+        const auto tanks = Members(ai, true);
+        if (boss->GetVictim() == bot && !SpecialPosition(ai))
+        {
+            // The 40-player layout separates the boss from the chow circuit.
+            // Long approaches use bounded native walking legs, never teleport.
+            EncounterPosition p; p.active = true; p.map = 533; p.instance = bot->GetInstanceId();
+            p.boss = boss->GetObjectGuid(); p.spell = 28235;
+            p.destination = {3331.48f, -3109.06f, bot->GetPositionZ()};
+            const float dx = p.destination.x - bot->GetPositionX(), dy = p.destination.y - bot->GetPositionY();
+            const float d = std::hypot(dx, dy);
+            if (d > 55) { p.destination.x = bot->GetPositionX() + dx * 55 / d; p.destination.y = bot->GetPositionY() + dy * 55 / d; }
+            if (ValidateEncounterDestination(ai, p)) plan.position = p;
+            return plan;
+        }
+        if (tanks.size() >= 3 && tanks[2] == bot)
+        {
+            Unit* chow = nullptr;
+            bool pursued = false;
+            for (ObjectGuid guid : nearby)
+            {
+                Unit* unit = ai->GetUnit(guid);
+                if (!Attackable(ai, unit) || unit->GetEntry() != 16360 || unit->GetHealthPercent() <= 5.1f ||
+                    unit->GetUInt32Value(UNIT_CREATED_BY_SPELL) != 28217) continue;
+                Unit* source = ai->GetUnit(unit->GetSpawnerGuid());
+                if (!Live(bot, source) || source->GetEntry() != 15384 || source->GetDistance(boss) > 100) continue;
+                pursued |= unit->GetVictim() == bot;
+                if (!chow || (unit->GetVictim() != bot && chow->GetVictim() == bot) ||
+                    (unit->GetVictim() != bot && unit->GetObjectGuid() < chow->GetObjectGuid())) chow = unit;
+            }
+            if (chow)
+            {
+                plan.target = chow->GetObjectGuid();
+                if (pursued)
+                {
+                    EncounterPosition p;
+                    if (RingPosition(ai, boss, 3293.61f, -3149.01f, 12.0f, 28217, p)) plan.position = p;
+                }
+                return plan;
+            }
+        }
+    }
+    if (entry == 12460 && boss->GetVictim() == bot && ai->IsTank(bot) && !SpecialPosition(ai))
+    {
+        std::vector<encounter::Circle> others;
+        for (ObjectGuid guid : nearby)
+        {
+            Unit* other = ai->GetUnit(guid);
+            if (!Engaged(bot, other) || other == boss || other->GetEntry() != 12460 ||
+                !(other->GetObjectGuid() < boss->GetObjectGuid())) continue;
+            Unit* victim = other->GetVictim();
+            if (!victim || !victim->IsPlayer() || !Member(bot, static_cast<Player*>(victim)) ||
+                !ai->IsTank(static_cast<Player*>(victim)) || other->GetDistance(bot) >= 18) continue;
+            others.push_back({{other->GetPositionX(), other->GetPositionY(), other->GetPositionZ()}, 18});
+        }
+        if (!others.empty())
+        {
+            // Stable GUID precedence: one holder moves, the older lane stays
+            // anchored. Both tanks must not repeatedly flee from each other.
+            EncounterPosition p; p.active = true; p.map = 469; p.instance = bot->GetInstanceId();
+            p.boss = boss->GetObjectGuid(); p.spell = 12460;
+            unsigned checks = 0;
+            const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+            for (auto point : encounter::EscapeCircles(here, others))
+            {
+                if (++checks > 8) break;
+                p.destination = point;
+                if (encounter::OutsideCircles(point, others) && ValidateEncounterDestination(ai, p) && LocalCircleRoute(ai, p, others))
+                { plan.position = p; return plan; }
+            }
+        }
+    }
+    // Native rescue/phase add selectors already handle Maexxna, Gluth,
+    // Ayamiss, Thekal, Twins, Hakkar, Jin'do and other ZG/AQ adds.
+    if (bot->GetMapId() == 533 && !ai->IsHeal(bot) && boss->GetVictim() != bot && horsemen.empty())
+    {
+        Unit* selected = nullptr; unsigned priority = 0;
+        for (ObjectGuid guid : nearby)
+        {
+            Unit* add = ai->GetUnit(guid);
+            if (!Attackable(ai, add) || add->GetDistance(boss) > 100) continue;
+            const unsigned rank = classicraid::AddPriority(entry, add->GetEntry(), boss->HasAura(28798), add->GetHealthPercent() <= 5.1f);
+            if (!rank) continue;
+            // Controlled human/bot worshippers/understudies are never attackable.
+            if (!selected || rank > priority || (rank == priority && (add == current ||
+                (selected != current && add->GetObjectGuid() < selected->GetObjectGuid()))))
+            { selected = add; priority = rank; }
+        }
+        if (selected) plan.target = selected->GetObjectGuid();
+    }
+    if ((entry == 15953 || entry == 16061) && !ai->IsTank(bot) && !ai->IsHeal(bot) &&
+        plan.target.IsEmpty() && Attackable(ai, boss)) plan.target = boss->GetObjectGuid();
+    Unit* target = ai->GetUnit(plan.target);
+    if (!target) target = current && Attackable(ai, current) ? current : boss;
+    if (SpecialPosition(ai) || !ai->CanMove() || bot->GetCharm()) return plan;
+    if (entry == 15928 && !bot->HasAura(28059) && !bot->HasAura(28084) &&
+        !bot->CanReachWithMeleeAttack(boss) && std::fabs(bot->GetPositionZ() - boss->GetPositionZ()) > 3)
+    {
+        // Transition from the native add ledges. Submit an ordinary validated
+        // jump through the existing trajectory/landing machinery, never teleport.
+        const float r = std::max(3.0f, boss->GetCombatReach() + bot->GetCombatReach() - 1);
+        const float a = boss->GetAngle(bot);
+        EncounterPosition p; p.active = true; p.map = 533; p.instance = bot->GetInstanceId();
+        p.boss = boss->GetObjectGuid(); p.spell = 15928;
+        p.destination = {boss->GetPositionX() + r * std::cos(a), boss->GetPositionY() + r * std::sin(a), boss->GetPositionZ()};
+        if (ValidateEncounterDestination(ai, p, false)) plan.position = p;
+        return plan;
+    }
+    if (entry == 16011 && !ai->IsTank(bot) && !ai->IsHeal(bot) && !bot->HasAura(29232))
+    {
+        Unit* spore = nullptr;
+        for (ObjectGuid guid : nearby)
+        {
+            Unit* candidate = ai->GetUnit(guid);
+            if (Spore(ai, candidate) && (!spore || candidate->GetObjectGuid() < spore->GetObjectGuid())) spore = candidate;
+        }
+        if (spore)
+        {
+            const float radius = NativeEncounterSpellRadius(29232);
+            if (radius > 0 && radius <= 30)
+            {
+                bool assembled = false;
+                const auto dps = SporeRecipients(ai, spore, assembled);
+                if (std::find(dps.begin(), dps.end(), bot) != dps.end())
+                {
+                    plan.target = assembled ? spore->GetObjectGuid() : boss->GetObjectGuid();
+                    EncounterPosition p; p.active = true; p.map = 533; p.instance = bot->GetInstanceId();
+                    p.boss = boss->GetObjectGuid(); p.source = spore->GetObjectGuid();
+                    p.destination = {spore->GetPositionX(), spore->GetPositionY(), bot->GetPositionZ()};
+                    if (ValidateEncounterDestination(ai, p)) plan.position = p;
+                    return plan;
+                }
+            }
+        }
+    }
+    if (entry == 16061 && bot->getClass() == CLASS_PRIEST) return plan; // Controller must hold its channel.
+    if (entry == 15989 && boss->HasAura(18430)) return plan;
+    if (entry == 15928 || entry == 16060) return plan; // Phase-specific platforms/gate retain native travel.
+    const bool ranged = ai->IsRanged(bot) || ai->IsHeal(bot);
+    Unit* anchor = target;
+    if (ai->IsHeal(bot))
+    {
+        Unit* victim = boss->GetVictim();
+        if (Live(bot, victim) && (victim->IsPlayer() || victim->GetCharmer())) anchor = victim;
+    }
+    const float radius = ranged ? Range(ai, anchor) : std::max(2.0f, target->GetCombatReach() + bot->GetCombatReach() - 1.0f);
+    const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+    const bool front = classicraid::Front(target->GetEntry()) && target->GetVictim() != bot;
+    const float angle = target->GetAngle(bot) - target->GetOrientation();
+    const bool unsafe = front && (classicraid::Dragon(target->GetEntry()) ? std::fabs(std::cos(angle)) > 0.70710678f : std::cos(angle) > 0);
+    float spacing = entry == 15990 ? 10.0f : entry == 16063 ? 8.0f : ranged ? 5.0f : 0.0f;
+    // Korth'azz's meteor is shared. Melee and its tank stack, never generic spread.
+    if (entry == 16064 && !ranged) spacing = 0;
+    std::vector<encounter::Point> neighbors;
+    for (Player* member : Members(ai))
+        if (member != bot) neighbors.push_back({member->GetPositionX(), member->GetPositionY(), member->GetPositionZ()});
+    auto separated = [&](const encounter::Point& p) {
+        for (auto q : neighbors) if (encounter::Distance2d(p, q) < spacing && std::fabs(p.z - q.z) < 8) return false;
+        return true;
+    };
+    EncounterPosition p; p.active = true; p.exclusive = false; p.map = bot->GetMapId();
+    p.instance = bot->GetInstanceId(); p.boss = boss->GetObjectGuid(); p.source = anchor->GetObjectGuid(); p.destination = here;
+    // Holding the boss keeps native tank orientation; spare tanks participate
+    // from a legal melee flank instead of standing at a ranged formation.
+    if (boss->GetVictim() == bot) return plan;
+    if (!unsafe && separated(here) && (ranged ? (anchor->GetDistance(bot) >= radius - 8 &&
+        PositionLegal(ai, anchor, p, radius + 2)) : bot->CanReachWithMeleeAttack(target))) return plan;
+    const float side = std::sin(angle) >= 0 ? 1.0f : -1.0f;
+    const float base = front ? target->GetOrientation() + side * float(M_PI) * (classicraid::Dragon(target->GetEntry()) ? 2.0f / 3.0f : 0.85f) : target->GetAngle(bot);
+    for (unsigned i = 0; i < 16; ++i)
+    {
+        const float offset = i == 0 ? 0 : ((i + 1) / 2) * 0.18f * (i % 2 ? 1 : -1);
+        const float a = base + offset;
+        if (front && (classicraid::Dragon(target->GetEntry()) ? std::fabs(std::cos(a - target->GetOrientation())) > 0.70710678f : std::cos(a - target->GetOrientation()) > 0)) continue;
+        p.destination = {target->GetPositionX() + radius * std::cos(a), target->GetPositionY() + radius * std::sin(a), here.z};
+        if (separated(p.destination) && PositionLegal(ai, anchor, p, ranged ? radius + 2 : radius + 3))
+        { plan.position = p; plan.emergency = unsafe; return plan; }
+    }
+    return plan;
+}
+
+bool ClassicRaidPositionAction::GetPlan(PlayerbotAI* ai, ClassicRaidPlan& plan)
+{
+    if (!Ready(ai) || SpecialPosition(ai) || ai->GetBot()->GetCharm()) return false;
+    plan = ai->GetAiObjectContext()->GetValue<ClassicRaidPlan>("classic raid plan")->Get();
+    if (!plan.position.active || plan.position.map != ai->GetBot()->GetMapId() ||
+        plan.position.instance != ai->GetBot()->GetInstanceId()) return false;
+    Unit* boss = ai->GetUnit(plan.boss);
+    if (!boss) return plan.boss.IsEmpty() && plan.emergency && ai->GetBot()->GetMapId() == 533 &&
+        (ai->GetBot()->HasAura(28832) || ai->GetBot()->HasAura(28833) || ai->GetBot()->HasAura(28834) || ai->GetBot()->HasAura(28835));
+    // Recalculate after a fear/knockback, target change, boss turn or relocation.
+    if (!Engaged(ai->GetBot(), boss)) return false;
+    if (boss->GetVictim() == ai->GetBot())
+        return (plan.position.spell == 12460 && boss->GetEntry() == 12460) ||
+            (plan.position.spell == 28137 && boss->GetEntry() == 15931) ||
+            (plan.position.spell == 28235 && boss->GetEntry() == 15932) ||
+            (classicraid::HorsemanMark(boss->GetEntry()) && plan.position.spell == classicraid::HorsemanMark(boss->GetEntry()));
+    return true;
+}
+
+bool ai::ClassicRaidOffenseAllowed(PlayerbotAI* ai, const SpellEntry* spell, Unit* target)
+{
+    if (!Ready(ai) || ai->GetBot()->GetMapId() != 533) return true;
+    Player* bot = ai->GetBot();
+    bool damage = !spell; // nullptr is native melee/pet attack admission.
+    if (spell) for (unsigned i = 0; i < MAX_EFFECT_INDEX; ++i)
+        damage |= IsSpellEffectDamage(*spell, SpellEffectIndex(i));
+    const bool cleaveBuff = spell && (spell->Id == 13877 || spell->Id == 12328);
+    if (!damage && !cleaveBuff) return true; // heals, CC and native taunts remain admitted normally.
+    const bool area = spell && (IsAreaOfEffectSpell(spell) || spell->MaxAffectedTargets > 1 || cleaveBuff);
+    for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets", "100:1")->Get())
+    {
+        Unit* reserved = ai->GetUnit(guid);
+        if (Live(bot, reserved) && reserved->GetEntry() == 16286 &&
+            reserved->GetUInt32Value(UNIT_CREATED_BY_SPELL) == 29234)
+        {
+            Unit* source = ai->GetUnit(reserved->GetSpawnerGuid());
+            if (source && source->GetEntry() == 16011 && Engaged(bot, source))
+            {
+                if (area) return false; // do not pop another group's spore with splash.
+                if (target == reserved)
+                {
+                    bool assembled = false;
+                    const auto recipients = SporeRecipients(ai, reserved, assembled);
+                    if (!assembled || std::find(recipients.begin(), recipients.end(), bot) == recipients.end()) return false;
+                }
+            }
+        }
+        if (!Live(bot, reserved) || (reserved->GetEntry() != 16506 && reserved->GetEntry() != 16803)) continue;
+        Unit* boss = FindBoss(ai, reserved->GetEntry() == 16506 ? 15953 : 16061);
+        if (!boss || reserved->GetDistance(boss) > 80) continue;
+        if (target == reserved && !ai->IsTank(bot)) return false;
+        // All classes' damaging AoE/proc-cleave admission reserves the actual
+        // Classic control actors. No disease/curse removal or taunt is blocked.
+        if (area) return false;
+    }
+    return true;
+}
+bool ClassicRaidPositionAction::isUseful()
+{
+    ClassicRaidPlan plan;
+    return GetPlan(ai, plan) && EncounterMovementRequired(bot, plan.position.destination);
+}
+bool ClassicRaidPositionAction::ShouldReactionInterruptCast() const
+{
+    ClassicRaidPlan plan;
+    return GetPlan(ai, plan) && plan.emergency && EncounterMovementRequired(bot, plan.position.destination);
+}
+bool ClassicRaidPositionAction::Execute(Event& event)
+{
+    ClassicRaidPlan plan;
+    if (!GetPlan(ai, plan) || !ai->CanMove() || (!plan.emergency && bot->IsNonMeleeSpellCasted(false)) ||
+        !ValidateEncounterDestination(ai, plan.position, plan.position.spell != 15928)) return false;
+    if (plan.holdDamage)
+    {
+        bot->AttackStop();
+        if (Pet* pet = bot->GetPet())
+        {
+            WorldPacket follow(CMSG_PET_ACTION);
+            follow << pet->GetObjectGuid() << uint32((ACT_COMMAND << 24) | COMMAND_FOLLOW) << ObjectGuid();
+            bot->GetSession()->HandlePetAction(follow);
+        }
+    }
+    if (!EncounterMovementRequired(bot, plan.position.destination)) return false;
+    const auto& p = plan.position.destination;
+    if (plan.position.spell == 15928)
+    {
+        AI_VALUE(PositionMap&, "position")["classic thaddius"].Set(p.x, p.y, p.z, plan.position.map);
+        return ai->DoSpecificAction("jump::position classic thaddius", Event(), true);
+    }
+    return MoveTo(plan.position.map, p.x, p.y, p.z, false, IsReaction(), false, true);
+}
+Unit* ClassicRaidTargetAction::GetTarget()
+{
+    if (!Ready(ai) || ai->IsHeal(bot)) return nullptr;
+    Unit* target = ai->GetUnit(AI_VALUE(ClassicRaidPlan, "classic raid plan").target);
+    return Attackable(ai, target) || Spore(ai, target) ? target : nullptr;
+}
+bool ClassicRaidTargetAction::isUseful()
+{
+    Unit* target = GetTarget();
+    return target && target != ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
+}
+
+bool ClassicRaidSupportAction::Select(std::string& spell, Unit*& target)
+{
+    if (!Ready(ai) || bot->GetCharm()) return false;
+    auto cast = [&](const char* name, Unit* unit) {
+        if (!unit || !ai->CanCastSpell(name, unit, 0)) return false;
+        spell = name; target = unit; return true;
+    };
+    if (ai->IsHeal(bot) && bot->GetMapId() == 533)
+    {
+        const ClassicRaidPlan plan = AI_VALUE(ClassicRaidPlan, "classic raid plan");
+        Unit* horseman = ai->GetUnit(plan.boss);
+        Unit* patient = horseman && classicraid::HorsemanMark(horseman->GetEntry()) ? horseman->GetVictim() : nullptr;
+        if (patient && patient->IsPlayer() && Member(bot, static_cast<Player*>(patient)) && patient->GetHealthPercent() < 90)
+            for (const char* name : {"greater heal", "healing wave", "healing touch", "holy light", "flash heal", "flash of light"})
+                if (cast(name, patient)) return true;
+        if (FindBoss(ai, 16061))
+            for (Player* owner : Members(ai))
+            {
+                Unit* student = owner->GetCharm();
+                if (!student || student->GetEntry() != 16803 || !student->IsInWorld() || !student->IsAlive() ||
+                    !owner->IsInMap(student) || !student->HasCharmer(owner->GetObjectGuid()) || student->GetHealthPercent() >= 80) continue;
+                for (const char* name : {"greater heal", "healing wave", "healing touch", "holy light", "flash heal", "flash of light"})
+                    if (cast(name, student)) return true;
+            }
+    }
+    if (bot->GetMapId() == 469 && bot->getClass() == CLASS_MAGE && bot->HasAura(23410) &&
+        FindBoss(ai, 11583) && cast("ice block", bot)) return true;
+    if (Unit* gluth = FindBoss(ai, 15932))
+    {
+        if (gluth->HasAura(28371) && cast("tranquilizing shot", gluth)) return true;
+        for (ObjectGuid guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
+        {
+            Unit* chow = ai->GetUnit(guid);
+            if (!Attackable(ai, chow) || chow->GetEntry() != 16360 || chow->GetHealthPercent() <= 5.1f ||
+                chow->GetUInt32Value(UNIT_CREATED_BY_SPELL) != 28217 || chow->GetDistance(gluth) > 100 ||
+                chow->GetTotalAuraModifier(SPELL_AURA_MOD_DECREASE_SPEED) < 0) continue;
+            for (const char* name : {"concussive shot", "frostbolt"}) if (cast(name, chow)) return true;
+        }
+        // Classic traps cannot be placed in combat. Keep native admission,
+        // rather than importing Wrath's unconditional combat Frost Trap cast.
+    }
+    if (Unit* onyxia = FindBoss(ai, 10184))
+        if (Unit* tank = onyxia->GetVictim())
+            if (Member(bot, tank->IsPlayer() ? static_cast<Player*>(tank) : nullptr) && !ai->HasAura("fear ward", tank) && cast("fear ward", tank)) return true;
+    if (Unit* boss = FindBoss(ai, 15990))
+        for (auto slot : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL})
+        {
+            const Spell* active = boss->GetCurrentSpell(slot);
+            if (!active || !active->m_spellInfo || active->getState() == SPELL_STATE_FINISHED ||
+                (active->m_spellInfo->Id != 28478 && active->m_spellInfo->Id != 28479)) continue;
+            for (const char* name : {"kick", "pummel", "shield bash", "counterspell", "earth shock"})
+                if (cast(name, boss)) return true;
+        }
+    auto members = Members(ai);
+    std::sort(members.begin(), members.end(), [](Player* a, Player* b) { return a->GetHealthPercent() < b->GetHealthPercent(); });
+    // Actual native dispel types; injection, polarity, Hakkar poison and other
+    // deliberate encounter auras remain governed by existing dispel policy.
+    for (Player* member : members)
+        for (uint32 id : {29213u, 28776u, 28542u, 28167u})
+        {
+            const SpellEntry* aura = member->HasAura(id) ? sServerFacade.LookupSpellInfo(id) : nullptr;
+            if (!aura) continue;
+            const char* spells[4] = {};
+            if (aura->Dispel == DISPEL_CURSE) { spells[0] = "remove lesser curse"; spells[1] = "remove curse"; }
+            if (aura->Dispel == DISPEL_POISON) { spells[0] = "abolish poison"; spells[1] = "cleanse"; spells[2] = "purify"; }
+            if (aura->Dispel == DISPEL_DISEASE) { spells[0] = "abolish disease"; spells[1] = "cleanse"; spells[2] = "purify"; }
+            if (aura->Dispel == DISPEL_MAGIC) { spells[0] = "dispel magic"; spells[1] = "cleanse"; }
+            for (const char* name : spells) if (name && cast(name, member)) return true;
+        }
+    for (ObjectGuid guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
+    {
+        Unit* boss = ai->GetUnit(guid);
+        if (!Engaged(bot, boss) || !classicraid::HorsemanMark(boss->GetEntry()) || !ai->IsTank(bot)) continue;
+        Unit* victim = boss->GetVictim();
+        if (!victim || !victim->IsPlayer() || !Member(bot, static_cast<Player*>(victim)) || victim == bot || Stacks(bot, boss) != 0) continue;
+        unsigned heldCount = 0;
+        for (ObjectGuid otherGuid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
+        {
+            Unit* other = ai->GetUnit(otherGuid);
+            if (Engaged(bot, other) && classicraid::HorsemanMark(other->GetEntry()) && other->GetVictim() == victim) ++heldCount;
+        }
+        if (heldCount <= 1 && Stacks(static_cast<Player*>(victim), boss) < 3) continue;
+        // Elect only the closest clean bot tank; native taunt can still miss.
+        Player* selected = nullptr;
+        for (Player* tank : Members(ai, true))
+            if (tank != victim && tank->GetPlayerbotAI() && !tank->GetPlayerbotAI()->IsRealPlayer() &&
+                tank->GetVictim() == boss && !Stacks(tank, boss) && tank->CanReachWithMeleeAttack(boss) &&
+                (!selected || tank->GetObjectGuid() < selected->GetObjectGuid())) selected = tank;
+        if (selected == bot)
+            for (const char* name : {"taunt", "growl"}) if (cast(name, boss)) return true;
+    }
+    if (const char* duty = ResistanceDuty(ai))
+        if (Action* delegate = ai->GetAiObjectContext()->GetAction(duty))
+            if (delegate->isUseful() && delegate->isPossible()) { spell = duty; target = bot; return true; }
+    return false;
+}
+bool ClassicRaidSupportAction::isUseful() { std::string spell; Unit* target = nullptr; return Select(spell, target); }
+bool ClassicRaidSupportAction::Execute(Event& event)
+{
+    std::string spell; Unit* target = nullptr;
+    if (!Select(spell, target) || bot->IsNonMeleeSpellCasted(false)) return false;
+    if (spell == "fire resistance aura" || spell == "fire resistance totem")
+    {
+        Action* delegate = ai->GetAiObjectContext()->GetAction(spell);
+        return delegate && delegate->isUseful() && delegate->isPossible() && delegate->Execute(event);
+    }
+    uint32 duration = sPlayerbotAIConfig.globalCoolDown;
+    if (!ai->CastSpell(spell, target, nullptr, false, &duration)) return false;
+    SetDuration(duration); return true;
+}
+
+Unit* ClassicRaidControlAction::SelectUnderstudy()
+{
+    if (!Ready(ai) || bot->GetMapId() != 533 || bot->getClass() != CLASS_PRIEST || bot->GetCharm() || !bot->HasSpell(10912)) return nullptr;
+    Unit* boss = FindBoss(ai, 16061);
+    if (!boss) boss = FindBoss(ai, 15953);
+    if (!boss) return nullptr;
+    const bool faerlina = boss->GetEntry() == 15953;
+    if (faerlina && !boss->HasAura(28798)) return nullptr;
+    std::vector<Unit*> students;
+    for (ObjectGuid guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
+    {
+        Unit* student = ai->GetUnit(guid);
+        if (Live(bot, student) && student->GetEntry() == (faerlina ? 16506 : 16803) && student->GetDistance(boss) < 80 &&
+            !PossibleAttackTargetsValue::HasBreakableCC(student, bot)) students.push_back(student);
+    }
+    std::sort(students.begin(), students.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+    std::vector<Player*> priests;
+    unsigned controlled = 0;
+    const SpellEntry* mindControl = sServerFacade.LookupSpellInfo(10912);
+    for (Player* member : Members(ai))
+    {
+        Unit* charm = member->GetCharm();
+        if (charm && charm->GetEntry() == (faerlina ? 16506 : 16803) && charm->IsAlive()) { ++controlled; continue; }
+        if (mindControl && member->getClass() == CLASS_PRIEST && member->HasSpell(10912) && member->IsSpellReady(*mindControl) &&
+            member->GetPower(POWER_MANA) >= Spell::CalculatePowerCost(mindControl, member) &&
+            !member->GetCharm() && !member->hasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL) &&
+            member->GetPlayerbotAI() && !member->GetPlayerbotAI()->IsRealPlayer() &&
+            !member->IsNonMeleeSpellCasted(false)) priests.push_back(member);
+    }
+    const unsigned required = faerlina ? 1 : 2;
+    if (controlled >= required || priests.empty()) return nullptr;
+    const auto self = std::find(priests.begin(), priests.end(), bot);
+    const size_t slot = self == priests.end() ? priests.size() : size_t(self - priests.begin());
+    if (slot >= required - controlled || slot >= students.size()) return nullptr;
+    return students[slot];
+}
+bool ClassicRaidControlAction::isUseful() { return SelectUnderstudy() != nullptr; }
+bool ClassicRaidControlAction::Execute(Event& event)
+{
+    Unit* student = SelectUnderstudy();
+    if (!student || bot->IsNonMeleeSpellCasted(false)) return false;
+    if (ai->CanCastSpell("mind control", student, 0))
+    {
+        uint32 duration = sPlayerbotAIConfig.globalCoolDown;
+        if (!ai->CastSpell("mind control", student, nullptr, false, &duration)) return false;
+        SetDuration(duration); return true;
+    }
+    return MoveNear(student, 18.0f);
+}
+bool ClassicRaidControlAction::UpdateControl()
+{
+#ifdef MANGOSBOT_ZERO
+    if (!Ready(ai) || bot->GetMapId() != 533 || bot->getClass() != CLASS_PRIEST) return false;
+    Unit* charm = bot->GetCharm();
+    if (!charm || !charm->IsInWorld() || !charm->IsAlive() || !bot->IsInMap(charm) ||
+        !charm->HasCharmer(bot->GetObjectGuid()) || (charm->GetEntry() != 16803 && charm->GetEntry() != 16506)) return false;
+    Unit* boss = FindBoss(ai, charm->GetEntry() == 16803 ? 16061 : 15953);
+    if (!boss) return false; // Native channel/cleanup completes normally after death/reset.
+    if (configuredCharm != charm->GetObjectGuid())
+    {
+        configuredCharm = charm->GetObjectGuid(); nextControl = 0;
+        // Native charm initialization enables autocastable spells. Disable
+        // only our managed abilities through the ordinary ownership-checked
+        // packet, so PetAI cannot race the explicit raid timing/controller.
+        for (uint32 id : {29061u, 29060u, 28732u})
+            if (charm->HasSpell(id) && IsAutocastable(id))
+            {
+                WorldPacket packet(CMSG_PET_SPELL_AUTOCAST);
+                packet << charm->GetObjectGuid() << id << uint8(0);
+                bot->GetSession()->HandlePetSpellAutocastOpcode(packet);
+            }
+    }
+    const uint32 now = WorldTimer::getMSTime();
+    if (static_cast<int32>(nextControl - now) > 0) return true;
+    nextControl = now + 300;
+    if (charm->GetEntry() == 16506)
+    {
+        // Classic requires the possessed worshipper's native Widow's Embrace;
+        // killing an uncontrolled worshipper is the Wrath tactic, not Classic.
+        if (boss->HasAura(28798) && ControlledInRadius(ai, charm, boss, NativeEncounterSpellRadius(28732)))
+            SubmitControlledSpell(bot, charm, 28732, nullptr);
+        return true;
+    }
+    // Two native controlled students alternate on real Shield Wall expiry.
+    // Elect one activation so both do not spend the wall on the same frame.
+    // Never renew/strip MC or alter the boss threat table.
+    Unit* victim = boss->GetVictim();
+    const bool relief = !victim || victim->GetEntry() != 16803 || !victim->HasAura(29061);
+    if (charm->GetVictim() != boss)
+    {
+        WorldPacket attack(CMSG_PET_ACTION);
+        attack << charm->GetObjectGuid() << uint32((ACT_COMMAND << 24) | COMMAND_ATTACK) << boss->GetObjectGuid();
+        bot->GetSession()->HandlePetAction(attack);
+    }
+    const bool elected = relief && ControlledRelief(ai) == charm;
+    if (elected && (!charm->CanReachWithMeleeAttack(boss) || !charm->IsWithinLOSInMap(boss))) return true;
+    if (elected && !charm->HasAura(29061) && SubmitControlledSpell(bot, charm, 29061, charm)) return true;
+    if (elected && victim != charm && charm->HasAura(29061) && SubmitControlledSpell(bot, charm, 29060, boss)) return true;
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool ClassicRaidCloakAction::isUseful()
+{
+#ifdef MANGOSBOT_ZERO
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() || bot->IsBeingTeleported() ||
+        bot->HasCharmer() || bot->GetMapId() != 469 || ai->IsRealPlayer()) return false;
+    Item* worn = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_BACK);
+    Item* cloak = bot->GetItemByEntry(15138);
+    uint16 dest;
+    return (!worn || worn->GetEntry() != 15138) && cloak &&
+        bot->CanEquipItem(EQUIPMENT_SLOT_BACK, dest, cloak, true) == EQUIP_ERR_OK;
+#else
+    return false;
+#endif
+}
+bool ClassicRaidCloakAction::Execute(Event& event)
+{
+    if (!isUseful() || bot->IsNonMeleeSpellCasted(false)) return false;
+    Item* cloak = bot->GetItemByEntry(15138);
+    if (!cloak) return false;
+    // Equip only a real owned cloak. Native inventory admission grants its
+    // protective aura; no aura, item, old-cloak deletion or GM bypass is added.
+    WorldPacket packet(CMSG_AUTOEQUIP_ITEM);
+    packet << cloak->GetBagSlot() << cloak->GetSlot();
+    bot->GetSession()->HandleAutoEquipItemOpcode(packet);
+    Item* worn = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_BACK);
+    return worn && worn->GetEntry() == 15138;
+}
+
+bool ClassicRaidPauseAction::isUseful()
+{
+    if (!Ready(ai)) return false;
+    const bool hold = AI_VALUE(ClassicRaidPlan, "classic raid plan").holdDamage;
+    if (hold && bot->GetVictim()) return true;
+    if (bot->GetVictim() && !ClassicRaidOffenseAllowed(ai, nullptr, bot->GetVictim())) return true;
+    for (auto slot : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL, CURRENT_AUTOREPEAT_SPELL})
+        if (Spell* cast = bot->GetCurrentSpell(slot))
+            if (cast->m_spellInfo && ((!ClassicRaidOffenseAllowed(ai, cast->m_spellInfo, cast->m_targets.getUnitTarget())) ||
+                (hold && !IsPositiveSpell(cast->m_spellInfo, bot, cast->m_targets.getUnitTarget())))) return true;
+    return false;
+}
+bool ClassicRaidPauseAction::Execute(Event& event)
+{
+    if (!isUseful()) return false;
+    const bool hold = AI_VALUE(ClassicRaidPlan, "classic raid plan").holdDamage;
+    if (hold || (bot->GetVictim() && !ClassicRaidOffenseAllowed(ai, nullptr, bot->GetVictim()))) bot->AttackStop();
+    for (auto slot : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL, CURRENT_AUTOREPEAT_SPELL})
+        if (Spell* cast = bot->GetCurrentSpell(slot))
+            if (cast->m_spellInfo && ((!ClassicRaidOffenseAllowed(ai, cast->m_spellInfo, cast->m_targets.getUnitTarget())) ||
+                (hold && !IsPositiveSpell(cast->m_spellInfo, bot, cast->m_targets.getUnitTarget()))))
+                bot->InterruptSpell(slot);
+    if (Pet* pet = hold ? bot->GetPet() : nullptr)
+    {
+        WorldPacket packet(CMSG_PET_ACTION);
+        packet << pet->GetObjectGuid() << uint32((ACT_COMMAND << 24) | COMMAND_FOLLOW) << ObjectGuid();
+        bot->GetSession()->HandlePetAction(packet);
+    }
+    return true;
+}
+
+bool ClassicRaidTrigger::IsActive()
+{
+    if (getName() == "classic raid cloak") { ClassicRaidCloakAction action(ai); return action.isUseful(); }
+    if (!Ready(ai)) return false;
+    if (getName() == "classic raid egg hazard")
+        return ai->GetBot()->GetMapId() == 249 && classicraid::EggZone(
+            bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ());
+    if (getName() == "classic raid pause") { ClassicRaidPauseAction action(ai); return action.isUseful(); }
+    if (getName() == "classic raid emergency")
+    { ClassicRaidPlan plan; return ClassicRaidPositionAction::GetPlan(ai, plan) && plan.emergency && EncounterMovementRequired(bot, plan.position.destination); }
+    if (getName() == "classic raid position") { ClassicRaidPositionAction action(ai); return action.isUseful(); }
+    if (getName() == "classic raid target") { ClassicRaidTargetAction action(ai); return action.isUseful(); }
+    if (getName() == "classic raid support") { ClassicRaidSupportAction action(ai); return action.isUseful(); }
+    if (getName() == "classic raid control") { ClassicRaidControlAction action(ai); return action.isUseful(); }
+    return false;
+}
+float PreserveClassicRaidPlan::GetValue(Action* action)
+{
+    if (!action || !Ready(ai) || dynamic_cast<ClassicRaidPositionAction*>(action) ||
+        dynamic_cast<ClassicRaidControlAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    const std::string& name = action->getName();
+    if (const char* duty = ResistanceDuty(ai))
+    {
+        if (ai->GetBot()->getClass() == CLASS_PALADIN && name.find("aura") != std::string::npos && name != duty) return 0.0f;
+        if (ai->GetBot()->getClass() == CLASS_SHAMAN &&
+            (name == "mana spring totem" || name == "healing stream totem" || name == "frost resistance totem")) return 0.0f;
+    }
+    if (CastSpellAction* cast = dynamic_cast<CastSpellAction*>(action))
+        if (!ClassicRaidOffenseAllowed(ai, sServerFacade.LookupSpellInfo(cast->GetDecisionSpellId()), action->GetTarget())) return 0.0f;
+    if (dynamic_cast<AttackAction*>(action) && !ClassicRaidOffenseAllowed(ai, nullptr, action->GetTarget())) return 0.0f;
+    const ClassicRaidPlan assigned = ai->GetAiObjectContext()->GetValue<ClassicRaidPlan>("classic raid plan")->Get();
+    if (assigned.holdDamage)
+    {
+        if (dynamic_cast<AttackAction*>(action)) return 0.0f;
+        if (CastSpellAction* cast = dynamic_cast<CastSpellAction*>(action))
+            if (const SpellEntry* spell = sServerFacade.LookupSpellInfo(cast->GetDecisionSpellId()))
+                if (!IsPositiveSpell(spell, ai->GetBot(), action->GetTarget())) return 0.0f;
+    }
+    if (!assigned.target.IsEmpty() && (name == "dps assist" || name == "tank assist") &&
+        action->GetTarget() && action->GetTarget()->GetObjectGuid() != assigned.target) return 0.0f;
+    // Block only ordinary formation/pursuit drift. Other raid mechanics and
+    // friendly healing approaches retain their existing native priorities.
+    if (name != "follow" && name != "set behind" && name != "reach melee" && name != "reach spell") return 1.0f;
+    if (ReachTargetAction* reach = dynamic_cast<ReachTargetAction*>(action))
+        if (Unit* target = reach->GetTarget()) if (sServerFacade.IsFriendlyTo(ai->GetBot(), target)) return 1.0f;
+    ClassicRaidPlan plan;
+    return ClassicRaidPositionAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+}

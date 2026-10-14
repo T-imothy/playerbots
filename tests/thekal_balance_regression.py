@@ -23,7 +23,7 @@ struct Player:Unit{Player(){player=true;}unsigned map=309;bool teleport=false;Gr
  unsigned GetMapId(){return map;}Group* GetGroup(){return group;}bool IsBeingTeleported(){return teleport;}bool IsInMap(Unit*u){return u&&u->phase==phase;}};
 struct PlayerbotAI{Player* bot;Unit* current=nullptr;std::map<unsigned,Unit*> units;std::list<unsigned> near;
  Unit* GetUnit(unsigned id){return units.count(id)?units[id]:nullptr;}
- template<class T>T value(std::string){return current;}
+ template<class T>T value(std::string){return current?current->guid:0;}
  template<class T>T qualified(std::string name,std::string qualifier){assert(name=="possible targets"&&qualifier=="100:1");return near;}};
 struct Config{float sightDistance=60;}sPlayerbotAIConfig;
 struct PossibleTargetsValue{static bool IsValid(Unit*u,Player*,bool){return u->valid;}};
@@ -62,7 +62,9 @@ dispatcher=(root/'playerbot/strategy/actions/DungeonAddTargetAction.cpp').read_t
 assert dispatcher.index('ai->IsHeal(bot)')<dispatcher.index('GetThekalTarget()')
 assert dispatcher.index('commanded(ai->GetUnit')<dispatcher.index('GetThekalTarget()')
 for era in ('classic','tbc','wotlk'):
-    native=(root.parent/f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/zulgurub/boss_thekal.cpp').read_text()
+    repo=root.parent/era
+    if not repo.exists():repo=root.parent/f'mangos-{era}-behavior'
+    native=(repo/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/zulgurub/boss_thekal.cpp').read_text()
     assert 'SetStandState(UNIT_STAND_STATE_DEAD)' in native and 'SetDeathPrevention(true)' in native
     assert 'SPELL_TIGER_FORM        = 24169' in native
 print('PASS: dispatcher preserves manual/healer/tank controls and all native fake-death scripts')
