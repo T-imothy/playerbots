@@ -27,19 +27,20 @@ code=r'''
 using uint32=unsigned;
 struct ObjectGuid{unsigned id=0;ObjectGuid(unsigned i=0):id(i){}bool IsEmpty(){return !id;}void Clear(){id=0;}operator unsigned()const{return id;}};
 constexpr unsigned SMSG_ATTACKSTART=1,SMSG_ATTACKSTOP=2,UNIT_STAND_STATE_STAND=0;
-struct Group{};struct Unit{virtual ~Unit()=default;unsigned entry=11669,map=409,instance=1;float x=0,y=0,o=0;float GetPositionX(){return x;}float GetPositionY(){return y;}float GetOrientation(){return o;}bool world=true,alive=true,combat=true,charm=false;Unit*victim=nullptr;
+struct Group{};struct Unit{virtual ~Unit()=default;unsigned entry=11669,map=409,instance=1;float x=0,y=0,z=0,o=0;float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}float GetCombatReach(){return 1.5f;}bool IsWithinLOS(float,float,float,bool){return true;}float GetOrientation(){return o;}bool world=true,alive=true,combat=true,charm=false;Unit*victim=nullptr;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charm;}unsigned GetEntry(){return entry;}
  ObjectGuid GetObjectGuid(){return 3;}
  std::set<unsigned>auras;bool HasAura(unsigned id){return auras.count(id);}Unit*GetVictim(){return victim;}virtual bool IsPlayer(){return false;}};
 struct Player:Unit{bool transfer=false,tank=false,sit=true;unsigned guid=2,interrupts=0,stands=0;Group*group=nullptr;std::vector<Unit*>attackers;
- bool IsPlayer()override{return true;}bool IsBeingTeleported(){return transfer;}unsigned GetMapId(){return map;}unsigned GetInstanceId(){return instance;}
+ bool IsPlayer()override{return true;}bool IsBeingTeleported(){return transfer;}unsigned GetMapId(){return map;}unsigned GetInstanceId(){return instance;}unsigned getClass(){return 1;}float GetCollisionHeight(){return 2;}bool IsWithinLOSInMap(Unit*){return true;}
  bool IsInMap(Unit*u){return u&&u->world&&map==u->map&&instance==u->instance;}Group*GetGroup(){return group;}
  ObjectGuid GetObjectGuid(){return guid;}bool HasAura(unsigned){return false;}bool IsSitState(){return sit;}
  void SetStandState(unsigned){sit=false;++stands;}void InterruptNonMeleeSpells(bool f){assert(!f);++interrupts;}
  auto const&getAttackers(){return attackers;}};
-namespace encounter{struct Circle{};}
-struct EncounterPosition{bool active=true;unsigned map=409,instance=1,spell=20602;ObjectGuid boss=3,source;struct Point{float x=-20,y=0,z=0;}destination;};
-template<class T>struct Cached{T value;unsigned resets=0;T Get(){return value;}void Reset(){++resets;}};
+constexpr unsigned CLASS_HUNTER=3;
+namespace encounter{struct Circle{};struct Point{float x=-20,y=0,z=0;};bool OutsideCircles(Point,const std::vector<Circle>&){return true;}}
+struct EncounterPosition{bool active=true,groundOnly=false,anchored=false;unsigned map=409,instance=1,spell=20602;ObjectGuid boss=3,source;encounter::Point destination,anchor;};
+template<class T>struct Cached{T value;unsigned resets=0;T Get(){return value;}void Reset(){++resets;}void Set(T v){value=v;}};
 struct Context{Cached<EncounterPosition>plan;std::map<std::string,std::any>cells;template<class T,class Q=int>Cached<T>*GetValue(const char*n,Q={}){if constexpr(std::is_same_v<T,EncounterPosition>)return &plan;else{auto[it,b]=cells.emplace(n,Cached<T>{});return std::any_cast<Cached<T>>(&it->second);}}};
 struct WorldPacket{unsigned opcode=1,bytes=16,index=0;unsigned ids[2]={3,2};unsigned GetOpcode()const{return opcode;}unsigned size()const{return bytes;}
  void rpos(unsigned n){index=n;}WorldPacket&operator>>(ObjectGuid&g){g=ids[index++];return *this;}};
@@ -47,13 +48,22 @@ struct ReactionEngine{unsigned notifications=0;void NotifyPartyCombat(){++notifi
 struct PlayerbotAI{Player*bot;bool real=false,isWaiting=true;unsigned aiInternalUpdateDelay=8000;Context context;Context*aiObjectContext=&context;
  ReactionEngine reactions;ReactionEngine*reactionEngine=&reactions;Unit*loose=nullptr;std::map<unsigned,Unit*>units;std::atomic<bool>urgentAttackPending{false},urgentCombatPending{false};
  Player*GetBot(){return bot;}bool IsRealPlayer(){return real;}static bool IsTank(Player*p){return p->tank;}
+ bool IsRanged(Player*){return false;}bool IsHeal(Player*){return false;}bool GetSpellRange(const char*,float*p){*p=40;return true;}
  Context*GetAiObjectContext(){return &context;}Unit*GetUnit(ObjectGuid g){return units.count(g)?units[g]:nullptr;}
  bool HasRealPlayerMaster(){return true;}void ResetAIInternalUpdateDelay(){aiInternalUpdateDelay=0;}ObjectGuid urgentRecoveryTarget;
  void PrepareForUrgentCombat();void Publish(const WorldPacket&packet){__PUBLISH__}
  __URGENT__
 };
+struct Facade{bool IsFriendlyTo(Player*,Unit*){return false;}}sServerFacade;
+struct PossibleAttackTargetsValue{static bool HasBreakableCC(Unit*,Player*){return false;}static bool HasUnBreakableCC(Unit*,Player*){return false;}};
+bool MoltenCorePackStackRequired(PlayerbotAI*){return false;}
+std::pair<float,float> FirelordRangedBounds(PlayerbotAI*,Unit*){return {8.0f,43.0f};}
+bool PlanFirelordRanged(PlayerbotAI*,EncounterPosition&){return false;}
+const char* MoltenCoreRangeSpell(PlayerbotAI*,Player*){return "frostbolt";}
 bool MoltenCoreRecoveryTrash(unsigned e){return e!=11502;}
 Unit*MoltenCoreTrashAggroTarget(PlayerbotAI*a){for(auto*u:a->bot->attackers)if(u->world&&u->alive&&!u->charm&&a->bot->IsInMap(u)&&u->victim==a->bot&&!u->HasAura(19951)&&MoltenCoreRecoveryTrash(u->entry))return u;return nullptr;}
+bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&){return false;}
+bool PlanMajordomoFormation(PlayerbotAI*,EncounterPosition&){return false;}
 bool PlanMoltenCoreGiants(PlayerbotAI*,EncounterPosition&){return false;}
 bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&){return false;}
 Unit*MoltenCorePackTankTarget(PlayerbotAI*a){return a->loose;}Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*a){return a->loose;}

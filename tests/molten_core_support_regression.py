@@ -1,10 +1,13 @@
 """Actual MC support, tank allocation and frontal-position bodies across all eras."""
 from pathlib import Path
-import subprocess,tempfile
+import subprocess,tempfile,sys
 from behavior_regression import block
 r=Path(__file__).resolve().parents[1]
 s=(r/'playerbot/strategy/actions/MoltenCoreDungeonActions.cpp').read_text()
-methods='\n'.join(block(s,m) for m in ('bool ai::MoltenCoreRecoverableImp(', 'bool ai::MoltenCoreImpUnderPressure(', 'bool ai::MoltenCoreImpPack(', 'bool ai::MoltenCoreImpTauntAllowed(', 'const char* MoltenCoreRangeSpell(', 'bool PlanCoreHoundRanged(', 'void PreserveMoltenCoreTank(', 'std::vector<Unit*> MoltenCorePack(', 'std::vector<Player*> MoltenCorePackTanks(', 'bool ai::MoltenCorePackStackRequired(', 'Unit* ai::MoltenCorePackTankTarget(', 'bool ai::PlanMoltenCorePack(', 'bool PlanMagmadarTank(', 'bool PlanMagmadarFormation(', 'bool ai::PlanGeddonFormation(', 'bool RaidMember(', 'bool RaidEnemy(', 'bool MoltenCoreBoss(', 'Unit* RaidBoss(', 'std::vector<Unit*> ai::MoltenCoreGroupTrash(', 'Unit* MoltenCoreTrashTankTarget(', 'bool ai::PlanMoltenCoreGiants(', 'uint32 RaidAdd(', 'std::vector<Unit*> RaidAdds(', 'Unit* MajordomoFocus(', 'Unit* MajordomoAssignedHealer(', 'bool MajordomoSupport(', 'bool ai::PlanMajordomoFormation(', 'Unit* ai::MoltenCoreAssignedTankTarget(', 'bool MoltenCoreSupportAction::Select(', 'bool MoltenCoreSupportAction::Execute(', 'bool ai::PlanGolemaggFormation(', 'Unit* ai::MoltenCoreRagnaros(', 'std::vector<Player*> RagnarosRanged(', 'const char* RagnarosRangeSpell(', 'bool ai::RagnarosSameCluster(', 'bool ai::PlanRagnarosFormation(', 'bool ai::PlanMoltenCoreTrash('))
+if '--before-firelord' in sys.argv:
+ old=subprocess.check_output(['git','-C',str(r),'show','HEAD:playerbot/strategy/actions/MoltenCoreDungeonActions.cpp'],text=True)
+ s=s.replace(block(s,'bool ai::PlanMoltenCoreTrash('),block(old,'bool ai::PlanMoltenCoreTrash('))
+methods='\n'.join(block(s,m) for m in ('bool ai::MoltenCoreRecoverableImp(', 'bool ai::MoltenCoreImpUnderPressure(', 'bool ai::MoltenCoreImpPack(', 'bool ai::MoltenCoreImpTauntAllowed(', 'const char* MoltenCoreRangeSpell(', 'bool PlanCoreHoundRanged(', 'void PreserveMoltenCoreTank(', 'std::vector<Unit*> MoltenCorePack(', 'std::vector<Player*> MoltenCorePackTanks(', 'bool ai::MoltenCorePackStackRequired(', 'Unit* ai::MoltenCorePackTankTarget(', 'bool ai::PlanMoltenCorePack(', 'bool PlanMagmadarTank(', 'bool PlanMagmadarFormation(', 'bool ai::PlanGeddonFormation(', 'bool RaidMember(', 'bool RaidEnemy(', 'bool MoltenCoreBoss(', 'Unit* RaidBoss(', 'std::vector<Unit*> ai::MoltenCoreGroupTrash(', 'Unit* MoltenCoreTrashTankTarget(', 'bool ai::PlanMoltenCoreGiants(', 'uint32 RaidAdd(', 'std::vector<Unit*> RaidAdds(', 'Unit* MajordomoFocus(', 'ObjectGuid MajordomoSheepOwner(', 'Unit* MajordomoAssignedHealer(', 'bool MajordomoSupport(', 'bool ai::PlanMajordomoFormation(', 'Unit* ai::MoltenCoreAssignedTankTarget(', 'bool MoltenCoreSupportAction::Select(', 'bool MoltenCoreSupportAction::Execute(', 'bool ai::PlanGolemaggFormation(', 'Unit* ai::MoltenCoreRagnaros(', 'std::vector<Player*> RagnarosRanged(', 'const char* RagnarosRangeSpell(', 'bool ai::RagnarosSameCluster(', 'bool ai::PlanRagnarosFormation(', 'std::pair<float,float> FirelordRangedBounds(', 'bool PlanFirelordRanged(', 'bool ai::PlanMoltenCoreTrash('))
 code=r'''
 #include <cassert>
 #include <ctime>
@@ -17,21 +20,22 @@ code=r'''
 #include <string>
 #include <iostream>
 using uint32=unsigned;using int32=int;constexpr unsigned SPELL_SCHOOL_MASK_ALL=127;constexpr float M_PI=3.14159265358979323846f;
-enum{CURRENT_GENERIC_SPELL,SPELL_STATE_CASTING,SPELL_STATE_FINISHED,CLASS_WARRIOR=1,CLASS_PALADIN=2,CLASS_HUNTER=3,CLASS_PRIEST=5,CLASS_SHAMAN=7,CLASS_MAGE=8,CLASS_WARLOCK=9,CLASS_DRUID=11};
+enum{DIST_CALC_NONE,CURRENT_GENERIC_SPELL,SPELL_STATE_CASTING,SPELL_STATE_FINISHED,CLASS_WARRIOR=1,CLASS_PALADIN=2,CLASS_HUNTER=3,CLASS_PRIEST=5,CLASS_SHAMAN=7,CLASS_MAGE=8,CLASS_WARLOCK=9,CLASS_DRUID=11};
 namespace BotState{enum{BOT_STATE_COMBAT};}
-struct ObjectGuid{unsigned id=0;ObjectGuid(unsigned v=0):id(v){}operator unsigned()const{return id;}};
-struct SpellEntry{unsigned Id=19775;};struct Spell{SpellEntry*m_spellInfo=nullptr;int state=SPELL_STATE_CASTING;bool interrupt=true;int getState(){return state;}bool CanBeInterrupted(){return interrupt;}};
+struct ObjectGuid{unsigned id=0;ObjectGuid(unsigned v=0):id(v){}operator unsigned()const{return id;}bool IsEmpty()const{return !id;}};
+constexpr unsigned SPELL_AURA_MOD_CONFUSE=5,MECHANIC_POLYMORPH=17;struct SpellEntry{unsigned Id=19775,Mechanic=MECHANIC_POLYMORPH;};struct Spell{SpellEntry*m_spellInfo=nullptr;int state=SPELL_STATE_CASTING;bool interrupt=true;int getState(){return state;}bool CanBeInterrupted(){return interrupt;}};
 struct Player;struct PlayerbotAI;struct Group;
-struct Aura{unsigned stacks=5;unsigned GetStackAmount(){return stacks;}};
+struct SheepHolder{ObjectGuid owner;ObjectGuid GetCasterGuid(){return owner;}};
+struct Aura{SpellEntry proto;SheepHolder holder;const SpellEntry*GetSpellProto(){return &proto;}SheepHolder*GetHolder(){return &holder;}unsigned stacks=5;unsigned GetStackAmount(){return stacks;}};
 struct Unit{virtual ~Unit()=default;unsigned entry=0,map=409,instance=1,phase=1;ObjectGuid guid;bool world=true,alive=true,combat=true,charmed=false,friendly=false,cc=false,hardCC=false,attackable=true;
  float x=0,y=0,z=0,o=0,health=100;bool mobile=true;bool CanReactInCombat(){return mobile&&alive&&!charmed;}bool IsImmobilizedState(){return !mobile;}
- std::vector<Unit*>attackers;const auto&getAttackers(){return attackers;}
+ std::vector<Aura*>sheeps;const auto&GetAurasByType(unsigned){return sheeps;}std::vector<Unit*>attackers;const auto&getAttackers(){return attackers;}
  Unit*owner=nullptr;Unit*GetOwner(void*,bool){return owner;}Unit*victim=nullptr;Spell*cast=nullptr;std::set<unsigned>auras;
  virtual bool IsPlayer(){return false;}unsigned GetEntry(){return entry;}ObjectGuid GetObjectGuid(){return guid;}unsigned GetGUIDLow(){return guid;}unsigned GetInstanceId(){return instance;}
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
  bool IsSpellReady(unsigned){return true;}bool IsInMap(Unit*u){return world&&u->world&&map==u->map&&instance==u->instance&&phase==u->phase;}
- float GetDistance(Unit*u){return std::hypot(x-u->x,y-u->y);}float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}
- float GetReflectChance(unsigned){return HasAura(20619)?50:0;}float GetOrientation(){return o;}float GetAngle(Unit*u){return std::atan2(u->y-y,u->x-x);}float GetCombatReach(){return 1.5f;}float GetObjectBoundingRadius(){return 1.5f;}float GetHealthPercent(){return health;}
+ float GetDistance(Unit*u,bool,int){float dx=x-u->x,dy=y-u->y,dz=z-u->z;return dx*dx+dy*dy+dz*dz;}float GetDistance(Unit*u){return std::hypot(x-u->x,y-u->y);}float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}
+ bool visible=true;bool IsWithinLOS(float,float,float,bool){return visible;}float GetCollisionHeight(){return 2;}float GetReflectChance(unsigned){return HasAura(20619)?50:0;}float GetOrientation(){return o;}float GetAngle(Unit*u){return std::atan2(u->y-y,u->x-x);}float GetCombatReach(){return 1.5f;}float GetObjectBoundingRadius(){return 1.5f;}float GetHealthPercent(){return health;}
  bool HasAura(unsigned a){return auras.count(a);}Unit*GetVictim(){return victim;}Spell*GetCurrentSpell(int){return cast;}};
 struct Creature:Unit{void*formation=nullptr;void*GetCreatureGroup(){return formation;}};
 struct Player:Unit{bool teleport=false,tank=false,ranged=false,healer=false;unsigned cls=1;Group*group=nullptr;PlayerbotAI*ai=nullptr;
@@ -44,7 +48,7 @@ namespace ai{namespace encounter{struct Point{float x=0,y=0,z=0;};}struct Magmad
 template<class T>struct Cached{T value;T Get(){return value;}void Set(T v){value=v;}};
 struct Context{Cached<ai::MagmadarControl>magmadar;Cached<ai::GeddonControl>geddon;Cached<std::list<ObjectGuid>>possible;Cached<ObjectGuid>attack,current;std::map<std::string,Cached<int32>>owners;template<class T>Cached<T>*GetValue(const char*name,const std::string&key=""){if constexpr(std::is_same_v<T,ai::MagmadarControl>)return &magmadar;else if constexpr(std::is_same_v<T,ai::GeddonControl>)return &geddon;else if constexpr(std::is_same_v<T,ObjectGuid>)return std::string(name)=="current target"?&current:&attack;else if constexpr(std::is_same_v<T,int32>)return &owners[key];else return &possible;}};
 std::vector<Unit*>units;
-struct PlayerbotAI{Player*bot;Context context;bool rejectFrontLane=false,rejectFarPaths=false,real=false,path=true,castOK=true;float spellRange=40;bool fireBlocked=false,rangeUnavailable=false;std::string lastRangeSpell;unsigned casts=0;Unit*lastTarget=nullptr;std::string lastSpell;std::set<std::string>learned;
+struct PlayerbotAI{Player*bot;Context context;bool owned=true;bool HasRealPlayerMaster(){return owned;}bool rejectFrontLane=false,rejectFarPaths=false,real=false,path=true,castOK=true;float spellRange=40;bool fireBlocked=false,rangeUnavailable=false;std::string lastRangeSpell;unsigned casts=0;Unit*lastTarget=nullptr;std::string lastSpell;std::set<std::string>learned;
  time_t combatStart=time(0)-12;time_t GetCombatStartTime(){return combatStart;}
  PlayerbotAI(Player*p):bot(p){p->ai=this;}Player*GetBot(){return bot;}bool IsRealPlayer(){return real;}bool IsTank(Player*p){return p->tank;}bool IsRanged(Player*p){return p->ranged;}bool IsHeal(Player*p){return p->healer;}
  Context*GetAiObjectContext(){return &context;}Unit*GetUnit(ObjectGuid g){for(auto*u:units)if(u->guid==g)return u;return nullptr;}
@@ -60,7 +64,7 @@ namespace Cell{template<class Check>void VisitAllObjects(Unit*,MaNGOS::UnitListS
 struct WorldPosition{float x=0,y=0,z=0;float getX()const{return x;}float getY()const{return y;}float getZ()const{return z;}};
 using HazardPosition=std::pair<WorldPosition,float>;
 std::list<HazardPosition> liveFire;
-namespace ai{void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>&out){out=liveFire;}struct EncounterPosition{bool active=false;unsigned map=0,instance=0,spell=0;ObjectGuid boss,source;encounter::Point destination;};
+namespace ai{void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>&out){out=liveFire;}struct EncounterPosition{bool active=false;unsigned map=0,instance=0,spell=0;ObjectGuid boss,source;encounter::Point destination,anchor;bool anchored=false,groundOnly=false;};
  struct PossibleAttackTargetsValue{static bool IsValid(Unit*u,Player*p,float range,bool,bool){return u->attackable&&p->GetDistance(u)<=range;}static bool HasBreakableCC(Unit*u,Player*){return u->cc;}static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}};
  bool ValidateEncounterDestination(PlayerbotAI*ai,EncounterPosition&p,bool walking=true){if(p.spell==19364)assert(p.active&&p.map==ai->bot->GetMapId()&&p.instance==ai->bot->GetInstanceId());for(const auto& h:liveFire)if(std::hypot(p.destination.x-h.first.x,p.destination.y-h.first.y)<h.second)return false;return (!walking||ai->path)&&!ai->fireBlocked&&(!ai->rejectFrontLane||p.destination.y>5)&&(!ai->rejectFarPaths||std::hypot(p.destination.x,p.destination.y)<40);}float NativeEncounterSpellRadius(unsigned id){assert(id==1161||id==5209||id==19364||id==19408||id==20602||id==20556||id==19798||id==21155||id==20566);return id==19364?45.0f:id==20566?25.0f:id==21155?20.0f:id==19408?45.0f:id==20556?30.0f:id==19798?18.0f:10.0f;}
  Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool LavaTrashReservedTarget(PlayerbotAI*,Unit*){return false;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&){return false;}bool PlanLavaTrashBanish(PlayerbotAI*,EncounterPosition&){return false;}
@@ -69,6 +73,7 @@ namespace ai{void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPos
  struct Event{};struct MoltenCoreSupportAction{PlayerbotAI*ai;Player*bot;bool Select(std::string&,Unit*&);bool Execute(Event&);void SetDuration(unsigned){}};
 }
 using namespace ai;
+namespace ai{std::pair<float,float> HunterShotRange(PlayerbotAI*a,Unit*t){if(a->rangeUnavailable)return {0.0f,0.0f};return {a->minimum,a->spellRange+a->bot->GetCombatReach()+t->GetCombatReach()};}}
 __METHODS__
 int main(){
 
@@ -76,10 +81,12 @@ int main(){
  Player tanks[3],members[37];Group group;std::vector<PlayerbotAI*> brains;
  for(unsigned i=0;i<3;++i){tanks[i].guid=1+i;tanks[i].tank=true;tanks[i].x=2;group.Add(&tanks[i]);brains.push_back(new PlayerbotAI(&tanks[i]));}
  for(unsigned i=0;i<37;++i){members[i].guid=100+i;members[i].cls=i<8?CLASS_PRIEST:CLASS_MAGE;members[i].healer=i<8;members[i].ranged=i<29;group.Add(&members[i]);brains.push_back(new PlayerbotAI(&members[i]));}
- Unit boss;boss.entry=11502;boss.guid=500;boss.victim=&tanks[0];units={&boss};
+ Unit boss;boss.entry=11502;boss.guid=500;boss.victim=&tanks[0];tanks[0].attackers={&boss};units={&boss};
  for(auto* brain:brains)units.push_back(brain->bot);
+ assert(RaidBoss(brains[1])==&boss);boss.combat=false;assert(!RaidBoss(brains[1]));boss.combat=true;
  std::vector<EncounterPosition> plans(40);
  for(unsigned i=0;i<40;++i)assert(PlanRagnarosFormation(brains[i],plans[i]));
+ for(unsigned i=1;i<3;++i)assert(std::hypot(plans[i].destination.x-boss.x,plans[i].destination.y-boss.y)<=3.01f&&plans[i].destination.x<0); // spare tanks remain in rear melee range
  for(unsigned i=3;i<32;++i)for(unsigned j=i+1;j<32;++j){
   const float d=std::hypot(plans[i].destination.x-plans[j].destination.x,plans[i].destination.y-plans[j].destination.y);
   if((i-3)/3==(j-3)/3)assert(d<=1.61f);else assert(d>20.0f);
@@ -112,6 +119,12 @@ int main(){
  std::string spell;Unit* target=nullptr;
  for(unsigned i=0;i<6;++i){bool casts=MajordomoSupport(brains[i],&boss,spell,target);assert(casts==(i<4));if(casts)assert(spell=="polymorph"&&target==&healers[i]);}
  EncounterPosition sheepPlan;assert(PlanMajordomoFormation(brains[3],sheepPlan));assert(std::hypot(sheepPlan.destination.x-healers[3].x,sheepPlan.destination.y-healers[3].y)<=40.01f);
+ Aura humanSheep;humanSheep.holder.owner=900;healers[0].sheeps={&humanSheep};
+ assert(MajordomoAssignedHealer(brains[0],&boss)==&healers[1]);
+ Aura ownedSheep;ownedSheep.holder.owner=mages[1].guid;healers[2].sheeps={&ownedSheep};
+ assert(MajordomoAssignedHealer(brains[1],&boss)==&healers[2]);assert(MajordomoAssignedHealer(brains[0],&boss)==&healers[1]);
+ healers[0].sheeps.clear();healers[2].sheeps.clear();
+ assert(sheepPlan.destination.x==mages[3].x&&sheepPlan.destination.y==mages[3].y);
  for(auto& healer:healers)healer.cc=true;assert(!PlanMajordomoFormation(brains[3],sheepPlan));
  for(auto* a:brains)assert(MajordomoFocus(a,&boss)==&elites[0]);
  group.skull=healers[3].guid;assert(MajordomoFocus(brains[0],&boss)==&elites[0]);
@@ -344,6 +357,8 @@ int main(){
  assert(std::hypot(p.destination.x-peer.x,p.destination.y-peer.y)>=5);
  mage.x=p.destination.x;mage.y=p.destination.y;auto station=p.destination;
  assert(PlanMagmadarFormation(&brain,&b,p)&&p.destination.x==station.x&&p.destination.y==station.y);
+ brain.rejectFrontLane=false;brain.rejectFarPaths=true;mage.x=-30;assert(PlanMagmadarFormation(&brain,&b,p)&&std::hypot(p.destination.x,p.destination.y)<40&&std::hypot(p.destination.x,p.destination.y)>30);brain.rejectFarPaths=false;
+ mage.cls=CLASS_HUNTER;mage.ranged=false;assert(PlanMagmadarFormation(&brain,&b,p)&&std::hypot(p.destination.x,p.destination.y)>40);mage.cls=CLASS_MAGE;mage.ranged=true;
  b.o=3.141592653589793f;brain.rejectFrontLane=false;
  assert(PlanMagmadarFormation(&brain,&b,p)&&p.destination.x>0); // fear has turned the boss; never retain its front
  mage.x=-30;mage.y=0;peer.x=-30;peer.y=10;b.o=0;
@@ -391,6 +406,40 @@ int main(){
  off.x=p.destination.x;off.y=p.destination.y;auto melee=p.destination;
  assert(PlanMagmadarFormation(&offBrain,&boss,p)&&p.destination.x==melee.x&&p.destination.y==melee.y);
 }
+
+ {
+ Player tank,hunter,lock;Group group;tank.guid=2001;tank.tank=true;hunter.guid=2002;hunter.cls=CLASS_HUNTER;hunter.ranged=true;
+ lock.guid=2003;lock.cls=CLASS_WARLOCK;lock.ranged=true;group.Add(&tank);group.Add(&hunter);group.Add(&lock);
+ PlayerbotAI hunt(&hunter),warlock(&lock);Creature firelord,dog,dog2;firelord.guid=2010;firelord.entry=11668;firelord.victim=&tank;
+ dog.guid=2011;dog.entry=11671;dog.victim=&tank;dog.combat=false;dog2.guid=2012;dog2.entry=11671;dog2.victim=&tank;dog2.combat=false;units={&tank,&hunter,&lock,&firelord,&dog,&dog2};
+ hunt.context.current.value=warlock.context.current.value=firelord.guid;hunt.context.possible.value=warlock.context.possible.value={firelord.guid,dog.guid,dog2.guid};
+ EncounterPosition p;
+ assert(PlanMoltenCoreTrash(&hunt,p)&&p.active&&p.boss==firelord.guid&&p.spell==19630);
+ auto bounds=FirelordRangedBounds(&hunt,&firelord);float radial=std::hypot(p.destination.x-firelord.x,p.destination.y-firelord.y);
+ assert(radial>bounds.first+1&&radial<=bounds.second-2+0.01f); // hunter at boss feet gains native shooting room
+ hunter.x=p.destination.x;hunter.y=p.destination.y;assert(PlanFirelordRanged(&hunt,p)&&p.destination.x==hunter.x&&p.destination.y==hunter.y);
+ lock.x=80;assert(PlanMoltenCoreTrash(&warlock,p)&&p.boss==firelord.guid);
+ assert(std::hypot(p.destination.x,p.destination.y)<=warlock.spellRange+1.01f); // caster approaches without leader DPS
+ dog.combat=dog2.combat=true;assert(MoltenCorePackStackRequired(&hunt)&&!PlanFirelordRanged(&hunt,p));
+ assert(PlanMoltenCoreTrash(&hunt,p)&&p.boss==dog.guid&&p.destination.x==tank.x); // mandatory pack still wins
+ dog.combat=dog2.combat=false;assert(!MoltenCorePackStackRequired(&hunt)&&PlanFirelordRanged(&hunt,p)); // next pull releases stack
+ for(unsigned f=0;f<12;++f){firelord.visible=true;hunt.rangeUnavailable=false;firelord.world=firelord.alive=firelord.combat=true;firelord.instance=1;firelord.cc=firelord.hardCC=false;firelord.victim=&tank;
+ hunter.teleport=false;hunter.los=true;hunt.owned=true;hunt.path=true;tank.tank=true;
+ if(f==0)firelord.world=false;if(f==1)firelord.alive=false;if(f==2)firelord.combat=false;if(f==3)firelord.instance=2;
+ if(f==4)firelord.cc=true;if(f==5)firelord.hardCC=true;if(f==6)hunter.teleport=true;if(f==7)hunt.owned=false;if(f==8)hunt.path=false;if(f==9)tank.tank=false;if(f==10){firelord.visible=false;hunter.los=false;}if(f==11)hunt.rangeUnavailable=true;
+ assert(!PlanFirelordRanged(&hunt,p));}
+ }
+
+ {
+ // A multiboss pull must not hold a melee DPS bot at an unrelated lower-GUID
+ // trash mob while its real attack target is elsewhere.
+ Player tank,melee;Group group;tank.guid=3001;tank.tank=true;melee.guid=3002;group.Add(&tank);group.Add(&melee);
+ PlayerbotAI brain(&melee);Creature guard,boss,other;guard.guid=3010;guard.entry=11661;guard.victim=&tank;
+ boss.guid=3020;boss.entry=12259;boss.victim=&tank;other.guid=3030;other.entry=11661;other.victim=&tank;other.x=20;
+ units={&tank,&melee,&guard,&boss,&other};brain.context.possible.value={guard.guid,other.guid};brain.context.current.value=boss.guid;
+ EncounterPosition p;assert(!PlanMoltenCoreTrash(&brain,p));
+ brain.context.current.value=other.guid;assert(PlanMoltenCoreTrash(&brain,p)&&p.boss==other.guid);
+ }
 std::cout<<"PASS: actual MC off-target interrupts, native era abilities, dispels, frenzy, mind control, sheep assignments, tank allocation and Magmadar positioning\n";
 }
 '''.replace('__METHODS__',methods)

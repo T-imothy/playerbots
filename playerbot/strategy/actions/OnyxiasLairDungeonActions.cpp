@@ -40,7 +40,7 @@ bool OnyxiaPositionAction::isUseful()
 {
     EncounterPosition plan;
     return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f ||
-        (plan.exclusive && (!bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE)));
+        (plan.exclusive && EncounterMovementRequired(bot, plan.destination, 1.5f)));
 }
 
 bool OnyxiaPositionAction::ShouldReactionInterruptCast() const

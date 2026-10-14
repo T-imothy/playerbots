@@ -781,6 +781,8 @@ private:
     void PrepareForUrgentAttack();
     void PrepareForUrgentCombat();
     void PrepareForMoltenCoreFearRecovery();
+    void PrepareForForcedMovementRecovery();
+    bool forcedMovementRecoveryPending = false;
     void PrepareForRaidRegroup();
     ObjectGuid regroupDeadTarget;
     void PrepareForPartyCombat();

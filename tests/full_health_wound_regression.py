@@ -41,6 +41,7 @@ struct HealthInRangeTrigger:ValueInRangeTrigger{PlayerbotAI* ai;std::string name
  Unit* GetTarget(){return target;}std::string GetTargetName(){return "party member to heal";}std::string getName(){return name;}
  Player* GetMaster(){return nullptr;}bool IsActive();};
 #define AI_VALUE2(type,key,qualifier) ai->value<type>(key)
+bool burst=false;bool NeedsMoltenCoreBurstHealing(PlayerbotAI*,Unit*u){return burst&&u&&u->hp<u->maxhp;}
 __METHODS__
 int main(){
  Player patient;PlayerbotAI ai;ai.target=&patient;HealthInRangeTrigger t;t.target=&patient;t.ai=&ai;
@@ -62,6 +63,7 @@ int main(){
  }
  patient.auras={38772};assert(!t.IsActive()); // This native wound uses a different health threshold.
  patient.auras.clear();patient.hp=60;assert(t.IsActive());patient.hp=98;assert(!t.IsActive());
+ t.name="party member critical health";burst=true;assert(t.IsActive());patient.hp=100;assert(!t.IsActive());patient.hp=98;burst=false;t.name="party member medium health";
  assert(!NeedsFullHealingToRemoveAura(nullptr));
  Aura first{{60000}},empty{{0}},negative{{-1}},large{{INT32_MAX}};patient.hp=100;patient.absorbs={&first,&empty,&negative};
 #ifdef MANGOSBOT_TWO

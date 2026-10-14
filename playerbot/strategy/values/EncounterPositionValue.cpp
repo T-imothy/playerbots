@@ -7,10 +7,25 @@
 #include "HazardsValue.h"
 #include "playerbot/ServerFacade.h"
 #include "Spells/SpellMgr.h"
+#include "Movement/MoveSpline.h"
 #include "playerbot/strategy/actions/MovementPathSafety.h"
 #include "playerbot/strategy/actions/MoltenCoreLavaTrashActions.h"
 
 using namespace ai;
+
+bool ai::EncounterMovementRequired(Player* bot, const encounter::Point& destination, float tolerance)
+{
+    if (!bot || !std::isfinite(destination.x) || !std::isfinite(destination.y) ||
+        !std::isfinite(destination.z) || !std::isfinite(tolerance) || tolerance < 0) return false;
+    if (bot->GetDistance(destination.x, destination.y, destination.z) > tolerance) return true;
+    // An arrived point generator or retained movement flag is not unfinished
+    // travel. Repeated arrival reactions otherwise consume combat updates even
+    // while damage/healing spells and melee are ready to execute.
+    if (!bot->movespline || bot->movespline->Finalized()) return false;
+    const auto end = bot->movespline->FinalDestination();
+    return std::hypot(end.x - destination.x, end.y - destination.y) > tolerance ||
+        std::fabs(end.z - destination.z) > tolerance;
+}
 
 float ai::NativeEncounterSpellRadius(uint32 id, unsigned depth)
 {

@@ -14,6 +14,7 @@ namespace ai
     bool IsViscidusShatterTarget(Unit* target, Player* bot);
     bool NeedsFullHealingToRemoveAura(Unit* target);
     bool NeedsRaidObjectiveHealing(Unit* target);
+    bool NeedsMoltenCoreBurstHealing(PlayerbotAI* ai, Unit* target);
     Unit* FindRaidHealingObjective(PlayerbotAI* ai);
     uint32 RemainingHealingAbsorb(Unit* target);
     uint32 UpcomingEncounterHealingWindow(Player* bot, Unit* target);

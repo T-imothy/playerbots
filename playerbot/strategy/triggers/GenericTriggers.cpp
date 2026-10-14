@@ -287,22 +287,10 @@ bool DebuffTrigger::IsActive()
 
 bool DebuffTrigger::HasMaxDebuffs()
 {
-#ifdef MANGOSBOT_TWO
-    return false;
-#else
-    Unit* target = GetTarget();
-    if(target)
-    {
-#ifdef MANGOSBOT_ONE
-        constexpr uint32 debuffLimit = 40;
-#else
-        constexpr uint32 debuffLimit = 16;
-#endif
-
-        return ai->GetAuras(target, false, false).size() >= debuffLimit;
-    }
-#endif
-
+    // All three native cores retain applied aura holders independently of
+    // visible client slots. Do not suppress a valid curse/DoT/armor debuff
+    // because the old client's display is full. Native spell checks and
+    // stacking/ownership rules still decide whether it can be applied.
     return false;
 }
 

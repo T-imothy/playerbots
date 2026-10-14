@@ -23,9 +23,7 @@ bool OssirianCrystalAction::isUseful()
     EncounterPosition plan;
     if (!GetPlan(ai, plan)) return false;
     Unit* boss = ai->GetUnit(plan.boss);
-    return bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.0f ||
-        !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE ||
-        (boss->GetVictim() != bot && OssirianNeedsCrystal(boss));
+    return EncounterMovementRequired(bot, plan.destination, 1.0f) || (boss->GetVictim() != bot && OssirianNeedsCrystal(boss));
 }
 
 bool OssirianCrystalAction::ShouldReactionInterruptCast() const

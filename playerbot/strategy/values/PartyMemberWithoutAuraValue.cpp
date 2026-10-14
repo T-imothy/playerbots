@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "PartyMemberWithoutAuraValue.h"
+#include "playerbot/strategy/actions/GroupBuffPolicy.h"
 
 #include "playerbot/ServerFacade.h"
 using namespace ai;
@@ -35,7 +36,7 @@ public:
             }
 #endif
 
-            if (ai->HasAura(*i, unit))
+            if (HasEquivalentGroupBuff(ai, *i, unit))
                 return false;
         }
 

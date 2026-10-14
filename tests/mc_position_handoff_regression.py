@@ -1,5 +1,6 @@
 """Exercise actual arrival handoff, native fire candidates and item cast waits."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess,tempfile
 from behavior_regression import block
 R=Path(__file__).resolve().parents[1]
@@ -14,15 +15,17 @@ code=r'''
 #include "__GEOMETRY__"
 using namespace ai;using uint32=unsigned;using int32=int;
 struct Spline{bool done=true;encounter::Point end;bool Finalized(){return done;}auto FinalDestination(){return end;}};
+struct Unit{unsigned GetEntry(){return 0;}};
+struct Guid{bool IsEmpty(){return true;}};
 struct Player{float x=0,y=0,z=0;Spline spline;Spline*movespline=&spline;
  bool HasAura(unsigned){return false;}bool IsNonMeleeSpellCasted(bool,bool,bool){return false;}
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}float GetDistance(float a,float b,float c){return std::hypot(x-a,y-b);}};
 struct SpellEntry{unsigned Id=1;bool channel=false;int duration=0;};
 struct Spell{SpellEntry*m_spellInfo;unsigned cast=0;unsigned GetCastTime(){return cast;}};
 bool IsChanneledSpell(const SpellEntry*s){return s->channel;}int GetSpellDuration(const SpellEntry*s){return s->duration;}
-struct PlayerbotAI{Player*bot;unsigned nativeGcd=1500;uint32 CalculateGlobalCooldown(unsigned){return nativeGcd;}uint32 GetSpellCastDuration(Spell*);};
+struct PlayerbotAI{Player*bot;unsigned nativeGcd=1500;uint32 CalculateGlobalCooldown(unsigned){return nativeGcd;}Unit* GetUnit(Guid){return nullptr;}uint32 GetSpellCastDuration(Spell*);};
 struct{unsigned reactDelay=100;}sPlayerbotAIConfig;
-struct EncounterPosition{bool active=true;encounter::Point destination;};
+struct EncounterPosition{bool active=true,groundOnly=false;unsigned spell=0;Guid source,boss;encounter::Point destination;};
 bool GetPlan(PlayerbotAI*,EncounterPosition&p){p.destination={0,0,0};return true;}
 struct MoltenCorePositionAction{PlayerbotAI*ai;Player*bot;bool isUseful();bool ShouldReactionInterruptCast(){return false;}};
 struct MoltenCorePositionValue{PlayerbotAI*ai;Player*bot;EncounterPosition Calculate();};
@@ -50,6 +53,6 @@ int main(){Player bot;PlayerbotAI ai{&bot};MoltenCorePositionAction position{&ai
 '''.replace('__METHODS__',methods).replace('__GEOMETRY__',str(R/'playerbot/strategy/EncounterGeometry.h').replace('\\','/'))
 for era in ('ZERO','ONE','TWO'):
  with tempfile.TemporaryDirectory(prefix='mc-handoff-') as tmp:
-  d=Path(tmp);(d/'test.cpp').write_text(code)
+  d=Path(tmp);(d/'test.cpp').write_text(arrival_fixture(code))
   subprocess.run(['cl','/nologo','/std:c++17','/EHsc','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=d,check=True)
   subprocess.run([str(d/'test.exe')],cwd=d,check=True)

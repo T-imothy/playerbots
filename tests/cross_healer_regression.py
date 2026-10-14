@@ -18,7 +18,7 @@ code=r'''
 using uint8=unsigned char;using uint32=unsigned;
 enum{SPELL_EFFECT_HEAL=10,SPELL_AURA_MOD_HEALING_PCT=118,CLASS_PRIEST=5,CLASS_SHAMAN=7};
 struct Unit{bool world=true,alive=true,friendly=true;unsigned map=1,instance=1,phase=1,maxHealth=100;float hp=30,distance=0;int reduction=0;
- bool IsInWorld(){return world;}bool IsAlive(){return alive;}unsigned GetMaxHealth(){return maxHealth;}
+ unsigned GetMapId(){return map;}unsigned GetEntry(){return 0;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}unsigned GetMaxHealth(){return maxHealth;}
  float GetHealthPercent(){return hp;}int GetMaxNegativeAuraModifier(unsigned){return reduction;}};
 struct Group{struct Slot{unsigned guid;};using MemberSlotList=std::vector<Slot>;using member_citerator=MemberSlotList::const_iterator;MemberSlotList slots;
  const MemberSlotList&GetMemberSlots(){return slots;}};
@@ -36,7 +36,9 @@ struct {float lowHealth=50,mediumHealth=75,criticalHealth=20;}sPlayerbotAIConfig
 struct Objects{std::vector<Player*>players;Player*GetPlayer(unsigned id){return players.at(id);}}sObjectMgr;
 bool CanPrecastEncounterHeal(Player*,Unit*,const SpellEntry*){return false;}
 unsigned UpcomingEncounterHealingWindow(Player*,Player*p){return p->window?2000:0;}
-struct CastSpellAction{Player*bot=nullptr;Unit*target=nullptr;bool allowed=true;std::string spell;
+bool burst=false;bool NeedsMoltenCoreBurstHealing(PlayerbotAI*,Unit*){return burst;}
+bool NeedsRaidObjectiveHealing(Unit*){return false;}
+struct CastSpellAction{PlayerbotAI*ai=nullptr;Player*bot=nullptr;Unit*target=nullptr;bool allowed=true;std::string spell;
  CastSpellAction(PlayerbotAI*,std::string s):spell(s){}virtual ~CastSpellAction()=default;
  virtual std::string getName(){return spell;}virtual std::string GetTargetName(){return "current target";}
  virtual bool isUseful(){return allowed;}void RefreshSpellId(){}unsigned GetSpellID(){return 1;}Unit*GetTarget(){return target;}};
@@ -51,7 +53,7 @@ __METHODS__
 __ROUTES__
 int main(){Player bot,patient;CastHealingSpellAction heal(nullptr,"regrowth");heal.bot=&bot;heal.target=&patient;heal.aura=true;
  // Existing Regrowth/Riptide HoT must not block a rescue's immediate heal.
- assert(heal.isUseful());patient.hp=75;assert(!heal.isUseful());patient.hp=30;
+ assert(heal.isUseful());patient.hp=75;assert(!heal.isUseful());burst=true;assert(heal.isUseful());sServerFacade.spell.heal=false;assert(!heal.isUseful());sServerFacade.spell.heal=true;burst=false;patient.hp=30;
  sServerFacade.spell.heal=false;assert(!heal.isUseful());heal.aura=false;assert(heal.isUseful());heal.aura=true;
  sServerFacade.spell.heal=true;heal.allowed=false;assert(!heal.isUseful());heal.allowed=true;
  patient.reduction=-100;assert(!heal.isUseful());patient.reduction=0;

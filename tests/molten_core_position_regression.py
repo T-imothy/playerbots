@@ -1,12 +1,17 @@
 """Exercise actual MC positioning/plan validation, including post-kill Living Bomb."""
 from pathlib import Path
-import subprocess
+import subprocess,sys
 import tempfile
 from behavior_regression import block
 
 root = Path(__file__).resolve().parents[1]
 value = (root/'playerbot/strategy/values/MoltenCorePositionValue.cpp').read_text()
 action = (root/'playerbot/strategy/actions/MoltenCoreDungeonActions.cpp').read_text()
+if '--before-mag' in sys.argv or '--before-fire-hold' in sys.argv:
+ value=subprocess.check_output(['git','-C',str(root),'show','HEAD:playerbot/strategy/values/MoltenCorePositionValue.cpp'],text=True)
+ oldAction=subprocess.check_output(['git','-C',str(root),'show','HEAD:playerbot/strategy/actions/MoltenCoreDungeonActions.cpp'],text=True)
+ if '--before-mag' in sys.argv: action=oldAction
+ else: action=action.replace(block(action,'bool MoltenCorePositionAction::Execute('),block(oldAction,'bool MoltenCorePositionAction::Execute('))
 methods = '\n'.join((block(value, 'bool Casting('),
                      block(value, 'bool ai::MoltenCoreThreats('),
                      block(value, 'EncounterPosition MoltenCorePositionValue::Calculate('),
@@ -23,7 +28,7 @@ using uint32=unsigned;
 struct ObjectGuid {unsigned id=0;ObjectGuid(unsigned i=0):id(i){}operator unsigned()const{return id;}
  bool IsEmpty()const{return id==0;}};
 enum CurrentSpellTypes {CURRENT_GENERIC_SPELL,CURRENT_CHANNELED_SPELL};
-enum {SPELL_STATE_CASTING,SPELL_STATE_FINISHED};
+enum {CLASS_HUNTER=3,SPELL_STATE_CASTING,SPELL_STATE_FINISHED};
 struct SpellEntry {unsigned Id=19695;};
 struct Spell {SpellEntry* m_spellInfo=nullptr;int state=SPELL_STATE_CASTING;int getState()const{return state;}};
 struct Map {};
@@ -31,7 +36,7 @@ struct Aura { unsigned stacks=0; unsigned GetStackAmount(){return stacks;} };
 struct PlayerbotAI;
 struct Unit {virtual ~Unit()=default;virtual bool IsPlayer(){return false;}bool charmed=false;bool HasCharmer(){return charmed;}
  unsigned entry=0,phase=1;ObjectGuid guid;bool world=true,alive=true,combat=true;Map* map=nullptr;
- float GetOrientation(){return 0;}float health=100; float GetHealthPercent(){return health;} float GetCombatReach(){return 1.5f;}
+ bool visible=true;bool IsWithinLOS(float,float,float,bool){return visible;}float GetOrientation(){return 0;}float health=100; float GetHealthPercent(){return health;} float GetCombatReach(){return 1.5f;}
  float x=0,y=0,z=0;std::set<unsigned> auras;Unit* victim=nullptr;Spell* cast=nullptr;
  unsigned GetEntry(){return entry;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}
  bool IsInCombat(){return combat;}Map* GetMap(){return map;}ObjectGuid GetObjectGuid(){return guid;}
@@ -41,7 +46,7 @@ struct Unit {virtual ~Unit()=default;virtual bool IsPlayer(){return false;}bool 
 };
 struct Group;
 struct Spline{bool Finalized(){return true;}struct Point{float x=0,y=0,z=0;};Point FinalDestination(){return {};}};
-struct Player:Unit {bool teleport=false;unsigned mapId=409,instance=1;Group* group=nullptr;
+struct Player:Unit {unsigned cls=8;unsigned getClass(){return cls;}bool tankRole=false;bool IsWithinLOSInMap(Unit*){return true;}float GetCollisionHeight(){return 2;}bool teleport=false;unsigned mapId=409,instance=1;Group* group=nullptr;
  Spline*movespline=nullptr;bool IsNonMeleeSpellCasted(bool,bool,bool){return false;}
  bool IsPlayer()override{return true;}
  PlayerbotAI* GetPlayerbotAI(){return nullptr;}
@@ -55,18 +60,19 @@ struct GroupReference {Player* source=nullptr;GroupReference* following=nullptr;
  Player* getSource(){return source;}GroupReference* next(){return following;}};
 struct Group {GroupReference* first=nullptr;GroupReference* GetFirstMember(){return first;}};
 namespace ai {
- struct EncounterPosition {bool active=false;unsigned map=0,instance=0,spell=0;ObjectGuid boss,source;encounter::Point destination;};
+ struct EncounterPosition {bool active=false;unsigned map=0,instance=0,spell=0;ObjectGuid boss,source;encounter::Point destination,anchor;bool anchored=false,groundOnly=false;};
 }
 struct WorldPosition {float x,y,z; float getX()const{return x;} float getY()const{return y;} float getZ()const{return z;}};
 using HazardPosition=std::pair<WorldPosition,float>;
 using namespace ai;
-template<class T>struct Cached {T value;T Get(){return value;}void Reset(){value=T{};}};
-struct Context {Cached<EncounterPosition> cached;Cached<std::list<ObjectGuid>> attackers;
- template<class T>Cached<T>* GetValue(const char*){if constexpr(std::is_same_v<T,EncounterPosition>)return &cached;else return &attackers;}};
+struct Facade{bool IsFriendlyTo(Player*,Unit*){return false;}}sServerFacade;
+template<class T>struct Cached {T value;T Get(){return value;}void Reset(){value=T{};}void Set(T v){value=v;}};
+struct Context {Cached<EncounterPosition> cached;Cached<ObjectGuid>current;Cached<std::list<ObjectGuid>> attackers;
+ template<class T>Cached<T>* GetValue(const char*){if constexpr(std::is_same_v<T,EncounterPosition>)return &cached;else if constexpr(std::is_same_v<T,ObjectGuid>)return &current;else return &attackers;}};
 struct PlayerbotAI {Player* bot=nullptr;Context context;std::list<ObjectGuid> attackers;std::map<unsigned,Unit*> units;
- Aura splash; bool tank=false; bool IsTank(Player*){return tank;} bool IsRealPlayer(){return false;}
+ Aura splash; bool tank=false; bool IsTank(Player*p){return p==bot?tank:p->tankRole;} bool IsRealPlayer(){return false;}
  Aura* GetAura(unsigned id,Player* p){return p->HasAura(id)?&splash:nullptr;}
- bool validPath=true,ranged=false,healer=false,canMove=true;unsigned checked=0,moves=0;bool CanMove(){return canMove;}
+ bool formation=false;bool GetSpellRange(const char*,float*r){*r=40;return true;}bool validPath=true,ranged=false,healer=false,canMove=true;unsigned checked=0,moves=0;bool CanMove(){return canMove;}
  unsigned stops=0;void StopMoving(){++stops;}
  Player* GetBot(){return bot;}Context* GetAiObjectContext(){return &context;}
  bool IsRanged(Player*){return ranged;}bool IsHeal(Player*){return healer;}
@@ -81,12 +87,17 @@ namespace ai {
  struct MoltenCorePositionValue {Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
  bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
  // This fixture isolates the existing boss hazards; trash is checked separately.
- unsigned magmadarReplans=0;bool PlanMagmadarFormation(PlayerbotAI*,Unit*,EncounterPosition& p){++magmadarReplans;p.destination={-41,0,0};return true;}
- bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&) { return false; }Unit*MoltenCorePackTankTarget(PlayerbotAI*){return nullptr;}Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*){return nullptr;}
+ const char* MoltenCoreRangeSpell(PlayerbotAI*,Player*){return "frostbolt";}
+ unsigned magmadarReplans=0;bool PlanMagmadarFormation(PlayerbotAI*,Unit*b,EncounterPosition& p){++magmadarReplans;p.destination={b->x-41,b->y,b->z};p.anchor={b->x,b->y,b->z};p.anchored=true;return true;}
+ struct PossibleAttackTargetsValue{static bool HasBreakableCC(Unit*,Player*){return false;}static bool HasUnBreakableCC(Unit*,Player*){return false;}};
+ bool MoltenCorePackStackRequired(PlayerbotAI*){return false;}std::pair<float,float> FirelordRangedBounds(PlayerbotAI*,Unit*){return {8.0f,43.0f};}
+ unsigned firelordReplans=0;bool PlanFirelordRanged(PlayerbotAI*,EncounterPosition&){++firelordReplans;return false;}
+ bool PlanMoltenCoreTrash(PlayerbotAI*a,EncounterPosition&p) {if(!a->formation)return false;Unit*b=a->GetUnit(1);p.active=true;p.map=a->bot->mapId;p.instance=a->bot->instance;p.spell=19272;p.boss=b->guid;p.destination={b->x-41,b->y,b->z};p.anchor={b->x,b->y,b->z};p.anchored=true;return a->validPath;}Unit*MoltenCorePackTankTarget(PlayerbotAI*){return nullptr;}Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*){return nullptr;}
  Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&){return false;}
  bool PlanMoltenCoreGiants(PlayerbotAI*,EncounterPosition&){return false;}bool MoltenCoreRecoveryTrash(unsigned){return true;}
  bool RagnarosSameCluster(PlayerbotAI*,Player*){return false;}
- bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&){return false;}
+ bool PlanMajordomoFormation(PlayerbotAI*,EncounterPosition&){return false;}
+bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&){return false;}
  struct Event{};
  struct JumpAction {JumpAction(PlayerbotAI*){} void Qualify(const char*){} bool Execute(Event&){return false;}};
  struct MoltenCorePositionAction {PlayerbotAI* ai;Player*bot=ai->bot;static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool Execute(Event&);
@@ -169,6 +180,11 @@ int main(){
  ground.clear();assert(!MoltenCorePositionAction::GetPlan(&ai,resolved)&&!movement.Execute(event));
  assert(!get()); // no stale movement hold after the native area expires
  ground={{{0,0,0},9}};assert(get());ai.canMove=false;assert(!movement.Execute(event));ai.canMove=true;
+ // Ground-fire escape stops holding immediately after reaching real clearance,
+ // while the native area can remain live nearby. Native route admission still
+ // rejects walking back through it.
+ auto escaped=resolved.destination;bot.x=escaped.x;bot.y=escaped.y;
+ assert(!MoltenCorePositionAction::GetPlan(&ai,resolved));assert(!get());bot.x=bot.y=0;
  ai.validPath=false;ai.checked=0;assert(!get()&&ai.checked<=32);ai.validPath=true;ground.clear();
  // A living low-health Firesworn must not kite its own holding tank.
  Unit firesworn;firesworn.entry=12099;firesworn.guid=7;firesworn.map=&map;firesworn.health=25;firesworn.victim=&bot;
@@ -182,6 +198,26 @@ int main(){
  ai.context.cached.value.active=true;ai.context.cached.value.map=409;ai.context.cached.value.instance=1;
  ai.context.cached.value.boss=boss.guid;ai.context.cached.value.spell=19272;ai.context.cached.value.destination={30,0,0};
  assert(MoltenCorePositionAction::GetPlan(&ai,resolved)&&magmadarReplans==1&&resolved.destination.x==-41);
+
+ // Cached max-range station follows a boss relocation once, without per-frame replanning.
+ ai.ranged=true;ai.context.cached.value=resolved;boss.x=4;
+ assert(MoltenCorePositionAction::GetPlan(&ai,resolved)&&magmadarReplans==2&&resolved.destination.x==-37);
+ assert(MoltenCorePositionAction::GetPlan(&ai,resolved)&&magmadarReplans==2);
+ // A wall/ledge fallback can stay closer than maximum without being discarded every frame.
+ ai.context.cached.value.destination.x=boss.x-37;assert(MoltenCorePositionAction::GetPlan(&ai,resolved)&&magmadarReplans==2);
+ // Ground-fire approach band cannot manufacture an idle hold that blocks safe formation.
+ boss.x=0;boss.victim=&other;other.tankRole=true;bot.x=bot.y=0;ai.tank=false;ai.formation=true;
+ ground={{{8,0,0},5}};ai.attackers={1};assert(get()&&resolved.spell==19272&&resolved.destination.x==-41);
+ auto beforeMoves=ai.moves;assert(movement.Execute(event)&&ai.moves==beforeMoves+1);
+ // An actual fire overlap can use the same admitted clear route; native control still wins.
+ ground={{{0,0,0},9}};assert(get()&&resolved.spell==19272&&resolved.destination.x==-41);
+ assert(movement.Execute(event));ai.canMove=false;assert(!movement.Execute(event));ai.canMove=true;
+ boss.entry=12101;assert(get()&&resolved.spell==19272);assert(movement.Execute(event)); // safe mandatory Surger stack also survives nearby fire
+ boss.entry=11982;
+ // A formation endpoint covered by another flame remains rejected in favor of escape.
+ ground.push_back({{-41,0,0},9});assert(get()&&resolved.spell!=19272&&encounter::OutsideCircles(resolved.destination,{{{0,0,0},10},{{-41,0,0},10}}));
+ ai.formation=false;ground={{{8,0,0},5}};bot.x=bot.y=0;
+ assert(!get()); // ordinary safe melee/caster station is not an exclusive fire hold
  std::cout<<"PASS: actual MC bomb lifetime after boss death, friendly carriers, phase/map/role, native radius and bounded paths\n";
 }
 '''.replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__METHODS__',methods)

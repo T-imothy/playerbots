@@ -82,6 +82,7 @@ struct Facade{bool IsFriendlyTo(Unit*,Unit* u){return u&&u->friendly;}bool IsAli
 struct Config{unsigned almostFullHealth=95,lowMana=20,criticalHealth=20,lowHealth=50;}sPlayerbotAIConfig;
 struct SpellEntryPredicate{virtual bool Check(const SpellEntry*)=0;};
 struct PartyMemberValue{PlayerbotAI* ai;Player* bot;bool IsTargetOfSpellCast(Unit*,SpellEntryPredicate&);};
+Unit* burstPatient=nullptr;bool NeedsMoltenCoreBurstHealing(PlayerbotAI*,Unit*u){return u&&u==burstPatient;}
 Unit* raidObjective=nullptr;Unit* FindRaidHealingObjective(PlayerbotAI*){return raidObjective;}
 struct PartyMemberToHeal:PartyMemberValue{ObjectGuid CalculateRaw();Unit* Calculate(){return ai->GetUnit(CalculateRaw());}bool CanHealPet(Pet*);bool Check(Unit*);std::vector<Player*> GetPartyMembers();};
 #define AI_VALUE(type,key) ai->value<type>(key)
@@ -134,6 +135,7 @@ int main(){
  // Low-health cloth wearer outranks a much healthier tank with more missing HP.
  bot.selection=0;a.hp=30;b.maxhp=10000;b.hp=9000;b.tank=true;
  assert(selector.Calculate()==&a); // healer index must stay within the urgent band
+ a.hp=40;burstPatient=&b;assert(selector.Calculate()==&b);a.hp=10;assert(selector.Calculate()==&a);burstPatient=nullptr;
  // An incoming cast is not a guarantee that a critically injured player is safe.
  a.hp=10;healing.m_targets.unit=a.guid;healer.casts[0]=&healing;ai.nearest={healer.guid};
  assert(selector.Calculate()==&a);ai.nearest.clear();b.tank=false;b.maxhp=100;

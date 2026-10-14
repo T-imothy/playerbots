@@ -1,0 +1,73 @@
+MC / AV engagement recovery, 2026-10-13
+
+Findings and changes
+
+1. The hunter's mandatory Core Hound/Surger stack correctly ends with the
+   native pack. A nearby single Firelord lacked an encounter ranged station,
+   however, and raid flee is intentionally disabled. Native shots could stay
+   TOO_CLOSE without a usable positioning action. Hunters and warlocks now
+   plan bounded native-range stations for tank-held Firelords/Lava Spawns.
+   Pack stacking still takes precedence. Admission checks current target,
+   native engagement, same group/instance, CC, native range, terrain, LOS,
+   ground hazards and unpulled-pack routes. This does not re-enable fleeing.
+
+2. Autonomous movement failure readiness used an empty signature. A failed
+   reach could remain throttled after either endpoint moved or native control
+   returned. Live failure entries now compare endpoint positions and movement
+   control. Unchanged failed routes retain bounded retry. Spell resource/GCD
+   checks and explicit-command behavior remain unchanged.
+
+3. Ground fire's approach band could produce an exclusive stationary hold
+   instead of Magmadar formation. Formation execution also rejected nearby
+   fire without checking whether its destination and route were clear.
+   A valid Magmadar station can now take precedence for ground fire, with
+   every native route guard retained. Actual fire overlap interrupts casts;
+   ordinary formation corrections still wait for casts/channels to finish.
+   Bombs and other encounter hazards retain their separate escape policy.
+
+4. A cached Magmadar station could outlive boss relocation. Plans now retain
+   the boss position used to admit them and refresh after displacement, a
+   facing change, lost LOS or invalid spell reach. Accepted refreshed plans
+   are cached, so a stationary boss does not force repeated path searches.
+   Blocked maximum-range lanes can use nearer legal lanes, with a total
+   bound of 32 native path checks and five-yard minimum ranged spacing.
+   Native three-dimensional range and LOS are checked after height adjustment.
+   Hunters remain a ranged role here even after the preceding melee stack.
+   The holding tank's existing stable facing/fire relocation remains active.
+
+5. Fear aura removal can precede native control recovery. The one-shot wake
+   now waits for CanReactInCombat rather than losing the recovery signal in
+   that interval. No fear aura, immunity, cooldown or native control is changed.
+
+6. Battleground attackers omit normal group aggregation. An unmarked AV NPC
+   fighting a nearby teammate was therefore absent unless it also fought the
+   bot. AV now admits an enemy NPC already engaged with the same active native
+   BG raid. BG identity/team, world/instance/phase, distance, CC and native
+   attackability remain authoritative. Selection alone cannot pull an NPC.
+   Skull precedence remains; unmarked focus mode only falls back to these
+   engaged AV NPCs. Enemy-player PvP policy and other BGs remain unchanged.
+
+Verification
+
+movement_failure_readiness_regression.py executes the actual retry methods.
+alterac_engagement_regression.py executes actual attacker admission/discovery.
+molten_core_support_regression.py exercises native-shaped Firelord stations,
+pack transitions, tank relocation, blocked paths and maximum-range fallback.
+molten_core_position_regression.py exercises actual Calculate/GetPlan/Execute
+with nearby/overlapping fire, boss movement, cached fallback and native control.
+mc_rotation_recovery_regression.py exercises actual cast/escape/fear recovery.
+Each runs under Classic, TBC and Wrath defines. Old reviewed bodies deliberately
+fail the movement, unmarked AV, fire-hold and native-control recovery cases.
+
+These are controlled-interface regression tests, not a live 40-bot encounter.
+The existing bounded live logs confirmed hunter TOO_CLOSE failures and ranged
+reach failures, but did not attribute every warlock decision to an individual.
+The AV clip was decoded locally (176x144, about 10 seconds); unreadable names
+or spell bars were not used as evidence. Source findings are distinct from a
+claim that every observed live failure has been independently reproduced.
+
+Release
+
+No SQL, character identity, raid lockout, summon policy, ownership, GM commands,
+PBRECRUIT v1 wire contract or addon change. Build/publish/deploy receipts live
+outside this repo and must be verified separately before declaring restart ready.

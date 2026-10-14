@@ -76,7 +76,7 @@ bool CastHealingSpellAction::isUseful()
     // prevent a needed direct heal; pure HoTs still avoid redundant refreshes.
     const SpellEntry* spell = sServerFacade.LookupSpellInfo(GetSpellID());
     // Stack/expiry-aware actions such as Lifebloom select their own refreshes.
-    if (allowAuraRefresh || (target && target->GetHealthPercent() < sPlayerbotAIConfig.lowHealth &&
+    if (allowAuraRefresh || (target && (target->GetHealthPercent() < sPlayerbotAIConfig.lowHealth || NeedsMoltenCoreBurstHealing(ai, target)) &&
         spell && IsSpellHaveEffect(spell, SPELL_EFFECT_HEAL)))
         return CastSpellAction::isUseful();
     return CastAuraSpellAction::isUseful();

@@ -29,7 +29,9 @@ bool IsSpellHaveEffect(const SpellEntry*s,unsigned){return s->heal;}bool IsChann
 struct Facade{SpellEntry spell;const SpellEntry*LookupSpellInfo(unsigned){return &spell;}}sServerFacade;
 struct {float lowHealth=50;}sPlayerbotAIConfig;
 struct Event{};
-struct CastSpellAction{Player*bot;Unit*target;unsigned casts=0;void RefreshSpellId(){}unsigned GetSpellID()const{return spellId;}Unit*GetTarget(){return target;}bool isUseful(){return true;}bool Execute(Event&){++casts;return true;}private:unsigned spellId=1;};
+struct PlayerbotAI{};
+namespace ai{bool NeedsMoltenCoreBurstHealing(PlayerbotAI*,Unit*){return false;}}
+struct CastSpellAction{PlayerbotAI*ai=nullptr;Player*bot;Unit*target;unsigned casts=0;void RefreshSpellId(){}unsigned GetSpellID()const{return spellId;}Unit*GetTarget(){return target;}bool isUseful(){return true;}bool Execute(Event&){++casts;return true;}private:unsigned spellId=1;};
 struct CastAuraSpellAction:CastSpellAction{};
 namespace ai{
  bool NeedsRaidObjectiveHealing(Unit*);

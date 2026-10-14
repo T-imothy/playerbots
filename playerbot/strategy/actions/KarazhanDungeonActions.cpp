@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "Movement/MoveSpline.h"
 #include "KarazhanDungeonActions.h"
 #include "playerbot/strategy/Action.h"
 #include "playerbot/strategy/values/PossibleTargetsValue.h"
@@ -121,8 +122,7 @@ bool AranFlameWreathHoldAction::IsHolding(PlayerbotAI* ai)
 
 bool AranFlameWreathHoldAction::isUseful()
 {
-    return IsHolding(ai) && (!bot->IsStopped() ||
-        bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+    return IsHolding(ai) && bot->movespline && !bot->movespline->Finalized();
 }
 
 bool AranFlameWreathHoldAction::Execute(Event& event)
@@ -155,8 +155,7 @@ bool NetherspitePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan
 bool NetherspitePositionAction::isUseful()
 {
     EncounterPosition plan;
-    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.0f ||
-        !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+    return GetPlan(ai, plan) && EncounterMovementRequired(bot, plan.destination, 1.0f);
 }
 
 bool NetherspitePositionAction::ShouldReactionInterruptCast() const

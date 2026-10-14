@@ -22,8 +22,7 @@ bool LinkedBurstAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 bool LinkedBurstAction::isUseful()
 {
     EncounterPosition plan;
-    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1 ||
-        !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+    return GetPlan(ai, plan) && EncounterMovementRequired(bot, plan.destination, 1.0f);
 }
 
 bool LinkedBurstAction::ShouldReactionInterruptCast() const

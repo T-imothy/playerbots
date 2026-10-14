@@ -1,0 +1,184 @@
+Raid and dungeon engagement audit, October 13, 2026
+
+Scope
+
+The shared Engine retry correction applies on every map in Classic, TBC and
+Wrath: a failed autonomous MovementAction is retried when its bot/target
+coordinates or native movement permission change. Unchanged failures remain
+bounded. Explicit player commands still bypass autonomous failure throttling.
+Native resource, proc, stance, GCD, cooldown and casting rules remain intact.
+
+All existing encounter position actions were checked for the same arrival
+starvation pattern. They used movement flags or a retained generator as proof
+that travel remained unfinished. Those tests could repeatedly select a stop
+reaction at an already reached station. EncounterMovementRequired now tests
+distance and the live unfinished spline's endpoint. The positional hold still
+exists in its multiplier; a completed arrival no longer consumes combat frames.
+
+Updated actions and mechanics
+
+MoltenCorePositionAction: MC trash/boss formations, native ground fire, bombs.
+BlackwingLairPositionAction: Broodlord clearance and Burning Adrenaline.
+NaxxramasPositionAction: Mutating Injection, Detonate Mana and polarity.
+OnyxiaPositionAction: Deep Breath, targeted air-phase spread and safe flank.
+NetherspitePositionAction: assigned native portal beams and relief.
+GruulSpreadAction: native Shatter/related expansion-gated spread phases.
+BossCastPositionAction: registered native cast/aura escape mechanics in raids
+  and dungeons (AQ, Naxx, Karazhan, Blood Furnace, Tempest Keep, Arcatraz,
+  Botanica, Shadow Labyrinth, and Wrath registered encounters).
+BossCoverAction: Firemaw/Chromaggus, Sapphiron, Ikiss and Garfrost/ice cover.
+MechanarPositionAction: native charges, Raging Flames, polarity and silence.
+SolarianPositionAction: Wrath of the Astromancer burst separation.
+RotatingBeamAction: C'Thun, The Lurker Below and Devourer of Souls.
+HeiganDanceAction: native controller waves and cloud clearance.
+LinkedBurstAction: Vazruden, Murmur and Mother Shahraz burst/link rules.
+AkilzonStormAction: actual Electrical Storm eye.
+HakkarPoisonAction: acquiring native poison from the engaged Son/cloud.
+OssirianCrystalAction: native tank position and assigned crystal use; a needed
+  crystal interaction remains eligible after arrival.
+
+Aran's separate Flame Wreath stop action now checks the unfinished native
+spline. Its movement multiplier and native wreath aura are still authoritative.
+Naj'entus spine rescue, Magtheridon cube channels and Vashj core relay were also
+reviewed: unlike pure arrival actions, they perform an item/object interaction
+or delivery/channel task. Their task eligibility and native channel rules were
+retained, rather than releasing a required mechanic merely after arrival.
+
+Position multipliers were reviewed for stationary damage/healing admission,
+escape exceptions and live mechanic expiry. Required cover, bursts, waves,
+beams, cube participation and Flame Wreath holds must remain active during the
+native mechanic. This is not a global removal of encounter safety movement.
+Default Attack/pull, party combat wakeup, CC ownership, friendly healing reach,
+safe native paths and reset/transfer guards are included in the regression run.
+
+Additional MC corrections
+
+Safe ground-fire escape releases its movement hold as soon as the bot is clear,
+including before the normal cached-value refresh. Native hazard route admission
+still blocks re-entry/crossing. A validated useful formation may take an actor
+directly out of a ground-only hazard; bombs, pulses and death bursts keep their
+independent holds. Required pack stacks are preserved when ground fire overlaps.
+
+A non-tank's ordinary rear station follows its actual hostile current target;
+it cannot hold melee at a different trash mob during a multiboss pull. Existing
+mandatory pack/carrier/banish rules keep precedence. Current tank ownership and
+loose-mob pickup still outrank a cached gathering station.
+
+Magmadar's accepted formation tracks boss relocation, facing, final native 3D
+spell range and spell LOS. Hunters remain ranged outside required stack packs.
+Bounded shorter-range alternatives allow walls/ledges without per-frame
+replanning of an accepted fallback. Actual ground-fire overlap can interrupt a
+cast to escape; routine formation correction preserves a valid cast/channel.
+Fear recovery waits for native combat control to return before consuming its
+one-shot wakeup. No fear aura, stun, native spell immunity or cooldown is bypassed.
+
+Firelord/Lava Spawn hunter/warlock stations use native learned spell ranges,
+range talents/reach, LOS, full native path/hazard/unpulled-pack validation and
+a bounded candidate search. They do not persist into a required hound/Surger
+stack or depend on the leader beginning DPS.
+
+Warrior role audit
+
+The reported Tadryn screenshot shows Shield Slam/Revenge and substantial
+incoming damage: it demonstrates a tank rotation, not a Fury rotation test.
+Native roles use configured tank strategies/talent tab, not merely knowledge
+of talent spells (bots can know abilities from more than one tab). Fury/Arms
+schedulers, melee reach, native stance/proc/resource guards, Whirlwind/cleave,
+shout refresh, and the other classes' cast/channel paths are covered by the
+existing class/warrior and shared timing regressions. The movement/hold fixes
+restore scheduling opportunity; no damage multiplier or artificial rage is added.
+
+Debuffs
+
+Classic bot DebuffTrigger used an arbitrary 16-aura cutoff; TBC used 40; Wrath
+already returned no cutoff. All now defer to native spell application/stacking.
+The server aura-holder maps and modifier application are independent of visible
+client slots in all three cores. Native field sizes and aura slot serializers
+were not enlarged. Old clients can display fewer effects than are active.
+Existing aura/rank/caster ownership, immunity and native spell checks are retained.
+
+Verification and limits
+
+Firewalker healing and mixed trash
+
+The actual living, hostile Firewalker victim identifies the threatened group
+tank. Injured Firewalker tanks receive the existing class fast-heal actions;
+critically injured allies retain the first urgency band. Regrowth/Riptide direct
+healing is not blocked by an existing HoT, and valid tank heals are not clipped
+at the ordinary almost-full-health threshold. Full health and native spell
+admission remain authoritative. No damage, health or mana values are fabricated.
+
+Lava Annihilator joins Lava Elemental/Reaver only in the existing engaged mixed
+trash Banish coordinator. The release ledger and one-at-a-time cleanup remain.
+Unaccompanied Annihilator/Surger pulls do not receive perpetual Banish. Without
+a priority skull, Firewalkers precede Flameguards. Both fire mobs retain native
+Banish immunity. Garr's allocation, tank lanes and post-boss releases are unchanged.
+
+Majordomo and Ragnaros
+
+Majordomo mages retain native Polymorph ownership, including human-owned sheep,
+and use an already legal casting station before requesting movement. The sheep
+support action precedes optional dispels/buffs. Completed/immune assignments
+release their old positioning hold immediately. Native four-add-death Polymorph
+immunity is retained; it cannot be bypassed to promise indefinite sheep control
+after all four elites die. Only bot mages are automated; a human mage is not made
+to cast or move. Elite focus and one-at-a-time healer focus remain coordinated.
+
+After a real knockback/jump landing, bots defer until native combat control
+returns, then wake once, clearing MC position caches without cancelling a new
+cast or altering spell/GCD cooldowns. This wake applies to every map/expansion.
+Spare Ragnaros tanks now use the rear melee attack station, rather than remaining
+permanently outside attack range. A live Wrath cast still temporarily overrides
+that station. The bounded recovery search admits additional rear dry-ground
+stations through native endpoint/path/trajectory safety; it does not walk across
+an unvalidated route or teleport. Sons/submerge formations remain separate.
+
+Long-duration group buffs
+
+Fortitude/Prayer, Spirit/Prayer, Shadow Protection/Prayer, Intellect/Brilliance
+and Mark/Gift are checked as equivalent families at target selection and again
+before the automatic mutation. Any still-active equivalent aura prevents rebuff.
+Available strongest native providers divide raid subgroups; dead, transferring,
+disabled, out-of-map/range or resource-blocked providers drop out. Native pending
+player/bot casts are respected. Group variants require at least three eligible
+missing players in their expansion's native scope, otherwise single buffs fill
+the gaps. Shields, HoTs, totems, cooldowns and native paladin blessing ownership
+retain their own policies. Native mana/reagents/range/LOS/GCD are never bypassed.
+
+Geddon patrol startup
+
+The earlier absence occurred before his later kill and is not explained away
+by that later DONE save. All three databases contain a native 17-point template
+route, but the spawn lacked active-object status. Instance entry now loads only
+the bounded existing waypoint route and activates the living native boss; death
+deactivates it. Completed saves/respawns, path coordinates, combat AI and loot
+remain native and unchanged. There is no kill-trash spawn threshold or SQL edit.
+
+AzerothCore comparison
+
+Pinned mod-playerbots source: 79bd428115c8f33b74b13de23b133d49c3f75c60.
+The complete module inventory is recorded in AZEROTHCORE-PORT-INVENTORY.txt.
+Its current Magmadar handler has resistance support and an anti-fear TODO;
+Majordomo has resistance support without dedicated sheep assignments. Their
+group-buff family/three-missing-player concept is adapted with our native APIs.
+A full port of every remaining upstream raid, dungeon and battleground handler
+is not complete and must not be represented as part of these verified fixes.
+Working Garr/Geddon combat is preserved as requested.
+
+encounter_arrival_regression compiles actual arrival bodies for all 16 actions
+under all three era defines: retained flags/generators, facing-only splines,
+travel beyond station, real correction, inactive plan, and Loken cast protection.
+The old reviewed bodies fail the retained-generator arrival assertion.
+debuff_admission_regression executes actual bot trigger bodies above 16/40/64,
+including existing aura, dead/null target guards; it additionally checks native
+aura-holder storage/application contracts without changing client field sizes.
+The old Classic admission body fails above its cutoff.
+MC, class, pull, recruitment/summon, encounter movement and native destination
+regressions are rerun, then each complete native target is compiled and tested.
+
+These are source audits and controlled native-interface regressions. They do
+not demonstrate a live clear of every boss or add missing custom strategies for
+every raid. The universal retry path is map-independent; the listed encounter
+handlers retain their native expansion/map gates. No new realm or lockout reset
+is required for these checks. Deployment and restart status must be reported
+separately from source/tests and from staged binaries.

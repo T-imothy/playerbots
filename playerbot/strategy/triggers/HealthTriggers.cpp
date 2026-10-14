@@ -50,6 +50,9 @@ bool HealthInRangeTrigger::IsActive()
             NeedsRaidObjectiveHealing(GetTarget())))
         healthCheck = true;
 
+    // Use each healing class's learned fast/emergency party actions while a
+    // Firewalker tank is injured; do not falsify its health or restart casts.
+    if (getName() == "party member critical health" && NeedsMoltenCoreBurstHealing(ai, GetTarget())) healthCheck = true;
     return healthCheck
         && !AI_VALUE2(bool, "dead", GetTargetName())
         && (!isTankRequired || (GetTarget()->IsPlayer() && ai->IsTank((Player*)GetTarget(), false)));
@@ -84,6 +87,7 @@ bool HealTargetFullHealthTrigger::IsActive()
                 if (RemainingHealingAbsorb(pTarget)) return false;
                 bool hpFull = pTarget->GetHealth() == pTarget->GetMaxHealth();
                 if (!hpFull && !NeedsFullHealingToRemoveAura(pTarget) && !NeedsRaidObjectiveHealing(pTarget) &&
+                    !NeedsMoltenCoreBurstHealing(ai, pTarget) &&
                     (pTarget->GetHealthPercent() > 90.f))
                 {
                     uint32 healValue = currentSpell->GetDamage();

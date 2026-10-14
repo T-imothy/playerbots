@@ -1,5 +1,6 @@
 """Actual Solarian burst/target/action policy in Classic, TBC and Wrath modes."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess
 import tempfile
 from behavior_regression import block
@@ -59,8 +60,8 @@ struct PlayerbotAI{Player* bot;Context context;std::map<unsigned,Unit*> units;bo
  Player* GetBot(){return bot;}Context* GetAiObjectContext(){return &context;}bool CanMove(){return canMove;}
  bool IsTank(Player*){return tank;}bool IsHeal(Player*){return healer;}
  Unit* GetUnit(ObjectGuid guid){auto i=units.find(guid);return i==units.end()?nullptr:i->second;}
- void StopMoving(){++stops;bot->stopped=true;bot->motion.kind=0;}
- template<class T>T Data(std::string key){if constexpr(std::is_same_v<T,ObjectGuid>)return commanded;
+ void StopMoving(){bot->movespline->done=true;++stops;bot->stopped=true;bot->motion.kind=0;}
+ template<class T>T Data(std::string key){if constexpr(std::is_same_v<T,ObjectGuid>)return key=="current target"?(current?current->guid:0):(key=="rti target"?(marked?marked->guid:0):commanded);
  else if constexpr(std::is_same_v<T,Unit*>)return key=="rti target"?marked:current;else return possible;}};
 struct Config{float sightDistance=60;}sPlayerbotAIConfig;
 struct PossibleTargetsValue{static bool IsValid(Unit* u,Player*,bool){return u->attackable;}};
@@ -119,6 +120,7 @@ int main(){
  radius=0;assert(!get());radius=100;assert(!get());radius=std::nanf("");assert(!get());radius=10;
  sServerFacade.present=false;assert(!get());sServerFacade.present=true;sServerFacade.aura.base[1]=42783;assert(!get());sServerFacade.aura.base[1]=42786;
  assert(get());bot.x=plan.destination.x;bot.y=plan.destination.y;bot.stopped=false;bot.motion.kind=1;
+ bot.movespline->done=false;bot.movespline->end={bot.x+10,bot.y,bot.z};
  assert(action.isUseful()&&!action.ShouldReactionInterruptCast()&&action.Execute(event)&&ai.stops==1);
  assert(!action.isUseful());bot.x=bot.y=0;assert(get());
  ai.context.position.value.destination.x=std::nanf("");assert(!SolarianPositionAction::GetPlan(&ai,plan));assert(get());
@@ -148,7 +150,7 @@ int main(){
 '''.replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__METHODS__',methods)
 for era in ('ZERO','ONE','TWO'):
     with tempfile.TemporaryDirectory(prefix='mantech-solarian-policy-') as folder:
-        tmp=Path(folder);(tmp/'test.cpp').write_text(code)
+        tmp=Path(folder);(tmp/'test.cpp').write_text(arrival_fixture(code))
         subprocess.run(['cl','/nologo','/std:c++17','/EHsc',f'/DMANGOSBOT_{era}','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 strategy=(root/'playerbot/strategy/generic/DungeonStrategy.cpp').read_text()
@@ -156,7 +158,7 @@ for state in ('Combat','NonCombat','Reaction'):
     assert 'solarian burst position' in block(strategy,f'void DungeonStrategy::Init{state}Triggers(')
     assert 'PreserveSolarianPositionMultiplier' in block(strategy,f'void DungeonStrategy::Init{state}Multipliers(')
 for era in ('tbc','wotlk'):
-    core=root.parent/f'mangos-{era}-behavior/src/game'
+    core=root.parent/era/'src/game'
     native=(core/'AI/ScriptDevAI/scripts/outland/tempest_keep/the_eye/boss_astromancer.cpp').read_text()
     assert 'CalculateSimpleValue(SpellEffectIndex(aura->GetEffIndex() + 1))' in block(native,'struct WrathOfTheAstromancer')
     assert 'AURA_REMOVE_BY_EXPIRE' in block(native,'struct WrathOfTheAstromancer')

@@ -27,8 +27,8 @@ __METHODS__
 int main(){using namespace ai;Player bot;PlayerbotAI a{&bot};Unit walker,guard,elemental;
 walker.guid=10;walker.entry=11666;guard.guid=20;guard.entry=11667;elemental.guid=1;elemental.entry=11659;elemental.health=1;
 a.units={{10,&walker},{20,&guard},{1,&elemental}};a.context.possible.value={1,20,10};
-assert(MoltenCoreNukeTarget(&a)==&walker);guard.health=50;assert(MoltenCoreNukeTarget(&a)==&guard);
-a.context.marked.value=1;assert(MoltenCoreNukeTarget(&a)==&guard);a.context.marked.value=10;assert(MoltenCoreNukeTarget(&a)==&walker);
+assert(MoltenCoreNukeTarget(&a)==&walker);guard.health=50;assert(MoltenCoreNukeTarget(&a)==&walker);
+a.context.marked.value=1;assert(MoltenCoreNukeTarget(&a)==&walker);a.context.marked.value=20;assert(MoltenCoreNukeTarget(&a)==&guard);a.context.marked.value=10;assert(MoltenCoreNukeTarget(&a)==&walker);
 assert(!MoltenCoreTrashSpellAllowed(&a,"blizzard")&&!MoltenCoreTrashSpellAllowed(&a,"seed of corruption")&&!MoltenCoreTrashSpellAllowed(&a,"whirlwind"));
 assert(MoltenCoreTrashSpellAllowed(&a,"cleave")&&MoltenCoreTrashSpellAllowed(&a,"blade flurry")&&MoltenCoreTrashSpellAllowed(&a,"shadow bolt"));
 bot.tank=true;assert(MoltenCoreTrashSpellAllowed(&a,"thunder clap"));bot.tank=false;

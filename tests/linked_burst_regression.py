@@ -1,5 +1,6 @@
 """Actual debuff ownership, spread geometry, dispatch and movement arbitration."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess, tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -64,7 +65,7 @@ int main(){
  assert(action.Execute(event)&&ai.moves==1);
  PreserveLinkedBurstMultiplier multiplier{&ai};MovementAction chase;AttackAction attack;MoveAwayFromHazard hazard;BossCastPositionAction boom;CastSpellAction heal,blink;blink.moving=true;
  assert(multiplier.GetValue(&chase)==0&&multiplier.GetValue(&blink)==0&&multiplier.GetValue(&heal)==1&&multiplier.GetValue(&attack)==1&&multiplier.GetValue(&hazard)==1&&multiplier.GetValue(&boom)==1);
- bot.x=p.destination.x;bot.y=p.destination.y;calculate();assert(action.isUseful()&&!action.ShouldReactionInterruptCast());assert(action.Execute(event)&&ai.stops==1&&!action.isUseful());
+ bot.x=p.destination.x;bot.y=p.destination.y;calculate();bot.movespline->done=false;bot.movespline->end={bot.x+10,bot.y,bot.z};assert(action.isUseful()&&!action.ShouldReactionInterruptCast());assert(action.Execute(event)&&ai.stops==1&&!action.isUseful());
  member.x=bot.x;member.y=bot.y;assert(!action.Execute(event)); // stale destination now occupied
  bot.x=bot.y=member.x=member.y=0;assert(calculate().active);bot.auras.clear();assert(!action.Execute(event));
  threats.clear();current={};assert(LinkedBurstThreats(&ai,current,threats)&&threats[0].radius==17); // unlinked player avoids splash only
@@ -90,6 +91,6 @@ int main(){
 '''.replace('__GEOMETRY__',str(root/'playerbot/strategy/EncounterGeometry.h').replace('\\','/')).replace('__METHODS__',methods)
 for era in ('ZERO','ONE','TWO'):
     with tempfile.TemporaryDirectory(prefix='mantech-linked-') as directory:
-        tmp=Path(directory);(tmp/'test.cpp').write_text(code)
+        tmp=Path(directory);(tmp/'test.cpp').write_text(arrival_fixture(code))
         subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)

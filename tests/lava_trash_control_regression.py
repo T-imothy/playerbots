@@ -6,9 +6,9 @@ tree=ast.parse((R/'tests/molten_core_support_regression.py').read_text())
 node=next(n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='code' for t in n.targets))
 while isinstance(node,ast.Call):node=node.func.value
 code=ast.literal_eval(node);code=code[:code.index('__METHODS__')]
-code=code.replace('struct ObjectGuid{unsigned id=0;','struct ObjectGuid{unsigned GetCounter()const{return id;}bool IsEmpty()const{return !id;}unsigned id=0;')
-code=code.replace('struct SpellEntry{unsigned Id=19775;};', '''enum{SPELL_EFFECT_WEAPON_DAMAGE=1,SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL,SPELL_EFFECT_NORMALIZED_WEAPON_DMG,SPELL_EFFECT_WEAPON_PERCENT_DAMAGE,TYPEID_UNIT=1,TYPEID_PLAYER=2};
-struct SpellEntry{unsigned Id=19775;unsigned Effect[3]={};bool damage=false;};
+code=code.replace('struct ObjectGuid{unsigned id=0;','struct ObjectGuid{unsigned GetCounter()const{return id;}unsigned id=0;')
+code=code.replace('struct SpellEntry{unsigned Id=19775,Mechanic=MECHANIC_POLYMORPH;};', '''enum{SPELL_EFFECT_WEAPON_DAMAGE=1,SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL,SPELL_EFFECT_NORMALIZED_WEAPON_DMG,SPELL_EFFECT_WEAPON_PERCENT_DAMAGE,TYPEID_UNIT=1,TYPEID_PLAYER=2};
+struct SpellEntry{unsigned Id=19775,Mechanic=MECHANIC_POLYMORPH;unsigned Effect[3]={};bool damage=false;};
 struct SpellAuraHolder{ObjectGuid caster;ObjectGuid GetCasterGuid(){return caster;}};
 struct Reference{ObjectGuid guid;ObjectGuid getUnitGuid()const{return guid;}};
 struct ThreatManager{std::list<Reference*>refs;const std::list<Reference*>&getThreatList(){return refs;}};''')
@@ -23,7 +23,8 @@ code=code.replace('struct Context{', '''#include "playerbot/strategy/LavaTrashCo
 namespace ai{struct LavaTrashControl{LavaTrashAllocation allocation;unsigned groupId=0,map=0,instance=0,observedAt=0;std::vector<ObjectGuid>observedElementals,observedPriorities;};}
 struct Context{Cached<ai::LavaTrashControl>lava;''')
 code=code.replace('if constexpr(std::is_same_v<T,ai::GeddonControl>)','if constexpr(std::is_same_v<T,ai::LavaTrashControl>)return &lava;else if constexpr(std::is_same_v<T,ai::GeddonControl>)')
-code=code.replace('bool IsRealPlayer(){return real;}','bool IsRealPlayer(){return real;}bool owned=true;bool HasRealPlayerMaster(){return owned;}')
+if 'HasRealPlayerMaster()' not in code:
+ code=code.replace('bool IsRealPlayer(){return real;}','bool IsRealPlayer(){return real;}bool owned=true;bool HasRealPlayerMaster(){return owned;}')
 stubs='Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool LavaTrashReservedTarget(PlayerbotAI*,Unit*){return false;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&){return false;}bool PlanLavaTrashBanish(PlayerbotAI*,EncounterPosition&){return false;}'
 assert stubs in code;code=code.replace(stubs,'')
 from behavior_regression import block
@@ -76,7 +77,7 @@ int main(){
  unpulled.guid=300;unpulled.entry=12076;unpulled.combat=false;unpulled.x=35;
  Player stranger;stranger.guid=999;otherRaid.guid=301;otherRaid.entry=12076;otherRaid.victim=&stranger;
  units={&tank,&dps,&unpulled,&otherRaid};for(auto&caster:casters)units.push_back(&caster);for(auto&target:elemental)units.push_back(&target);for(auto&target:danger)units.push_back(&target);
- assert(LavaTrashBanishTarget(locks[0])==&elemental[0]);assert(LavaTrashBanishTarget(locks[1])==&elemental[1]);assert(!LavaTrashBanishTarget(locks[2])&&!LavaTrashBanishTarget(locks[3]));
+ elemental[0].entry=11665;assert(LavaTrashBanishTarget(locks[0])==&elemental[0]);assert(LavaTrashBanishTarget(locks[1])==&elemental[1]);assert(!LavaTrashBanishTarget(locks[2])&&!LavaTrashBanishTarget(locks[3]));
  garrActive=true;assert(!LavaTrashBanishTarget(locks[0])&&!LavaTrashFocusTarget(&damageAI));garrActive=false;
  assert(LavaTrashReservedTarget(&tankAI,&elemental[0])&&LavaTrashReservedTarget(&tankAI,&elemental[1])&&!LavaTrashReservedTarget(&tankAI,&unpulled));
  damageAI.context.attack.value=elemental[1].guid;locks[1]->context.attack.value=elemental[1].guid;

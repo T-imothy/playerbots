@@ -15,8 +15,12 @@ namespace ai
         uint32 map = 0, instance = 0, spell = 0;
         ObjectGuid boss, source;
         encounter::Point destination;
+        encounter::Point anchor;
+        bool anchored = false;
+        bool groundOnly = false;
     };
 
+    bool EncounterMovementRequired(Player* bot, const encounter::Point& destination, float tolerance = 1.5f);
     bool PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan);
     bool MoltenCoreImpPack(PlayerbotAI* ai);
     bool StopMoltenCoreUnsafeTravel(PlayerbotAI* ai);

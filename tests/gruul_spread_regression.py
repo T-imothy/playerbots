@@ -3,6 +3,7 @@
 This checks policy and lifecycle, not a live encounter or pathfinding result.
 """
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess
 import tempfile
 from behavior_regression import block
@@ -100,7 +101,7 @@ int main(){
  assert(get());ai.unsafeHeight=true;assert(action.Execute(event)&&ai.moves==1&&ai.stops==1);ai.unsafeHeight=false;ai.stops=0;
  // Already separated: stop an old chase, without interrupting a stationary heal.
  bot.x=50;assert(get());bot.stopped=false;bot.motion.type=1;
- assert(action.isUseful()&&!action.ShouldReactionInterruptCast()&&action.Execute(event)&&ai.stops==1);
+ bot.movespline->done=false;bot.movespline->end={bot.x+10,bot.y,bot.z};assert(action.isUseful()&&!action.ShouldReactionInterruptCast()&&action.Execute(event)&&ai.stops==1);
  assert(!action.isUseful());bot.x=0;
  assert(get());bot.auras.clear();assert(!GruulSpreadAction::GetPlan(&ai,plan)&&!get());
  ally.auras={33652};assert(get()); // unaffected neighbors still avoid a native burst carrier
@@ -154,11 +155,11 @@ int main(){
 '''.replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__METHODS__',methods)
 for era in ('ZERO','ONE','TWO'):
     with tempfile.TemporaryDirectory(prefix='mantech-gruul-') as folder:
-        tmp=Path(folder);(tmp/'test.cpp').write_text(code)
+        tmp=Path(folder);(tmp/'test.cpp').write_text(arrival_fixture(code))
         subprocess.run(['cl','/nologo','/std:c++17','/EHsc',f'/DMANGOSBOT_{era}','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 for realm in ('tbc','wotlk'):
-    core=root.parent/f'mangos-{realm}-behavior'
+    core=root.parent/realm
     native=(core/'src/game/Spells/SpellEffects.cpp').read_text()
     assert 'case 33671:' in native and 'DIST_CALC_COMBAT_REACH' in native[native.index('case 33671:'):][:650]
     shatter=native[native.index('case 33654:'):][:650]

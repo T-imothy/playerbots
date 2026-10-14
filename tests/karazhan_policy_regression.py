@@ -1,5 +1,6 @@
 """Compile actual Karazhan movement policies; fixtures do not simulate a raid clear."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess
 import tempfile
 from behavior_regression import block
@@ -102,7 +103,7 @@ int main(){
 #endif
  // Execute stops a current chase, not stationary healing/casting or the aura.
  ai.context.hold.value=true;AranFlameWreathHoldAction hold;hold.bot=&bot;hold.ai=&ai;
- assert(!hold.isUseful());bot.motion.kind=1;assert(hold.isUseful());Event event;
+ assert(!hold.isUseful());bot.motion.kind=1;assert(!hold.isUseful());bot.movespline->done=false;assert(hold.isUseful());Event event;
  assert(hold.Execute(event) && ai.stopped==1 && !hold.isUseful());
  bot.mapId=0;assert(!hold.Execute(event) && ai.stopped==1);bot.mapId=532;
  PreserveAranFlameWreathMultiplier multiplier{&ai};MovementAction move;AttackAction attack;Action heal;
@@ -133,7 +134,7 @@ int main(){
 for expansion in ("ZERO", "ONE", "TWO"):
     with tempfile.TemporaryDirectory(prefix="mantech-karazhan-policy-") as tmp:
         tmp = Path(tmp)
-        (tmp / "test.cpp").write_text(code)
+        (tmp / "test.cpp").write_text(arrival_fixture(code))
         subprocess.run(["cl", "/nologo", "/EHsc", "/std:c++17", f"/DMANGOSBOT_{expansion}",
                         "test.cpp", "/Fe:test.exe"], cwd=tmp, check=True)
         subprocess.run([str(tmp / "test.exe")], check=True)

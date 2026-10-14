@@ -143,11 +143,15 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
     const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
     std::list<HazardPosition> ground;
     AppendMoltenCoreGroundHazards(ai, ground);
+    plan.groundOnly=!ground.empty();
     for (const auto& hazard : ground)
         threats.push_back({{hazard.first.getX(), hazard.first.getY(), hazard.first.getZ()}, hazard.second + 1.0f});
     const auto add = [&](Unit* center, float radius) {
         if (radius > 0 && radius <= 45 && std::fabs(center->GetPositionZ() - here.z) < 8)
+        {
             threats.push_back({{center->GetPositionX(), center->GetPositionY(), center->GetPositionZ()}, radius + 2});
+            plan.groundOnly=false; // A bomb, pulse or boss burst retains its separate hold.
+        }
     };
     if (boss && boss->GetEntry() == 12056)
     {
@@ -237,6 +241,22 @@ EncounterPosition MoltenCorePositionValue::Calculate()
         return plan;
     }
     const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+    if (plan.groundOnly && !plan.spell && plan.source.IsEmpty())
+    {
+        // Nearby ground fire must not turn a safe actor's current spot into
+        // an exclusive hold that prevents recovering its useful formation.
+        // A complete safe route can also take an actor directly out of fire
+        // to its useful station; otherwise retain the native escape search.
+        EncounterPosition formation;
+        if (PlanMoltenCoreTrash(ai,formation) && encounter::OutsideCircles(formation.destination,threats)) return formation;
+    }
+    if (plan.groundOnly && encounter::OutsideCircles(here,threats))
+    {
+        // Live ground hazards already guard every native movement route.
+        // Do not strand melee outside attack range in an eight-yard approach
+        // band after they have escaped the actual fire.
+        plan.active=false;return plan;
+    }
     if (bot->HasAura(20475) && std::hypot(here.x-690.709167f,here.y+766.988770f) < 100)
     {
         plan.active = true; plan.destination = {690.709167f,-766.988770f,-209.290512f};

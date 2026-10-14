@@ -388,6 +388,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
     PrepareForUrgentAttack(); // Explicit authorized orders outrank food/drink duration.
     PrepareForUrgentCombat(); // A pack aggro carrier must not wait behind a channel.
     PrepareForMoltenCoreFearRecovery();
+    PrepareForForcedMovementRecovery();
     PrepareForPartyCombat(); // Natural human/party pulls also outrank idle/rest duration.
     PrepareForRaidRegroup(); // Do not retain the last fight's action wait while the raid is idle.
     PrepareCompletedMovement();
@@ -620,6 +621,8 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
             ResetJumpDestination();
 
             bot->InterruptMoving();
+            forcedMovementRecoveryPending = true;
+            PrepareForForcedMovementRecovery();
         }
         // falling after hitting something
         else
@@ -1503,6 +1506,7 @@ void PlayerbotAI::PrepareForMoltenCoreFearRecovery()
         bot->GetMapId()!=409 || !bot->GetGroup()) {moltenCoreFeared=false;return;}
     if (bot->HasAuraType(SPELL_AURA_MOD_FEAR)) {moltenCoreFeared=true;return;}
     if (!moltenCoreFeared) return;
+    if (!bot->CanReactInCombat()) return; // Aura removal can precede native control recovery.
     moltenCoreFeared=false;
     if (!ai::GetPartyCombatAnchor(this)) return;
     reactionEngine->NotifyPartyCombat();
@@ -1511,6 +1515,21 @@ void PlayerbotAI::PrepareForMoltenCoreFearRecovery()
     aiObjectContext->GetValue<ObjectGuid>("tank target")->Reset();
     ResetAIInternalUpdateDelay();
     isWaiting=false;
+}
+
+void PlayerbotAI::PrepareForForcedMovementRecovery()
+{
+    if (!forcedMovementRecoveryPending) return;
+    if (!bot || IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer())
+    { forcedMovementRecoveryPending = false; return; }
+    // A native knockback/fall can finish before a stun or fear releases. Wait
+    // for real control, then wake exactly once without cancelling a new cast.
+    if (IsJumping() || !bot->CanReactInCombat()) return;
+    forcedMovementRecoveryPending = false;
+    if (bot->GetMapId() == 409) aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
+    if (ai::GetPartyCombatAnchor(this)) reactionEngine->NotifyPartyCombat();
+    ResetAIInternalUpdateDelay();
+    isWaiting = false;
 }
 
 void PlayerbotAI::PrepareForUrgentCombat()

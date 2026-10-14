@@ -88,7 +88,7 @@ namespace
         if (combat && (!result.control.observedAt || WorldTimer::getMSTimeDiff(result.control.observedAt, now) >= 200))
         {
           result.control.observedElementals.clear(); result.control.observedPriorities.clear();
-          for (uint32 entry : {12076u, 12100u, 11666u, 11667u})
+          for (uint32 entry : {12076u, 12100u, 11665u, 11666u, 11667u})
           {
             // Scan actual native group combat, including CC targets omitted
             // from attackable values. No proximity-only target recruitment.
@@ -99,7 +99,7 @@ namespace
             for (Unit* unit : nearby)
             {
                 if (!Engaged(ai, unit)) continue;
-                ((entry == 12076 || entry == 12100) ? result.control.observedElementals : result.control.observedPriorities).push_back(unit->GetObjectGuid());
+                ((entry == 12076 || entry == 12100 || entry == 11665) ? result.control.observedElementals : result.control.observedPriorities).push_back(unit->GetObjectGuid());
             }
           }
           result.control.observedAt = now;
@@ -160,7 +160,8 @@ Unit* ai::LavaTrashFocusTarget(PlayerbotAI* ai)
             if (PossibleAttackTargetsValue::HasBreakableCC(target, ai->GetBot()) ||
                 PossibleAttackTargetsValue::HasUnBreakableCC(target, ai->GetBot())) continue;
             if (target->GetObjectGuid() == skull) return target;
-            if (!selected || target->GetObjectGuid() < selected->GetObjectGuid()) selected = target;
+            if (!selected || (target->GetEntry() == 11666 && selected->GetEntry() != 11666) ||
+                (target->GetEntry() == selected->GetEntry() && target->GetObjectGuid() < selected->GetObjectGuid())) selected = target;
         }
         return selected;
     }
@@ -173,7 +174,7 @@ Unit* ai::LavaTrashFocusTarget(PlayerbotAI* ai)
 
 bool ai::LavaTrashReservedTarget(PlayerbotAI* ai, Unit* target)
 {
-    if (!target || (target->GetEntry() != 12076 && target->GetEntry() != 12100) || ai->GetBot()->GetMapId() != 409) return false;
+    if (!target || (target->GetEntry() != 12076 && target->GetEntry() != 12100 && target->GetEntry() != 11665) || ai->GetBot()->GetMapId() != 409) return false;
     return Read(ai).control.allocation.Reserved(target->GetGUIDLow());
 }
 
@@ -219,11 +220,11 @@ bool ai::LavaTrashSpellAllowed(PlayerbotAI* ai, const std::string& name, Unit* t
         damage = damage || effect == SPELL_EFFECT_WEAPON_DAMAGE || effect == SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL ||
             effect == SPELL_EFFECT_NORMALIZED_WEAPON_DMG || effect == SPELL_EFFECT_WEAPON_PERCENT_DAMAGE;
     if (!damage || !target || sServerFacade.IsFriendlyTo(ai->GetBot(), target)) return true;
-    if (trash.control.allocation.Reserved(target->GetGUIDLow()) && (target->GetEntry() == 12076 || target->GetEntry() == 12100)) return false;
+    if (trash.control.allocation.Reserved(target->GetGUIDLow()) && (target->GetEntry() == 12076 || target->GetEntry() == 12100 || target->GetEntry() == 11665)) return false;
     if (!ai->IsTank(ai->GetBot()))
     {
         Unit* focus = LavaTrashFocusTarget(ai);
-        if (focus && (target->GetEntry() == 12076 || target->GetEntry() == 12100 || target->GetEntry() == 11666 || target->GetEntry() == 11667) && target != focus) return false;
+        if (focus && (target->GetEntry() == 12076 || target->GetEntry() == 12100 || target->GetEntry() == 11665 || target->GetEntry() == 11666 || target->GetEntry() == 11667) && target != focus) return false;
     }
     return true;
 }

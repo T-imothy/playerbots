@@ -1,5 +1,6 @@
 """Actual BWL value/action/arbitration bodies, native geometry and controlled lifecycle."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess
 import tempfile
 from behavior_regression import block
@@ -126,7 +127,7 @@ int main(){
 for era in ('ZERO', 'ONE', 'TWO'):
     with tempfile.TemporaryDirectory(prefix='mantech-bwl-position-') as folder:
         tmp = Path(folder)
-        (tmp / 'test.cpp').write_text(code)
+        (tmp / 'test.cpp').write_text(arrival_fixture(code))
         subprocess.run(['cl', '/nologo', '/EHsc', '/std:c++17', f'/DMANGOSBOT_{era}',
                         'test.cpp', '/Fe:test.exe'], cwd=tmp, check=True)
         subprocess.run([str(tmp / 'test.exe')], cwd=tmp, check=True)

@@ -8,6 +8,7 @@
 #include "Engine.h"
 #include "warrior/WarriorCombatPolicy.h"
 #include "actions/GenericActions.h"
+#include "actions/MovementActions.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/PlayerbotDiagnostics.h"
 #include "playerbot/CombatDiagnostics.h"
@@ -94,16 +95,21 @@ std::string Engine::GetFailureKey(Action* action, const Event& event, ActionResu
 std::string Engine::GetFailureReadiness(Action* action) const
 {
     auto spell = dynamic_cast<CastSpellAction*>(action);
-    if (!spell) return "";
+    auto movement = dynamic_cast<MovementAction*>(action);
+    if (!spell && !movement) return "";
     Player* bot = ai->GetBot();
     std::ostringstream out;
-    out << bot->GetPower(bot->GetPowerType()) << '|' << uint32(bot->GetShapeshiftForm()) << '|'
-        << bot->GetPositionX() << '|' << bot->GetPositionY() << '|' << bot->GetPositionZ();
+    if (spell) out << bot->GetPower(bot->GetPowerType()) << '|' << uint32(bot->GetShapeshiftForm()) << '|';
+    out << bot->GetPositionX() << '|' << bot->GetPositionY() << '|' << bot->GetPositionZ();
     if (Unit* target = action->GetTarget())
         out << '|' << target->GetPositionX() << '|' << target->GetPositionY() << '|' << target->GetPositionZ();
     // Native possibility includes resources, cooldown, range/LOS and proc state.
     // Recheck only actions with a live failure entry, not every scheduled action.
-    out << '|' << spell->isPossible();
+    if (spell) out << '|' << spell->isPossible();
+    // A failed approach is no longer the same failure after either endpoint
+    // moves or native movement control returns. Keep unchanged failed paths
+    // throttled, but do not retain their delay through the next raid pull.
+    if (movement) out << '|' << ai->CanMove();
     return out.str();
 }
 

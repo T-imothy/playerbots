@@ -1,5 +1,6 @@
 """Actual beam planning/execution against controlled native world and route fixtures."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess, tempfile
 from behavior_regression import block
 root = Path(__file__).resolve().parents[1]
@@ -131,7 +132,7 @@ int main(){
   auto plan=load();assert(plan.active&&action.isUseful()&&action.ShouldReactionInterruptCast());
   bot.casting=true;assert(action.Execute(event)&&ai.moves==1&&ai.interrupts==1);
   bot.x=-20;load();bot.casting=true;bot.motion.kind=1;
-  assert(action.isUseful()&&!action.ShouldReactionInterruptCast());assert(action.Execute(event)&&ai.stops==1&&ai.interrupts==1&&bot.casting);
+  bot.movespline->done=false;bot.movespline->end={bot.x+10,bot.y,bot.z};assert(action.isUseful()&&!action.ShouldReactionInterruptCast());assert(action.Execute(event)&&ai.stops==1&&ai.interrupts==1&&bot.casting);
   assert(!action.isUseful());assert(multiplier.GetValue(&chase)==0&&multiplier.GetValue(&attack)==0&&multiplier.GetValue(&charge)==0);
   assert(multiplier.GetValue(&heal)==1&&multiplier.GetValue(&hazard)==1);
   boss.auras.clear();assert(!action.Execute(event)&&multiplier.GetValue(&chase)==1);boss.auras={left};
@@ -155,7 +156,7 @@ int main(){
 code=code.replace('__GEOMETRY__',(base/'RotatingBeamGeometry.h').as_posix()).replace('__METHODS__',methods)
 for era in ('ZERO','ONE','TWO'):
     with tempfile.TemporaryDirectory(prefix='rotating-beam-') as folder:
-        tmp=Path(folder);(tmp/'test.cpp').write_text(code)
+        tmp=Path(folder);(tmp/'test.cpp').write_text(arrival_fixture(code))
         subprocess.run(['cl','/nologo','/std:c++17','/EHsc',f'/DMANGOSBOT_{era}','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 strategy=(base/'generic/DungeonStrategy.cpp').read_text()

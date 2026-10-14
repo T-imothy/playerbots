@@ -4,13 +4,47 @@
 #include "AttackersValue.h"
 #include "PossibleTargetsValue.h"
 #include "EnemyPlayerValue.h"
+#include "PossibleAttackTargetsValue.h"
+#include "PvpValues.h"
+#include "BattleGround/BattleGround.h"
 
 using namespace ai;
 using namespace MaNGOS;
 
+bool AttackersValue::EngagedAlteracNpc(Unit* target, Player* player)
+{
+    if (!player || !player->IsInWorld() || !player->IsAlive() || player->IsBeingTeleported() ||
+        !player->InBattleGround() || ActualBattlegroundType(player)!=BATTLEGROUND_AV ||
+        !target || !target->IsCreature() || !target->IsInWorld() || !target->IsAlive() ||
+        !target->IsInCombat() || target->HasCharmer() || target->GetObjectGuid().IsPet() ||
+        !player->IsInMap(target) || !player->IsWithinDistInMap(target,sPlayerbotAIConfig.sightDistance) ||
+        !PossibleTargetsValue::IsValid(target,player) || PossibleAttackTargetsValue::HasBreakableCC(target,player) ||
+        PossibleAttackTargetsValue::HasUnBreakableCC(target,player)) return false;
+    BattleGround* bg=player->GetBattleGround();
+    if (!bg || bg->GetStatus()!=STATUS_IN_PROGRESS) return false;
+    Group* group=bg->GetBgRaid(player->GetBGTeam());
+    if (!group || !group->IsMember(player->GetObjectGuid())) return false;
+    if (InCombat(target,player,false)) return true;
+    for (const auto& slot:group->GetMemberSlots())
+    {
+        Player* member=sObjectMgr.GetPlayer(slot.guid);
+        if (!member || member==player || !member->IsInWorld() || !member->IsAlive() ||
+            member->IsBeingTeleported() || member->HasCharmer() || member->duel ||
+            member->GetBattleGround()!=bg || member->GetBGTeam()!=player->GetBGTeam() ||
+            !player->IsInMap(member) || !member->IsInCombat() ||
+            !player->IsWithinDistInMap(member,sPlayerbotAIConfig.sightDistance) ||
+            !sServerFacade.IsFriendlyTo(player,member)) continue;
+        // Only native engagement counts. A teammate's selection, objective or
+        // queued pull command must not make an unpulled captain attackable.
+        if (InCombat(target,member,false)) return true;
+    }
+    return false;
+}
+
 std::list<ObjectGuid> AttackersValue::Calculate()
 {
     std::list<ObjectGuid> result;
+    bool unmarkedAvFocus=false;
     if (!ai->AllowActivity(ALL_ACTIVITY))
         return result;
 
@@ -36,7 +70,10 @@ std::list<ObjectGuid> AttackersValue::Calculate()
             return { rtiTarget->GetObjectGuid() };
         }
 
-        return result;
+        // A skull still wins. Without one, AV teammates must be able to help
+        // against an already engaged NPC without requiring BG leadership.
+        if (ActualBattlegroundType(bot)!=BATTLEGROUND_AV) return result;
+        unmarkedAvFocus=true;
     }
 
     // Keep the established owner/group/master aggregation below. The retired
@@ -77,6 +114,7 @@ std::list<ObjectGuid> AttackersValue::Calculate()
     // Convert the targets to guids
     for (Unit* target : targets)
     {
+        if (unmarkedAvFocus && !EngagedAlteracNpc(target,bot)) continue;
         result.push_back(target->GetObjectGuid());
     }
 
@@ -307,7 +345,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
                     isRtiTarget = true;
             }
 
-            if(!isRtiTarget)
+            if(!isRtiTarget && !EngagedAlteracNpc(target,playerToCheckAgainst))
                 return false;
         }
 

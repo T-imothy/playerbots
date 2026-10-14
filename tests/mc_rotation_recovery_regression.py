@@ -1,5 +1,6 @@
 """Actual MC mage selection, cast admission, route reuse and native fear-end transition."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import ast,subprocess,tempfile,sys
 from behavior_regression import block
 R=Path(__file__).resolve().parents[1]
@@ -84,11 +85,14 @@ movementSource=actions
 if '--before-cast' in sys.argv:
  movementSource=subprocess.run(['git','-C',str(R),'show','HEAD:playerbot/strategy/actions/MoltenCoreDungeonActions.cpp'],capture_output=True,text=True,check=True).stdout
 moveMethods='\n'.join(block(movementSource,m) for m in ('bool MoltenCorePositionAction::isUseful(', 'bool MoltenCorePositionAction::ShouldReactionInterruptCast(', 'bool MoltenCorePositionAction::Execute('))
-fear=block((R/'playerbot/PlayerbotAI.cpp').read_text(),'void PlayerbotAI::PrepareForMoltenCoreFearRecovery(')
+fearSource=(R/'playerbot/PlayerbotAI.cpp').read_text()
+if '--before-fear' in sys.argv: fearSource=subprocess.check_output(['git','-C',str(R),'show','HEAD:playerbot/PlayerbotAI.cpp'],text=True)
+fear=block(fearSource,'void PlayerbotAI::PrepareForMoltenCoreFearRecovery(')
 movePrefix=r'''
 #include <cassert>
 #include <cmath>
 #include <map>
+#include <list>
 #include <vector>
 #include <string>
 #include <iostream>
@@ -96,14 +100,14 @@ using ObjectGuid=unsigned;constexpr unsigned SPELL_AURA_MOD_FEAR=1;
 struct Player;struct Unit{unsigned entry=11982;bool world=true,alive=true;Player*victim=nullptr;float o=0;
  unsigned GetEntry(){return entry;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}Player*GetVictim(){return victim;}float GetOrientation(){return o;}float GetAngle(Player*);};
 struct Spline{bool done=true;struct Point{float x=10,y=0,z=0;}end;bool Finalized(){return done;}Point FinalDestination(){return end;}};
-struct Player{bool casting=false,fear=false,world=true,alive=true,transfer=false,charm=false;unsigned map=409;float x=-30,y=0;Spline spline;Spline*movespline=&spline;
+struct Player{bool control=true;bool CanReactInCombat(){return control;}bool casting=false,fear=false,world=true,alive=true,transfer=false,charm=false;unsigned map=409;float x=-30,y=0;Spline spline;Spline*movespline=&spline;
  bool IsNonMeleeSpellCasted(bool,bool,bool skip){assert(skip);return casting;}bool HasAuraType(unsigned){return fear;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}
  bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}unsigned GetMapId(){return map;}void*GetGroup(){return this;}unsigned GetObjectGuid(){return 2;}bool IsInMap(Unit*){return true;}
  float GetDistance(float a,float b,float){return std::hypot(x-a,y-b);}float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return 0;}};
 float Unit::GetAngle(Player*p){return std::atan2(p->y,p->x);}
 struct Guid{unsigned n=0;bool IsEmpty(){return n==0;}operator unsigned()const{return n;}};
 namespace encounter{struct Point{float x=-40,y=0,z=0;};struct Circle{};bool OutsideCircles(Point,const std::vector<Circle>&){return true;}}
-struct EncounterPosition{bool active=true;unsigned spell=19272,map=409;Guid source,boss;encounter::Point destination;};
+struct EncounterPosition{bool groundOnly=false;bool active=true;unsigned spell=19272,map=409;Guid source,boss;encounter::Point destination;};
 template<class T>struct Cached{unsigned resets=0;void Reset(){++resets;}};
 struct Context{Cached<EncounterPosition>position;Cached<ObjectGuid>target;template<class T>Cached<T>*GetValue(const char*){if constexpr(std::is_same_v<T,EncounterPosition>)return &position;else return &target;}};
 struct ReactionEngine{unsigned wakes=0;void NotifyPartyCombat(){++wakes;}};
@@ -112,10 +116,12 @@ struct PlayerbotAI{Player*bot;Unit boss;Context context;Context*aiObjectContext=
  Player*GetBot(){return bot;}bool CanMove(){return movable&&!bot->fear;}bool IsRealPlayer(){return real;}bool HasRealPlayerMaster(){return owned;}
  Unit*GetUnit(Guid){return &boss;}bool IsRanged(Player*){return true;}bool IsHeal(Player*){return false;}void StopMoving(){++stops;}void ResetAIInternalUpdateDelay(){delay=0;}
  void PrepareForMoltenCoreFearRecovery();};
+struct WorldPosition{float x=0,y=0;WorldPosition(Player*p):x(p->x),y(p->y){}WorldPosition(float a,float b):x(a),y(b){}float distance(const WorldPosition&p)const{return std::hypot(x-p.x,y-p.y);}};
+using HazardPosition=std::pair<WorldPosition,float>;bool fire=false;void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>&h){if(fire)h.push_back({WorldPosition(-30,0),10.0f});}
 struct Event{};EncounterPosition admitted;
 bool GetPlan(PlayerbotAI*,EncounterPosition&plan){plan=admitted;return true;}
 bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&){return false;}
-bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&,bool=true){return true;}bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&p){p=admitted;return true;}
+bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&,bool=true){return true;}bool PlanMajordomoFormation(PlayerbotAI*,EncounterPosition&){return false;}bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&p){p=admitted;return true;}
 bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&p){p=admitted;return true;}
 struct JumpAction{JumpAction(PlayerbotAI*){}void Qualify(const char*){}bool Execute(Event&){return false;}};
 struct MoltenCorePositionAction{PlayerbotAI*ai;Player*bot;unsigned moves=0,duration=0;bool isUseful();bool ShouldReactionInterruptCast()const;bool Execute(Event&);
@@ -132,11 +138,11 @@ int main(){Player bot;PlayerbotAI ai{&bot};MoltenCorePositionAction move{&ai,&bo
  bot.spline.done=false;bot.spline.end={-40,0,0};assert(move.Execute(event)&&move.moves==1&&move.duration==100);
  bot.x=-40;bot.spline.done=true;assert(!move.isUseful());bot.x=-30;
  admitted.source.n=2;bot.casting=true;assert(move.ShouldReactionInterruptCast()&&move.isUseful());admitted.source.n=0;
- ai.boss.entry=11982;bot.x=20;assert(move.ShouldReactionInterruptCast()&&move.isUseful());bot.x=-30;assert(!move.ShouldReactionInterruptCast());
+ ai.boss.entry=11982;bot.x=20;assert(move.ShouldReactionInterruptCast()&&move.isUseful());bot.x=-30;assert(!move.ShouldReactionInterruptCast());fire=true;assert(move.ShouldReactionInterruptCast());fire=false;
  // One native fear-end transition wakes movement/action bookkeeping exactly
  // once, preserving casts and native GCD. No enemy means no post-kill wake.
  bot.fear=true;ai.PrepareForMoltenCoreFearRecovery();assert(ai.moltenCoreFeared&&ai.delay==9000);
- bot.fear=false;ai.PrepareForMoltenCoreFearRecovery();assert(!ai.moltenCoreFeared&&ai.delay==0&&!ai.isWaiting&&ai.reactions.wakes==1&&ai.context.position.resets==1&&bot.casting);
+ bot.fear=false;bot.control=false;ai.PrepareForMoltenCoreFearRecovery();assert(ai.moltenCoreFeared&&ai.delay==9000&&ai.reactions.wakes==0);bot.control=true;ai.PrepareForMoltenCoreFearRecovery();assert(!ai.moltenCoreFeared&&ai.delay==0&&!ai.isWaiting&&ai.reactions.wakes==1&&ai.context.position.resets==1&&bot.casting);
  ai.PrepareForMoltenCoreFearRecovery();assert(ai.reactions.wakes==1);
  bot.fear=true;ai.PrepareForMoltenCoreFearRecovery();ai::engaged=false;bot.fear=false;ai.delay=9000;ai.PrepareForMoltenCoreFearRecovery();assert(ai.delay==9000&&ai.reactions.wakes==1);
  std::cout<<"PASS all-class cast/channel protection, active route reuse and one-shot native fear recovery\n";
@@ -145,6 +151,6 @@ int main(){Player bot;PlayerbotAI ai{&bot};MoltenCorePositionAction move{&ai,&bo
 for era in ('ZERO','ONE','TWO'):
  for name,code in (('rotation',prefix+mageMethods+mageCase),('recovery',movePrefix+moveMethods+'\n'+fear+moveCase)):
   with tempfile.TemporaryDirectory(prefix='mc-'+name+'-') as tmp:
-   d=Path(tmp);(d/'test.cpp').write_text(code)
+   d=Path(tmp);(d/'test.cpp').write_text(arrival_fixture(code))
    subprocess.run(['cl','/nologo','/std:c++17','/EHsc','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=d,check=True)
    subprocess.run([str(d/'test.exe')],cwd=d,check=True)

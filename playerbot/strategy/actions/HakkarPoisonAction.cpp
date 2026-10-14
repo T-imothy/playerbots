@@ -25,8 +25,7 @@ bool HakkarPoisonAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 bool HakkarPoisonAction::isUseful()
 {
     EncounterPosition plan;
-    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.0f ||
-        !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+    return GetPlan(ai, plan) && EncounterMovementRequired(bot, plan.destination, 1.0f);
 }
 
 bool HakkarPoisonAction::Execute(Event& event)

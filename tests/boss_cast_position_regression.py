@@ -3,6 +3,7 @@
 The fixture cannot establish encounter success or replace real map path testing.
 """
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess
 import tempfile
 import sys
@@ -134,7 +135,7 @@ int main(){
  assert(multiplier.GetValue(&chase)==0 && multiplier.GetValue(&charge)==0);
  assert(multiplier.GetValue(&heal)==1 && multiplier.GetValue(&attack)==1 && multiplier.GetValue(&hazard)==1);
  // Already safe: stop an old chase, retain a stationary heal, then let casting proceed.
- bot.x=30;load();bot.motion.kind=1;assert(action.isUseful() && !action.ShouldReactionInterruptCast());
+ bot.x=30;load();bot.motion.kind=1;bot.movespline->done=false;bot.movespline->end={bot.x+10,bot.y,bot.z};assert(action.isUseful() && !action.ShouldReactionInterruptCast());
  assert(action.Execute(event) && ai.stops==1 && ai.moves==1 && !action.isUseful());
  // No cached hold survives completion/interruption, spell replacement, reset or map transfer.
  cast.state=SPELL_STATE_FINISHED;assert(!action.isUseful() && multiplier.GetValue(&chase)==1);
@@ -291,7 +292,7 @@ int main(){
  // again on the next cast, and never clip a heal merely to return closer.
  ai.attackers={1};bot.mapId=602;bot.x=30;boss.entry=28923;boss.aura=52961;boss.current=boss.channel=nullptr;
  auto close=load();assert(close.active&&close.spell==59414&&encounter::Distance2d(close.destination,{0,0,0})<=5);
- assert(action.isUseful()&&!action.ShouldReactionInterruptCast()&&action.Execute(event));
+ bot.movespline->done=false;bot.movespline->end={bot.x+10,bot.y,bot.z};assert(action.isUseful()&&!action.ShouldReactionInterruptCast()&&action.Execute(event));
  assert(multiplier.GetValue(&chase)==0&&multiplier.GetValue(&heal)==1);
  bot.casting=true;assert(!action.isUseful()&&!action.Execute(event));bot.casting=false;
  entry.Id=52960;cast.state=0;boss.current=&cast;
@@ -304,7 +305,7 @@ int main(){
  ai.validPath=false;ai.checked=0;assert(!load().active&&ai.checked==8);ai.validPath=true;
  close=load();boss.x=15;assert(!action.Execute(event));boss.x=0;
  bot.x=3;close=load();assert(close.active&&close.destination.x==3);bot.motion.kind=1;
- assert(action.isUseful()&&!action.ShouldReactionInterruptCast()&&action.Execute(event)&&!action.isUseful());
+ bot.movespline->done=false;bot.movespline->end={bot.x+10,bot.y,bot.z};assert(action.isUseful()&&!action.ShouldReactionInterruptCast()&&action.Execute(event)&&!action.isUseful());
  boss.aura=0;assert(!action.Execute(event)&&!load().active&&multiplier.GetValue(&chase)==1);
  bot.mapId=603;boss.aura=52961;assert(!load().active);
 #endif
@@ -314,7 +315,7 @@ int main(){
 for expansion in ('ZERO', 'ONE', 'TWO'):
     with tempfile.TemporaryDirectory(prefix='mantech-boss-cast-test-') as tmp:
         tmp = Path(tmp)
-        (tmp / 'test.cpp').write_text(code)
+        (tmp / 'test.cpp').write_text(arrival_fixture(code))
         subprocess.run(['cl', '/nologo', '/EHsc', '/std:c++17', f'/DMANGOSBOT_{expansion}',
             'test.cpp', '/Fe:test.exe'], cwd=tmp, check=True)
         subprocess.run([str(tmp / 'test.exe')], check=True)

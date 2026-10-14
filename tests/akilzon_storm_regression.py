@@ -1,5 +1,6 @@
 """Compile actual storm source selection, ground shelter planning and dispatch."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess, tempfile
 from behavior_regression import block
 root = Path(__file__).resolve().parents[1]
@@ -68,7 +69,7 @@ int main(){
  ai.adjustment=1;assert(action.Execute(event)&&ai.lastZ==1); // preserve validated terrain adjustment
  ai.adjustment=10;assert(!action.Execute(event));ai.adjustment=0;
  ai.deleteOnValidate=true;assert(!action.Execute(event));ai.deleteOnValidate=false;map.eye=&eye;
- bot.x=18;calculate();assert(action.isUseful()&&!action.ShouldReactionInterruptCast());assert(action.Execute(event)&&ai.stops==1&&!action.isUseful());
+ bot.x=18;calculate();bot.movespline->done=false;bot.movespline->end={bot.x+10,bot.y,bot.z};assert(action.isUseful()&&!action.ShouldReactionInterruptCast());assert(action.Execute(event)&&ai.stops==1&&!action.isUseful());
  bot.x=0;assert(calculate().active);eye.duration=0;assert(!action.Execute(event)&&!calculate().active);eye.duration=8000;
  eye.radius=std::numeric_limits<float>::quiet_NaN();assert(!calculate().active);eye.radius=6;
  eye.phase=2;assert(!calculate().active);eye.phase=1;
@@ -89,11 +90,11 @@ int main(){
 '''.replace('__METHODS__', methods)
 for era in ('ZERO','ONE','TWO'):
     with tempfile.TemporaryDirectory(prefix='mantech-storm-') as directory:
-        tmp=Path(directory);(tmp/'test.cpp').write_text(code)
+        tmp=Path(directory);(tmp/'test.cpp').write_text(arrival_fixture(code))
         subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 for era in ('tbc','wotlk'):
-    core=root.parent/f'mangos-{era}-behavior'
+    core=root.parent/era
     effects=(core/'src/game/Spells/SpellEffects.cpp').read_text()
     assert 'unitTarget->CastSpell(nullptr, 44007, TRIGGERED_OLD_TRIGGERED)' in effects
     spells=(core/'src/game/Spells/Spell.cpp').read_text()

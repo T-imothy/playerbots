@@ -33,8 +33,7 @@ bool HeiganDanceAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 bool HeiganDanceAction::isUseful()
 {
     EncounterPosition plan;
-    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1 ||
-        !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+    return GetPlan(ai, plan) && EncounterMovementRequired(bot, plan.destination, 1.0f);
 }
 
 bool HeiganDanceAction::ShouldReactionInterruptCast() const

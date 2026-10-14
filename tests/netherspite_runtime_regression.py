@@ -3,6 +3,7 @@
 Native-shaped world/path interfaces are controlled here; this is not a raid clear.
 """
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess
 import tempfile
 from behavior_regression import block
@@ -76,6 +77,7 @@ struct PlayerbotAI {Player* bot;bool real=false,validPath=true,canMove=true;unsi
  Unit* GetUnit(ObjectGuid id){auto i=units.find(id);return i==units.end()?nullptr:i->second;}
  Aura* GetAura(unsigned id,Player* p){auto i=p->buffs.find(id);return i==p->buffs.end()?nullptr:&i->second;}
 };
+bool MoltenCorePackStackRequired(PlayerbotAI*){return false;}bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}
 std::list<Unit*> grid;
 namespace MaNGOS {
 struct AllCreaturesOfEntryInRangeCheck {unsigned entry;AllCreaturesOfEntryInRangeCheck(Player*,unsigned e,float):entry(e){}};
@@ -147,7 +149,7 @@ int main(){
  ai.units.erase(4);assert(!NetherspitePositionAction::GetPlan(&ai,plan));ai.units[4]=&red;
  // At the assigned beam point, stop a surviving chase without interrupting a stationary cast.
  assert(calculate());auto safe=ai.context.cache.plan.destination;bot.x=safe.x;bot.y=safe.y;bot.z=safe.z;
- assert(calculate()&&move.isUseful()&&!move.ShouldReactionInterruptCast());
+ bot.movespline->done=false;bot.movespline->end={bot.x+10,bot.y,bot.z};assert(calculate()&&move.isUseful()&&!move.ShouldReactionInterruptCast());
  unsigned oldMoves=ai.moves;assert(move.Execute(event)&&ai.moves==oldMoves&&ai.stops==1&&!move.isUseful());
  bot.x=10;bot.y=5;assert(calculate());
  PreserveNetherspitePositionMultiplier multiplier{&ai};
@@ -161,7 +163,7 @@ int main(){
  CastSpellAction heal;MoveAwayFromHazard escape2;AttackAction attack2;Action assist;assist.name="dps assist";
  assert(mc.GetValue(&charge)==1);ai.mcHold=true;
  assert(mc.GetValue(&charge)==0&&mc.GetValue(&chase2)==0);
- assert(mc.GetValue(&heal)==1&&mc.GetValue(&attack2)==0&&mc.GetValue(&escape2)==1&&mc.GetValue(nullptr)==1);
+ assert(mc.GetValue(&heal)==1&&mc.GetValue(&attack2)==1&&mc.GetValue(&escape2)==1&&mc.GetValue(nullptr)==1);
  ai.mcHold=false;assert(mc.GetValue(&charge)==1);ai.mcPriority=true;assert(mc.GetValue(&assist)==0);
  ai.mcPriority=false;assert(mc.GetValue(&assist)==1);
  std::cout<<"PASS: actual Netherspite value/plan/action, phase/human/exhaustion, bounded fresh paths and native movement-spell arbitration\n";
@@ -170,7 +172,7 @@ int main(){
 for era in ('ZERO', 'ONE', 'TWO'):
     with tempfile.TemporaryDirectory(prefix='mantech-netherspite-runtime-') as folder:
         tmp = Path(folder)
-        (tmp / 'test.cpp').write_text(code)
+        (tmp / 'test.cpp').write_text(arrival_fixture(code))
         subprocess.run(['cl', '/nologo', '/EHsc', '/std:c++17', f'/DMANGOSBOT_{era}',
                         'test.cpp', '/Fe:test.exe'], cwd=tmp, check=True)
         subprocess.run([str(tmp / 'test.exe')], cwd=tmp, check=True)

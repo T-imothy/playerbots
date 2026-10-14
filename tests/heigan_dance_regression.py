@@ -1,5 +1,6 @@
 """Actual native wave/target-mask interpretation, floor planning and fresh dispatch."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -80,7 +81,7 @@ int main(){
  ai.context.position.calculate=[&](){return planner.Calculate();};auto calculate=[&](){ai.paths=0;ai.context.position.data=planner.Calculate();return ai.context.position.data;};
  const unsigned expected[]={30116,30117,30118,30119,30118,30117,30116};for(unsigned i=0;i<7;++i){wave.ticks=i;assert(HeiganNextWave(&controller)==expected[i]);}wave.ticks=0;
  auto p=calculate();assert(p.active&&p.destination.x==0&&action.ShouldReactionInterruptCast()&&action.Execute(event));
- bot.x=0;calculate();assert(action.isUseful()&&!action.ShouldReactionInterruptCast());assert(action.Execute(event)&&ai.stops==1&&!action.isUseful());
+ bot.x=0;calculate();bot.movespline->done=false;bot.movespline->end={bot.x+10,bot.y,bot.z};assert(action.isUseful()&&!action.ShouldReactionInterruptCast());assert(action.Execute(event)&&ai.stops==1&&!action.isUseful());
  wave.ticks=1;assert(action.isUseful()&&ai.context.position.resets==1&&ai.context.position.data.destination.x==20);
  assert(action.isUseful()&&ai.context.position.resets==1); // no repeated grid/path reset at same wave
  ai.path=false;wave.ticks=2;assert(!action.Execute(event));ai.path=true;
@@ -98,12 +99,12 @@ int main(){
 '''.replace('__GEOMETRY__',str(root/'playerbot/strategy/EncounterGeometry.h').replace('\\','/')).replace('__METHODS__',methods)
 for era in ('ZERO','ONE','TWO'):
     with tempfile.TemporaryDirectory(prefix='mantech-dance-') as directory:
-        tmp=Path(directory);(tmp/'test.cpp').write_text(code)
+        tmp=Path(directory);(tmp/'test.cpp').write_text(arrival_fixture(code))
         subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 for era in ('classic','tbc','wotlk'):
     zone='northrend' if era=='wotlk' else 'eastern_kingdoms'
-    core=root.parent/f'mangos-{era}-behavior'
+    core=root.parent/era
     native=(core/f'src/game/AI/ScriptDevAI/scripts/{zone}/naxxramas/boss_heigan.cpp').read_text()
     assert '{ 30116, 30117, 30118, 30119, 30118, 30117 }' in native
     assert '(aura->GetAuraTicks() - 1) % 6' in native

@@ -39,8 +39,9 @@ namespace ai
                 PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot)) continue;
             // Respect a skull on either priority mob, never on its accompanying elemental.
             if (unit == marked) return unit;
-            if (!selected || unit->GetHealthPercent() < selected->GetHealthPercent() ||
-                (unit->GetHealthPercent() == selected->GetHealthPercent() && unit->GetObjectGuid() < selected->GetObjectGuid()))
+            if (!selected || (unit->GetEntry() == 11666 && selected->GetEntry() != 11666) ||
+                (unit->GetEntry() == selected->GetEntry() && (unit->GetHealthPercent() < selected->GetHealthPercent() ||
+                 (unit->GetHealthPercent() == selected->GetHealthPercent() && unit->GetObjectGuid() < selected->GetObjectGuid()))))
                 selected = unit;
         }
         return selected;

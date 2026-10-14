@@ -1,5 +1,6 @@
 """Actual pre-kill poison positioning, bounded coordination and dispatch."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -79,7 +80,7 @@ int main(){
  auto plan=calculate();assert(plan.active&&plan.destination.x==15&&action.Execute(event)&&ai.moves==1);
  assert(!HasHakkarPoisonPreparation(&bot));cloud.health=30;calculate();assert(HasHakkarPoisonPreparation(&bot));
  clockNow=110;calculate();assert(!HasHakkarPoisonPreparation(&bot));clockNow=100;calculate();
- bot.x=15;assert(action.isUseful());assert(action.Execute(event)&&ai.stops==1&&!action.isUseful());
+ bot.x=15;bot.movespline->done=false;bot.movespline->end={25,bot.y,bot.z};assert(action.isUseful());assert(action.Execute(event)&&ai.stops==1&&!action.isUseful());
  assert(!HasHakkarPoisonPreparation(&bot));
  assert(!bot.HasAura(24321)); // no fabricated poison or successful cast
  bot.auras.insert(24321);member.auras.insert(24321);assert(!action.Execute(event)&&!calculate().active);bot.auras.clear();member.auras.clear();
@@ -101,11 +102,11 @@ int main(){
 '''.replace('__METHODS__',methods)
 for era in ('ZERO','ONE','TWO'):
  with tempfile.TemporaryDirectory(prefix='mantech-hakkar-') as directory:
-  tmp=Path(directory);(tmp/'test.cpp').write_text(code)
+  tmp=Path(directory);(tmp/'test.cpp').write_text(arrival_fixture(code))
   subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
   subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 for era in ('classic','tbc','wotlk'):
- core=root.parent/f'mangos-{era}-behavior'
+ core=root.parent/era
  native=(core/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/zulgurub/boss_hakkar.cpp').read_text()
  assert 'HasAura(24321) ? 24323 : 24322' in native
  effects=(core/'src/game/Spells/SpellEffects.cpp').read_text()

@@ -153,10 +153,13 @@ ObjectGuid PartyMemberToHeal::Calculate()
 
     // Distribute healers within the most urgent health band. A second healer
     // must not be sent to a healthy tank while the only injured player waits.
+    std::map<Unit*, bool> burstTanks;
+    for (Unit* target : needHeals) burstTanks[target] = NeedsMoltenCoreBurstHealing(ai, target);
     const auto urgency = [&](Unit* target) {
         if (target->GetHealthPercent() < sPlayerbotAIConfig.criticalHealth) return 0;
-        if (double(forecast(target)) * 100.0 / target->GetMaxHealth() < sPlayerbotAIConfig.lowHealth) return 1;
-        return 2;
+        if (burstTanks.at(target)) return 1;
+        if (double(forecast(target)) * 100.0 / target->GetMaxHealth() < sPlayerbotAIConfig.lowHealth) return 2;
+        return 3;
     };
     std::map<Unit*, uint64> healingNeed;
     for (Unit* target : needHeals)

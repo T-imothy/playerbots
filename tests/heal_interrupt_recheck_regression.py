@@ -36,6 +36,7 @@ struct PlayerbotAI{Context context;unsigned notified=0;
 struct HealTargetFullHealthTrigger:Trigger{Player* bot;PlayerbotAI* ai;bool IsActive()override;Player* GetMaster(){return nullptr;}};
 struct Event{std::string source;std::string getSource(){return source;}};
 struct InterruptCurrentSpellAction{Player* bot;PlayerbotAI* ai;bool Execute(Event&);};
+bool burst=false;bool NeedsMoltenCoreBurstHealing(PlayerbotAI*,Unit*u){return burst&&u&&u->hp<u->maxhp;}
 __METHODS__
 int main(){
  Player bot;PlayerbotAI ai;HealTargetFullHealthTrigger trigger;trigger.bot=&bot;trigger.ai=&ai;ai.context.trigger=&trigger;
@@ -56,7 +57,7 @@ int main(){
  patient.hp=95;patient.fullHealWound=false;
  patient.raidObjective=true;spell.m_spellInfo=&heal;bot.spells[CURRENT_GENERIC_SPELL]=&spell;
  assert(!action.Execute(automatic));patient.hp=100;assert(action.Execute(automatic));
- patient.hp=95;patient.raidObjective=false;
+ patient.hp=95;patient.raidObjective=false;burst=true;spell.m_spellInfo=&heal;bot.spells[CURRENT_GENERIC_SPELL]=&spell;assert(!trigger.IsActive()&&!action.Execute(automatic));burst=false;
  spell.m_spellInfo=&heal;bot.spells[CURRENT_GENERIC_SPELL]=&spell;spell.interruptible=false;assert(!action.Execute(automatic));
  spell.interruptible=true;spell.m_targets.target=nullptr;assert(!action.Execute(automatic));
  spell.m_targets.target=&patient;ai.context.trigger=nullptr;assert(!action.Execute(automatic));

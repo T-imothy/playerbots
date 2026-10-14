@@ -6,6 +6,7 @@
 #include "UseItemAction.h"
 #include "playerbot/CombatDiagnostics.h"
 #include "EncounterSpellPolicy.h"
+#include "GroupBuffPolicy.h"
 #include "playerbot/strategy/Trigger.h"
 #include "playerbot/strategy/warrior/WarriorCombatPolicy.h"
 
@@ -456,6 +457,17 @@ bool CastPetSpellAction::isPossible()
 bool CastAuraSpellAction::isUseful()
 {
     return CastSpellAction::isUseful() && !ai->HasAura(GetSpellName(), GetTarget(), false, isOwner);
+}
+
+bool CastBuffSpellAction::isUseful()
+{
+    return CastAuraSpellAction::isUseful() && AutomaticGroupBuffAllowed(ai, GetSpellName(), GetTarget());
+}
+
+bool CastBuffSpellAction::Execute(Event& event)
+{
+    if (!AutomaticGroupBuffAllowed(ai, GetSpellName(), GetTarget())) return false;
+    return CastSpellAction::Execute(event);
 }
 
 bool CastMeleeAoeSpellAction::isUseful()

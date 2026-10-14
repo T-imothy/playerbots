@@ -1,5 +1,6 @@
 """Actual crystal assignment/planner/action; no fabricated native click outcome."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -118,10 +119,10 @@ int main(){
 '''.replace('__METHODS__',methods)
 for era in ('ZERO','ONE','TWO'):
  with tempfile.TemporaryDirectory(prefix='mantech-ossirian-') as directory:
-  tmp=Path(directory);(tmp/'test.cpp').write_text(code)
+  tmp=Path(directory);(tmp/'test.cpp').write_text(arrival_fixture(code))
   subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
   subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 for era in ('classic','tbc','wotlk'):
- core=root.parent/f'mangos-{era}-behavior'
+ core=root.parent/era
  source=(core/'src/game/AI/ScriptDevAI/scripts/kalimdor/ruins_of_ahnqiraj/boss_ossirian.cpp').read_text()
  assert 'GOUse_go_ossirian_crystal' in source and '25176' in source and 'SPELL_SUMMON_CRYSTAL' in source

@@ -159,6 +159,8 @@ namespace ai
 	{
 	public:
 		CastBuffSpellAction(PlayerbotAI* ai, std::string spell) : CastAuraSpellAction(ai, spell) { }
+        bool isUseful() override;
+        bool Execute(Event& event) override;
         virtual std::string GetTargetName() override { return "self target"; }
 	};
 

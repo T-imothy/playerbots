@@ -9,9 +9,9 @@ code=ast.literal_eval(node)
 code=code[:code.index('__METHODS__')]
 code=re.sub(r'Unit\*GarrTankTarget\(PlayerbotAI\*\)\{return nullptr;\}Unit\*GarrBanishTarget\(PlayerbotAI\*\)\{return nullptr;\}bool GarrTankHandoff\(PlayerbotAI\*,Unit\*\)\{return false;\}bool PlanGarrPosition\(PlayerbotAI\*,EncounterPosition&\)\{return false;\}', '', code)
 code=code.replace('constexpr float M_PI=', 'constexpr float M_PI=')
-code=code.replace('struct ObjectGuid{unsigned id=0;', 'struct ObjectGuid{unsigned GetCounter()const{return id;}bool IsEmpty()const{return !id;}unsigned id=0;')
-code=code.replace('struct SpellEntry{unsigned Id=19775;};', '''enum {SPELL_EFFECT_WEAPON_DAMAGE=1,SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL,SPELL_EFFECT_NORMALIZED_WEAPON_DMG,SPELL_EFFECT_WEAPON_PERCENT_DAMAGE};
-struct SpellEntry{unsigned Id=19775;unsigned Effect[3]={0,0,0};bool damage=false;};
+code=code.replace('struct ObjectGuid{unsigned id=0;', 'struct ObjectGuid{unsigned GetCounter()const{return id;}unsigned id=0;')
+code=code.replace('struct SpellEntry{unsigned Id=19775,Mechanic=MECHANIC_POLYMORPH;};', '''enum {SPELL_EFFECT_WEAPON_DAMAGE=1,SPELL_EFFECT_WEAPON_DAMAGE_NOSCHOOL,SPELL_EFFECT_NORMALIZED_WEAPON_DMG,SPELL_EFFECT_WEAPON_PERCENT_DAMAGE};
+struct SpellEntry{unsigned Id=19775,Mechanic=MECHANIC_POLYMORPH;unsigned Effect[3]={0,0,0};bool damage=false;};
 struct SpellAuraHolder{ObjectGuid caster;ObjectGuid GetCasterGuid(){return caster;}};''')
 code=code.replace('std::set<unsigned>auras;', 'std::set<unsigned>auras;std::map<unsigned,SpellAuraHolder>holders;SpellAuraHolder*GetSpellAuraHolder(unsigned id){return holders.count(id)?&holders[id]:nullptr;}')
 code=code.replace('struct Context{', '''#include "playerbot/strategy/GarrCombatPolicy.h"

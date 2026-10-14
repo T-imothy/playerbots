@@ -1,5 +1,6 @@
 """Actual cover policy, cached planner and dispatch with controlled native geometry."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -86,7 +87,7 @@ int main(){
  bot.aura.stacks=4;assert(!calculate().active);bot.aura.stacks=5;auto plan=calculate();
  assert(plan.active&&plan.destination.x>=6&&ai.pathChecks<=8);assert(action.isUseful()&&action.ShouldReactionInterruptCast());
  assert(action.Execute(event)&&ai.moves==1);
- bot.x=plan.destination.x;bot.y=plan.destination.y;bot.z=plan.destination.z;assert(action.isUseful()&&!action.ShouldReactionInterruptCast());
+ bot.x=plan.destination.x;bot.y=plan.destination.y;bot.z=plan.destination.z;bot.movespline->done=false;bot.movespline->end={bot.x+10,bot.y,bot.z};assert(action.isUseful()&&!action.ShouldReactionInterruptCast());
  assert(action.Execute(event)&&ai.stops==1&&ai.moves==1&&!action.isUseful());
  bot.aura.stacks=1;assert(calculate().active); // remain sheltered until actual stack expiration
  bot.aura.stacks=0;assert(!calculate().active&&!action.isUseful());
@@ -148,7 +149,7 @@ int main(){
 '''.replace('__METHODS__',methods).replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix())
 for era in ('ZERO','ONE','TWO'):
  with tempfile.TemporaryDirectory(prefix='mantech-boss-cover-') as directory:
-  tmp=Path(directory);(tmp/'test.cpp').write_text(code)
+  tmp=Path(directory);(tmp/'test.cpp').write_text(arrival_fixture(code))
   subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
   subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 strategy=(root/'playerbot/strategy/generic/DungeonStrategy.cpp').read_text()

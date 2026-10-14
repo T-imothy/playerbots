@@ -3,6 +3,26 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/ServerFacade.h"
 
+bool ai::NeedsMoltenCoreBurstHealing(PlayerbotAI* ai, Unit* target)
+{
+    Player* bot = ai->GetBot();
+    if (!bot || !target || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->GetMapId() != 409 || !bot->GetGroup() || ai->IsRealPlayer() ||
+        !target->IsPlayer() || !target->IsInWorld() || !target->IsAlive() || target->HasCharmer() ||
+        !bot->IsInMap(target) || !target->GetMaxHealth() || target->GetHealth() >= target->GetMaxHealth() ||
+        !sServerFacade.IsFriendlyTo(bot, target)) return false;
+    Player* tank = static_cast<Player*>(target);
+    if (tank->IsBeingTeleported() || tank->duel || tank->GetGroup() != bot->GetGroup() || !ai->IsTank(tank)) return false;
+    // Native victim changes, not a remembered controller/marker, identify the
+    // threatened tank. Existing party admission and native casts retain range,
+    // LOS, resources, immunity and GCD checks.
+    for (Unit* attacker : tank->getAttackers())
+        if (attacker && attacker->IsInWorld() && attacker->IsAlive() && attacker->IsInCombat() &&
+            !attacker->HasCharmer() && attacker->GetEntry() == 11666 && bot->IsInMap(attacker) &&
+            attacker->GetVictim() == tank && !sServerFacade.IsFriendlyTo(bot, attacker)) return true;
+    return false;
+}
+
 bool ai::NeedsRaidObjectiveHealing(Unit* target)
 {
 #ifdef MANGOSBOT_TWO

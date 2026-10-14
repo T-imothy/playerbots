@@ -1,5 +1,6 @@
 """Compile actual Naxx burst value, action and multiplier against native geometry."""
 from pathlib import Path
+from encounter_arrival_fixture import arrival_fixture
 import subprocess
 import tempfile
 from behavior_regression import block
@@ -122,7 +123,7 @@ int main(){
 '''.replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__METHODS__',methods)
 for era in ('ZERO','ONE','TWO'):
     with tempfile.TemporaryDirectory(prefix='mantech-naxx-burst-') as folder:
-        tmp=Path(folder);(tmp/'test.cpp').write_text(code)
+        tmp=Path(folder);(tmp/'test.cpp').write_text(arrival_fixture(code))
         subprocess.run(['cl','/nologo','/std:c++17','/EHsc',f'/DMANGOSBOT_{era}','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 strategy=(root/'playerbot/strategy/generic/NaxxramasDungeonStrategies.cpp').read_text()

@@ -32,8 +32,7 @@ bool SolarianPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 bool SolarianPositionAction::isUseful()
 {
     EncounterPosition plan;
-    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f ||
-        !bot->IsStopped() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType() != IDLE_MOTION_TYPE);
+    return GetPlan(ai, plan) && EncounterMovementRequired(bot, plan.destination, 1.5f);
 }
 
 bool SolarianPositionAction::ShouldReactionInterruptCast() const
