@@ -15,7 +15,7 @@ code=r'''
 using namespace ai;using uint32=unsigned;using int32=int;
 struct Spline{bool done=true;encounter::Point end;bool Finalized(){return done;}auto FinalDestination(){return end;}};
 struct Player{float x=0,y=0,z=0;Spline spline;Spline*movespline=&spline;
- bool HasAura(unsigned){return false;}
+ bool HasAura(unsigned){return false;}bool IsNonMeleeSpellCasted(bool,bool,bool){return false;}
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}float GetDistance(float a,float b,float c){return std::hypot(x-a,y-b);}};
 struct SpellEntry{unsigned Id=1;bool channel=false;int duration=0;};
 struct Spell{SpellEntry*m_spellInfo;unsigned cast=0;unsigned GetCastTime(){return cast;}};
@@ -24,7 +24,7 @@ struct PlayerbotAI{Player*bot;unsigned nativeGcd=1500;uint32 CalculateGlobalCool
 struct{unsigned reactDelay=100;}sPlayerbotAIConfig;
 struct EncounterPosition{bool active=true;encounter::Point destination;};
 bool GetPlan(PlayerbotAI*,EncounterPosition&p){p.destination={0,0,0};return true;}
-struct MoltenCorePositionAction{PlayerbotAI*ai;Player*bot;bool isUseful();};
+struct MoltenCorePositionAction{PlayerbotAI*ai;Player*bot;bool isUseful();bool ShouldReactionInterruptCast(){return false;}};
 struct MoltenCorePositionValue{PlayerbotAI*ai;Player*bot;EncounterPosition Calculate();};
 unsigned checked=0,reject=8;bool danger=true;std::vector<encounter::Circle>circles;
 bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&out){out=circles;return danger;}

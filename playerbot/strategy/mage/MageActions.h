@@ -9,6 +9,18 @@
 
 namespace ai
 {
+    bool PlanMoltenCoreMageCleave(PlayerbotAI* ai, EncounterPosition& plan);
+    bool MoltenCorePackStackRequired(PlayerbotAI* ai);
+    class MoltenCoreMageAoeAction : public Action
+    {
+    public:
+        MoltenCoreMageAoeAction(PlayerbotAI* ai) : Action(ai, "molten core mage aoe") {}
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+        ActionThreatType getThreatType() override { return ActionThreatType::ACTION_THREAT_AOE; }
+    private:
+        Action* Select();
+    };
     BUFF_ACTION(CastFireWardAction, "fire ward");
     BUFF_ACTION(CastFrostWardAction, "frost ward");
     BUFF_ACTION(CastBlinkAction, "blink");
@@ -82,6 +94,14 @@ namespace ai
     {
     public:
         CastFrostNovaAction(PlayerbotAI* ai) : CastMeleeAoeSpellAction(ai, "frost nova", 10.0f) {}
+        bool isUseful() override
+        {
+#ifdef MANGOSBOT_ZERO
+            EncounterPosition cleave;
+            if (bot->GetMapId()==409 && (MoltenCorePackStackRequired(ai) || PlanMoltenCoreMageCleave(ai,cleave))) return false;
+#endif
+            return CastMeleeAoeSpellAction::isUseful();
+        }
     };
 
 	class CastFrostboltAction : public CastSpellAction

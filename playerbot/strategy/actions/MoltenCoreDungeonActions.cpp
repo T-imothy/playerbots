@@ -11,6 +11,7 @@
 #include "playerbot/ServerFacade.h"
 #include "Movement/MoveSpline.h"
 #include "playerbot/strategy/mage/MageCombatPolicy.h"
+#include "playerbot/strategy/mage/MageActions.h"
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
@@ -181,6 +182,43 @@ bool ai::MoltenCorePackStackRequired(PlayerbotAI* ai)
     return false;
 }
 
+bool ai::MoltenCoreRecoverableImp(PlayerbotAI* ai, Unit* enemy)
+{
+    Player* bot=ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->GetMapId()!=409 || !bot->GetGroup() || ai->IsRealPlayer() || !enemy ||
+        enemy->GetEntry()!=11669 || !enemy->IsInWorld() || !enemy->IsAlive() || !bot->IsInMap(enemy) ||
+        !enemy->IsInCombat() || enemy->HasCharmer() || sServerFacade.IsFriendlyTo(bot,enemy) ||
+        PossibleAttackTargetsValue::HasBreakableCC(enemy,bot) ||
+        PossibleAttackTargetsValue::HasUnBreakableCC(enemy,bot)) return false;
+    Unit* victim=enemy->GetVictim();
+    if (!victim || !victim->IsInWorld() || !victim->IsAlive() || !bot->IsInMap(victim)) return false;
+    Unit* owner=victim->IsPlayer()?victim:victim->GetOwner(nullptr,true);
+    Player* carrier=owner && owner->IsPlayer()?static_cast<Player*>(owner):nullptr;
+    if (!carrier || !carrier->IsInWorld() || !carrier->IsAlive() || !bot->IsInMap(carrier) ||
+        carrier->IsBeingTeleported() || carrier->HasCharmer() || carrier->GetGroup()!=bot->GetGroup()) return false;
+    for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+    {
+        Player* tank=ref->getSource();
+        if (tank && tank->IsInWorld() && tank->IsAlive() && !tank->IsBeingTeleported() &&
+            !tank->HasCharmer() && bot->IsInMap(tank) && ai->IsTank(tank) && tank->CanReactInCombat() &&
+            tank->GetDistance(enemy)<=30) return true;
+    }
+    return false;
+}
+
+bool ai::MoltenCoreImpUnderPressure(PlayerbotAI* ai)
+{
+    for (ObjectGuid guid:ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
+    {
+        Unit* enemy=ai->GetUnit(guid);
+        if (!MoltenCoreRecoverableImp(ai,enemy)) continue;
+        Unit* victim=enemy->GetVictim();
+        if (!victim->IsPlayer() || !ai->IsTank(static_cast<Player*>(victim))) return true;
+    }
+    return false;
+}
+
 Unit* ai::MoltenCorePackTankTarget(PlayerbotAI* ai)
 {
     auto pack = MoltenCorePack(ai);
@@ -189,6 +227,19 @@ Unit* ai::MoltenCorePackTankTarget(PlayerbotAI* ai)
     if (pack.empty() || (pack.size()<2 && pack.front()->GetEntry()!=11669) || own == tanks.end()) return nullptr;
     const size_t slot = std::distance(tanks.begin(), own);
     Unit* held = nullptr;
+    if (pack.front()->GetEntry()==11669)
+        for (size_t i=0;i<pack.size();++i)
+        {
+            Unit* enemy=pack[i];Unit* victim=enemy->GetVictim();
+            if (!MoltenCoreRecoverableImp(ai,enemy) ||
+                (victim && std::find(tanks.begin(),tanks.end(),victim)!=tanks.end())) continue;
+            Player* rescue=tanks[i%tanks.size()];
+            if (!rescue->CanReactInCombat()) rescue=nullptr;
+            for (Player* candidate:tanks)
+                if (candidate->CanReactInCombat() && (!rescue ||
+                    candidate->GetDistance(enemy)+8<rescue->GetDistance(enemy))) rescue=candidate;
+            if (rescue==ai->GetBot() && PossibleAttackTargetsValue::IsValid(enemy,ai->GetBot(),60,false,true)) return enemy;
+        }
     for (size_t i = slot; i < pack.size(); i += tanks.size())
     {
         Unit* enemy = pack[i];
@@ -199,7 +250,7 @@ Unit* ai::MoltenCorePackTankTarget(PlayerbotAI* ai)
         // another living group tank merely to satisfy the allocation.
         const bool tankHeld = victim && victim->IsPlayer() && victim->IsAlive() &&
             std::find(tanks.begin(), tanks.end(), victim) != tanks.end();
-        if (!tankHeld) return enemy;
+        if (!tankHeld) {if (enemy->GetEntry()==11669) continue;return enemy;}
         if (victim == ai->GetBot()) held = enemy;
     }
     return held;
@@ -222,10 +273,36 @@ bool ai::PlanMoltenCorePack(PlayerbotAI* ai, EncounterPosition& plan)
                 plan.boss=pack[i]->GetObjectGuid();
                 plan.spell=pack[i]->GetEntry()==11669?20602:19771;
                 plan.source=bot->GetObjectGuid();
-                plan.destination={tank->GetPositionX(),tank->GetPositionY(),tank->GetPositionZ()};
-                if (ValidateEncounterDestination(ai,plan)) return true;
+                auto recovery=tanks;
+                if (pack[i]->GetEntry()==11669)
+                    std::sort(recovery.begin(),recovery.end(),[bot](Player* a,Player* b) {
+                        const float da=bot->GetDistance(a),db=bot->GetDistance(b);
+                        return da!=db ? da<db : a->GetObjectGuid()<b->GetObjectGuid();
+                    });
+                else recovery={tank};
+                for (Player* candidate:recovery)
+                {
+                    if (!candidate->CanReactInCombat()) continue;
+                    plan.destination={candidate->GetPositionX(),candidate->GetPositionY(),candidate->GetPositionZ()};
+                    if (ValidateEncounterDestination(ai,plan)) return true;
+                }
                 plan.active=false;return false;
             }
+#ifdef MANGOSBOT_ZERO
+    if (bot->getClass()==CLASS_MAGE && !ai->IsTank(bot) && !ai->IsHeal(bot))
+        for (ObjectGuid guid:ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
+        {
+            Unit* ancient=ai->GetUnit(guid);
+            if (!ancient || ancient->GetEntry()!=11673 || !ancient->IsInWorld() || !ancient->IsAlive() ||
+                !ancient->IsInCombat() || !bot->IsInMap(ancient) || ancient->HasCharmer()) continue;
+            Unit* victim=ancient->GetVictim();
+            if (!victim || !victim->IsPlayer() || !victim->IsInWorld() || !victim->IsAlive() ||
+                !bot->IsInMap(victim) || static_cast<Player*>(victim)->GetGroup()!=bot->GetGroup() ||
+                !ai->IsTank(static_cast<Player*>(victim))) continue;
+            plan.boss=ancient->GetObjectGuid();
+            return PlanCoreHoundRanged(ai,ancient,plan); // Patrol mixed into a pack: preserve ranged safety.
+        }
+#endif
     if (pack.size()<2 && pack.front()->GetEntry()!=11669) {plan.active=false;return false;}
     if (ai->IsTank(bot))
     {
@@ -331,7 +408,7 @@ bool ai::MoltenCoreImpPack(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
-        bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsRealPlayer() || ai->IsHeal(bot)) return false;
+        bot->GetMapId() != 409 || !bot->GetGroup() || ai->IsRealPlayer() || ai->IsHeal(bot)) return false;
     Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
     if (!target || !target->IsInWorld() || !bot->IsInMap(target) || !target->IsAlive() ||
         !target->IsInCombat() || (target->GetEntry() != 11669 && target->GetEntry()!=12101)) return false;
@@ -353,7 +430,8 @@ bool ai::MoltenCoreImpPack(PlayerbotAI* ai)
             ++imps;
         }
     }
-    return imps >= 3 && held > 0 && ai->GetCombatStartTime() && time(0) - ai->GetCombatStartTime() >= 10;
+    return imps >= 3 && ((held > 0 && ai->GetCombatStartTime() && time(0) - ai->GetCombatStartTime() >= 10) ||
+        MoltenCoreImpUnderPressure(ai));
 }
 
 namespace
@@ -428,14 +506,14 @@ namespace
         Player* bot=ai->GetBot();
         if (boss->GetVictim()==bot) return PlanMagmadarTank(ai,boss,plan);
         const bool healer=ai->IsHeal(bot);
-        const bool ranged=ai->IsRanged(bot)||healer;
+        const bool ranged=!ai->IsTank(bot) && (ai->IsRanged(bot)||healer);
         std::vector<Player*> members;
         for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
         {
             Player* member=ref->getSource();
             if (!member || !member->IsInWorld() || !member->IsAlive() || member->HasCharmer() ||
                 member->IsBeingTeleported() || !bot->IsInMap(member) || member==boss->GetVictim() ||
-                member->GetDistance(boss)>100 || (ai->IsRanged(member)||ai->IsHeal(member))!=ranged) continue;
+                member->GetDistance(boss)>100 || (!ai->IsTank(member) && (ai->IsRanged(member)||ai->IsHeal(member)))!=ranged) continue;
             members.push_back(member);
         }
         std::sort(members.begin(),members.end(),[](Player* a,Player* b){return a->GetObjectGuid()<b->GetObjectGuid();});
@@ -476,7 +554,7 @@ namespace
         // Keep a valid maximum-range rear station; do not drift inward after
         // finding it, or move just because another bot arrived in its slot.
         if (std::cos(ownAngle-boss->GetOrientation())<-0.05f && radial>=outerRange(ownAngle)-1.5f &&
-            bot->GetDistance(rangeTarget)<=maximum && (!ranged||separated(here)>=5))
+            radial<=outerRange(ownAngle)+0.5f && bot->GetDistance(rangeTarget)<=maximum && (!ranged||separated(here)>=5))
         {
             plan.destination=here;
             if (ValidateEncounterDestination(ai,plan)) return true;
@@ -576,7 +654,7 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
     plan = EncounterPosition();
     Player* bot = ai->GetBot();
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
-        bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsRealPlayer()) return false;
+        bot->GetMapId() != 409 || !bot->GetGroup() || ai->IsRealPlayer()) return false;
     if (PlanGarrPosition(ai, plan)) return true;
     if (PlanRagnarosFormation(ai, plan)) return true;
     if (PlanGolemaggFormation(ai, plan)) return true;
@@ -585,6 +663,7 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
     if (PlanLavaTrashCarrier(ai, plan)) return true;
     if (PlanLavaTrashBanish(ai, plan)) return true;
     if (PlanMoltenCoreGiants(ai, plan)) return true;
+    if (PlanMoltenCoreMageCleave(ai, plan)) return true;
     Unit* selected = nullptr;
     for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
     {
@@ -957,7 +1036,7 @@ Unit* MoltenCorePriorityTargetAction::GetTarget()
 {
     if (Unit* assigned = MoltenCoreAssignedTankTarget(ai)) return assigned;
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
-        bot->GetMapId() != 409 || !bot->IsInCombat() || !bot->GetGroup() || ai->IsHeal(bot) || ai->IsTank(bot)) return nullptr;
+        bot->GetMapId() != 409 || !bot->GetGroup() || ai->IsHeal(bot) || ai->IsTank(bot)) return nullptr;
 
     Unit* boss = nullptr;
     bool ragSons = false;
@@ -1112,6 +1191,7 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         bot->GetMapId() != 409) return false;
     plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("molten core position")->Get();
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
+    if (plan.spell==1449) return PlanMoltenCoreMageCleave(ai,plan);
     if (plan.spell == 18647)
     {
         Unit* assigned = LavaTrashBanishTarget(ai);
@@ -1181,6 +1261,10 @@ bool MoltenCorePositionAction::isUseful()
 {
     EncounterPosition plan;
     if (!GetPlan(ai,plan)) return false;
+    // Formation adjustments wait for a real cast/channel to finish. Otherwise
+    // a one-yard formation correction can cancel Frostbolt (or any class's
+    // damage/heal) repeatedly without ever completing useful work.
+    if (bot->IsNonMeleeSpellCasted(false,false,true) && !ShouldReactionInterruptCast()) return false;
     if (bot->GetDistance(plan.destination.x,plan.destination.y,plan.destination.z)>1.5f) return true;
     if (!bot->movespline || bot->movespline->Finalized()) return false;
     // Only stop an actual spline continuing beyond the station. A retained
@@ -1193,7 +1277,19 @@ bool MoltenCorePositionAction::isUseful()
 bool MoltenCorePositionAction::ShouldReactionInterruptCast() const
 {
     EncounterPosition plan;
-    return ai->CanMove() && GetPlan(ai, plan) && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
+    if (!ai->CanMove() || !GetPlan(ai,plan) ||
+        bot->GetDistance(plan.destination.x,plan.destination.y,plan.destination.z)<=1.5f) return false;
+    // Carrying a bomb/loose mob and escaping a real hazard outrank casts.
+    if (!plan.source.IsEmpty() && plan.source==bot->GetObjectGuid()) return true;
+    const bool formation=plan.spell==1449 || plan.spell==18945 || plan.spell==19196 || plan.spell==19272 ||
+        plan.spell==19364 || plan.spell==19630 || plan.spell==19771 || plan.spell==20602 || plan.spell==21155;
+    if (!formation) return true;
+    Unit* boss=ai->GetUnit(plan.boss);
+    // Fear can leave a melee/caster directly in Magmadar's breath. That is a
+    // real emergency; ordinary maximum-range/spacing adjustments are not.
+    return boss && boss->GetEntry()==11982 && boss->IsInWorld() && boss->IsAlive() &&
+        bot->IsInMap(boss) && boss->GetVictim()!=bot &&
+        std::cos(boss->GetAngle(bot)-boss->GetOrientation())>0;
 }
 
 bool MoltenCorePositionAction::Execute(Event& event)
@@ -1201,6 +1297,7 @@ bool MoltenCorePositionAction::Execute(Event& event)
     EncounterPosition plan, current;
     std::vector<encounter::Circle> threats;
     if (!GetPlan(ai, plan) || !ai->CanMove()) return false;
+    if (bot->IsNonMeleeSpellCasted(false,false,true) && !ShouldReactionInterruptCast()) return false;
     if (plan.spell == 21155)
     {
         if (!PlanRagnarosFormation(ai, current)) return false;
@@ -1214,10 +1311,11 @@ bool MoltenCorePositionAction::Execute(Event& event)
         }
     }
     else if (plan.spell == 18945 || plan.spell == 19196 || plan.spell == 19272 || plan.spell == 19364 || plan.spell == 19630 ||
-        plan.spell == 19771 || plan.spell == 20602)
+        plan.spell == 19771 || plan.spell == 20602 || plan.spell == 1449)
     {
-        if (MoltenCoreThreats(ai, current, threats) || !PlanMoltenCoreTrash(ai, current)) return false;
-        plan = current;
+        // GetPlan admitted this exact station. Replacing it with a different
+        // fresh formation here could stop/reverse the route on every reaction.
+        if (MoltenCoreThreats(ai, current, threats)) return false;
     }
     else if (!MoltenCoreThreats(ai, current, threats)) return false;
     if (
@@ -1227,6 +1325,13 @@ bool MoltenCorePositionAction::Execute(Event& event)
         ai->StopMoving();
         SetDuration(100);
         return true;
+    }
+    if (bot->movespline && !bot->movespline->Finalized())
+    {
+        const auto end=bot->movespline->FinalDestination();
+        if (std::hypot(end.x-plan.destination.x,end.y-plan.destination.y)<=1.5f &&
+            std::fabs(end.z-plan.destination.z)<=1.5f)
+        { SetDuration(100);return true; } // Let the admitted native route finish.
     }
     return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
 }

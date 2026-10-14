@@ -24,7 +24,7 @@ bool ai::ControlledRaidAoe(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
-        !bot->IsInCombat() || !bot->GetGroup() || !bot->GetMap()->IsRaid() || ai->IsRealPlayer() ||
+        (!bot->IsInCombat() && bot->GetMapId()!=409) || !bot->GetGroup() || !bot->GetMap()->IsRaid() || ai->IsRealPlayer() ||
         ai->IsHeal(bot) || !ai->GetCombatStartTime() || time(0) - ai->GetCombatStartTime() < 2) return false;
     if (!ai->IsTank(bot) && (MoltenCoreNukeTarget(ai) || MoltenCoreBossBurn(ai))) return false;
     if (MoltenCoreImpAoeOpening(ai)) return false;
@@ -62,6 +62,10 @@ bool ai::ControlledRaidAoe(PlayerbotAI* ai)
             PossibleAttackTargetsValue::HasUnBreakableCC(enemy, bot)) return false;
         if (dx*dx + dy*dy > 8.0f*8.0f || std::fabs(dz) > 5.0f) continue;
         Unit* victim = enemy->GetVictim();
+        // Recoverable loose imps need ranged AoE support during pickup. This
+        // does not admit an unpulled/CC target, an unrelated victim or a pack
+        // without a nearby living tank able to react.
+        if (MoltenCoreRecoverableImp(ai,enemy)) { ++controlled;continue; }
         if (!victim || !victim->IsPlayer() || !victim->IsInWorld() || !victim->IsAlive() ||
             !bot->IsInMap(victim)) return false;
         Player* tank = static_cast<Player*>(victim);

@@ -40,7 +40,9 @@ struct Unit {virtual ~Unit()=default;virtual bool IsPlayer(){return false;}bool 
  Spell* GetCurrentSpell(CurrentSpellTypes type){return type==CURRENT_GENERIC_SPELL?cast:nullptr;}
 };
 struct Group;
+struct Spline{bool Finalized(){return true;}struct Point{float x=0,y=0,z=0;};Point FinalDestination(){return {};}};
 struct Player:Unit {bool teleport=false;unsigned mapId=409,instance=1;Group* group=nullptr;
+ Spline*movespline=nullptr;bool IsNonMeleeSpellCasted(bool,bool,bool){return false;}
  bool IsPlayer()override{return true;}
  PlayerbotAI* GetPlayerbotAI(){return nullptr;}
  float GetDistance(Unit* unit){return GetDistance(unit->x,unit->y,unit->z);}
@@ -88,11 +90,13 @@ namespace ai {
  struct Event{};
  struct JumpAction {JumpAction(PlayerbotAI*){} void Qualify(const char*){} bool Execute(Event&){return false;}};
  struct MoltenCorePositionAction {PlayerbotAI* ai;Player*bot=ai->bot;static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool Execute(Event&);
+ bool ShouldReactionInterruptCast(){return true;}
  void SetDuration(unsigned){}
  bool IsReaction(){return true;}
  bool MoveTo(unsigned,float,float,float,bool idle,bool reaction,bool noPath,bool ignoreEnemies){assert(!idle&&reaction&&!noPath&&ignoreEnemies);++ai->moves;return true;}};
 }
 #define AI_VALUE(type,name) ai->attackers
+bool PlanMoltenCoreMageCleave(PlayerbotAI*,EncounterPosition&){return false;}
 __METHODS__
 int main(){
  Player bot,other;Map map,otherMap;bot.map=other.map=&map;bot.guid=2;other.guid=3;other.x=1;

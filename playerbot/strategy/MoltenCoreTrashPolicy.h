@@ -4,13 +4,15 @@
 namespace ai
 {
     bool MoltenCoreImpTauntAllowed(PlayerbotAI* ai, const std::string& name);
+    bool MoltenCoreImpUnderPressure(PlayerbotAI* ai);
+    bool MoltenCoreRecoverableImp(PlayerbotAI* ai, Unit* enemy);
     inline bool MoltenCoreImpAoeOpening(PlayerbotAI* ai)
     {
         Player* bot=ai->GetBot();
         if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
-            bot->HasCharmer() || bot->GetMapId()!=409 || !bot->IsInCombat() || ai->IsTank(bot)) return false;
+            bot->HasCharmer() || bot->GetMapId()!=409 || ai->IsTank(bot)) return false;
         const time_t started=ai->GetCombatStartTime();
-        if (started && time(0)-started>=10) return false;
+        if (!started || time(0)-started>=10 || MoltenCoreImpUnderPressure(ai)) return false;
         for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
         {
             Unit* imp=ai->GetUnit(guid);

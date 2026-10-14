@@ -4,6 +4,8 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/actions/GenericSpellActions.h"
 #include "playerbot/strategy/actions/BotCommandAccess.h"
+#include "playerbot/strategy/MoltenCoreTrashPolicy.h"
+#include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 
 using namespace ai;
 
@@ -181,6 +183,7 @@ bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
                   // Damage still uses native threat/resource checks; the separate
                   // Flame Imp opening remains enforced for damage and AoE.
                   if (ai->IsHeal(bot) || ai->IsTank(bot)) return false;
+                  if (bot->GetMapId()==409 && (MoltenCorePackStackRequired(ai) || MoltenCoreImpUnderPressure(ai))) return false;
                   if (target && target->IsInWorld() && target->IsAlive() && target->IsInCombat() &&
                       bot->IsInMap(target) && target->GetEntry()!=11669)
                       if (Unit* victim=target->GetVictim())

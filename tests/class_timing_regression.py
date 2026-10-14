@@ -22,7 +22,7 @@ struct Event{};
 wait=src('generic/CombatStrategy.cpp')
 run(common+r'''
 struct Unit {virtual ~Unit(){};bool IsPlayer(){return false;}bool IsInWorld(){return true;}bool IsAlive(){return true;}bool IsInCombat(){return true;}unsigned GetEntry(){return 1;}Unit*GetVictim(){return nullptr;}float health=100;float GetHealthPercent(){return health;}};
-struct Map{bool IsRaid(){return false;}};using ObjectGuid=Unit*;struct PlayerbotAI;struct Player:Unit {Map map;Map*GetMap(){return &map;}bool IsBeingTeleported(){return false;}bool HasCharmer(){return false;}bool IsInMap(Unit*){return true;}PlayerbotAI*ai=nullptr;PlayerbotAI*GetPlayerbotAI(){return ai;}bool grouped=true;void* GetGroup(){return grouped?this:nullptr;}};
+struct Map{bool IsRaid(){return false;}};using ObjectGuid=Unit*;struct PlayerbotAI;struct Player:Unit {Map map;Map*GetMap(){return &map;}unsigned GetMapId(){return 0;}bool IsBeingTeleported(){return false;}bool HasCharmer(){return false;}bool IsInMap(Unit*){return true;}PlayerbotAI*ai=nullptr;PlayerbotAI*GetPlayerbotAI(){return ai;}bool grouped=true;void* GetGroup(){return grouped?this:nullptr;}};
 struct Value{Unit* target=nullptr;Unit* Get(){return target;}};
 struct AiObjectContext {Value v;template<class T>Value* GetValue(const char*){return &v;}};
 enum class BotState{BOT_STATE_COMBAT};
@@ -37,6 +37,7 @@ struct Action {virtual ~Action(){};std::string name="attack";Unit* patient=nullp
  virtual Unit* GetTarget(){return patient;}std::string& getName(){return name;}ActionThreatType getThreatType(){return threat;}};
 struct CastHealingSpellAction:Action{};
 struct WaitForAttackMultiplier{PlayerbotAI* ai;float GetValue(Action*);};
+bool MoltenCorePackStackRequired(PlayerbotAI*){return false;}bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}
 '''+block(wait,'bool WaitForAttackStrategy::ShouldWait')+block(wait,'float WaitForAttackMultiplier::GetValue')+r'''
 int main(){PlayerbotAI ai;Player enemy;Unit mob,patient;ai.ctx.v.target=&mob;assert(WaitForAttackStrategy::ShouldWait(&ai));
  ai.ctx.v.target=&enemy;assert(!WaitForAttackStrategy::ShouldWait(&ai));sServerFacade.friendly=true;assert(WaitForAttackStrategy::ShouldWait(&ai));

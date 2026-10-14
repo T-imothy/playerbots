@@ -48,6 +48,9 @@ namespace ai
         bool Execute(Event& event) override;
         bool isUseful() override;
         bool ShouldReactionInterruptCast() const override;
+        // Execute owns replacement of the native route. Pre-emptively stopping
+        // it here makes repeated formation reactions stutter before execution.
+        bool ShouldReactionInterruptMovement() const override { return false; }
         static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
     };
 

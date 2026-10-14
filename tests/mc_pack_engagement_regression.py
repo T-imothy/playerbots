@@ -10,7 +10,8 @@ publish=block(source,'if (((packet.GetOpcode()==SMSG_ATTACKSTART')
 getplan=block(actions,'bool MoltenCorePositionAction::GetPlan(')
 execute=block(actions,'bool MoltenCorePositionAction::Execute(')
 assert 'plan.spell == 19364' in execute and 'plan.spell == 20602' in execute
-assert execute.index('PlanMoltenCoreTrash(ai, current)')<execute.index('return MoveTo(')
+assert execute.index('GetPlan(ai, plan)')<execute.index('return MoveTo(')
+assert 'PlanMoltenCoreTrash(ai, current)' not in execute
 assert block(source,'void PlayerbotAI::UpdateAI(').index('PrepareForUrgentCombat()')<block(source,'void PlayerbotAI::UpdateAI(').index('if (!delayAlreadyAdvanced)')
 urgent=block((r/'playerbot/PlayerbotAI.h').read_text(),'bool HasUrgentCommand()').replace(' override','')
 code=r'''
@@ -61,6 +62,7 @@ bool PlanMagmadarFormation(PlayerbotAI*,Unit*,EncounterPosition&p){++replans;p.d
 Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&){return false;}
 struct MoltenCorePositionAction{static bool GetPlan(PlayerbotAI*,EncounterPosition&);};
 __WAKE__
+bool PlanMoltenCoreMageCleave(PlayerbotAI*,EncounterPosition&){return false;}
 __GETPLAN__
 int main(){Group group;Player bot,tank;bot.group=tank.group=&group;Unit imp;imp.victim=&bot;bot.attackers={&imp};PlayerbotAI ai{&bot};ai.units={{3,&imp}};WorldPacket packet;
  ai.Publish(packet);assert(ai.HasUrgentCommand());ai.PrepareForUrgentCombat();

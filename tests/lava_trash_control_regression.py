@@ -12,7 +12,7 @@ struct SpellEntry{unsigned Id=19775;unsigned Effect[3]={};bool damage=false;};
 struct SpellAuraHolder{ObjectGuid caster;ObjectGuid GetCasterGuid(){return caster;}};
 struct Reference{ObjectGuid guid;ObjectGuid getUnitGuid()const{return guid;}};
 struct ThreatManager{std::list<Reference*>refs;const std::list<Reference*>&getThreatList(){return refs;}};''')
-code=code.replace('std::set<unsigned>auras;', '''std::set<unsigned>auras;Unit*owner=nullptr;Unit*GetOwner(){return owner;}
+code=code.replace('std::set<unsigned>auras;', '''std::set<unsigned>auras;Unit*GetOwner(){return owner;}
  std::map<unsigned,SpellAuraHolder>holders;SpellAuraHolder*GetSpellAuraHolder(unsigned s){return holders.count(s)?&holders[s]:nullptr;}
  ThreatManager threat;ThreatManager&getThreatManager(){return threat;}unsigned GetTypeId(){return IsPlayer()?TYPEID_PLAYER:TYPEID_UNIT;}bool CanInitiateAttack(){return true;}bool CanAttackOnSight(Unit*){return !friendly;}float GetAttackDistance(Unit*){return 12;}''')
 code=code.replace('GroupReference*GetFirstMember(){', '''ObjectGuid GetLeaderGuid(){return refs.empty()?ObjectGuid():refs.front().p->GetObjectGuid();}

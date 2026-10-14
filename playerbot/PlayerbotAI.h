@@ -780,6 +780,7 @@ private:
     void PrepareForUrgentTransition();
     void PrepareForUrgentAttack();
     void PrepareForUrgentCombat();
+    void PrepareForMoltenCoreFearRecovery();
     void PrepareForRaidRegroup();
     ObjectGuid regroupDeadTarget;
     void PrepareForPartyCombat();
@@ -816,6 +817,7 @@ protected:
     std::atomic<bool> urgentAttackPending{false};
     std::atomic<bool> urgentCombatPending{false};
     ObjectGuid urgentRecoveryTarget;
+    bool moltenCoreFeared = false;
     ObjectGuid raidPetGuid;
     uint32 raidPetNumber = 0;
     std::set<uint32> raidPetSuppressedSpells;

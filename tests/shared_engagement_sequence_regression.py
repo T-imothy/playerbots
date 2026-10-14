@@ -86,6 +86,7 @@ bool CanManageBotCommands(PlayerbotAI*a,Player*p){return a->owned&&p==&a->owner;
 struct Facade{bool IsFriendlyTo(Unit*,Unit*t){return t->friendly;}}sServerFacade;
 struct CombatEndTrigger{PlayerbotAI*ai;Context*context;bool IsActive();};
 #define AI_VALUE(T,N) context->GetValue<T>(N)->Get()
+bool MoltenCorePackStackRequired(PlayerbotAI*){return false;}bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}
 __METHODS__
 int main(){for(unsigned map:{409u,0u,530u,571u})for(bool raid:{true,false})for(unsigned role=0;role<3;++role){
  Player bot;bot.map=map;bot.group.raid=raid;bot.roleTank=role==0;bot.roleHeal=role==1;PlayerbotAI a(&bot);sObjectMgr.member=&a.owner;CombatEndTrigger end{&a,&a.context};

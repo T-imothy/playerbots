@@ -74,12 +74,14 @@ int main(){Player bot,member;Group group;GroupReference one{&bot},two{&member};o
  MoltenCoreDungeonStrategy strategy{&ai};
 #ifdef MANGOSBOT_ZERO
  const char*warlockArea="rain of fire";
+ const char*mageArea="molten core mage aoe";
 #else
  const char*warlockArea="seed of corruption";
+ const char*mageArea="blizzard";
 #endif
  for(auto cls:{CLASS_WARRIOR,CLASS_PALADIN,CLASS_HUNTER,CLASS_ROGUE,CLASS_SHAMAN,CLASS_MAGE,CLASS_WARLOCK,CLASS_DRUID}){
-  bot.cls=cls;std::list<TriggerNode*>triggers;strategy.InitCombatTriggers(triggers);auto t=triggers.front();assert(t->name=="molten core imp pack"&&t->actions[0]->name!="arcane missiles"&&t->actions[0]->name!="frostbolt"&&t->actions[0]->name!="shadow bolt");
-  assert(t->actions[0]->name==(cls==CLASS_WARRIOR?"whirlwind":cls==CLASS_PALADIN?"consecration":cls==CLASS_HUNTER?"volley":cls==CLASS_ROGUE?"blade flurry":cls==CLASS_SHAMAN?"chain lightning":cls==CLASS_MAGE?"blizzard":cls==CLASS_DRUID?"hurricane":warlockArea));
+  bot.cls=cls;std::list<TriggerNode*>triggers;strategy.InitCombatTriggers(triggers);auto t=triggers.front();assert((t->name=="molten core imp pack"||t->name=="molten core mage aoe")&&t->actions[0]->name!="arcane missiles"&&t->actions[0]->name!="frostbolt"&&t->actions[0]->name!="shadow bolt");
+  assert(t->actions[0]->name==(cls==CLASS_WARRIOR?"whirlwind":cls==CLASS_PALADIN?"consecration":cls==CLASS_HUNTER?"volley":cls==CLASS_ROGUE?"blade flurry":cls==CLASS_SHAMAN?"chain lightning":cls==CLASS_MAGE?mageArea:cls==CLASS_DRUID?"hurricane":warlockArea));
   for(auto*x:triggers)delete x;
  }
  std::cout<<"PASS native raid vendor delegation and combat/faction/ownership guards, no DPS shout threat, single-target Whirlwind threat and Classic AP/Frost default\n";

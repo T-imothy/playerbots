@@ -1,0 +1,57 @@
+MC cast, formation and Classic mage AoE recovery
+
+Observed: tanks could pull while a caster had no native combat bit yet. MC
+formation admission required that bit, and Execute recomputed a different
+station after GetPlan had admitted a cached station. Movement reactions also
+inherited unconditional movement interruption and interrupted casts for any
+formation distance over 1.5 yards. These paths can cause delayed stacking,
+route stutter and repeated cancelled casts independently of the leader's DPS.
+
+Changes shared by Classic, TBC and Wrath:
+- Actual live, engaged enemy/group-victim checks admit MC formations before
+  each companion has personally dealt damage. No native combat bit is forced.
+- Execute uses the admitted, revalidated station and retains a native spline
+  already heading there. It owns route replacement; reaction discovery does
+  not pre-emptively stop movement.
+- Ordinary formation movement waits for a native cast/channel to finish.
+  Aggro carriers, bombs, real hazards and Magmadar's frontal danger can still
+  interrupt. This applies to every class, including heals and Slam. Instant
+  abilities have no cast to cancel; route reuse prevents repeated movement
+  from monopolizing their action opportunities.
+- Native fear ending causes one owning-map wake/cache invalidation if a real
+  party combat anchor remains. Native fear, spell/GCD and control rules stay.
+- Magmadar off-tanks use melee stations regardless of ranged strategy flags;
+  post-fear stations are recomputed at usable range rather than retained just
+  because an old point is behind the boss.
+- A recoverable loose Flame Imp requires a real group victim (or group-owned
+  pet) and a living same-instance tank able to react within 30 yards. Pressure
+  releases opening/stand-off waits and allows ranged AoE during recovery.
+  All-tank-held imps retain the initial ten-second opening. Unpulled/CC mobs,
+  invalid victims, unrelated groups and absent/disabled tanks remain blocked.
+  Carriers try nearest safe tank routes; tank assignments prefer their own
+  slot but can recover a substantially closer imp. Native taunts remain.
+
+Classic mage policy only:
+- Controlled safe clusters of at least two support spell cleave. Native spell
+  rank, range, mana, cooldown, GCD, immunity and CC checks are delegated to the
+  existing actions, including their cast/channel duration.
+- Imps and Ancient Core Hound mixed pulls select Blizzard from range. The
+  chooser never creates a close cleave station for either.
+- Other safe close clusters: apply Flamestrike when the mage's own live field
+  does not affect the cluster, then Cone of Cold when at least two eligible
+  enemies are actually in front and in radius, then repeat Arcane Explosion.
+  Distant clusters use Blizzard while approaching a validated station.
+- Hound/Surger mandatory tank stacks and health-balanced hound selection stay
+  authoritative. Separate Geddon, Shazzrah, Magmadar, Golemagg, Majordomo and
+  Ragnaros routines are not replaced by close cleave. Banish/sheep and native
+  threat/resource checks remain intact. Later-era spec rotations are retained.
+- Generic emergency Frost Nova yields on mandatory stacks and safe controlled
+  cleave formations; otherwise its high-priority root/fallback can dominate
+  the area damage rotation merely because raid tanks have grouped enemies.
+
+Verification: actual production methods compiled against controlled native
+interfaces in all three era configurations, full recruitment/summon/shared
+combat and encounter suites, plus complete server builds/CTest. An old-source
+comparison must fail the routine cast-interruption regression. These checks
+do not prove a live forty-player raid clear or a damage target after restart.
+No SQL, lockout, addon, ownership, teleport command or preparation wire change.

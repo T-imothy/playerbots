@@ -21,6 +21,7 @@ struct Context{Cached<ObjectGuid>marked;Cached<std::list<ObjectGuid>>possible;te
 struct PlayerbotAI{Player*bot;Context context;std::map<unsigned,Unit*>units;time_t started=time(0)-12;time_t GetCombatStartTime(){return started;}Player*GetBot(){return bot;}Context*GetAiObjectContext(){return &context;}bool IsTank(Player*p){return p->tank;}Unit*GetUnit(unsigned g){return units.count(g)?units[g]:nullptr;}};
 struct{float sightDistance=60;}sPlayerbotAIConfig;
 namespace ai{bool MoltenCoreImpTauntAllowed(PlayerbotAI*,const std::string&){return true;}struct PossibleAttackTargetsValue{static bool IsValid(Unit*u,Player*,float,bool,bool){return u->valid;}static bool HasBreakableCC(Unit*u,Player*){return u->cc;}static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}};
+bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}
 __METHODS__
 }
 int main(){using namespace ai;Player bot;PlayerbotAI a{&bot};Unit walker,guard,elemental;
@@ -44,7 +45,8 @@ assert(!MoltenCoreTrashSpellAllowed(&a,"blizzard")&&!MoltenCoreTrashSpellAllowed
 assert(MoltenCoreTrashSpellAllowed(&a,"shadow bolt")&&MoltenCoreTrashSpellAllowed(&a,"flash heal"));
 bot.tank=true;assert(MoltenCoreTrashSpellAllowed(&a,"thunder clap")&&MoltenCoreTrashSpellAllowed(&a,"consecration"));bot.tank=false;
 a.started=time(0)-10;assert(MoltenCoreTrashSpellAllowed(&a,"blizzard"));
-a.started=0;assert(!MoltenCoreTrashSpellAllowed(&a,"blizzard"));elemental.combat=false;assert(MoltenCoreTrashSpellAllowed(&a,"blizzard"));
+a.started=0;assert(MoltenCoreTrashSpellAllowed(&a,"blizzard")); // no indefinite opening timer; native action still checks readiness
+elemental.combat=false;assert(MoltenCoreTrashSpellAllowed(&a,"blizzard"));
 elemental.combat=true;elemental.instance=2;assert(MoltenCoreTrashSpellAllowed(&a,"blizzard"));elemental.instance=1;
 elemental.alive=false;a.started=time(0)-12;
 bot.map=0;assert(!MoltenCoreNukeTarget(&a)&&MoltenCoreTrashSpellAllowed(&a,"blizzard"));bot.map=409;bot.teleport=true;assert(!MoltenCoreNukeTarget(&a));

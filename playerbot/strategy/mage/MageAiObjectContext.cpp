@@ -253,6 +253,7 @@ ShareCreators<AiObjectContextInternal>([this] {
                     creators["presence of mind"] = [](PlayerbotAI* ai) { return new CastPresenceOfMindAction(ai); };
                     creators["frostbolt"] = [](PlayerbotAI* ai) { return new CastFrostboltAction(ai); };
                     creators["blizzard"] = [](PlayerbotAI* ai) { return new CastBlizzardAction(ai); };
+                    creators["molten core mage aoe"] = [](PlayerbotAI* ai) { return new MoltenCoreMageAoeAction(ai); };
                     creators["frost nova"] = [](PlayerbotAI* ai) { return new CastFrostNovaAction(ai); };
                     creators["arcane intellect"] = [](PlayerbotAI* ai) { return new CastArcaneIntellectAction(ai); };
                     creators["arcane intellect on party"] = [](PlayerbotAI* ai) { return new CastArcaneIntellectOnPartyAction(ai); };

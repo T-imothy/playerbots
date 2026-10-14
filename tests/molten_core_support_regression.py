@@ -4,7 +4,7 @@ import subprocess,tempfile
 from behavior_regression import block
 r=Path(__file__).resolve().parents[1]
 s=(r/'playerbot/strategy/actions/MoltenCoreDungeonActions.cpp').read_text()
-methods='\n'.join(block(s,m) for m in ('bool ai::MoltenCoreImpPack(', 'bool ai::MoltenCoreImpTauntAllowed(', 'const char* MoltenCoreRangeSpell(', 'bool PlanCoreHoundRanged(', 'void PreserveMoltenCoreTank(', 'std::vector<Unit*> MoltenCorePack(', 'std::vector<Player*> MoltenCorePackTanks(', 'bool ai::MoltenCorePackStackRequired(', 'Unit* ai::MoltenCorePackTankTarget(', 'bool ai::PlanMoltenCorePack(', 'bool PlanMagmadarTank(', 'bool PlanMagmadarFormation(', 'bool ai::PlanGeddonFormation(', 'bool RaidMember(', 'bool RaidEnemy(', 'bool MoltenCoreBoss(', 'Unit* RaidBoss(', 'std::vector<Unit*> ai::MoltenCoreGroupTrash(', 'Unit* MoltenCoreTrashTankTarget(', 'bool ai::PlanMoltenCoreGiants(', 'uint32 RaidAdd(', 'std::vector<Unit*> RaidAdds(', 'Unit* MajordomoFocus(', 'Unit* MajordomoAssignedHealer(', 'bool MajordomoSupport(', 'bool ai::PlanMajordomoFormation(', 'Unit* ai::MoltenCoreAssignedTankTarget(', 'bool MoltenCoreSupportAction::Select(', 'bool MoltenCoreSupportAction::Execute(', 'bool ai::PlanGolemaggFormation(', 'Unit* ai::MoltenCoreRagnaros(', 'std::vector<Player*> RagnarosRanged(', 'const char* RagnarosRangeSpell(', 'bool ai::RagnarosSameCluster(', 'bool ai::PlanRagnarosFormation(', 'bool ai::PlanMoltenCoreTrash('))
+methods='\n'.join(block(s,m) for m in ('bool ai::MoltenCoreRecoverableImp(', 'bool ai::MoltenCoreImpUnderPressure(', 'bool ai::MoltenCoreImpPack(', 'bool ai::MoltenCoreImpTauntAllowed(', 'const char* MoltenCoreRangeSpell(', 'bool PlanCoreHoundRanged(', 'void PreserveMoltenCoreTank(', 'std::vector<Unit*> MoltenCorePack(', 'std::vector<Player*> MoltenCorePackTanks(', 'bool ai::MoltenCorePackStackRequired(', 'Unit* ai::MoltenCorePackTankTarget(', 'bool ai::PlanMoltenCorePack(', 'bool PlanMagmadarTank(', 'bool PlanMagmadarFormation(', 'bool ai::PlanGeddonFormation(', 'bool RaidMember(', 'bool RaidEnemy(', 'bool MoltenCoreBoss(', 'Unit* RaidBoss(', 'std::vector<Unit*> ai::MoltenCoreGroupTrash(', 'Unit* MoltenCoreTrashTankTarget(', 'bool ai::PlanMoltenCoreGiants(', 'uint32 RaidAdd(', 'std::vector<Unit*> RaidAdds(', 'Unit* MajordomoFocus(', 'Unit* MajordomoAssignedHealer(', 'bool MajordomoSupport(', 'bool ai::PlanMajordomoFormation(', 'Unit* ai::MoltenCoreAssignedTankTarget(', 'bool MoltenCoreSupportAction::Select(', 'bool MoltenCoreSupportAction::Execute(', 'bool ai::PlanGolemaggFormation(', 'Unit* ai::MoltenCoreRagnaros(', 'std::vector<Player*> RagnarosRanged(', 'const char* RagnarosRangeSpell(', 'bool ai::RagnarosSameCluster(', 'bool ai::PlanRagnarosFormation(', 'bool ai::PlanMoltenCoreTrash('))
 code=r'''
 #include <cassert>
 #include <ctime>
@@ -26,7 +26,7 @@ struct Aura{unsigned stacks=5;unsigned GetStackAmount(){return stacks;}};
 struct Unit{virtual ~Unit()=default;unsigned entry=0,map=409,instance=1,phase=1;ObjectGuid guid;bool world=true,alive=true,combat=true,charmed=false,friendly=false,cc=false,hardCC=false,attackable=true;
  float x=0,y=0,z=0,o=0,health=100;bool mobile=true;bool CanReactInCombat(){return mobile&&alive&&!charmed;}bool IsImmobilizedState(){return !mobile;}
  std::vector<Unit*>attackers;const auto&getAttackers(){return attackers;}
- Unit*victim=nullptr;Spell*cast=nullptr;std::set<unsigned>auras;
+ Unit*owner=nullptr;Unit*GetOwner(void*,bool){return owner;}Unit*victim=nullptr;Spell*cast=nullptr;std::set<unsigned>auras;
  virtual bool IsPlayer(){return false;}unsigned GetEntry(){return entry;}ObjectGuid GetObjectGuid(){return guid;}unsigned GetGUIDLow(){return guid;}unsigned GetInstanceId(){return instance;}
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
  bool IsSpellReady(unsigned){return true;}bool IsInMap(Unit*u){return world&&u->world&&map==u->map&&instance==u->instance&&phase==u->phase;}
@@ -65,7 +65,7 @@ namespace ai{void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPos
  bool ValidateEncounterDestination(PlayerbotAI*ai,EncounterPosition&p,bool walking=true){if(p.spell==19364)assert(p.active&&p.map==ai->bot->GetMapId()&&p.instance==ai->bot->GetInstanceId());for(const auto& h:liveFire)if(std::hypot(p.destination.x-h.first.x,p.destination.y-h.first.y)<h.second)return false;return (!walking||ai->path)&&!ai->fireBlocked&&(!ai->rejectFrontLane||p.destination.y>5)&&(!ai->rejectFarPaths||std::hypot(p.destination.x,p.destination.y)<40);}float NativeEncounterSpellRadius(unsigned id){assert(id==1161||id==5209||id==19364||id==19408||id==20602||id==20556||id==19798||id==21155||id==20566);return id==19364?45.0f:id==20566?25.0f:id==21155?20.0f:id==19408?45.0f:id==20556?30.0f:id==19798?18.0f:10.0f;}
  Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool LavaTrashReservedTarget(PlayerbotAI*,Unit*){return false;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&){return false;}bool PlanLavaTrashBanish(PlayerbotAI*,EncounterPosition&){return false;}
  std::vector<Unit*>MoltenCoreGroupTrash(PlayerbotAI*);bool PlanMoltenCoreGiants(PlayerbotAI*,EncounterPosition&);bool MoltenCoreGroupEnemy(PlayerbotAI*a,Unit*u){return u&&u->world&&u->alive&&u->combat&&!u->charmed&&!u->friendly&&a->bot->IsInMap(u)&&u->victim&&u->victim->IsPlayer()&&static_cast<Player*>(u->victim)->group==a->bot->group;}bool MoltenCoreRecoveryTrash(unsigned e){return e!=11502&&e!=12099&&e!=11672&&e!=11663&&e!=11664&&e!=12143;}
- Unit* MoltenCoreRagnaros(PlayerbotAI*);bool RagnarosSameCluster(PlayerbotAI*,Player*);bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&);bool PlanMajordomoFormation(PlayerbotAI*,EncounterPosition&);bool PlanGolemaggFormation(PlayerbotAI*,EncounterPosition&);bool PlanGeddonFormation(PlayerbotAI*,Unit*,EncounterPosition&);Unit*GarrTankTarget(PlayerbotAI*){return nullptr;}Unit*GarrBanishTarget(PlayerbotAI*){return nullptr;}bool GarrTankHandoff(PlayerbotAI*,Unit*){return false;}bool PlanGarrPosition(PlayerbotAI*,EncounterPosition&){return false;}bool MoltenCorePackStackRequired(PlayerbotAI*);Unit*MoltenCorePackTankTarget(PlayerbotAI*);bool PlanMoltenCorePack(PlayerbotAI*,EncounterPosition&);Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*);inline const char* MagePrimaryDamageSpell(PlayerbotAI*){return "frostbolt";}bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&);bool MoltenCoreImpPack(PlayerbotAI*);bool MoltenCoreImpTauntAllowed(PlayerbotAI*,const std::string&);
+ Unit* MoltenCoreRagnaros(PlayerbotAI*);bool RagnarosSameCluster(PlayerbotAI*,Player*);bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&);bool PlanMajordomoFormation(PlayerbotAI*,EncounterPosition&);bool PlanGolemaggFormation(PlayerbotAI*,EncounterPosition&);bool PlanGeddonFormation(PlayerbotAI*,Unit*,EncounterPosition&);Unit*GarrTankTarget(PlayerbotAI*){return nullptr;}Unit*GarrBanishTarget(PlayerbotAI*){return nullptr;}bool GarrTankHandoff(PlayerbotAI*,Unit*){return false;}bool PlanGarrPosition(PlayerbotAI*,EncounterPosition&){return false;}bool MoltenCorePackStackRequired(PlayerbotAI*);Unit*MoltenCorePackTankTarget(PlayerbotAI*);bool PlanMoltenCorePack(PlayerbotAI*,EncounterPosition&);Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*);inline const char* MagePrimaryDamageSpell(PlayerbotAI*){return "frostbolt";}bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&);bool PlanMoltenCoreMageCleave(PlayerbotAI*,EncounterPosition&){return false;}bool MoltenCoreRecoverableImp(PlayerbotAI*,Unit*);bool MoltenCoreImpUnderPressure(PlayerbotAI*);bool MoltenCoreImpPack(PlayerbotAI*);bool MoltenCoreImpTauntAllowed(PlayerbotAI*,const std::string&);
  struct Event{};struct MoltenCoreSupportAction{PlayerbotAI*ai;Player*bot;bool Select(std::string&,Unit*&);bool Execute(Event&);void SetDuration(unsigned){}};
 }
 using namespace ai;
@@ -298,9 +298,11 @@ int main(){
  // Mixed imp/surger admission: one loose imp cannot deadlock the whole raid.
  boss.entry=12101;boss.victim=&mainTank;ai.context.current.value=10;ai.context.possible.value={10,40,41,42};
  h1.victim=&mainTank;h2.victim=&bot;h3.victim=&mainTank;assert(MoltenCoreImpPack(&ai));
- ai.combatStart=time(0)-1;assert(!MoltenCoreImpPack(&ai));ai.combatStart=time(0)-12;
+ ai.combatStart=time(0)-1;assert(MoltenCoreImpPack(&ai)); // live pressure bypasses the opening hold
+ h2.victim=&mainTank;assert(!MoltenCoreImpPack(&ai));h2.victim=&bot;ai.combatStart=time(0)-12;
  h3.cc=true;assert(!MoltenCoreImpPack(&ai));h3.cc=false;h3.combat=false;assert(!MoltenCoreImpPack(&ai));h3.combat=true;
- h1.victim=h2.victim=h3.victim=&bot;assert(!MoltenCoreImpPack(&ai));ai.context.current.value=0;
+ h1.victim=h2.victim=h3.victim=&bot;assert(MoltenCoreImpPack(&ai)); // nearby reactive tanks still recover a loose pack
+ mainTank.mobile=secondTank.mobile=false;assert(!MoltenCoreImpPack(&ai));mainTank.mobile=secondTank.mobile=true;ai.context.current.value=0;
  // Ranged stay back even if already behind a patrol hound. Other tanks isolate their mob.
  boss.entry=11673;boss.victim=&mainTank;boss.o=0;ai.context.possible.value={10};bot.x=-2;bot.ranged=true;
  assert(PlanMoltenCoreTrash(&ai,plan)&&std::hypot(plan.destination.x,plan.destination.y)>=40);
@@ -370,7 +372,26 @@ int main(){
  assert(!MoltenCoreImpTauntAllowed(&a2,"challenging roar"));unpulled.combat=true;unpulled.cc=true;assert(!MoltenCoreImpTauntAllowed(&a2,"challenging roar"));
  t2.map=530;assert(MoltenCoreImpTauntAllowed(&a2,"challenging roar"));t2.map=409;
  }
- std::cout<<"PASS: actual MC off-target interrupts, native era abilities, dispels, frenzy, mind control, sheep assignments, tank allocation and Magmadar positioning\n";
+ {
+ // The leader/caster has not attacked. Actual tank engagement admits the
+ // hound stack and leaves it as soon as native pack combat ends.
+ Player tank,mage,off;Group group;tank.guid=1001;tank.tank=true;mage.guid=1002;mage.cls=CLASS_MAGE;mage.ranged=true;mage.combat=false;mage.x=-30;
+ off.guid=1003;off.tank=true;off.ranged=true;group.Add(&tank);group.Add(&mage);group.Add(&off);
+ PlayerbotAI brain(&mage),offBrain(&off);Creature hounds[2];units={&tank,&mage,&off};
+ for(unsigned i=0;i<2;++i){hounds[i].guid=1010+i;hounds[i].entry=11671;hounds[i].victim=&tank;units.push_back(&hounds[i]);brain.context.possible.value.push_back(hounds[i].guid);}
+ EncounterPosition p;assert(PlanMoltenCoreTrash(&brain,p)&&p.active&&p.destination.x==tank.x);
+#ifdef MANGOSBOT_ZERO
+ Creature ancient;ancient.guid=1019;ancient.entry=11673;ancient.victim=&tank;units.push_back(&ancient);brain.context.possible.value.push_back(ancient.guid);
+ assert(PlanMoltenCoreTrash(&brain,p)&&p.spell==19364&&std::hypot(p.destination.x,p.destination.y)>=40);
+ ancient.combat=false;
+#endif
+ hounds[0].combat=hounds[1].combat=false;assert(!PlanMoltenCoreTrash(&brain,p));
+ Creature boss;boss.guid=1020;boss.entry=11982;boss.victim=&tank;off.x=-25;units.push_back(&boss);
+ assert(PlanMagmadarFormation(&offBrain,&boss,p));assert(std::hypot(p.destination.x,p.destination.y)<=3.1f);
+ off.x=p.destination.x;off.y=p.destination.y;auto melee=p.destination;
+ assert(PlanMagmadarFormation(&offBrain,&boss,p)&&p.destination.x==melee.x&&p.destination.y==melee.y);
+}
+std::cout<<"PASS: actual MC off-target interrupts, native era abilities, dispels, frenzy, mind control, sheep assignments, tank allocation and Magmadar positioning\n";
 }
 '''.replace('__METHODS__',methods)
 for era in ('ZERO','ONE','TWO'):

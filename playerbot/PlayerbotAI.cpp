@@ -387,6 +387,7 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
 
     PrepareForUrgentAttack(); // Explicit authorized orders outrank food/drink duration.
     PrepareForUrgentCombat(); // A pack aggro carrier must not wait behind a channel.
+    PrepareForMoltenCoreFearRecovery();
     PrepareForPartyCombat(); // Natural human/party pulls also outrank idle/rest duration.
     PrepareForRaidRegroup(); // Do not retain the last fight's action wait while the raid is idle.
     PrepareCompletedMovement();
@@ -1491,6 +1492,25 @@ void PlayerbotAI::PrepareForPartyCombat()
     // This is the existing native transition. It does not issue an attack,
     // consume rage/mana, bypass threat policy, or interrupt an in-flight heal.
     OnCombatStarted();
+}
+
+void PlayerbotAI::PrepareForMoltenCoreFearRecovery()
+{
+    // Owning-map transition, once per actual native fear. Never fabricate
+    // fear immunity, clear the aura or cancel native spell/GCD checks.
+    if (!bot || IsRealPlayer() || !HasRealPlayerMaster() || !bot->IsInWorld() ||
+        !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        bot->GetMapId()!=409 || !bot->GetGroup()) {moltenCoreFeared=false;return;}
+    if (bot->HasAuraType(SPELL_AURA_MOD_FEAR)) {moltenCoreFeared=true;return;}
+    if (!moltenCoreFeared) return;
+    moltenCoreFeared=false;
+    if (!ai::GetPartyCombatAnchor(this)) return;
+    reactionEngine->NotifyPartyCombat();
+    aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
+    aiObjectContext->GetValue<ObjectGuid>("dps target")->Reset();
+    aiObjectContext->GetValue<ObjectGuid>("tank target")->Reset();
+    ResetAIInternalUpdateDelay();
+    isWaiting=false;
 }
 
 void PlayerbotAI::PrepareForUrgentCombat()

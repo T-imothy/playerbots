@@ -24,7 +24,7 @@ struct Map{bool raid=false;bool IsRaid(){return raid;}};struct Group{};struct Pl
 struct Unit{virtual ~Unit()=default;bool world=true,alive=true,combat=true,friendly=false;unsigned guid=3,entry=1,instance=1;
  Unit*victim=nullptr;Unit*GetVictim(){return victim;}virtual bool IsPlayer(){return false;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}unsigned GetEntry(){return entry;}unsigned GetObjectGuid(){return guid;}};
 struct Session{unsigned security=0;unsigned GetSecurity(){return security;}};
-struct Player:Unit{Map map;Map*GetMap(){return &map;}bool roleTank=false;bool IsPlayer()override{return true;}bool real=true,transfer=false,charm=false;Group*group=nullptr;PlayerbotAI*ai=nullptr;Session session;
+struct Player:Unit{Map map;Map*GetMap(){return &map;}unsigned GetMapId(){return 409;}bool roleTank=false;bool IsPlayer()override{return true;}bool real=true,transfer=false,charm=false;Group*group=nullptr;PlayerbotAI*ai=nullptr;Session session;
  bool isRealPlayer(){return real;}Group*GetGroup(){return group;}bool IsInMap(Unit*u){return u&&u->instance==instance;}
  bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}Session*GetSession(){return &session;}PlayerbotAI*GetPlayerbotAI(){return ai;}};
 template<class T>struct Cached{T value{};T Get(){return value;}};
@@ -43,6 +43,7 @@ struct WaitForAttackStrategy{ObjectGuid orderedOwner=0,orderedTarget=0;time_t or
  void AllowExplicitAttack(PlayerbotAI*,Player*,Unit*);bool HasExplicitAttackOrder(PlayerbotAI*,time_t);};
 struct{bool IsFriendlyTo(Player*,Unit*u){return u->friendly;}}sServerFacade;
 #define AI_VALUE(type,name) context->GetValue<type>(name)->Get()
+bool MoltenCorePackStackRequired(PlayerbotAI*){return false;}bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}
 __ACCESS__
 __METHODS__
 int main(){Player bot,owner,other;Group group,foreign;bot.guid=2;owner.guid=1;other.guid=4;bot.group=owner.group=&group;Unit target;

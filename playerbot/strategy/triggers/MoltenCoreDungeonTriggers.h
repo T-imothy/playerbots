@@ -5,6 +5,12 @@
 
 namespace ai
 {
+    class MoltenCoreMageAoeTrigger : public Trigger
+    {
+    public:
+        MoltenCoreMageAoeTrigger(PlayerbotAI* ai) : Trigger(ai, "molten core mage aoe", 1) {}
+        bool IsActive() override { return ai->CanDoSpecificAction("molten core mage aoe", true, false); }
+    };
     class MoltenCoreImpTrigger : public Trigger
     {
     public:

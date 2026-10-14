@@ -68,6 +68,7 @@ namespace ai{ Unit* MoltenCoreNukeTarget(PlayerbotAI*){return nullptr;} bool Mol
  void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>&out){out=liveFire;}
 }
 using namespace ai;
+namespace ai {bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}bool MoltenCoreRecoverableImp(PlayerbotAI*,Unit*){return false;}}
 __METHODS__
 int main(){
  Player bot,tank;Group group;bot.group=tank.group=&group;tank.tank=true;PlayerbotAI ai{&bot};

@@ -10,7 +10,14 @@ void MoltenCoreDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trig
     const char* area = nullptr;
     switch (ai->GetBot()->getClass())
     {
-        case CLASS_MAGE: area = "blizzard"; break;
+        case CLASS_MAGE:
+#ifdef MANGOSBOT_ZERO
+            triggers.push_back(new TriggerNode("molten core mage aoe",
+                NextAction::array(0, new NextAction("molten core mage aoe", ACTION_HIGH + 12), NULL)));
+#else
+            area = "blizzard";
+#endif
+            break;
         case CLASS_HUNTER: area = "volley"; break;
         case CLASS_WARRIOR: area = "whirlwind"; break;
         case CLASS_ROGUE: area = "blade flurry"; break;
