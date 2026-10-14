@@ -178,6 +178,22 @@ namespace
         }
         return true;
     }
+    bool KeepFormationRoute(PlayerbotAI* ai, Unit* target, Unit* anchor, EncounterPosition& p,
+        float radius, bool ranged, bool front, const std::vector<encounter::Point>& neighbors, float spacing)
+    {
+        Player* bot = ai->GetBot();
+        if (!bot->movespline || bot->movespline->Finalized()) return false;
+        const auto end = bot->movespline->FinalDestination();
+        const float angle = std::atan2(end.y - target->GetPositionY(), end.x - target->GetPositionX()) - target->GetOrientation();
+        if (front && (classicraid::Dragon(target->GetEntry()) ? std::fabs(std::cos(angle)) > 0.70710678f : std::cos(angle) > 0)) return false;
+        const encounter::Point point{end.x, end.y, end.z};
+        for (auto q : neighbors)
+            if (encounter::Distance2d(point, q) < spacing && std::fabs(point.z - q.z) < 8) return false;
+        const float distance = anchor->GetDistance(end.x, end.y, end.z);
+        if (ranged && distance < radius - 8) return false;
+        p.destination = point;
+        return PositionLegal(ai, anchor, p, radius + (ranged ? 2 : 3));
+    }
     bool SubmitControlledSpell(Player* bot, Unit* charm, uint32 id, Unit* target)
     {
         const SpellEntry* spell = sServerFacade.LookupSpellInfo(id);
@@ -663,6 +679,8 @@ chosen:
     // Holding the boss keeps native tank orientation; spare tanks participate
     // from a legal melee flank instead of standing at a ranged formation.
     if (boss->GetVictim() == bot) return plan;
+    if (KeepFormationRoute(ai, target, anchor, p, radius, ranged, front, neighbors, spacing))
+    { plan.position = p; plan.emergency = unsafe; return plan; }
     if (!unsafe && separated(here) && (ranged ? (anchor->GetDistance(bot) >= radius - 8 &&
         PositionLegal(ai, anchor, p, radius + 2)) : bot->CanReachWithMeleeAttack(target))) return plan;
     const float side = std::sin(angle) >= 0 ? 1.0f : -1.0f;
