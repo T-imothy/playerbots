@@ -1,0 +1,37 @@
+Shared battleground objective recovery, 2026-10-15
+
+The Oct 14 integration enabled objective recovery only under MANGOSBOT_ZERO.
+Its common WSG/AB/AV behavior now uses a battleground admission helper rather
+than an expansion guard. Classic, TBC and Wrath register the same combat and
+dead-engine hooks, noncombat objective movement priority, death reset and
+accepted-cast/channel preservation. Wrath random queues resolve the actual
+battleground before admission. Arenas, EY, IC and other expansion-only maps
+retain their existing planners and registration.
+
+AB/AV ownership refresh remains bounded to ten seconds, keeps the bot's
+native job, restores the old objective when native selection fails and
+returns no new movement for an identical objective. No periodic refresh is
+performed while loading, dead, outside the world, casting or outside an
+active match. This bound is for objective reselection, not NPC engagement.
+After death the old route/objective is cleared once and the next live
+selection can run immediately. Existing WSG deterministic flag decisions
+remain authoritative. No leader or controller is required by these hooks.
+
+The existing unmarked AV NPC engagement fix is already shared across all
+three defines and remains unchanged. It admits only enemy NPCs actually
+fighting nearby members of the same active native BG raid. It preserves
+skull precedence, native hostility, CC, team, instance and distance checks.
+
+This is a shared movement/recovery correction, not a complete independent AV
+planner redesign or a claim that all reported idling is fixed. Native node,
+captain, general and mine objectives and walking paths remain in use.
+No commander NPC script, quest SQL, raid routine, addon protocol, ownership
+check, teleport, configuration or native spell cooldown is changed here.
+
+The historical classic_bg_recovery_regression.py filename is retained; its
+fixtures now execute the actual shared helper, strategy trigger bodies,
+objective refresh and cast/death admission under ZERO, ONE and TWO defines.
+They cover inactive/loading/dead refusal, failed selection retention, stable
+jobs, duplicate death resets, existing WSG delegation, Wrath random AV and
+exclusion of other BGs. Native unmarked-NPC and Warsong suites run alongside
+it. Full builds and deployed runtime receipts remain separate from tests.

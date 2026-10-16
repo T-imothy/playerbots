@@ -2805,21 +2805,22 @@ bool BGTactics::Execute(Event& event)
         break;
     }
 
-#ifdef MANGOSBOT_ZERO
-    if (getName() == "reset objective")
+    if (SupportsBattlegroundObjectiveRecovery(bot))
     {
-        if (bot->IsAlive()) return false;
-        PositionEntry& position = AI_VALUE(PositionMap&, "position")["bg objective"];
-        if (!position.isSet()) return false;
-        position.Reset();
-        context->GetValue<WarsongObjective>("warsong objective")->Reset();
-        classicObjectiveCheck = 0;
-        return true;
+        if (!bot->IsInWorld() || bot->IsBeingTeleported()) return false;
+        if (getName() == "reset objective")
+        {
+            if (bot->IsAlive()) return false;
+            PositionEntry& position = AI_VALUE(PositionMap&, "position")["bg objective"];
+            if (!position.isSet()) return false;
+            position.Reset();
+            context->GetValue<WarsongObjective>("warsong objective")->Reset();
+            battlegroundObjectiveCheck = 0;
+            return true;
+        }
+        // Accepted banner channels and damage/heal casts must complete.
+        if (bot->IsNonMeleeSpellCasted(false) && getName() != "check objective") return false;
     }
-    // An accepted native banner channel or damage/heal cast must complete;
-    // objective refresh does not imply a need to stop casting/moving.
-    if (bot->IsNonMeleeSpellCasted(false) && getName() != "check objective") return false;
-#endif
 
     if (getName() == "move to start")
         return moveToStart();
@@ -4140,19 +4141,21 @@ bool BGTactics::resetObjective()
         return refreshWarsongObjective();
     }
 
-#ifdef MANGOSBOT_ZERO
-    if (!bot->IsAlive() || bot->IsNonMeleeSpellCasted(false)) return false;
-    const uint32 now = WorldTimer::getMSTime();
-    if (classicObjectiveCheck && WorldTimer::getMSTimeDiff(classicObjectiveCheck, now) < 10000) return false;
-    classicObjectiveCheck = now;
-    // Preserve the native job while refreshing changed AB/AV ownership.
-    PositionEntry& objective = AI_VALUE(PositionMap&, "position")["bg objective"];
-    PositionEntry previous = objective;
-    objective.Reset();
-    if (!selectObjective(true)) { objective = previous; return false; }
-    return !previous.isSet() || previous.mapId != objective.mapId || previous.x != objective.x ||
-        previous.y != objective.y || previous.z != objective.z;
-#endif
+    if (SupportsBattlegroundObjectiveRecovery(bot))
+    {
+        if (!bot->IsInWorld() || bot->IsBeingTeleported() || !bot->IsAlive() ||
+            bg->GetStatus() != STATUS_IN_PROGRESS || bot->IsNonMeleeSpellCasted(false)) return false;
+        const uint32 now = WorldTimer::getMSTime();
+        if (battlegroundObjectiveCheck && WorldTimer::getMSTimeDiff(battlegroundObjectiveCheck, now) < 10000) return false;
+        battlegroundObjectiveCheck = now;
+        // Preserve the native job while refreshing changed AB/AV ownership.
+        PositionEntry& objective = AI_VALUE(PositionMap&, "position")["bg objective"];
+        PositionEntry previous = objective;
+        objective.Reset();
+        if (!selectObjective(true)) { objective = previous; return false; }
+        return !previous.isSet() || previous.mapId != objective.mapId || previous.x != objective.x ||
+            previous.y != objective.y || previous.z != objective.z;
+    }
 
     // sometimes change role
 #ifdef MANGOSBOT_ZERO

@@ -17,6 +17,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/RandomPlayerbotMgr.h"
 #include "BattleGround/BattleGroundMgr.h"
+#include "strategy/values/PvpValues.h"
 
 AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* ai)
 {
@@ -602,9 +603,8 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
     // Battleground switch
     if (player->InBattleGround())
     {
-#ifdef MANGOSBOT_ZERO
-        combatEngine->addStrategy("battleground");
-#endif
+        if (ai::SupportsBattlegroundObjectiveRecovery(player))
+            combatEngine->addStrategy("battleground");
         BattleGroundTypeId bgType = player->GetBattleGroundTypeId();
 
 #ifdef MANGOSBOT_TWO
@@ -1319,9 +1319,7 @@ Engine* AiFactory::createDeadEngine(Player* player, PlayerbotAI* const facade, A
 {
     Engine* deadEngine = new Engine(facade, AiObjectContext, BotState::BOT_STATE_DEAD);
     AddDefaultDeadStrategies(player, facade, deadEngine);
-#ifdef MANGOSBOT_ZERO
-    if (player->InBattleGround()) deadEngine->addStrategy("battleground");
-#endif
+    if (ai::SupportsBattlegroundObjectiveRecovery(player)) deadEngine->addStrategy("battleground");
     return deadEngine;
 }
 

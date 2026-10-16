@@ -59,7 +59,7 @@ public:
     bool isUseful() override;
 private:
     uint32 warsongRetryUntil = 0;
-    uint32 classicObjectiveCheck = 0;
+    uint32 battlegroundObjectiveCheck = 0;
     bool refreshWarsongObjective();
     bool SelectAvObjectiveAlliance(WorldLocation& objectiveLocation);
     bool SelectAvObjectiveHorde(WorldLocation& objectiveLocation);

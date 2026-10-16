@@ -233,6 +233,12 @@ BattleGroundTypeId ai::ActualBattlegroundType(Player* player)
     return bg->GetTypeId();
 }
 
+bool ai::SupportsBattlegroundObjectiveRecovery(Player* player)
+{
+    const auto type = ActualBattlegroundType(player);
+    return type == BATTLEGROUND_WS || type == BATTLEGROUND_AB || type == BATTLEGROUND_AV;
+}
+
 bool ai::IsBattlegroundFlagCarrier(Player* player)
 {
     if (!player) return false;
