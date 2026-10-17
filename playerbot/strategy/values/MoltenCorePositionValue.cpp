@@ -223,11 +223,16 @@ bool ai::MoltenCoreThreats(PlayerbotAI* ai, EncounterPosition& plan,
             { plan.spell = 20475; plan.source = member->GetObjectGuid(); }
         }
     if (threats.empty()) return false;
-    // Do not freeze an unrelated bot on the other side of the room. Within the
-    // danger/approach band, hold the safe position so ordinary chasing cannot undo it.
+    // Ragnaros knockback/spacing escape ends at real clearance. Keeping a
+    // stationary escape in the approach band can strand a landed ranged bot
+    // outside casting range instead of handing it back to its formation.
+    // Live Wrath casts, bombs and every other encounter retain their hold.
+    const float approach = boss && boss->GetEntry()==11502 && !Casting(boss,20566) &&
+        !carryingBomb && !plan.spell && plan.source.IsEmpty() ? 0.0f : 8.0f;
+    // Do not freeze an unrelated bot on the other side of the room.
     bool relevant = carryingBomb;
     for (const auto& circle : threats)
-        relevant = relevant || encounter::Distance2d(here, circle.center) < circle.radius + 8;
+        relevant = relevant || encounter::Distance2d(here, circle.center) < circle.radius + approach;
     return relevant;
 }
 

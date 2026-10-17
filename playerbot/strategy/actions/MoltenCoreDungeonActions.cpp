@@ -2207,7 +2207,7 @@ bool ai::PlanRagnarosFormation(PlayerbotAI* ai, EncounterPosition& plan)
     }
     const float base=std::atan2(state.tankPosition.y-boss->GetPositionY(),state.tankPosition.x-boss->GetPositionX());
     const bool submerged=boss->HasAura(21107)||boss->HasAura(21859)||boss->HasAura(20567);
-    float angle=base,distance=std::max(2.0f,boss->GetCombatReach()+bot->GetCombatReach()-1);
+    float angle=base,distance=std::max(2.0f,boss->GetCombatReach()+bot->GetCombatReach()-1),castRange=0;
     auto ranged=RagnarosRanged(ai);
     auto own=std::find(ranged.begin(),ranged.end(),bot);
     size_t slot=own==ranged.end()?0:std::distance(ranged.begin(),own);
@@ -2222,9 +2222,8 @@ bool ai::PlanRagnarosFormation(PlayerbotAI* ai, EncounterPosition& plan)
     }
     else if (own!=ranged.end())
     {
-        float range=0;
-        if (!ai->GetSpellRange(RagnarosRangeSpell(ai,bot),&range) || range<=5) return false;
-        distance=range+boss->GetCombatReach()+bot->GetCombatReach()-3;
+        if (!ai->GetSpellRange(RagnarosRangeSpell(ai,bot),&castRange) || castRange<=5) return false;
+        distance=castRange+boss->GetCombatReach()+bot->GetCombatReach()-3;
         // All members of a triple use its shortest learned cast/heal range.
         // Healing needs reach to the actual tank, not merely to the boss.
         for (size_t i=slot/3*3;i<std::min(ranged.size(),slot/3*3+3);++i)
@@ -2272,7 +2271,7 @@ bool ai::PlanRagnarosFormation(PlayerbotAI* ai, EncounterPosition& plan)
         if (boss->GetVictim()!=bot) angle+=float(M_PI);
         plan.destination={boss->GetPositionX()+std::cos(angle)*distance,boss->GetPositionY()+std::sin(angle)*distance,boss->GetPositionZ()};
     }
-    plan.active=true;plan.map=bot->GetMapId();plan.instance=bot->GetInstanceId();plan.boss=boss->GetObjectGuid();plan.spell=21155;
+    plan.active=true;plan.exclusive=true;plan.map=bot->GetMapId();plan.instance=bot->GetInstanceId();plan.boss=boss->GetObjectGuid();plan.spell=21155;
     const auto proposed=plan.destination;
     EncounterPosition landing; bool hasLanding=false;
     const bool meleeRecovery = !submerged && own == ranged.end() && boss->GetVictim() != bot;
@@ -2288,15 +2287,26 @@ bool ai::PlanRagnarosFormation(PlayerbotAI* ai, EncounterPosition& plan)
             plan.destination.x=boss->GetPositionX()+dx*std::cos(offset)-dy*std::sin(offset);
             plan.destination.y=boss->GetPositionY()+dx*std::sin(offset)+dy*std::cos(offset);
         }
-        const auto unadjusted=plan.destination;
+        // Project to the native floor before checking casting clearance. A
+        // walkable station behind a rock, or vertically outside spell range,
+        // must not reserve movement while its caster cannot attack or heal.
+        if (!ValidateEncounterDestination(ai,plan,false)) continue;
+        if (!submerged && own!=ranged.end())
+        {
+            Unit* patient=ai->IsHeal(bot)?static_cast<Unit*>(tank):boss;
+            const float dx=plan.destination.x-patient->GetPositionX(),dy=plan.destination.y-patient->GetPositionY(),
+                dz=plan.destination.z-patient->GetPositionZ();
+            const float legal=castRange+patient->GetCombatReach()+bot->GetCombatReach()-2;
+            if (dx*dx+dy*dy+dz*dz>legal*legal ||
+                !patient->IsWithinLOS(plan.destination.x,plan.destination.y,plan.destination.z+bot->GetCollisionHeight(),true)) continue;
+        }
         if (ValidateEncounterDestination(ai,plan)) return true;
-        // Validation projects to the native floor. Restore the unadjusted
-        // candidate before retrying, so a failed height check cannot admit it.
-        plan.destination=unadjusted;
-        if (!hasLanding && !submerged && own==ranged.end() && ValidateEncounterDestination(ai,plan,false))
-        {landing=plan;hasLanding=true;}
+        if (!hasLanding && !submerged && own==ranged.end())
+        {landing=plan;landing.exclusive=false;hasLanding=true;}
     }
     // Only the separate trajectory solver can use an endpoint without a walk.
+    // If that jump fails, leave ordinary guarded reach/chase available rather
+    // than deadlocking all movement behind an unexecutable formation.
     if (hasLanding) {plan=landing;return true;}
     plan.active=false;return false;
 }

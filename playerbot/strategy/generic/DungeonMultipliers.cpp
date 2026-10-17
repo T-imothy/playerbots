@@ -276,7 +276,7 @@ float PreserveMoltenCorePositionMultiplier::GetValue(Action* action)
     CastSpellAction* spell = dynamic_cast<CastSpellAction*>(action);
     if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
     EncounterPosition plan;
-    return MoltenCorePositionAction::GetPlan(ai, plan) ? 0.0f : 1.0f;
+    return MoltenCorePositionAction::GetPlan(ai, plan) && plan.exclusive ? 0.0f : 1.0f;
 }
 
 float PreserveOnyxiaPositionMultiplier::GetValue(Action* action)

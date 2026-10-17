@@ -162,6 +162,14 @@ int main(){
  // Ragnaros: ranged stay outside knockback, the current tank stays in melee.
  boss.entry=11502;ai.ranged=true;assert(get());boss.victim=&bot;assert(!get());boss.victim=nullptr;
  ai.ranged=false;assert(!get());info.Id=20566;cast.m_spellInfo=&info;boss.cast=&cast;assert(get());boss.cast=nullptr;
+ // After landing outside actual Wrath/spacing danger, release even a
+ // cached escape hold in the eight-yard approach band. A live Wrath cast
+ // still reserves the safe escape until that cast finishes.
+ ai.ranged=true;assert(get());bot.x=31;
+ assert(!MoltenCorePositionAction::GetPlan(&ai,resolved));assert(!get());
+ boss.cast=&cast;assert(get());cast.state=SPELL_STATE_FINISHED;
+ assert(!MoltenCorePositionAction::GetPlan(&ai,resolved));assert(!get());
+ cast.state=SPELL_STATE_CASTING;boss.cast=nullptr;bot.x=0;ai.ranged=false;
  // Firesworn: avoid a dying add, including our own tanked add, excluding a banished add.
  boss.entry=12057;Unit add;add.entry=12099;add.guid=4;add.map=&map;add.health=9;ai.units[4]=&add;ai.attackers={1,4};
  assert(get());add.victim=&bot;assert(get());add.victim=nullptr;add.auras={710};assert(!get());

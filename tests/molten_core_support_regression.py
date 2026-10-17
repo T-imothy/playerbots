@@ -7,7 +7,9 @@ s=(r/'playerbot/strategy/actions/MoltenCoreDungeonActions.cpp').read_text()
 if '--before-firelord' in sys.argv:
  old=subprocess.check_output(['git','-C',str(r),'show','HEAD:playerbot/strategy/actions/MoltenCoreDungeonActions.cpp'],text=True)
  s=s.replace(block(s,'bool ai::PlanMoltenCoreTrash('),block(old,'bool ai::PlanMoltenCoreTrash('))
+multipliers=(r/'playerbot/strategy/generic/DungeonMultipliers.cpp').read_text()
 methods='\n'.join(block(s,m) for m in ('bool ai::MoltenCoreRecoverableImp(', 'bool ai::MoltenCoreImpUnderPressure(', 'bool ai::MoltenCoreImpPack(', 'bool ai::MoltenCoreImpTauntAllowed(', 'const char* MoltenCoreRangeSpell(', 'bool PlanCoreHoundRanged(', 'void PreserveMoltenCoreTank(', 'std::vector<Unit*> MoltenCorePack(', 'std::vector<Player*> MoltenCorePackTanks(', 'bool ai::MoltenCorePackStackRequired(', 'Unit* ai::MoltenCorePackTankTarget(', 'bool ai::PlanMoltenCorePack(', 'bool PlanMagmadarTank(', 'bool PlanMagmadarFormation(', 'bool ai::PlanGeddonFormation(', 'bool RaidMember(', 'bool RaidEnemy(', 'bool MoltenCoreBoss(', 'Unit* RaidBoss(', 'std::vector<Unit*> ai::MoltenCoreGroupTrash(', 'Unit* MoltenCoreTrashTankTarget(', 'bool ai::PlanMoltenCoreGiants(', 'uint32 RaidAdd(', 'std::vector<Unit*> RaidAdds(', 'Unit* MajordomoFocus(', 'ObjectGuid MajordomoSheepOwner(', 'Unit* MajordomoAssignedHealer(', 'bool MajordomoSupport(', 'bool ai::PlanMajordomoFormation(', 'Unit* ai::MoltenCoreAssignedTankTarget(', 'bool MoltenCoreSupportAction::Select(', 'bool MoltenCoreSupportAction::Execute(', 'bool ai::PlanGolemaggFormation(', 'Unit* ai::MoltenCoreRagnaros(', 'std::vector<Player*> RagnarosRanged(', 'const char* RagnarosRangeSpell(', 'bool ai::RagnarosSameCluster(', 'bool ai::PlanRagnarosFormation(', 'std::pair<float,float> FirelordRangedBounds(', 'bool PlanFirelordRanged(', 'bool ai::PlanMoltenCoreTrash('))
+multiplierFixture='namespace ai{\n struct Action{std::string name;Action(const char*n):name(n){}virtual ~Action()=default;const std::string&getName(){return name;}};\n struct MovementAction:Action{using Action::Action;};struct AttackAction:MovementAction{using MovementAction::MovementAction;};\n struct MoltenCorePositionAction:MovementAction{using MovementAction::MovementAction;static bool GetPlan(PlayerbotAI*a,EncounterPosition&p){return PlanRagnarosFormation(a,p);}};\n struct MoveAwayFromHazard:MovementAction{using MovementAction::MovementAction;};\n struct CastSpellAction:Action{bool moving=false;using Action::Action;bool HasMovementEffect(){return moving;}};\n struct MoltenCorePriorityTargetAction{MoltenCorePriorityTargetAction(PlayerbotAI*){}Unit*GetTarget(){return nullptr;}};\n struct PreserveMoltenCorePositionMultiplier{PlayerbotAI*ai;float GetValue(Action*);};\n}\n' + block(multipliers, 'float PreserveMoltenCorePositionMultiplier::GetValue(')
 code=r'''
 #include <cassert>
 #include <ctime>
@@ -64,7 +66,7 @@ namespace Cell{template<class Check>void VisitAllObjects(Unit*,MaNGOS::UnitListS
 struct WorldPosition{float x=0,y=0,z=0;float getX()const{return x;}float getY()const{return y;}float getZ()const{return z;}};
 using HazardPosition=std::pair<WorldPosition,float>;
 std::list<HazardPosition> liveFire;
-namespace ai{void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>&out){out=liveFire;}struct EncounterPosition{bool active=false;unsigned map=0,instance=0,spell=0;ObjectGuid boss,source;encounter::Point destination,anchor;bool anchored=false,groundOnly=false;};
+namespace ai{void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>&out){out=liveFire;}struct EncounterPosition{bool active=false;unsigned map=0,instance=0,spell=0;ObjectGuid boss,source;encounter::Point destination,anchor;bool anchored=false,groundOnly=false,exclusive=true;};
  struct PossibleAttackTargetsValue{static bool IsValid(Unit*u,Player*p,float range,bool,bool){return u->attackable&&p->GetDistance(u)<=range;}static bool HasBreakableCC(Unit*u,Player*){return u->cc;}static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}};
  bool ValidateEncounterDestination(PlayerbotAI*ai,EncounterPosition&p,bool walking=true){if(p.spell==19364)assert(p.active&&p.map==ai->bot->GetMapId()&&p.instance==ai->bot->GetInstanceId());for(const auto& h:liveFire)if(std::hypot(p.destination.x-h.first.x,p.destination.y-h.first.y)<h.second)return false;return (!walking||ai->path)&&!ai->fireBlocked&&(!ai->rejectFrontLane||p.destination.y>5)&&(!ai->rejectFarPaths||std::hypot(p.destination.x,p.destination.y)<40);}float NativeEncounterSpellRadius(unsigned id){assert(id==1161||id==5209||id==19364||id==19408||id==20602||id==20556||id==19798||id==21155||id==20566);return id==19364?45.0f:id==20566?25.0f:id==21155?20.0f:id==19408?45.0f:id==20556?30.0f:id==19798?18.0f:10.0f;}
  Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool LavaTrashReservedTarget(PlayerbotAI*,Unit*){return false;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&){return false;}bool PlanLavaTrashBanish(PlayerbotAI*,EncounterPosition&){return false;}
@@ -75,6 +77,7 @@ namespace ai{void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPos
 using namespace ai;
 namespace ai{std::pair<float,float> HunterShotRange(PlayerbotAI*a,Unit*t){if(a->rangeUnavailable)return {0.0f,0.0f};return {a->minimum,a->spellRange+a->bot->GetCombatReach()+t->GetCombatReach()};}}
 __METHODS__
+__MULTIPLIERS__
 int main(){
 
  {
@@ -91,10 +94,27 @@ int main(){
   const float d=std::hypot(plans[i].destination.x-plans[j].destination.x,plans[i].destination.y-plans[j].destination.y);
   if((i-3)/3==(j-3)/3)assert(d<=1.61f);else assert(d>20.0f);
  }
+ // A walking station must be usable for the bot's native cast, not just
+ // geometrically outside Wrath. Healing range includes a knocked-up tank.
+ EncounterPosition castingPlan;assert(PlanRagnarosFormation(brains[12],castingPlan)&&castingPlan.exclusive);
+ boss.visible=false;assert(!PlanRagnarosFormation(brains[12],castingPlan));boss.visible=true;
+ tanks[0].visible=false;assert(!PlanRagnarosFormation(brains[3],castingPlan));tanks[0].visible=true;
+ tanks[0].z=30;assert(!PlanRagnarosFormation(brains[3],castingPlan));tanks[0].z=0;
  // Stable tank station survives a knockback onto a high rock. A missing walk
  // does not authorize walking: only a separately checked jump can use it.
  tanks[0].x=20;tanks[0].z=30;brains[0]->path=false;
- EncounterPosition p;assert(PlanRagnarosFormation(brains[0],p)&&p.destination.x==2&&p.destination.z==0);
+ EncounterPosition p;assert(PlanRagnarosFormation(brains[0],p)&&p.destination.x==2&&p.destination.z==0&&!p.exclusive);
+ // Exercise the production multiplier with the real formation planner.
+ // An endpoint-only jump candidate must not suppress ordinary reach when
+ // no safe trajectory is executable; full walking plans still reserve it.
+ PreserveMoltenCorePositionMultiplier hold{brains[0]};MovementAction reach("reach melee");
+ CastSpellAction charge("charge");charge.moving=true;CastSpellAction castDamage("frostbolt");
+ AttackAction attack("attack");MoveAwayFromHazard escape("move away from hazard");
+ assert(hold.GetValue(&reach)==1.0f&&hold.GetValue(&charge)==1.0f);
+ assert(hold.GetValue(&attack)==1.0f&&hold.GetValue(&escape)==1.0f&&hold.GetValue(&castDamage)==1.0f);
+ brains[0]->path=true;tanks[0].x=2;tanks[0].z=0;
+ assert(PlanRagnarosFormation(brains[0],p)&&p.exclusive&&hold.GetValue(&reach)==0.0f);
+ brains[0]->path=false;tanks[0].x=20;tanks[0].z=30;
  brains[0]->fireBlocked=true;assert(!PlanRagnarosFormation(brains[0],p));brains[0]->fireBlocked=false;brains[0]->path=true;
  boss.auras.insert(21859);boss.attackable=false;
  assert(MoltenCoreRagnaros(brains[3])==&boss);assert(PlanRagnarosFormation(brains[0],p)&&p.destination.x==2);
@@ -442,7 +462,7 @@ int main(){
  }
 std::cout<<"PASS: actual MC off-target interrupts, native era abilities, dispels, frenzy, mind control, sheep assignments, tank allocation and Magmadar positioning\n";
 }
-'''.replace('__METHODS__',methods)
+'''.replace('__METHODS__',methods).replace('__MULTIPLIERS__',multiplierFixture)
 for era in ('ZERO','ONE','TWO'):
  with tempfile.TemporaryDirectory(prefix='mc-support-') as directory:
   d=Path(directory);(d/'test.cpp').write_text(code)
