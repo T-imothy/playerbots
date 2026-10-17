@@ -2630,6 +2630,7 @@ std::string PlayerbotHolder::HandleBotGear(Player* bot, Player* master, const st
 
 std::string PlayerbotHolder::HandleBotTrainLearn(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
 #ifndef MANGOSBOT_ONE
     bot->learnClassLevelSpells();
 #endif
@@ -2638,6 +2639,7 @@ std::string PlayerbotHolder::HandleBotTrainLearn(Player* bot, Player* master, co
 
 std::string PlayerbotHolder::HandleBotFoodDrink(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     uint32 level = bot->GetLevel();
     PlayerbotFactory factory(bot, level, ITEM_QUALITY_NORMAL);
     factory.BeginSupplyRequest();
@@ -2647,6 +2649,7 @@ std::string PlayerbotHolder::HandleBotFoodDrink(Player* bot, Player* master, con
 
 std::string PlayerbotHolder::HandleBotPotions(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     uint32 level = bot->GetLevel();
     PlayerbotFactory factory(bot, level, ITEM_QUALITY_NORMAL);
     factory.BeginSupplyRequest();
@@ -2656,6 +2659,7 @@ std::string PlayerbotHolder::HandleBotPotions(Player* bot, Player* master, const
 
 std::string PlayerbotHolder::HandleBotConsumes(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     uint32 level = bot->GetLevel();
     PlayerbotFactory factory(bot, level, ITEM_QUALITY_NORMAL);
     factory.BeginSupplyRequest();
@@ -2665,6 +2669,7 @@ std::string PlayerbotHolder::HandleBotConsumes(Player* bot, Player* master, cons
 
 std::string PlayerbotHolder::HandleBotReagents(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     uint32 level = bot->GetLevel();
     PlayerbotFactory factory(bot, level, ITEM_QUALITY_NORMAL);
     factory.BeginSupplyRequest();
@@ -2674,6 +2679,7 @@ std::string PlayerbotHolder::HandleBotReagents(Player* bot, Player* master, cons
 
 std::string PlayerbotHolder::HandleBotPrepare(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     uint32 level = master ? master->GetLevel() : bot->GetLevel();
     PlayerbotFactory factory(bot, level, ITEM_QUALITY_NORMAL);
     factory.Refresh();
@@ -2682,6 +2688,7 @@ std::string PlayerbotHolder::HandleBotPrepare(Player* bot, Player* master, const
 
 std::string PlayerbotHolder::HandleBotInit(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     uint32 level = master ? master->GetLevel() : bot->GetLevel();
 
     if (param.empty())
@@ -2725,6 +2732,7 @@ std::string PlayerbotHolder::HandleBotInit(Player* bot, Player* master, const st
 
 std::string PlayerbotHolder::HandleBotEnchants(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     PlayerbotFactory factory(bot, bot->GetLevel(), ITEM_QUALITY_LEGENDARY);
     factory.EnchantEquipment();
     return "ok";
@@ -2732,6 +2740,7 @@ std::string PlayerbotHolder::HandleBotEnchants(Player* bot, Player* master, cons
 
 std::string PlayerbotHolder::HandleBotAmmo(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     PlayerbotFactory factory(bot, bot->GetLevel(), ITEM_QUALITY_LEGENDARY);
     factory.BeginSupplyRequest();
     factory.InitAmmo();
@@ -2740,6 +2749,7 @@ std::string PlayerbotHolder::HandleBotAmmo(Player* bot, Player* master, const st
 
 std::string PlayerbotHolder::HandleBotPet(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     PlayerbotFactory factory(bot, bot->GetLevel(), ITEM_QUALITY_LEGENDARY);
     factory.InitPet();
     factory.InitPetSpells();
@@ -2748,6 +2758,7 @@ std::string PlayerbotHolder::HandleBotPet(Player* bot, Player* master, const std
 
 std::string PlayerbotHolder::HandleBotLevelUp(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     PlayerbotFactory factory(bot, bot->GetLevel());
     factory.Randomize(true, false);
     return "ok";
@@ -2755,6 +2766,7 @@ std::string PlayerbotHolder::HandleBotLevelUp(Player* bot, Player* master, const
 
 std::string PlayerbotHolder::HandleBotRefresh(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     PlayerbotFactory factory(bot, bot->GetLevel());
     factory.Refresh();
     return "ok";
@@ -2762,6 +2774,7 @@ std::string PlayerbotHolder::HandleBotRefresh(Player* bot, Player* master, const
 
 std::string PlayerbotHolder::HandleBotRandom(Player* bot, Player* master, const std::string param)
 {
+    if (const std::string reason = PlayerbotFactory::CommandTargetReason(bot); !reason.empty()) return reason;
     sRandomPlayerbotMgr.Randomize(bot);
     return "ok";
 }

@@ -110,6 +110,15 @@ void PlayerbotFactory::Init()
     }
 }
 
+std::string PlayerbotFactory::CommandTargetReason(Player* bot)
+{
+    if (!bot || !bot->GetSession()) return "Player is offline";
+    if (!bot->GetPlayerbotAI() || bot->isRealPlayer()) return "Target is not a bot";
+    if (!bot->IsInWorld() || bot->IsBeingTeleported()) return "refused: transfer";
+    if (bot->GetSession()->isLogingOut()) return "refused: logging_out";
+    return "";
+}
+
 void PlayerbotFactory::Prepare()
 {
     /*if (!itemQuality)
@@ -170,6 +179,8 @@ void PlayerbotFactory::Prepare()
 
 void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
 {
+    // A refused target must not reach Prepare(), spell resets or equipment work.
+    if (!bot || !ai || bot->GetPlayerbotAI() != ai) return;
     sLog.outDetail("Preparing to %s randomize...", (incremental ? "incremental" : "full"));
     Prepare();
 
@@ -359,6 +370,7 @@ void PlayerbotFactory::Randomize(bool incremental, bool syncWithMaster)
 
 void PlayerbotFactory::Refresh()
 {
+    if (!bot || !ai || bot->GetPlayerbotAI() != ai) return;
     //Prepare();
     if (!ai->HasCheat(BotCheatMask::item))
         return;

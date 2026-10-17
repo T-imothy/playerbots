@@ -1,0 +1,31 @@
+Preparation command target crash, 2026-10-16
+
+Classic core bdc33c229 / shared 3166f4e2 generated four access violations.
+The preserved reports show HandleBotPrepare -> Refresh -> HasCheat with a
+missing AI, HandleBotInit -> factory construction with a missing Player,
+and two HandleBotInit -> Randomize -> ai->DoSpecificAction null accesses.
+Both available small dumps match the exact deployed EXE/PDB identities.
+
+Legacy group/guild/name selectors can resolve offline characters and real
+players. The existing init/prep factory handlers did not reject those targets.
+Randomize called Prepare and reset spells before using its cached AI, so
+refusal must happen before the first mutation, not only at the crash line.
+
+Thirteen native mutation handlers now use a shared target check before level
+access, factory construction or mutation. Null/missing sessions, absent bot AI,
+real characters, loading/transfer and logout are refused. Existing online
+bot success strings and init branches are retained. A refusal returns from
+only that target's handler so other group members can continue.
+
+Factory construction is null-safe, and Randomize/Refresh also reject missing
+or replaced cached AI before Prepare/HasCheat. Internal valid factory behavior
+is unchanged. Native account/admin/guild authorization and offline login,
+delete and self-management handlers are unchanged. BotRecruitment/PBRECRUIT
+membership, GUID/ownership checks, arrival policy and replay/receipt code are
+unchanged; their existing suites must still pass.
+
+No SQL, character repair/reroll, addon change, combat movement, cooldown or
+GM teleport change is included. Tests execute actual native handler bodies,
+constructor, target check and factory entry guards under all three expansion
+defines, including mixed valid/invalid batches and zero pre-refusal mutation.
+Crash evidence and per-core build/deploy receipts are stored outside source.
