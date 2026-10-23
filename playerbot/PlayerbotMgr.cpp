@@ -231,10 +231,14 @@ void PlayerbotHolder::LogoutPlayerBot(uint32 guid, bool allowInstant, bool forDe
            }
         }
         sLog.outDebug("Bot %s logging out", bot->GetName());
-        if (!forDelete)
-            bot->SaveToDB();
-
         WorldSession* botWorldSessionPtr = bot->GetSession();
+        const bool immediateLogout = allowInstant &&
+            (botWorldSessionPtr->ShouldLogOut(time(nullptr)) || !botWorldSessionPtr->isLogingOut());
+        // Native logout saves after removing the pet. Do not serialize the
+        // complete character twice; retain the early save when logout is
+        // deferred or the session has explicitly disabled its final save.
+        if (!forDelete && !(immediateLogout && botWorldSessionPtr->ShouldSaveOnLogout()))
+            bot->SaveToDB();
         WorldSession* masterWorldSessionPtr = nullptr;
 
         Player* master = ai->GetMaster();
