@@ -24,6 +24,22 @@
 using namespace ai;
 using namespace MaNGOS;
 
+void WorldPosition::logNonFinite(char const* site, WorldPosition const& a, WorldPosition const* b)
+{
+    static uint32 logCount = 0;
+    ++logCount;
+
+    if (logCount > 100 && (logCount % 1000) != 0)
+        return;
+
+    if (b)
+        sLog.outError("[BOT NANPOS] %s: non-finite position, call %u. A(map %u): %.2f,%.2f,%.2f B(map %u): %.2f,%.2f,%.2f",
+            site, logCount, a.getMapId(), a.coord_x, a.coord_y, a.coord_z, b->getMapId(), b->coord_x, b->coord_y, b->coord_z);
+    else
+        sLog.outError("[BOT NANPOS] %s: non-finite position, call %u. A(map %u): %.2f,%.2f,%.2f",
+            site, logCount, a.getMapId(), a.coord_x, a.coord_y, a.coord_z);
+}
+
 WorldPosition::WorldPosition(const uint32 mapId, const GuidPosition& guidP, uint32 instanceId)
 {
     if (guidP.mapid !=0 || guidP.coord_x != 0 || guidP.coord_y != 0 || guidP.coord_z !=0) {
@@ -340,6 +356,12 @@ bool WorldPosition::IsInStaticLineOfSight(WorldPosition pos, float heightMod) co
     float dstY = pos.coord_y;
     float dstZ = pos.coord_z + heightMod;
 
+    if (!isFinite() || !pos.isFinite())
+    {
+        logNonFinite("IsInStaticLineOfSight", *this, &pos);
+        return false;
+    }
+
     return VMAP::VMapFactory::createOrGetVMapManager()->isInLineOfSight(mapid, srcX, srcY, srcZ, dstX, dstY, dstZ, true);
 }
 
@@ -578,6 +600,12 @@ bool WorldPosition::isOnTransport(GenericTransport* transport)
 
     below.setZ(below.getZ() - 5.0f);
 
+    if (!isFinite())
+    {
+        logNonFinite("isOnTransport", *this);
+        return false;
+    }
+
     bool result0 = VMAP::VMapFactory::createOrGetVMapManager()->getObjectHitPos(mapid, coord_x, coord_y, coord_z + 0.5f, below.getX(), below.getY(), below.getZ(), below.coord_x, below.coord_y, below.coord_z, 0.0f);
 
     if (result0)
@@ -626,6 +654,12 @@ bool WorldPosition::SetOnTransport(GenericTransport* transport, int32 startHeigh
 
     start.setZ(transPos.getZ() + startHeight);
     below.setZ(transPos.getZ() + endHeight);
+
+    if (!isFinite())
+    {
+        logNonFinite("SetOnTransport", *this);
+        return false;
+    }
 
     bool result = VMAP::VMapFactory::createOrGetVMapManager()->getObjectHitPos(mapid, coord_x, coord_y, coord_z, below.getX(), below.getY(), below.getZ(), below.coord_x, below.coord_y, below.coord_z, 0.0f);
 
@@ -862,7 +896,7 @@ bool WorldPosition::loadMapAndVMap(uint32 mapId, uint32 instanceId, int x, int y
     std::string logName = "load_map_grid.csv";
 
     bool hasMmap = false;
-    if (mapId == 0 || mapId == 1 || mapId == 530 || mapId == 571)
+    if (isSharedNavmeshMap(mapId))
         hasMmap = isMmapLoaded(mapId, 0, x, y);
     else
         hasMmap = isMmapLoaded(mapId, instanceId, x, y);
@@ -878,7 +912,7 @@ bool WorldPosition::loadMapAndVMap(uint32 mapId, uint32 instanceId, int x, int y
     if (!hasMmap)
     {
 #ifndef MANGOSBOT_TWO
-        if (mapId == 0 || mapId == 1 || mapId == 530 || mapId == 571)
+        if (isSharedNavmeshMap(mapId))
             isLoaded = MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), mapId, x, y);
         else
         {
@@ -886,7 +920,7 @@ bool WorldPosition::loadMapAndVMap(uint32 mapId, uint32 instanceId, int x, int y
             isLoaded = MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), mapId, x, y);
         }
 #else
-        if (mapId == 0 || mapId == 1 || mapId == 530 || mapId == 571)
+        if (isSharedNavmeshMap(mapId))
         {
             isLoaded = MMAP::MMapFactory::createOrGetMMapManager()->loadMap(sWorld.GetDataPath(), mapId, 0, x, y, 0);
         }
@@ -974,7 +1008,7 @@ std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& s
     if (sTravelNodeMap.gethasToGen())
         instanceId = 0;
     else if (!bot || bot->GetMapId() != startPos.getMapId())
-        instanceId = hasher(std::this_thread::get_id());
+        instanceId = isSharedNavmeshMap(startPos.getMapId()) ? 0 : hasher(std::this_thread::get_id());
     else
         instanceId = bot->GetInstanceId();
     //Load mmaps and vmaps between the two points.
@@ -1006,7 +1040,7 @@ std::vector<WorldPosition> WorldPosition::getPathStepFrom(const WorldPosition& s
 
     std::vector<WorldPosition> retvec = fromPointsArray(points);
 
-    if (type == PATHFIND_INCOMPLETE)
+    if (type == PATHFIND_INCOMPLETE && !retvec.empty())
     {
         WorldPosition lastPoint = retvec.back();
 
@@ -1095,14 +1129,14 @@ std::vector<WorldPosition> WorldPosition::getPathFromPath(const std::vector<Worl
     if (sTravelNodeMap.gethasToGen())
         instanceId = 0;
     else if (!bot || bot->GetMapId() != currentPos.getMapId())
-        instanceId = hasher(std::this_thread::get_id());
+        instanceId = isSharedNavmeshMap(currentPos.getMapId()) ? 0 : hasher(std::this_thread::get_id());
     else
         instanceId = bot->GetInstanceId();
     //Load mmaps and vmaps between the two points.
 
     std::unique_ptr<PathFinder> pathfinder = nullptr;
 
-    if (bot && instanceId == bot->GetInstanceId())
+    if (bot && bot->GetMapId() == getMapId() && instanceId == bot->GetInstanceId())
         pathfinder = std::make_unique<PathFinder>(bot);
     else
         pathfinder = std::make_unique<PathFinder>(getMapId(), instanceId);
@@ -1193,6 +1227,10 @@ bool WorldPosition::isUnderground() const
             return false;
         else if (coord_z < groundZ)
             return true;
+    }
+    else if (groundZ <= INVALID_HEIGHT)
+    {
+        return false;
     }
 
     return true;
