@@ -172,6 +172,14 @@ namespace
     }
     void LogDiagnostic(Request const& request, const std::string& diagnostic)
     {
+        // Addons poll status for every candidate. Opting into wire diagnostics
+        // must not turn those polls into normal-console traffic or consume the
+        // budget reserved for preparation decisions and actionable failures.
+        if (request.operation == "status")
+        {
+            DEBUG_LOG("PLAYERBOT_RECRUIT_DIAG: %s", diagnostic.c_str());
+            return;
+        }
         Service& state = State();
         if (state.diagnosticSecond != Now())
         {

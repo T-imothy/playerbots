@@ -68,7 +68,7 @@ void RpgHelper::setFacing(GuidPosition guidPosition)
 
     Unit* unit = guidPosition.GetUnit(bot->GetInstanceId());
 
-    if (unit->IsMoving())
+    if (!unit || unit->IsMoving())
         return;
 
     MotionMaster& mm = *unit->GetMotionMaster();
@@ -158,6 +158,14 @@ bool RpgCancelAction::Execute(Event& event)
 
 bool RpgTaxiAction::Execute(Event& event)
 {
+    // A failed flight must release this RPG action instead of retrying the
+    // same unavailable flightmaster indefinitely.
+    auto failed = [this]()
+    {
+        rpg->AfterExecute(true, false, "rpg cancel");
+        DoDelay();
+        return false;
+    };
     rpg->BeforeExecute();
 
     GuidPosition guidP = rpg->guidP();
@@ -179,33 +187,36 @@ bool RpgTaxiAction::Execute(Event& event)
     if (nodes.empty())
     {
         sLog.outError("Bot %s - No flight paths available", bot->GetName());
-        return false;
+        return failed();
     }
 
     uint32 path = nodes[urand(0, nodes.size() - 1)];
-    uint32 money = bot->GetMoney();
-    bot->SetMoney(money + 100000);
-
     TaxiPathEntry const* entry = sTaxiPathStore.LookupEntry(path);
     if (!entry)
-        return false;
+        return failed();
 
     TaxiNodesEntry const* nodeFrom = sTaxiNodesStore.LookupEntry(entry->from);
     TaxiNodesEntry const* nodeTo = sTaxiNodesStore.LookupEntry(entry->to);
+    if (!nodeFrom || !nodeTo)
+        return failed();
 
     Creature* flightMaster = bot->GetNPCIfCanInteractWith(guidP, UNIT_NPC_FLAG_FLIGHTMASTER);
     if (!flightMaster)
     {
         sLog.outError("Bot %s cannot talk to flightmaster (%zu location available)", bot->GetName(), nodes.size());
-        return false;
+        return failed();
     }
 #ifdef MANGOSBOT_TWO                
     bot->OnTaxiFlightEject(true);
 #endif
-    if (!bot->ActivateTaxiPathTo({ entry->from, entry->to }, flightMaster, 0))
+    uint32 money = bot->GetMoney();
+    bot->SetMoney(money > UINT32_MAX - 100000 ? UINT32_MAX : money + 100000);
+    bool activated = bot->ActivateTaxiPathTo({ entry->from, entry->to }, flightMaster, 0);
+    bot->SetMoney(money);
+    if (!activated)
     {
         sLog.outError("Bot %s cannot fly %u (%zu location available)", bot->GetName(), path, nodes.size());
-        return false;
+        return failed();
     }
 
 #ifdef MANGOSBOT_TWO
@@ -213,7 +224,6 @@ bool RpgTaxiAction::Execute(Event& event)
 #endif
 
     sLog.outDetail("Bot #%d <%s> is flying from %s to %s (%zu location available)", bot->GetGUIDLow(), bot->GetName(), nodeFrom->name[0], nodeTo->name[0], nodes.size());
-    bot->SetMoney(money);
 
     rpg->AfterExecute();
 

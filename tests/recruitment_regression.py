@@ -67,6 +67,7 @@ struct DungeonMap:Map{unsigned count=1,max=40;InstanceData data;
 struct MapEntry{bool instanced=false;bool Instanceable()const{return instanced;}};
 struct MapStore{MapEntry entry;bool missing=false;MapEntry const* LookupEntry(uint32){return missing?nullptr:&entry;}}sMapStore;
 struct Log{unsigned diagnostics=0;template<class... T>void outString(const char* format,T...){if(std::string(format)=="PLAYERBOT_RECRUIT_DIAG: %s")++diagnostics;}}sLog;
+#define DEBUG_LOG(...) ((void)0)
 struct WorldLocation{uint32 mapid=409;float coord_x=0,coord_y=0,coord_z=0;};
 struct LfgData {int state=LFG_STATE_NONE;int GetState(){return state;}};
 class PlayerbotHolder {public:std::string ProcessBotCommand(std::string,ObjectGuid,ObjectGuid,bool,uint32,uint32);};
@@ -449,6 +450,11 @@ int main(){
  reset();{Player p(1,true),far(2),near(3);far.ai.master=near.ai.master=&p;far.distance=50;command(p,"failed prepare_diag 2 gear "+State().epoch);command(p,"other prepare_diag 3 gear "+State().epoch);assert(!far.gear&&near.gear==1);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;command(p,"transfer summon_diag 2 "+State().epoch);command(p,"cancel cancel 2");b.transfer=false;tick();assert(has("cancelled transfer_may_complete")&&!b.gear);
  command(p,"old receipt 2 transfer "+State().epoch);assert(has("PBRECRUIT 1 transfer 2 cancelled transfer_may_complete"));}
+ reset();{Player p(1,true),b(2);b.ai.master=&p;
+ for(unsigned i=0;i<40;++i)command(p,"poll"+std::to_string(i)+" status_diag 2 "+State().epoch);
+ assert(sLog.diagnostics==0&&has("PBRECRUIT_DIAG 1 poll39"));
+ b.distance=50;command(p,"refusal prepare_diag 2 gear "+State().epoch);
+ assert(sLog.diagnostics==1&&!b.gear&&has("pre_mutation_refused too_far"));}
  reset();{Player p(1,true),b(2);b.ai.master=&p;b.distance=50;for(unsigned i=0;i<30;++i)command(p,"log"+std::to_string(i)+" prepare 2 gear");assert(sLog.diagnostics==limits::DiagnosticEventsPerPlayerPerSecond&&!b.gear);
  unsigned logs=sLog.diagnostics;for(unsigned i=0;i<20;++i)tick();assert(sLog.diagnostics==logs);}
  reset();{Player p(1,true),b(2);b.ai.master=&p;
