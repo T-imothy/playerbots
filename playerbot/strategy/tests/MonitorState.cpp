@@ -283,6 +283,37 @@ bool MonitorStateStarterGearCount::IsConditionMet(const std::string& monitorStr,
     return count < threshold;
 }
 
+bool MonitorStateEquippedCount::IsConditionMet(const std::string& monitorStr, Player* bot, TestContext& ctx) const
+{
+    std::string leftSide;
+    std::string rightSide;
+    std::string parseMessage;
+    if (TrySplitOnce(monitorStr, "=>", leftSide, rightSide, parseMessage, GetName(), true) != TestResult::PASS)
+        return false;
+
+    std::string valueName;
+    std::string op;
+    std::string valueStr;
+    if (TryParseComparisonValue(monitorStr, valueName, op, valueStr, parseMessage, GetName()) != TestResult::PASS)
+        return false;
+
+    uint32 threshold = 0;
+    if (TryParseUInt32Strict(valueStr, threshold, parseMessage, GetName()) != TestResult::PASS)
+        return false;
+
+    uint32 count = 0;
+    for (uint8 slot = 0; slot < EQUIPMENT_SLOT_END; ++slot)
+    {
+        if (bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+            ++count;
+    }
+
+    if (op == ">")
+        return count > threshold;
+
+    return count < threshold;
+}
+
 bool MonitorStateEquipQuality::IsConditionMet(const std::string& monitorStr, Player* bot, TestContext& ctx) const
 {
     std::string leftSide;
@@ -404,6 +435,20 @@ bool MonitorAiValue::IsConditionMet(const std::string& monitorStr, Player* bot, 
 
         if(op == "==") return count == threshold; // == case
         if(op == "!=") return count != threshold; // != case
+        if(op == "<") return count < threshold;
+        if(op == ">") return count > threshold;
+        return false;
+    }
+    else if (datatype == "uint8")
+    {
+        uint8 count = AI_VALUE(uint8, valueName);
+
+        uint32 threshold = 0;
+        if (TryParseUInt32Strict(valueToCompareTo, threshold, parseMessage, GetName()) != TestResult::PASS)
+            return false;
+
+        if(op == "==") return count == threshold;
+        if(op == "!=") return count != threshold;
         if(op == "<") return count < threshold;
         if(op == ">") return count > threshold;
         return false;

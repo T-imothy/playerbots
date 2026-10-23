@@ -35,6 +35,20 @@ using namespace ai;
 
 namespace
 {
+    // True when the core never marks the quest rewarded server-side (repeatables, dailies,
+    // weekly/monthly/seasonal/dungeon-finder) — those need the "quest turnedin" monitor because
+    // "quest rewarded" can never fire. Mirrors wotlk Quest::CanIncreaseRewardedQuestCounters.
+    bool QuestNeverRewarded(Quest const* quest)
+    {
+#if defined(MANGOSBOT_TWO)
+        return !quest->CanIncreaseRewardedQuestCounters();
+#elif defined(MANGOSBOT_ONE)
+        return quest->IsDaily() || (quest->IsRepeatable() && !quest->IsWeekly() && !quest->IsMonthly());
+#else
+        return quest->IsRepeatable() && !quest->IsWeekly();
+#endif
+    }
+
     struct QuestSpawn
     {
         uint32 mapId = 0;
@@ -42,6 +56,7 @@ namespace
         bool continent = false;
         uint32 guid = 0;   // creature.spawn guid - real guid so injected rpg targets pass IsCreature/IsGameObject checks
         uint32 entry = 0;
+        uint32 phaseMask = 1;
     };
 
     using QuestSpawnMap = std::unordered_map<uint32, QuestSpawn>;
@@ -83,9 +98,15 @@ namespace
         return out;
     }
 
-    // "a"/"h"/"n" from the RequiredRaces mask; 0 (both/all) counts as neutral.
-    std::string FactionToken(uint32 requiredRaces)
+    // "a"/"h"/"n" from the RequiredRaces mask plus giver/taker faction hostility; 0 (both/all)
+    // counts as neutral when no NPC of the quest rules out a team.
+    std::string FactionToken(uint32 requiredRaces, bool teamAlliance, bool teamHorde)
     {
+        if (!teamHorde)
+            return "a";
+        if (!teamAlliance)
+            return "h";
+
         bool horde = (requiredRaces & RACEMASK_HORDE) != 0;
         bool alliance = (requiredRaces & RACEMASK_ALLIANCE) != 0;
 
@@ -98,6 +119,20 @@ namespace
         return "n";
     }
 
+    bool NpcHostileToTeam(uint32 creatureEntry, bool horde)
+    {
+        CreatureInfo const* cInfo = sObjectMgr.GetCreatureTemplate(creatureEntry);
+        if (!cInfo)
+            return false;
+
+        FactionTemplateEntry const* npcFaction = sFactionTemplateStore.LookupEntry(cInfo->Faction);
+        FactionTemplateEntry const* teamFaction = sFactionTemplateStore.LookupEntry(horde ? 2 : 1);
+        if (!npcFaction || !teamFaction)
+            return false;
+
+        return npcFaction->IsHostileTo(*teamFaction);
+    }
+
     // One require line drives both the in-test assertions (RequireBotIs) and the bot creation
     // parameters (GetBotCreationRequirement feeds CreateBot, which takes the same key=value
     // tokens). Classes/races are emitted numerically - ChatHelper parses ids as well.
@@ -105,7 +140,7 @@ namespace
     // Defaults: no class restriction -> paladin (solid solo class). Race is left to the factory
     // (GetRandomRace keeps race/class valid) unless the quest restricts the race; a quest that
     // restricts BOTH race and class is skipped by the caller (combination risk).
-    std::string RequireLine(uint32 level, Quest const* quest)
+    std::string RequireLine(uint32 level, Quest const* quest, bool teamAlliance, bool teamHorde)
     {
         std::ostringstream out;
         out << "require bot is level=" << level;
@@ -144,7 +179,11 @@ namespace
             }
         }
 
-        if ((raceMask & RACEMASK_ALLIANCE) && !(raceMask & RACEMASK_HORDE))
+        if (!teamHorde)
+            out << " faction=alliance";
+        else if (!teamAlliance)
+            out << " faction=horde";
+        else if ((raceMask & RACEMASK_ALLIANCE) && !(raceMask & RACEMASK_HORDE))
             out << " faction=alliance";
         else if ((raceMask & RACEMASK_HORDE) && !(raceMask & RACEMASK_ALLIANCE))
             out << " faction=horde";
@@ -175,53 +214,104 @@ namespace
             ++depth;
         }
 
-        return prev <= 0;
+        if (prev > 0)
+            return false;
+
+        if (lines.empty() && !quest->prevQuests.empty())
+        {
+            uint32 best = 0;
+            uint32 bestLevel = 0xFFFFFFFF;
+            for (int32 backlink : quest->prevQuests)
+            {
+                if (backlink <= 0)
+                    continue;
+                Quest const* cand = sObjectMgr.GetQuestTemplate(static_cast<uint32>(backlink));
+                if (!cand)
+                    continue;
+                if (cand->GetMinLevel() < bestLevel)
+                {
+                    bestLevel = cand->GetMinLevel();
+                    best = static_cast<uint32>(backlink);
+                }
+            }
+            if (!best)
+                return false;
+            std::ostringstream out;
+            out << "reward quest " << best;
+            lines.push_back(out.str());
+        }
+
+        return true;
     }
 }
 
 void TestRegistry::RegisterQuestSuiteTests()
 {
+    FindPointCreatureData allSpawns(WorldPosition(), 0, 0);
+    sObjectMgr.DoCreatureData(allSpawns);
+
+    std::unordered_map<uint32, QuestSpawn> spawnIndex;
+    std::unordered_map<uint32, bool> spawnEventAvailable;
+
+    for (CreatureDataPair const* pair : allSpawns.GetResult())
+    {
+        CreatureData const& data = pair->second;
+        uint32 guid = pair->first;
+
+        spawnEventAvailable[guid] = data.gameEvent <= 0 || sGameEventMgr.IsActiveEvent(static_cast<uint16>(data.gameEvent));
+
+        uint32 phase = 1;
+#ifdef MANGOSBOT_TWO
+        phase = data.phaseMask;
+#endif
+        MapEntry const* mapEntry = sMapStore.LookupEntry(data.mapid);
+        bool continent = mapEntry && mapEntry->IsContinent();
+
+        auto it = spawnIndex.find(data.id);
+        if (it == spawnIndex.end())
+            spawnIndex[data.id] = { data.mapid, data.posX, data.posY, data.posZ, continent, guid, data.id, phase };
+        else if ((phase & 1) && !(it->second.phaseMask & 1))
+            it->second = { data.mapid, data.posX, data.posY, data.posZ, continent, guid, data.id, phase };
+        else if (((phase & 1) == (it->second.phaseMask & 1)) && continent && !it->second.continent)
+            it->second = { data.mapid, data.posX, data.posY, data.posZ, continent, guid, data.id, phase };
+    }
+
     std::unordered_map<uint32, QuestSpawn> giverSpawns;
     std::unordered_map<uint32, QuestSpawn> takerSpawns;
 
-    // creature_questrelation / creature_involvedrelation: `id` = creature entry, `quest` = quest id.
-    if (auto result = WorldDatabase.Query(
-        "SELECT qr.quest, c.map, c.position_x, c.position_y, c.position_z, c.guid, c.id FROM creature_questrelation qr "
-        "JOIN creature c ON c.id = qr.id"))
+    for (auto const& [entry, questId] : sObjectMgr.GetCreatureQuestRelationsMap())
     {
-        do
-        {
-            Field* fields = result->Fetch();
-            uint32 questId = fields[0].GetUInt32();
-            uint32 mapId = fields[1].GetUInt32();
-            MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-            bool continent = mapEntry && mapEntry->IsContinent();
-            if (!giverSpawns.count(questId))
-                giverSpawns[questId] = { mapId, fields[2].GetFloat(), fields[3].GetFloat(), fields[4].GetFloat(), continent, fields[5].GetUInt32(), fields[6].GetUInt32() };
-            else if (!giverSpawns[questId].continent && continent)
-                giverSpawns[questId] = { mapId, fields[2].GetFloat(), fields[3].GetFloat(), fields[4].GetFloat(), continent, fields[5].GetUInt32(), fields[6].GetUInt32() };
-        } while (result->NextRow());
+        auto spawn = spawnIndex.find(entry);
+        if (spawn == spawnIndex.end())
+            continue;
+
+        auto it = giverSpawns.find(questId);
+        if (it == giverSpawns.end())
+            giverSpawns[questId] = spawn->second;
+        else if ((spawn->second.phaseMask & 1) && !(it->second.phaseMask & 1))
+            it->second = spawn->second;
+        else if (((spawn->second.phaseMask & 1) == (it->second.phaseMask & 1)) && spawn->second.continent && !it->second.continent)
+            it->second = spawn->second;
     }
 
-    if (auto result = WorldDatabase.Query(
-        "SELECT ir.quest, c.map, c.position_x, c.position_y, c.position_z, c.guid, c.id FROM creature_involvedrelation ir "
-        "JOIN creature c ON c.id = ir.id"))
+    for (auto const& [entry, spawn] : spawnIndex)
     {
-        do
+        auto bounds = sObjectMgr.GetCreatureQuestInvolvedRelationsMapBounds(entry);
+        for (auto rel = bounds.first; rel != bounds.second; ++rel)
         {
-            Field* fields = result->Fetch();
-            uint32 questId = fields[0].GetUInt32();
-            uint32 mapId = fields[1].GetUInt32();
-            MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-            bool continent = mapEntry && mapEntry->IsContinent();
-            if (!takerSpawns.count(questId))
-                takerSpawns[questId] = { mapId, fields[2].GetFloat(), fields[3].GetFloat(), fields[4].GetFloat(), continent, fields[5].GetUInt32(), fields[6].GetUInt32() };
-            else if (!takerSpawns[questId].continent && continent)
-                takerSpawns[questId] = { mapId, fields[2].GetFloat(), fields[3].GetFloat(), fields[4].GetFloat(), continent, fields[5].GetUInt32(), fields[6].GetUInt32() };
-        } while (result->NextRow());
+            uint32 questId = rel->second;
+
+            auto it = takerSpawns.find(questId);
+            if (it == takerSpawns.end())
+                takerSpawns[questId] = spawn;
+            else if ((spawn.phaseMask & 1) && !(it->second.phaseMask & 1))
+                it->second = spawn;
+            else if (((spawn.phaseMask & 1) == (it->second.phaseMask & 1)) && spawn.continent && !it->second.continent)
+                it->second = spawn;
+        }
     }
 
-    // Collect every creature objective entry, then resolve one spawn per entry in batched queries.
+    // Collect every creature objective entry, then resolve one spawn per entry from the spawnIndex.
     std::unordered_map<uint32, std::unordered_set<uint32>> questObjectiveEntries;
     std::unordered_set<uint32> objectiveEntrySet;
 
@@ -245,74 +335,33 @@ void TestRegistry::RegisterQuestSuiteTests()
     // BL-47(a) follow-up (five_signets / Field Marshal Snowfall 15701): the QUEST-level event check
     // below does not cover creatures whose SPAWN is event-linked. Snowfall's spawn
     // (game_event_creature event 120 = AV weekend) does not exist while the event is off, so the
-    // accept can never fire and every pickup run burned its full timeout. Load creature-spawn ->
-    // event links once; giver/taker spawns and objective spawns that are event-gated with no active
-    // event are treated as missing below.
-    std::unordered_map<uint32, std::vector<int16>> creatureSpawnEvents;
-    if (auto result = WorldDatabase.Query("SELECT guid, event FROM game_event_creature"))
-    {
-        do
-        {
-            Field* fields = result->Fetch();
-            creatureSpawnEvents[fields[0].GetUInt32()].push_back(fields[1].GetInt16());
-        } while (result->NextRow());
-    }
-
+    // accept can never fire and every pickup run burned its full timeout. Spawn-event links come
+    // from the core-loaded CreatureData.gameEvent; giver/taker spawns and objective spawns that
+    // are event-gated with no active event are treated as missing below.
     // True when the spawn exists regardless of events (no event links, or at least one active event).
-    auto spawnAvailable = [&creatureSpawnEvents](uint32 spawnGuid) -> bool
+    auto spawnAvailable = [&spawnEventAvailable](uint32 spawnGuid) -> bool
     {
-        auto it = creatureSpawnEvents.find(spawnGuid);
-        if (it == creatureSpawnEvents.end())
-            return true;
-        for (int16 eventId : it->second)
-        {
-            if (eventId <= 0)
-                return true;
-            if (sGameEventMgr.IsActiveEvent(static_cast<uint16>(eventId)))
-                return true;
-        }
-        return false;
+        auto it = spawnEventAvailable.find(spawnGuid);
+        return it == spawnEventAvailable.end() ? true : it->second;
     };
 
     // First spawn wins; a continent spawn replaces a non-continent one.
     uint32 skipEventSpawnObj = 0; // objective spawns skipped for inactive-event gating (see load above)
+    uint32 skipPhaseSpawnObj = 0;
     std::unordered_map<uint32, QuestSpawn> objectiveSpawns;
-    std::vector<uint32> entryList(objectiveEntrySet.begin(), objectiveEntrySet.end());
-    for (size_t offset = 0; offset < entryList.size(); offset += 500)
+    for (uint32 entry : objectiveEntrySet)
     {
-        std::ostringstream in;
-        for (size_t i = offset; i < offset + 500 && i < entryList.size(); ++i)
-            in << (i > offset ? "," : "") << entryList[i];
-
-        auto result = WorldDatabase.PQuery(
-            "SELECT c.id, c.guid, c.map, c.position_x, c.position_y, c.position_z FROM creature c WHERE c.id IN (%s)",
-            in.str().c_str());
-        if (!result)
+        auto it = spawnIndex.find(entry);
+        if (it == spawnIndex.end())
             continue;
 
-        do
+        if (!spawnEventAvailable[it->second.guid])
         {
-            Field* fields = result->Fetch();
-            uint32 entry = fields[0].GetUInt32();
-            uint32 guid = fields[1].GetUInt32();
-            uint32 mapId = fields[2].GetUInt32();
-            MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
-            bool continent = mapEntry && mapEntry->IsContinent();
+            ++skipEventSpawnObj;
+            continue;
+        }
 
-            // Event-gated spawn with no active event: this creature does not exist in the world
-            // (five_signets/Snowfall class). Do not let it become the representative spawn.
-            if (!spawnAvailable(guid))
-            {
-                ++skipEventSpawnObj;
-                continue;
-            }
-
-            auto it = objectiveSpawns.find(entry);
-            if (it == objectiveSpawns.end())
-                objectiveSpawns[entry] = { mapId, fields[3].GetFloat(), fields[4].GetFloat(), fields[5].GetFloat() };
-            else if (continent)
-                it->second = { mapId, fields[3].GetFloat(), fields[4].GetFloat(), fields[5].GetFloat() };
-        } while (result->NextRow());
+        objectiveSpawns[entry] = it->second;
     }
 
     // Downgrade: an entry with only non-continent spawns is skipped per objective below by checking
@@ -341,10 +390,16 @@ void TestRegistry::RegisterQuestSuiteTests()
     // True when the spawn exists regardless of events (no event links, or at least one active event).
 
     uint32 pickupTests = 0, handinTests = 0, objTests = 0;
-    uint32 pickupTravelTests = 0, pickupAimedTests = 0;
+    uint32 pickupTravelTests = 0;
+    uint32 moveGiverObjTests = 0, moveObjObjTests = 0, moveObjTakerTests = 0;
     uint32 skipNoGiver = 0, skipNoTaker = 0, skipNoSpawn = 0, skipGated = 0, skipChain = 0, skipGatedCombo = 0, skipNoLevel = 0;
+    uint32 skipAutoRewardHandin = 0;
+    uint32 skipEnemyNpc = 0;
+    uint32 skipRepGated = 0;
     uint32 skipEventSpawn = 0;
+    uint32 skipPhaseSpawn = 0;
     uint32 skipEventQuest = 0, skipCondition = 0, skipBreadcrumb = 0, skipZeroCount = 0;
+    uint32 skipGrayPickup = 0;
     uint32 skipLogs = 0;
 
     auto logSkip = [&](char const* reason, uint32 questId)
@@ -412,6 +467,13 @@ void TestRegistry::RegisterQuestSuiteTests()
         {
             ++skipGatedCombo;
             logSkip("skill/reputation gated", questId);
+            continue;
+        }
+
+        if (quest->GetRequiredMaxRepFaction() && !quest->GetRequiredMaxRepValue())
+        {
+            ++skipRepGated;
+            logSkip("max-rep gate at 0 (needs rep below zero)", questId);
             continue;
         }
 
@@ -485,9 +547,6 @@ void TestRegistry::RegisterQuestSuiteTests()
         levels.insert(edgeLevel);
         levels.insert(QUEST_LEVEL_CAP);
 
-        std::string base = "quest_" + FactionToken(raceMask) + "_" + std::to_string(minLevel) + "_" +
-            std::to_string(questLevel) + "_" + SanitizeQuestName(quest->GetTitle()) + "_" + std::to_string(questId);
-
         auto const& giver = giverSpawns.find(questId);
         auto const& taker = takerSpawns.find(questId);
 
@@ -508,6 +567,40 @@ void TestRegistry::RegisterQuestSuiteTests()
             logSkip("taker spawn event-gated (event not active)", questId);
             haveTaker = false;
         }
+        if (haveGiver && !(giver->second.phaseMask & 1))
+        {
+            ++skipPhaseSpawn;
+            logSkip("giver spawn phased (bot never phases there)", questId);
+            haveGiver = false;
+        }
+        if (haveTaker && !(taker->second.phaseMask & 1))
+        {
+            ++skipPhaseSpawn;
+            logSkip("taker spawn phased (bot never phases there)", questId);
+            haveTaker = false;
+        }
+
+        bool questTeamAlliance = !(raceMask & RACEMASK_HORDE) || (raceMask & RACEMASK_ALLIANCE);
+        bool questTeamHorde = !(raceMask & RACEMASK_ALLIANCE) || (raceMask & RACEMASK_HORDE);
+        if (haveGiver && NpcHostileToTeam(giver->second.entry, true))
+            questTeamHorde = false;
+        if (haveGiver && NpcHostileToTeam(giver->second.entry, false))
+            questTeamAlliance = false;
+        if (haveTaker && NpcHostileToTeam(taker->second.entry, true))
+            questTeamHorde = false;
+        if (haveTaker && NpcHostileToTeam(taker->second.entry, false))
+            questTeamAlliance = false;
+
+        if (!questTeamAlliance && !questTeamHorde)
+        {
+            ++skipEnemyNpc;
+            logSkip("giver/taker hostile to both player teams", questId);
+            continue;
+        }
+
+        std::string token = FactionToken(raceMask, questTeamAlliance, questTeamHorde);
+        std::string base = "quest_" + token + "_" + std::to_string(minLevel) + "_" +
+            std::to_string(questLevel) + "_" + SanitizeQuestName(quest->GetTitle()) + "_" + std::to_string(questId);
 
         std::vector<std::string> chainLines;
         bool chainOk = ChainSpoofLines(quest, chainLines);
@@ -536,19 +629,28 @@ void TestRegistry::RegisterQuestSuiteTests()
             nearName << "quest_" << questId << "_giver_near";
             RegisterNamedLocation(nearName.str(), GuidPosition(ObjectGuid(), WorldPosition(gp.mapId, ox, oy, gp.z)));
 
+            int32 hideDiff = sWorld.getConfig(CONFIG_INT32_QUEST_LOW_LEVEL_HIDE_DIFF);
+            int32 rawQuestLevel = quest->GetQuestLevel();
             for (uint32 level : levels)
             {
+                bool grayPickup = hideDiff >= 0 && rawQuestLevel >= 1 && !quest->GetRequiredClasses() && !quest->IsAutoComplete() && static_cast<int32>(level) > rawQuestLevel + hideDiff;
+                if (!grayPickup)
+                {
                 std::vector<std::string> lines;
                 lines.push_back("# quest pickup test " + std::to_string(questId));
-                lines.push_back(RequireLine(level, quest));
+                lines.push_back(RequireLine(level, quest, questTeamAlliance, questTeamHorde));
+                lines.push_back("nc -bg");
                 for (auto const& line : chainLines)
                     lines.push_back(line);
                 lines.push_back("monitor quest active " + std::to_string(questId) + " => pass \"Quest picked up\"");
                 lines.push_back("monitor time > 300 => fail \"Timeout: quest not picked up after <time elapsed>\"");
                 lines.push_back("monitor bot dead => abort \"Bot died before picking up quest\"");
+                lines.push_back("monitor npc dead quest_" + std::to_string(questId) + "_giver => abort \"Quest giver died during the test\"");
                 lines.push_back("teleport quest_" + std::to_string(questId) + "_giver");
                 lines.push_back("require creature alive quest_" + std::to_string(questId) + "_giver");
-                lines.push_back("set destination quest_" + std::to_string(questId) + "_giver");
+                lines.push_back("set destination quest_" + std::to_string(questId) + "_giver nonforced");
+                lines.push_back("set rpg target quest_" + std::to_string(questId) + "_giver");
+                lines.push_back("set value string next rpg action => rpg start quest");
                 lines.push_back("wait 15");
                 lines.push_back("observe");
 
@@ -556,6 +658,12 @@ void TestRegistry::RegisterQuestSuiteTests()
                 testName << base << "_pickup_l" << level;
                 RegisterTest(testName.str(), lines);
                 ++pickupTests;
+                }
+                else
+                {
+                    ++skipGrayPickup;
+                    logSkip("gray quest at profile level (bot skips gray unless traveling)", questId);
+                }
 
                 // BL-46 travel flavor: drop the bot ~90 yd off the giver and let it genuinely
                 // travel back. The arrival flip then happens inside MoveToTravelTargetAction
@@ -563,7 +671,8 @@ void TestRegistry::RegisterQuestSuiteTests()
                 {
                     std::vector<std::string> tlines;
                     tlines.push_back("# quest pickup travel test " + std::to_string(questId));
-                    tlines.push_back(RequireLine(level, quest));
+                    tlines.push_back(RequireLine(level, quest, questTeamAlliance, questTeamHorde));
+                    tlines.push_back("nc -bg");
                     for (auto const& line : chainLines)
                         tlines.push_back(line);
                     tlines.push_back("monitor quest active " + std::to_string(questId) + " => pass \"Quest picked up on arrival\"");
@@ -572,6 +681,7 @@ void TestRegistry::RegisterQuestSuiteTests()
                     // take longer than 600 s.
                     tlines.push_back("monitor time > 900 => fail \"Timeout: quest not picked up after travelling to the giver (<time elapsed>)\"");
                     tlines.push_back("monitor bot dead => abort \"Bot died before picking up quest\"");
+                    tlines.push_back("monitor npc dead quest_" + std::to_string(questId) + "_giver => abort \"Quest giver died during the test\"");
                     // Standard flow end-to-end (operator-approved 2026-09-27): no rpg injection,
                     // no strategy pins. The nonforced destination carries the giver's entry, so
                     // while traveling only 'move to travel target' runs (rpg choose is gated on
@@ -591,35 +701,6 @@ void TestRegistry::RegisterQuestSuiteTests()
                     RegisterTest(tname.str(), tlines);
                     ++pickupTravelTests;
                 }
-
-                // BL-46 aimed flavor: bot already standing at the giver; only the aim is
-                // injected. Isolates the accept action from rpg target choosing.
-                {
-                    std::vector<std::string> alines;
-                    alines.push_back("# quest pickup aimed test " + std::to_string(questId));
-                    alines.push_back(RequireLine(level, quest));
-                    for (auto const& line : chainLines)
-                        alines.push_back(line);
-                    alines.push_back("monitor quest active " + std::to_string(questId) + " => pass \"Quest picked up (aimed)\"");
-                    alines.push_back("monitor time > 300 => fail \"Timeout: quest not picked up after <time elapsed>\"");
-                    alines.push_back("monitor bot dead => abort \"Bot died before picking up quest\"");
-                    alines.push_back("teleport quest_" + std::to_string(questId) + "_giver");
-                    alines.push_back("require creature alive quest_" + std::to_string(questId) + "_giver 150");
-                    // Bot teleports INSIDE the radius: the first 'move to travel target' poll runs
-                    // CheckStatus, sees IsIn(bot) true, and flips the nonforced destination
-                    // TRAVEL -> WORK within the first ticks (fixed 5-minute window). The rpg target
-                    // is injected (BL-47(a) destination carries the entry) and 'next rpg action' is
-                    // pinned so vendor/repair/discover triggers cannot outrun the accept.
-                    alines.push_back("set destination quest_" + std::to_string(questId) + "_giver nonforced");
-                    alines.push_back("set rpg target quest_" + std::to_string(questId) + "_giver");
-                    alines.push_back("set value string next rpg action => rpg start quest");
-                    alines.push_back("observe");
-
-                    std::ostringstream aname;
-                    aname << base << "_pickup_aimed_l" << level;
-                    RegisterTest(aname.str(), alines);
-                    ++pickupAimedTests;
-                }
             }
         }
         else
@@ -628,7 +709,20 @@ void TestRegistry::RegisterQuestSuiteTests()
         }
 
         // ---- handin (state-injected accept + complete; AI must turn in at the taker) ----
-        if (haveTaker)
+        bool hasObjectives = false;
+        for (uint8 i = 0; i < QUEST_ITEM_OBJECTIVES_COUNT && !hasObjectives; ++i)
+            hasObjectives = quest->ReqItemId[i] || quest->ReqItemCount[i];
+        for (uint8 i = 0; i < QUEST_OBJECTIVES_COUNT && !hasObjectives; ++i)
+            hasObjectives = quest->ReqCreatureOrGOId[i] || quest->ReqSpell[i];
+        bool autoRewardHandin = haveTaker && quest->IsAutoComplete() && !hasObjectives;
+
+        if (autoRewardHandin)
+        {
+            ++skipAutoRewardHandin;
+            logSkip("objective-free auto-reward handin (instant transact quest)", questId);
+        }
+
+        if (haveTaker && !autoRewardHandin)
         {
             std::ostringstream locName;
             locName << "quest_" << questId << "_taker";
@@ -637,15 +731,22 @@ void TestRegistry::RegisterQuestSuiteTests()
 
             std::vector<std::string> lines;
             lines.push_back("# quest handin test " + std::to_string(questId));
-            lines.push_back(RequireLine(atLevel, quest));
+            lines.push_back(RequireLine(atLevel, quest, questTeamAlliance, questTeamHorde));
+            lines.push_back("nc -bg");
             lines.push_back("accept quest " + std::to_string(questId));
             lines.push_back("complete quest " + std::to_string(questId));
-            lines.push_back("monitor quest rewarded " + std::to_string(questId) + " => pass \"Quest handed in\"");
+            if (QuestNeverRewarded(quest))
+                lines.push_back("monitor quest turnedin " + std::to_string(questId) + " => pass \"Quest handed in\"");
+            else
+                lines.push_back("monitor quest rewarded " + std::to_string(questId) + " => pass \"Quest handed in\"");
             lines.push_back("monitor time > 600 => fail \"Timeout: quest not handed in after <time elapsed>\"");
             lines.push_back("monitor bot dead => abort \"Bot died before handing in quest\"");
+            lines.push_back("monitor npc dead quest_" + std::to_string(questId) + "_taker => abort \"Quest taker died during the test\"");
             lines.push_back("teleport quest_" + std::to_string(questId) + "_taker");
             lines.push_back("require creature alive quest_" + std::to_string(questId) + "_taker");
-            lines.push_back("set destination quest_" + std::to_string(questId) + "_taker");
+            lines.push_back("set rpg target quest_" + std::to_string(questId) + "_taker");
+            lines.push_back("set value string next rpg action => rpg end quest");
+            lines.push_back("set destination quest_" + std::to_string(questId) + "_taker nonforced");
             lines.push_back("wait 15");
             lines.push_back("observe");
 
@@ -654,7 +755,7 @@ void TestRegistry::RegisterQuestSuiteTests()
             RegisterTest(testName.str(), lines);
             ++handinTests;
         }
-        else
+        else if (!haveTaker)
         {
             ++skipNoTaker;
         }
@@ -663,6 +764,8 @@ void TestRegistry::RegisterQuestSuiteTests()
         auto objectiveSet = questObjectiveEntries.find(questId);
         if (objectiveSet == questObjectiveEntries.end())
             continue;
+
+        std::vector<uint8> validObjectives;
 
         for (uint8 i = 0; i < QUEST_OBJECTIVES_COUNT; ++i)
         {
@@ -674,6 +777,11 @@ void TestRegistry::RegisterQuestSuiteTests()
             if (spawn == objectiveSpawns.end() || !isOverworldSpawn(spawn->second))
             {
                 ++skipNoSpawn;
+                continue;
+            }
+            if (!(spawn->second.phaseMask & 1))
+            {
+                ++skipPhaseSpawnObj;
                 continue;
             }
 
@@ -688,13 +796,15 @@ void TestRegistry::RegisterQuestSuiteTests()
                 continue;
             }
             uint32 clearTimeout = std::min<uint32>(1800, 600 + count * 60);
+            validObjectives.push_back(i);
 
             for (uint32 level : levels)
             {
                 {
                     std::vector<std::string> lines;
                     lines.push_back("# quest objective tick test " + std::to_string(questId) + " obj " + std::to_string(i));
-                    lines.push_back(RequireLine(level, quest));
+                    lines.push_back(RequireLine(level, quest, questTeamAlliance, questTeamHorde));
+                    lines.push_back("nc -bg");
                     lines.push_back("accept quest " + std::to_string(questId));
                     lines.push_back("monitor quest objective " + std::to_string(questId) + " " + std::to_string(i) + " count > 0 => pass \"Objective ticked\"");
                     lines.push_back("monitor time > 420 => fail \"Timeout: objective not ticked after <time elapsed>\"");
@@ -713,7 +823,8 @@ void TestRegistry::RegisterQuestSuiteTests()
                 {
                     std::vector<std::string> lines;
                     lines.push_back("# quest objective clear test " + std::to_string(questId) + " obj " + std::to_string(i));
-                    lines.push_back(RequireLine(level, quest));
+                    lines.push_back(RequireLine(level, quest, questTeamAlliance, questTeamHorde));
+                    lines.push_back("nc -bg");
                     lines.push_back("accept quest " + std::to_string(questId));
                     if (count > 1)
                         lines.push_back("force objectives " + std::to_string(questId) + " except " + std::to_string(i));
@@ -732,12 +843,55 @@ void TestRegistry::RegisterQuestSuiteTests()
                 }
             }
         }
+
+        if (!validObjectives.empty())
+        {
+            uint32 legLevel = QUEST_LEVEL_CAP;
+            uint32 legQuestId = questId;
+
+            auto addMoveLeg = [&](const std::string& fromLoc, const std::string& toLoc, const std::string& variant, uint32& counter)
+            {
+                std::vector<std::string> lines;
+                lines.push_back("# quest movement leg " + std::to_string(legQuestId) + " " + variant);
+                lines.push_back(RequireLine(legLevel, quest, questTeamAlliance, questTeamHorde));
+                lines.push_back("nc -bg");
+                lines.push_back("monitor distance to " + toLoc + " < 40 => pass \"Bot reached the objective after <time elapsed>\"");
+                lines.push_back("monitor time > 1800 => fail \"Timeout: bot did not reach the objective after <time elapsed> (traveled <distance traveled>)\"");
+                lines.push_back("monitor bot dead => abort \"Bot died on the way to the objective\"");
+                lines.push_back("teleport " + fromLoc);
+                lines.push_back("set destination " + toLoc + " nonforced");
+                lines.push_back("wait 10");
+                lines.push_back("observe");
+
+                std::ostringstream name;
+                name << base << "_" << variant << "_l" << legLevel;
+                RegisterTest(name.str(), lines);
+                ++counter;
+            };
+
+            std::string firstObjLoc = "quest_obj_" + std::to_string(questId) + "_" + std::to_string(validObjectives.front());
+            std::string lastObjLoc = "quest_obj_" + std::to_string(questId) + "_" + std::to_string(validObjectives.back());
+
+            if (haveGiver)
+                addMoveLeg("quest_" + std::to_string(questId) + "_giver", firstObjLoc, "move_giver_obj" + std::to_string(validObjectives.front()), moveGiverObjTests);
+
+            for (size_t k = 1; k < validObjectives.size(); ++k)
+                addMoveLeg("quest_obj_" + std::to_string(questId) + "_" + std::to_string(validObjectives[k - 1]),
+                    "quest_obj_" + std::to_string(questId) + "_" + std::to_string(validObjectives[k]),
+                    "move_obj" + std::to_string(validObjectives[k - 1]) + "_obj" + std::to_string(validObjectives[k]), moveObjObjTests);
+
+            if (haveTaker && !autoRewardHandin)
+                addMoveLeg(lastObjLoc, "quest_" + std::to_string(questId) + "_taker", "move_obj" + std::to_string(validObjectives.back()) + "_taker", moveObjTakerTests);
+        }
     }
 
-    sLog.outString("[QUESTGEN] generated %u pickup, %u pickup_travel, %u pickup_aimed, %u handin, %u objective tests",
-        pickupTests, pickupTravelTests, pickupAimedTests, handinTests, objTests);
+    sLog.outString("[QUESTGEN] generated %u pickup, %u pickup_travel, %u handin, %u objective tests",
+        pickupTests, pickupTravelTests, handinTests, objTests);
+    sLog.outString("[QUESTGEN] generated %u movement legs (giver->obj %u, obj->obj %u, obj->taker %u) at level %u",
+        moveGiverObjTests + moveObjObjTests + moveObjTakerTests, moveGiverObjTests, moveObjObjTests, moveObjTakerTests, QUEST_LEVEL_CAP);
     sLog.outError("[QUESTGEN] skips: %u no-giver, %u no-taker, %u no-spawn, %u gated, %u chain, %u race+class, %u level, "
-        "%u event-inactive, %u condition, %u breadcrumb, %u event-gated-spawn, %u event-gated-objspawns, %u zero-count",
+        "%u event-inactive, %u condition, %u breadcrumb, %u event-gated-spawn, %u event-gated-objspawns, %u zero-count, %u auto-reward-handin, %u enemy-npc, %u rep-gated, %u phased-objspawns, %u phased-spawn, %u gray-pickup",
         skipNoGiver, skipNoTaker, skipNoSpawn, skipGated, skipChain, skipGatedCombo, skipNoLevel,
-        skipEventQuest, skipCondition, skipBreadcrumb, skipEventSpawn, skipEventSpawnObj, skipZeroCount);
+        skipEventQuest, skipCondition, skipBreadcrumb, skipEventSpawn, skipEventSpawnObj, skipZeroCount, skipAutoRewardHandin,
+        skipEnemyNpc, skipRepGated, skipPhaseSpawnObj, skipPhaseSpawn, skipGrayPickup);
 }

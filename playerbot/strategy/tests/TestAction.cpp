@@ -55,6 +55,7 @@ void TestAction::RegisterCommands()
     commands.push_back(std::make_unique<CommandSetupPull>());
     commands.push_back(std::make_unique<CommandSetupGiveItem>());
     commands.push_back(std::make_unique<CommandSetupEquipItem>());
+    commands.push_back(std::make_unique<CommandSpawnMob>());
     commands.push_back(std::make_unique<CommandSetupClearMobs>());
     commands.push_back(std::make_unique<CommandPartySpawnBot>());
     commands.push_back(std::make_unique<CommandPartyDespawnBot>());
@@ -103,12 +104,15 @@ void TestAction::RegisterMonitors()
     monitors.push_back(std::make_unique<MonitorStateGroupOnMap>());
     monitors.push_back(std::make_unique<MonitorStateLootGuid>());
     monitors.push_back(std::make_unique<MonitorStateStarterGearCount>());
+    monitors.push_back(std::make_unique<MonitorStateEquippedCount>());
     monitors.push_back(std::make_unique<MonitorStateEquipQuality>());
     monitors.push_back(std::make_unique<MonitorStateAreaLevelDiff>());
     monitors.push_back(std::make_unique<MonitorAiValue>());
     monitors.push_back(std::make_unique<MonitorOutgoingMessage>());
     monitors.push_back(std::make_unique<MonitorQuestComplete>());
     monitors.push_back(std::make_unique<MonitorQuestRewarded>());
+    monitors.push_back(std::make_unique<MonitorQuestTurnedIn>());
+    monitors.push_back(std::make_unique<MonitorNpcDead>());
     monitors.push_back(std::make_unique<MonitorQuestActive>());
     monitors.push_back(std::make_unique<MonitorQuestObjective>());
     monitors.push_back(std::make_unique<MonitorHasItem>());
@@ -241,8 +245,8 @@ bool TestAction::Execute(Event& event)
     std::string message;
     TestResult commandResult = ExecuteCommand(ctx.script[ctx.pc], message);
 
-    // Log command execution for scenario and quest tests
-    if (ctx.testName.find("scenario_") == 0 || ctx.testName.find("quest_") == 0)
+    // Log command execution for scenario, quest and lab tests
+    if (ctx.testName.find("scenario_") == 0 || ctx.testName.find("quest_") == 0 || ctx.testName.find("lab_") == 0 || ctx.testName.find("lab_micro") == 0)
     {
         std::string result = (commandResult == TestResult::PASS ? "PASS" :
                 commandResult == TestResult::FAIL               ? "FAIL" :

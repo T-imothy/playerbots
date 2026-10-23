@@ -475,6 +475,7 @@ namespace ai
 		int32 GetAreaLevel(uint32 area_id);
 		void LoadAreaLevels();
         CacheStats GetCacheStats() const;
+		std::string GetCacheCensus() const;
 	private:
 		void Clear();
 		void SetMobAvoidAreaMap(uint32 mapId);
