@@ -85,6 +85,9 @@ namespace MaNGOS {
 }
 namespace Cell {template<class T>void VisitAllObjects(Player*,MaNGOS::UnitListSearcher<T>&s,float){s.list=worldUnits;}}
 namespace ai {
+ // This suite exercises MC/ZG/TBC/Wrath damage-pause encounters, all outside
+ // Naxx. Execute the full scoped Naxx helper in raid_pet_admission_regression.py.
+ bool RaidPetOffenseAllowed(Unit* pet,const SpellEntry*,Unit*){assert(!pet||pet->GetMapId()!=533);return true;}
  bool IsProtectedBlackwingTarget(Player*,Unit*){return false;} // Separate BWL phase fixture.
  bool HasHakkarPoisonPreparation(Player*) { return false; } // actual coordination is exercised in hakkar_poison_regression.py
  bool HasMajordomoDamageShield(Player*,Unit*);bool HasEncounterDamagePause(Player*);bool HasEncounterThreatPause(Player*);bool HasEncounterSpellBomb(Player*);bool HasEncounterWeaponPause(Player*);bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*);
