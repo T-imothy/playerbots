@@ -5,6 +5,7 @@
 #include "BotReliabilityValue.h"
 #include "EncounterPositionValue.h"
 #include "GarrControlValue.h"
+#include "SuppressionDutyValue.h"
 #include "LavaTrashControlValue.h"
 #include "GeddonControlValue.h"
 #include "VashjCoreValue.h"
@@ -435,6 +436,7 @@ namespace ai
                 creators["magmadar control"] = [](PlayerbotAI* ai) { return new MagmadarControlValue(ai); };
                 creators["ragnaros control"] = [](PlayerbotAI* ai) { return new RagnarosControlValue(ai); };
                 creators["garr control"] = [](PlayerbotAI* ai) { return new GarrControlValue(ai); };
+                creators["suppression duty"] = [](PlayerbotAI* ai) { return new SuppressionDutyValue(ai); };
                 creators["lava trash control"] = [](PlayerbotAI* ai) { return new LavaTrashControlValue(ai); };
                 creators["manual int"] = [](PlayerbotAI* ai) { return new IntManualSetValue(ai); };
                 creators["manual saved int"] = [](PlayerbotAI* ai) { return new IntManualSetSavedValue(ai); };

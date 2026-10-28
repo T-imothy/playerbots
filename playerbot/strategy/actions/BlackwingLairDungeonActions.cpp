@@ -3,12 +3,15 @@
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
 #include "MotionGenerators/PathFinder.h"
+#include "Movement/MoveSpline.h"
 #include "BlackwingLairDungeonActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
 
 #include "playerbot/ServerFacade.h"
 
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "playerbot/strategy/values/SuppressionDutyValue.h"
+#include "MovementPathSafety.h"
 
 #include "AI/ScriptDevAI/include/sc_instance.h"
 
@@ -20,6 +23,9 @@ GameObject* ai::AssignedSuppressionDevice(PlayerbotAI* ai)
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId() != 469 ||
         bot->IsBeingTeleported() || bot->HasCharmer() || !bot->GetGroup() ||
         ai->IsRealPlayer() || bot->getClass() != CLASS_ROGUE || !bot->HasSpell(SPELL_DISARM_TRAP)) return nullptr;
+
+    if (InstanceData* instance = bot->GetMap()->GetInstanceData())
+        if (instance->GetData(2) == IN_PROGRESS || instance->GetData(2) == DONE) return nullptr;
 
     // Use one common raid anchor, rather than each rogue's sight list. This
     // prevents duplicate assignments and sending rogues ahead into another pack.
@@ -54,21 +60,70 @@ GameObject* ai::AssignedSuppressionDevice(PlayerbotAI* ai)
             std::fabs(go->GetPositionZ() - anchor->GetPositionZ()) <= 8.0f)
             devices.push_back(go);
     std::sort(rogues.begin(), rogues.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+    const uint32 now = WorldTimer::getMSTime();
+    std::map<Player*, SuppressionDuty> duties;
     for (Player* rogue : rogues)
     {
-        if (rogue->GetDistance(anchor) > 40.0f) continue;
-        GameObject* selected = nullptr;
-        float distance = 30.0f;
+        PlayerbotAI* owner = rogue->GetPlayerbotAI();
+        auto state = owner->GetAiObjectContext()->GetValue<SuppressionDuty>("suppression duty")->Get();
+        if (state.anchor != anchor->GetObjectGuid() || state.instance != rogue->GetInstanceId() ||
+            state.generation != owner->GetTransitionGeneration()) state = SuppressionDuty{};
+        state.anchor = anchor->GetObjectGuid(); state.instance = rogue->GetInstanceId();
+        state.generation = owner->GetTransitionGeneration();
+        for (auto it = state.rejected.begin(); it != state.rejected.end();)
+            if (WorldTimer::getMSTimeDiff(it->second, now) >= 10000) it = state.rejected.erase(it);
+            else ++it;
+        duties[rogue] = state;
+    }
+    auto eligible = [&](Player* rogue, GameObject* go) {
+        return rogue->GetDistance(anchor) <= 40.0f && rogue->GetDistance(go) <= 30.0f &&
+            std::fabs(go->GetPositionZ() - rogue->GetPositionZ()) <= 8.0f &&
+            rogue->IsWithinLOSInMap(go) && !duties[rogue].rejected.count(go->GetObjectGuid());
+    };
+    std::map<Player*, GameObject*> assignments;
+    // Keep valid in-progress claims before allocating new work. Completing one
+    // trap must not redirect this rogue onto another rogue's unfinished trap.
+    for (Player* rogue : rogues)
+    {
+        auto& state = duties[rogue];
         for (GameObject* go : devices)
+            if (go->GetObjectGuid() == state.device && eligible(rogue, go))
+            {
+                const float distance = rogue->GetDistance(go);
+                if (distance + 0.5f < state.distance)
+                { state.distance = distance; state.progressAt = now; }
+                if (WorldTimer::getMSTimeDiff(state.progressAt, now) >= 10000)
+                { state.rejected[state.device] = now; state.device.Clear(); }
+                else assignments[rogue] = go;
+                break;
+            }
+        if (assignments.count(rogue))
+            devices.erase(std::remove(devices.begin(), devices.end(), assignments[rogue]), devices.end());
+    }
+    for (Player* rogue : rogues)
+    {
+        auto& state = duties[rogue];
+        GameObject* selected = assignments.count(rogue) ? assignments[rogue] : nullptr;
+        if (!selected)
         {
-            const float candidate = rogue->GetDistance(go);
-            if (candidate > 30.0f || std::fabs(go->GetPositionZ() - rogue->GetPositionZ()) > 8.0f ||
-                !rogue->IsWithinLOSInMap(go)) continue;
-            if (!selected || candidate < distance ||
-                (candidate == distance && go->GetObjectGuid() < selected->GetObjectGuid()))
-            { selected = go; distance = candidate; }
+            float distance = 30.0f;
+            for (GameObject* go : devices)
+            {
+                if (!eligible(rogue, go)) continue;
+                const float candidate = rogue->GetDistance(go);
+                if (!selected || candidate < distance ||
+                    (candidate == distance && go->GetObjectGuid() < selected->GetObjectGuid()))
+                { selected = go; distance = candidate; }
+            }
+            if (selected)
+            { state.device = selected->GetObjectGuid(); state.distance = distance; state.progressAt = now; }
+            else state.device.Clear();
         }
-        if (rogue == bot) return selected;
+        if (rogue == bot)
+        {
+            ai->GetAiObjectContext()->GetValue<SuppressionDuty>("suppression duty")->Set(state);
+            return selected;
+        }
         if (selected) devices.erase(std::remove(devices.begin(), devices.end(), selected), devices.end());
     }
     return nullptr;
@@ -92,8 +147,56 @@ bool MoveToSuppressionDeviceAction::isUseful()
 bool MoveToSuppressionDeviceAction::Execute(Event& event)
 {
     GameObject* go = AssignedSuppressionDevice(ai);
-    if (!go || SuppressionDeviceInCastRange(ai, go) || bot->IsNonMeleeSpellCasted(true)) return false;
-    return MoveTo(bot->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), false, false, false, true);
+    if (!go || SuppressionDeviceInCastRange(ai, go) || bot->IsNonMeleeSpellCasted(true) || !ai->CanMove()) return false;
+    auto reject = [&]() {
+        auto* value = ai->GetAiObjectContext()->GetValue<SuppressionDuty>("suppression duty");
+        auto state = value->Get();
+        state.rejected[go->GetObjectGuid()] = WorldTimer::getMSTime();
+        state.device.Clear(); value->Set(state);
+        ai->StopMoving();
+        return false;
+    };
+    PathFinder path(bot);
+    if (!path.calculate(go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), false) ||
+        path.getPathType() != PATHFIND_NORMAL || path.getPath().size() < 2 || path.getPath().size() > 256) return reject();
+    auto hazards = AI_VALUE(std::list<HazardPosition>, "hazards");
+    AppendBlackwingGroundHazards(ai, hazards);
+    // Generic enemy path clipping is disabled in combat. Device duty must not
+    // cross an untouched pack even while whelps already keep the raid in combat.
+    for (ObjectGuid guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
+    {
+        Unit* enemy = ai->GetUnit(guid);
+        if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || !bot->IsInMap(enemy) ||
+            enemy->IsInCombat() || enemy->HasCharmer() || !enemy->CanAttackOnSight(bot)) continue;
+        hazards.emplace_back(WorldPosition(enemy), enemy->GetAttackDistance(bot) + 2.0f);
+    }
+    WorldPosition previous(bot);
+    float length = 0;
+    for (const auto& point : path.getPath())
+    {
+        WorldPosition next(bot->GetMapId(), point.x, point.y, point.z);
+        length += previous.distance(next);
+        if (length > 45 || !IsHazardSafeSegment(previous, next, hazards)) return reject();
+        previous = next;
+    }
+    for (const auto& hazard : hazards)
+        if (previous.distance(hazard.first) <= hazard.second) return reject();
+    // Dispatch the exact checked route, rather than allowing a cached travel
+    // route to substitute a different path. Never teleport for device duty.
+    if (bot->movespline && !bot->movespline->Finalized())
+    {
+        const auto end = bot->movespline->FinalDestination();
+        if (go->GetDistance(end.x, end.y, end.z) <= 1.0f) return true;
+    }
+    ai->StopMoving();
+    bot->SetStandState(UNIT_STAND_STATE_STAND);
+#ifndef MANGOSBOT_TWO
+    bot->GetMotionMaster()->MovePath(path.getPath(), FORCED_MOVEMENT_RUN, false, false);
+#else
+    bot->GetMotionMaster()->MovePath(path.getPath(), FORCED_MOVEMENT_RUN, false);
+#endif
+    SetDuration(250);
+    return true;
 }
 
 bool StealthForSuppressionDeviceAction::isUseful()
@@ -227,7 +330,7 @@ namespace
             case 12420: return 3; // Razorgore: Blackwing mages.
             case 12416: case 14456: return 2;
             case 12422: return 1;
-            case 12468: return 5; // Hatchers sustain the suppression-room whelp pressure.
+            case 12468: return 5; // Growing Flames/Flamestrike threat; whelps respawn independently.
             case 12457: return 6; // Spellbinders: physical DPS handles their native magic immunity.
             case 12461: return 4; // Death Talon Overseer.
             case 12459: return 4; // Blackwing Warlock.

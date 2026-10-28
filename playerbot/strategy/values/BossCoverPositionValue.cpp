@@ -120,7 +120,8 @@ EncounterPosition BossCoverPositionValue::Calculate()
         return plan;
     }
     Unit* source = nullptr;
-    std::list<ObjectGuid> sources = AI_VALUE(std::list<ObjectGuid>, "attackers");
+    std::list<ObjectGuid> sources = bot->GetMapId() == 469 ?
+        AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1") : AI_VALUE(std::list<ObjectGuid>, "attackers");
 #ifdef MANGOSBOT_TWO
     if (bot->GetMapId() == 631 && bot->IsAlive() && bot->IsInCombat())
     {

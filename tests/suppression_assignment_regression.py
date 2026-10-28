@@ -4,15 +4,24 @@ import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
 source=(root/'playerbot/strategy/actions/BlackwingLairDungeonActions.cpp').read_text()
-method=block(source,'GameObject* ai::AssignedSuppressionDevice(')
+method=block(source,'GameObject* ai::AssignedSuppressionDevice(').replace('state.device.Clear()', 'state.device = 0')
 code=r'''
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <iostream>
 #include <list>
+#include <map>
 #include <vector>
 using uint32=unsigned;
+unsigned tick=1000;
+struct WorldTimer{static unsigned getMSTime(){return tick;}static unsigned getMSTimeDiff(unsigned a,unsigned b){return b-a;}};
+enum{IN_PROGRESS=1,DONE=3};
+struct InstanceData{unsigned phase=0;unsigned GetData(unsigned){return phase;}};
+struct Map{InstanceData instance;InstanceData* GetInstanceData(){return &instance;}};
+struct SuppressionDuty{unsigned device=0,anchor=0,instance=0,generation=0,progressAt=0;float distance=0;std::map<unsigned,unsigned> rejected;};
+struct StoredDuty{SuppressionDuty data;SuppressionDuty Get(){return data;}void Set(SuppressionDuty s){data=s;}};
+struct Context{StoredDuty duty;template<class T>StoredDuty* GetValue(const char*){return &duty;}};
 enum {CLASS_ROGUE=4,SPELL_DISARM_TRAP=1842,GO_READY=1,GO_FLAG_IN_USE=1,GO_FLAG_NO_INTERACT=2,
  SPELL_ATTR_ONLY_STEALTHED=0x20000,SPELL_AURA_MOD_STEALTH=16,GAMEOBJECT_FLAGS=0};
 struct SpellEntry{unsigned Attributes=0;};
@@ -24,14 +33,14 @@ struct Object{bool world=true,alive=true;unsigned map=469,instance=1,guid=1;floa
  float GetDistance(Object* b){return std::hypot(x-b->x,z-b->z);}};
 struct GameObject:Object{bool spawned=true,los=true;unsigned state=GO_READY,flags=0;
  unsigned GetLootState(){return state;}bool HasFlag(unsigned,unsigned f){return flags&f;}};
-struct Player:Object{bool teleport=false,charmed=false,learned=true,combat=false,stealth=false;unsigned cls=CLASS_ROGUE;
+struct Player:Object{Map mapData;Map* GetMap(){return &mapData;}unsigned GetInstanceId(){return instance;}bool teleport=false,charmed=false,learned=true,combat=false,stealth=false;unsigned cls=CLASS_ROGUE;
  Group* group=nullptr;PlayerbotAI* ai=nullptr;bool IsBeingTeleported(){return teleport;}bool HasCharmer(){return charmed;}
  Group* GetGroup(){return group;}unsigned getClass(){return cls;}bool HasSpell(unsigned){return learned;}
  PlayerbotAI* GetPlayerbotAI(){return ai;}bool IsInCombat(){return combat;}bool HasAuraType(unsigned){return stealth;}
  bool IsWithinLOSInMap(GameObject* go){return go->los;}};
 struct GroupReference{Player* p;GroupReference* n=nullptr;Player* getSource(){return p;}GroupReference* next(){return n;}};
 struct Group{GroupReference* first=nullptr;unsigned leader=100;GroupReference* GetFirstMember(){return first;}unsigned GetLeaderGuid(){return leader;}};
-struct PlayerbotAI{Player* bot;bool real=false,movable=true,vanish=true;Player* GetBot(){return bot;}
+struct PlayerbotAI{Player* bot;Context context;unsigned generation=1;Context* GetAiObjectContext(){return &context;}unsigned GetTransitionGeneration(){return generation;}bool real=false,movable=true,vanish=true;Player* GetBot(){return bot;}
  bool IsRealPlayer(){return real;}bool CanMove(){return movable;}bool CanCastSpell(const char*,Player*,int){return vanish;}};
 struct Facade{SpellEntry spell;bool isSpawned(GameObject* go){return go->spawned;}
  SpellEntry* LookupSpellInfo(unsigned){return &spell;}}sServerFacade;
@@ -52,26 +61,38 @@ int main(){
  GroupReference r3{&b},r2{&a,&r3},r1{&leader,&r2};Group group{&r1};a.group=b.group=leader.group=&group;
  GameObject first,second;first.guid=10;first.x=2;second.guid=11;second.x=5;grid={&second,&first};
  assert(ai::AssignedSuppressionDevice(&aa)==&first);assert(ai::AssignedSuppressionDevice(&bb)==&second);
- first.state=2;assert(ai::AssignedSuppressionDevice(&aa)==&second);assert(!ai::AssignedSuppressionDevice(&bb));
- first.state=GO_READY;second.spawned=false;assert(!ai::AssignedSuppressionDevice(&bb));second.spawned=true;
- a.alive=false;assert(ai::AssignedSuppressionDevice(&bb)==&first);assert(!ai::AssignedSuppressionDevice(&aa));a.alive=true;
- a.teleport=true;assert(ai::AssignedSuppressionDevice(&bb)==&first);a.teleport=false;
- a.instance=2;assert(!ai::AssignedSuppressionDevice(&aa));a.instance=1;
- first.z=9;assert(ai::AssignedSuppressionDevice(&aa)==&second);first.z=0;
- first.los=false;assert(ai::AssignedSuppressionDevice(&aa)==&second);first.los=true;
- first.flags=GO_FLAG_IN_USE;assert(ai::AssignedSuppressionDevice(&aa)==&second);first.flags=0;
- a.map=409;assert(!ai::AssignedSuppressionDevice(&aa));a.map=469;
- aa.real=true;assert(!ai::AssignedSuppressionDevice(&aa));aa.real=false;
- a.learned=false;assert(ai::AssignedSuppressionDevice(&bb)==&first);a.learned=true;
- leader.x=100;assert(!ai::AssignedSuppressionDevice(&aa));leader.x=0;
- a.combat=true;aa.vanish=false;sServerFacade.spell.Attributes=SPELL_ATTR_ONLY_STEALTHED;
+ // Completing one job must not steal the other rogue's live lease.
+ first.state=2;assert(!ai::AssignedSuppressionDevice(&aa));assert(ai::AssignedSuppressionDevice(&bb)==&second);
+ auto reset=[&](){aa.context.duty.data={};bb.context.duty.data={};first.state=second.state=GO_READY;};
+ reset();second.spawned=false;assert(!ai::AssignedSuppressionDevice(&bb));second.spawned=true;
+ reset();a.alive=false;assert(ai::AssignedSuppressionDevice(&bb)==&first);assert(!ai::AssignedSuppressionDevice(&aa));a.alive=true;
+ reset();a.teleport=true;assert(ai::AssignedSuppressionDevice(&bb)==&first);a.teleport=false;
+ reset();a.instance=2;assert(!ai::AssignedSuppressionDevice(&aa));a.instance=1;
+ reset();first.z=9;assert(ai::AssignedSuppressionDevice(&aa)==&second);first.z=0;
+ reset();first.los=false;assert(ai::AssignedSuppressionDevice(&aa)==&second);first.los=true;
+ reset();first.flags=GO_FLAG_IN_USE;assert(ai::AssignedSuppressionDevice(&aa)==&second);first.flags=0;
+ reset();a.map=409;assert(!ai::AssignedSuppressionDevice(&aa));a.map=469;
+ reset();aa.real=true;assert(!ai::AssignedSuppressionDevice(&aa));aa.real=false;
+ reset();a.learned=false;assert(ai::AssignedSuppressionDevice(&bb)==&first);a.learned=true;
+ reset();leader.x=100;assert(!ai::AssignedSuppressionDevice(&aa));leader.x=0;
+ reset();a.combat=true;aa.vanish=false;sServerFacade.spell.Attributes=SPELL_ATTR_ONLY_STEALTHED;
  assert(!ai::AssignedSuppressionDevice(&aa));assert(ai::AssignedSuppressionDevice(&bb)==&first);
- a.stealth=true;assert(ai::AssignedSuppressionDevice(&aa)==&first);a.stealth=false;
- aa.vanish=true;assert(ai::AssignedSuppressionDevice(&aa)==&first);
- sServerFacade.spell.Attributes=0;aa.vanish=false;assert(ai::AssignedSuppressionDevice(&aa)==&first);
- first.state=second.state=2;assert(!ai::AssignedSuppressionDevice(&aa));
+ reset();a.stealth=true;assert(ai::AssignedSuppressionDevice(&aa)==&first);a.stealth=false;
+ reset();aa.vanish=true;assert(ai::AssignedSuppressionDevice(&aa)==&first);
+ reset();sServerFacade.spell.Attributes=0;aa.vanish=false;assert(ai::AssignedSuppressionDevice(&aa)==&first);
+ reset();first.state=second.state=2;assert(!ai::AssignedSuppressionDevice(&aa));
  first.state=GO_READY;assert(ai::AssignedSuppressionDevice(&aa)==&first);
- std::cout<<"PASS: active state, unique ownership, raid leash, floors/LOS, eligibility and per-era stealth\n";
+ reset();a.mapData.instance.phase=IN_PROGRESS;assert(!ai::AssignedSuppressionDevice(&aa));
+ a.mapData.instance.phase=DONE;assert(!ai::AssignedSuppressionDevice(&aa));a.mapData.instance.phase=0;
+ reset();assert(ai::AssignedSuppressionDevice(&aa)==&first);
+ tick+=10001;assert(ai::AssignedSuppressionDevice(&aa)==&second); // stalled lease bounded
+ assert(aa.context.duty.data.rejected.count(first.guid));
+ ++aa.generation;assert(ai::AssignedSuppressionDevice(&aa)==&first); // transition clears stale rejection
+ reset();aa.context.duty.data.anchor=leader.guid;aa.context.duty.data.instance=1;
+ aa.context.duty.data.generation=aa.generation;aa.context.duty.data.rejected[first.guid]=tick;
+ assert(ai::AssignedSuppressionDevice(&aa)==&second); // route failure tries another device
+ tick+=10001;assert(ai::AssignedSuppressionDevice(&aa)==&first); // bounded retry
+ std::cout<<"PASS: active state, unique ownership, stable leases, timeout/recovery, boss transition, raid leash, floors/LOS, eligibility and per-era stealth\n";
 }
 '''.replace('__METHOD__',method)
 strategy=(root/'playerbot/strategy/generic/BlackwingLairDungeonStrategies.cpp').read_text()

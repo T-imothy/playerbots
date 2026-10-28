@@ -12,9 +12,9 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
     triggers.push_back(new TriggerNode("classic raid support", NextAction::array(0, new NextAction("classic raid support", ACTION_DISPEL + 4), NULL)));
 #endif
     triggers.push_back(new TriggerNode("suppression device need stealth",
-        NextAction::array(0, new NextAction("stealth for suppression device", ACTION_HIGH + 9), NULL)));
+        NextAction::array(0, new NextAction("stealth for suppression device", ACTION_MOVE + 9), NULL)));
     triggers.push_back(new TriggerNode("suppression device in sight",
-        NextAction::array(0, new NextAction("move to suppression device", ACTION_HIGH + 8), NULL)));
+        NextAction::array(0, new NextAction("move to suppression device", ACTION_MOVE + 8), NULL)));
     triggers.push_back(new TriggerNode("razorgore orb",
         NextAction::array(0, new NextAction("razorgore orb", 100.0f), NULL)));
     triggers.push_back(new TriggerNode("blackwing lair flank",
@@ -58,11 +58,11 @@ void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>
         NextAction::array(0, new NextAction("blackwing lair safe position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode(
         "suppression device need stealth",
-        NextAction::array(0, new NextAction("stealth for suppression device", ACTION_HIGH + 3), NULL)));
+        NextAction::array(0, new NextAction("stealth for suppression device", ACTION_MOVE + 9), NULL)));
 
     triggers.push_back(new TriggerNode(
         "suppression device in sight",
-        NextAction::array(0, new NextAction("move to suppression device", ACTION_HIGH + 2), NULL)));
+        NextAction::array(0, new NextAction("move to suppression device", ACTION_MOVE + 8), NULL)));
 
     triggers.push_back(new TriggerNode(
         "suppression device close",
@@ -93,10 +93,10 @@ void BlackwingLairDungeonStrategy::InitNonCombatMultipliers(std::list<Multiplier
 void SuppressionRoomStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     triggers.push_back(new TriggerNode("suppression device need stealth",
-        NextAction::array(0, new NextAction("stealth for suppression device", ACTION_HIGH + 9), NULL)));
+        NextAction::array(0, new NextAction("stealth for suppression device", ACTION_MOVE + 9), NULL)));
     triggers.push_back(new TriggerNode(
         "suppression device in sight",
-        NextAction::array(0, new NextAction("move to suppression device", ACTION_HIGH + 8), NULL)));
+        NextAction::array(0, new NextAction("move to suppression device", ACTION_MOVE + 8), NULL)));
 
     triggers.push_back(new TriggerNode(
         "suppression device close",
@@ -107,11 +107,11 @@ void SuppressionRoomStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tri
 {
     triggers.push_back(new TriggerNode(
         "suppression device need stealth",
-        NextAction::array(0, new NextAction("stealth for suppression device", ACTION_MOVE), NULL)));
+        NextAction::array(0, new NextAction("stealth for suppression device", ACTION_MOVE + 9), NULL)));
 
     triggers.push_back(new TriggerNode(
         "suppression device in sight",
-        NextAction::array(0, new NextAction("move to suppression device", ACTION_HIGH + 8), NULL)));
+        NextAction::array(0, new NextAction("move to suppression device", ACTION_MOVE + 8), NULL)));
 
     triggers.push_back(new TriggerNode(
         "suppression device close",

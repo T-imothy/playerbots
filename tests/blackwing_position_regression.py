@@ -50,8 +50,9 @@ namespace ai{struct EncounterPosition{bool active=false,exclusive=true;unsigned 
 using namespace ai;
 struct Cached{EncounterPosition value;EncounterPosition Get(){return value;}};
 struct AttackerCache{std::list<ObjectGuid> value;std::list<ObjectGuid>& Get(){return value;}};
-struct Context{Cached cached;AttackerCache attackers;template<class T>auto* GetValue(const char*){
- if constexpr(std::is_same_v<T,EncounterPosition>)return &cached;else return &attackers;}};
+struct Context{Cached cached;AttackerCache attackers,focus;template<class T>auto* GetValue(const char* key,const char* qualifier=""){
+ if constexpr(std::is_same_v<T,EncounterPosition>)return &cached;
+ else {if(std::string(key)=="possible targets"){assert(std::string(qualifier)=="100:1");return &attackers;}return &focus;}}};
 struct PlayerbotAI{Player* bot;Context context;std::list<ObjectGuid> attackers;std::map<unsigned,Unit*> units;
  bool ranged=false,healer=false;bool IsRanged(Player*){return ranged;}bool IsHeal(Player*){return healer;}
  bool validPath=true,canMove=true;unsigned checked=0,moves=0;Player* GetBot(){return bot;}

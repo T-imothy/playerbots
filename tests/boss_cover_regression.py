@@ -55,7 +55,7 @@ struct EncounterPosition{bool active=false;unsigned map=0,instance=0,spell=0;Obj
 template<class T>struct Cached{T data;T Get(){return data;}};
 struct Context{Cached<EncounterPosition>position;template<class T>Cached<T>*GetValue(const char*){return &position;}};
 struct PlayerbotAI{Player*bot;Context context;bool real=false,canMove=true,path=true,healer=false;unsigned pathChecks=0,moves=0,stops=0;
- std::list<ObjectGuid>attackers,objects;std::map<unsigned,Unit*>units;std::map<unsigned,GameObject*>gos;float range=30;
+ std::list<ObjectGuid>attackers,nearby,objects;std::map<unsigned,Unit*>units;std::map<unsigned,GameObject*>gos;float range=30;
  Player*GetBot(){return bot;}bool IsRealPlayer(){return real;}bool CanMove(){return canMove;}
  bool IsHeal(Player*){return healer;}
  float GetRange(const char*){return range;}GameObject*GetGameObject(ObjectGuid guid){auto i=gos.find(guid);return i==gos.end()?nullptr:i->second;}
@@ -79,9 +79,12 @@ namespace ai {
 }
 using namespace ai;
 #define AI_VALUE(type,key) (std::string(key)=="attackers"?ai->attackers:ai->objects)
+#define AI_VALUE2(type,key,qualifier) ai->nearby
 __METHODS__
 int main(){
- Player bot;bot.guid=10;Unit boss;PlayerbotAI ai{&bot};ai.units={{1,&boss}};ai.attackers={1};
+ Player bot;bot.guid=10;Unit boss;PlayerbotAI ai{&bot};ai.units={{1,&boss}};ai.nearby={1};
+ // A marked add hides the boss from attackers; BWL safety must still see it.
+ ai.attackers={99};
  BossCoverPositionValue planner{&ai,&bot};BossCoverAction action{&ai,&bot};Event event;
  auto calculate=[&](){ai.context.position.data=planner.Calculate();return ai.context.position.data;};
  bot.aura.stacks=4;assert(!calculate().active);bot.aura.stacks=5;auto plan=calculate();
@@ -109,7 +112,7 @@ int main(){
  boss.entry=14020;SpellEntry info;Spell cast{&info};boss.cast=&cast;
  for(unsigned id:{23187,23189,23308,23309,23310,23312,23313,23314,23315,23316}){info.Id=id;assert(calculate().active);}
  info.Id=1;assert(!calculate().active);info.Id=23187;cast.state=SPELL_STATE_FINISHED;assert(!calculate().active);cast.state=SPELL_STATE_CASTING;
- bot.map=boss.map=556;boss.entry=18473;boss.victim=&bot;
+ ai.attackers={1};bot.map=boss.map=556;boss.entry=18473;boss.victim=&bot;
  for(unsigned id:{38197,40425}){info.Id=id;
 #ifdef MANGOSBOT_ZERO
   assert(!calculate().active);

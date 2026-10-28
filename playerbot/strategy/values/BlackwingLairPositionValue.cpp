@@ -21,7 +21,7 @@ bool ai::BlackwingLairBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
     // Ranged damage and healers can remain outside Broodlord's native Blast
     // Wave radius. The active tank and melee retain their normal positions.
     if (!BurningAdrenalineAura(bot) && (ai->IsRanged(bot) || ai->IsHeal(bot)))
-        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
+        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets", "100:1")->Get())
         {
             Unit* lord = ai->GetUnit(guid);
             if (!lord || lord->GetEntry() != 12017 || !lord->IsInWorld() || !lord->IsAlive() ||
@@ -39,7 +39,7 @@ bool ai::BlackwingLairBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
         }
 
     Unit* boss = nullptr;
-    for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
+    for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets", "100:1")->Get())
     {
         Unit* unit = ai->GetUnit(guid);
         if (unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->IsAlive() &&
