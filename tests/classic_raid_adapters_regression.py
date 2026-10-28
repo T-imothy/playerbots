@@ -96,7 +96,12 @@ int main(){using namespace ai::classicraid;
  plan.boss={1};plan.emergency=false;plan.position.spell=15928;assert(action.Execute(event)&&brain.jumps==1&&brain.moves==1);
  brain.jumpAccepted=false;assert(!action.Execute(event)&&brain.jumps==2&&brain.moves==1); // native rejected trajectory is not a teleport/move success
 #else
- assert(!action.isUseful()&&!action.Execute(event)); // no TBC/Wrath behavior change
+ assert(!action.isUseful()&&!action.Execute(event)); // Classic Naxx remains disabled in later cores.
+ bot.map=469;plan.position.map=469;brain.boss.entry=11983;
+ assert(Ready(&brain)&&action.isUseful());
+ bot.casting=true;assert(!action.Execute(event));bot.casting=false;
+ brain.boss.victim=&bot;assert(!action.isUseful());brain.boss.victim=nullptr;
+ bot.map=249;assert(!Ready(&brain));bot.map=533;assert(!Ready(&brain));
 #endif
  std::cout<<"PASS actual Classic raid scope, native target/mark policy, movement/cast and lifecycle admission\n";
 }

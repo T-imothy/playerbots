@@ -20,7 +20,8 @@ for guard in ('BwlReady(ai)','ai->IsHeal(bot)','"attack target"','"rti target"',
 support=block(a,'bool BlackwingLairSupportAction::Select(')
 assert 'CanCastSpell(name, unit, 0)' in support and 'info->Dispel' in support
 assert '23342' in support and '23128' in support
-assert 'for (uint32 aura : {22687u, 23153u, 23154u, 23155u, 23169u})' in support
+for aura in ('22438u','22274u','22335u','22423u','22687u','23153u','23154u','23155u','23169u'):
+    assert aura in support
 assert 'if (!Select(spell, target)) return false;' in a
 flank=block(a,'bool ai::BlackwingMeleeFlankAngle(')
 assert 'target->GetEntry() != 13020 && target->GetEntry() != 11583' in flank

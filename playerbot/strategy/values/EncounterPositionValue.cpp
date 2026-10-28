@@ -67,6 +67,7 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan, 
             hazards.emplace_back(WorldPosition(boss), clearance - 2);
         }
     if (plan.map == 409) AppendMoltenCoreGroundHazards(ai, hazards);
+    if (plan.map == 469) AppendBlackwingGroundHazards(ai, hazards);
     if (plan.map == 531)
     {
         EncounterPosition current;

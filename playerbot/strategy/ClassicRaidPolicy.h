@@ -23,7 +23,12 @@ namespace ai { namespace classicraid
             case 249: return entry == 10184;
             case 469:
                 return entry == 12435 || entry == 13020 || entry == 12017 || entry == 11983 ||
-                    entry == 14601 || entry == 11981 || entry == 14020 || entry == 11583 || entry == 12460;
+                    entry == 14601 || entry == 11981 || entry == 14020 || entry == 11583 || entry == 12460 ||
+                    entry == 12416 || entry == 12420 || entry == 12422 || entry == 12457 || entry == 12458 ||
+                    entry == 12459 || entry == 12461 || entry == 12463 || entry == 12464 || entry == 12465 ||
+                    entry == 12467 || entry == 12468 || entry == 12557 || entry == 13996 || entry == 14456 ||
+                    (entry >= 14022 && entry <= 14025) || (entry >= 14261 && entry <= 14265) ||
+                    entry == 14302 || entry == 14605 || entry == 14668 || entry == 14101;
             case 309:
                 return entry == 14517 || entry == 14507 || entry == 14510 || entry == 14509 ||
                     entry == 14515 || entry == 11382 || entry == 15114 || entry == 11380 || entry == 14834 ||
@@ -102,6 +107,7 @@ namespace ai { namespace classicraid
     inline bool Front(unsigned entry)
     {
         return Dragon(entry) || entry == 12435 || entry == 12017 || entry == 14020 || entry == 12460 ||
+            entry == 12416 || entry == 12422 || entry == 12461 || entry == 12467 || entry == 14456 ||
             entry == 15956 || entry == 15952 || entry == 16028 || entry == 15931 || entry == 15932 ||
             entry == 15517 || entry == 15510;
     }

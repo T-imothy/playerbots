@@ -1,11 +1,46 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/ServerFacade.h"
 #include "HazardsValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "MotionGenerators/PathFinder.h"
 #include "Entities/GameObject.h"
+#include "Entities/DynamicObject.h"
+#include "Grids/GridNotifiers.h"
+#include "Grids/GridNotifiersImpl.h"
+#include "Grids/CellImpl.h"
 
 using namespace ai;
+
+void ai::AppendBlackwingGroundHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId() != 469 ||
+        bot->IsBeingTeleported() || bot->HasCharmer()) return;
+    struct FireCheck
+    {
+        Player* bot;
+        WorldObject const& GetFocusObject() const { return *bot; }
+        bool operator()(WorldObject* object) const
+        {
+            if (!object || object->GetTypeId() != TYPEID_DYNAMICOBJECT || !object->IsInWorld() ||
+                !bot->IsInMap(object) || std::fabs(object->GetPositionZ() - bot->GetPositionZ()) > 8) return false;
+            DynamicObject* fire = static_cast<DynamicObject*>(object);
+            Unit* caster = fire->GetCaster();
+            const uint32 spell = fire->GetSpellId();
+            if (spell != 19717 && spell != 22275) return false;
+            return fire->GetType() == DYNAMIC_OBJECT_AREA_SPELL && fire->GetDuration() > 0 &&
+                std::isfinite(fire->GetRadius()) && fire->GetRadius() > 0 && fire->GetRadius() <= 25 &&
+                caster && !caster->HasCharmer() && bot->IsInMap(caster) && fire->IsEnemy(bot) &&
+                fire->CanAttackSpell(bot, sServerFacade.LookupSpellInfo(spell), true);
+        }
+    } check{bot};
+    WorldObjectList objects;
+    MaNGOS::WorldObjectListSearcher<FireCheck> searcher(objects, check);
+    Cell::VisitAllObjects(bot, searcher, 60.0f);
+    for (WorldObject* object : objects)
+        hazards.emplace_back(WorldPosition(object), static_cast<DynamicObject*>(object)->GetRadius() + 1.0f);
+}
 
 Hazard::Hazard()
 : position(WorldPosition())
@@ -174,6 +209,7 @@ std::list<HazardPosition> HazardsValue::Calculate()
     }
 
     AppendMoltenCoreGroundHazards(ai, hazards);
+    AppendBlackwingGroundHazards(ai, hazards);
     AppendVashjStriderHazards(ai, hazards);
     AppendNativeEncounterActorHazards(ai, hazards);
     return hazards;

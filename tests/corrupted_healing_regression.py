@@ -35,6 +35,8 @@ code = r'''
 #include <set>
 #include <string>
 using uint32=unsigned;using uint64=uint64_t;
+enum {CLASS_MAGE=8,CLASS_WARLOCK=9,CLASS_DRUID=11,CLASS_SHAMAN=7};
+enum class ActionThreatType {ACTION_THREAT_NONE};
 constexpr unsigned CLASS_PRIEST=5,CLASS_HUNTER=3,SPELL_EFFECT_HEAL=10,SPELL_EFFECT_APPLY_AURA=6,
  SPELL_EFFECT_DUMMY=3,SPELL_EFFECT_CREATE_ITEM=24,SPELL_AURA_PERIODIC_TRIGGER_SPELL=23,
  MAX_EFFECT_INDEX=3,SPELLFAMILY_PRIEST=6,ATTACK_DISTANCE=5,SPELL_AURA_DAMAGE_SHIELD=15,EQUIP_ERR_OK=0;
@@ -49,6 +51,7 @@ bool IsReflectableSpell(const SpellEntry*){return false;}
 unsigned GetSpellSchoolMask(const SpellEntry*){return 1;}
 struct Aura{struct Mod{unsigned m_amount=0;}mod;Mod* GetModifier(){return &mod;}};
 struct Unit{using AuraList=std::list<Aura*>;AuraList shields;bool world=true,friendly=true;unsigned map=469,phase=1;
+ bool HasBreakableByDamageCrowdControlAura(){return false;}
  bool IsInWorld(){return world;}unsigned GetMapId(){return map;}bool IsInMap(Unit* u){return u&&world&&u->world&&map==u->map&&phase==u->phase;}
  const AuraList& GetAurasByType(unsigned){return shields;}float GetReflectChance(unsigned){return 0;}};
 struct Spell{const SpellEntry* m_spellInfo=nullptr;SpellState state=SPELL_STATE_CASTING;
@@ -57,6 +60,7 @@ struct Spell{const SpellEntry* m_spellInfo=nullptr;SpellState state=SPELL_STATE_
 using PlayerSpellMap=std::map<uint32,unsigned>;
 struct ItemPrototype{};
 struct Player:Unit{bool alive=true,teleport=false,charmed=false,corrupted=true;unsigned klass=CLASS_PRIEST,stops=0;
+ bool CanAttack(Unit* u){return u&&!u->friendly;}
  Spell* casts[4]{};PlayerSpellMap spellMap;bool IsAlive(){return alive;}bool IsBeingTeleported(){return teleport;}
  bool HasCharmer(){return charmed;}unsigned getClass(){return klass;}bool HasAura(unsigned id){return id==23401&&corrupted;}
  bool CanAssistSpell(Unit* u,const SpellEntry*){return u&&u->friendly;}Spell* GetCurrentSpell(CurrentSpellTypes s){return casts[s];}
@@ -74,6 +78,14 @@ struct PlayerbotAI{bool learned=true;unsigned casts=0;bool HasSpell(unsigned){re
  bool IsInVehicle(bool=false,bool=false,bool=false){return false;}bool HasCheat(BotCheatMask){return false;}
  template<class T>bool CastSpell(T,Unit*,void* =nullptr,bool=false,unsigned* =nullptr){++casts;return true;}};
 struct Config{unsigned globalCoolDown=1500;}sPlayerbotAIConfig;
+// Orthogonal damage/MC policies are admitted; this fixture tests the real
+// corrupted-healing policy and its two common spell dispatch gates.
+bool CasterSpellAreaSafe(PlayerbotAI*,const std::string&,Unit*){return true;}
+bool CasterHealthCostSafe(PlayerbotAI*,const std::string&){return true;}
+bool CasterDamageSpell(const SpellEntry*){return false;}
+bool MoltenCoreTrashSpellAllowed(PlayerbotAI*,const std::string&){return true;}
+bool GarrSpellAllowed(PlayerbotAI*,const std::string&,Unit*,const SpellEntry*){return true;}
+struct MeleeCcCheck{MeleeCcCheck(PlayerbotAI*){}bool Protected(Unit*){return false;}};
 struct Event{std::string getSource(){return "test";}};
 struct CombatDiagnostics{static bool Select(PlayerbotAI*){return false;}
  static void Record(PlayerbotAI*,std::string,std::string,const char*,int,unsigned){}};
@@ -85,6 +97,7 @@ namespace ai{bool ShouldAvoidCorruptedHealing(Player*,const SpellEntry*,Unit*);
 __POLICY__
 using namespace ai;
 struct CastSpellAction{Player* bot;PlayerbotAI* ai;Unit* target;unsigned spellId=1;float range=30;
+ std::string GetSpellName(){return spellName;}ActionThreatType getThreatType(){return ActionThreatType::ACTION_THREAT_NONE;}
  std::string spellName="heal";bool useful=true;void RefreshSpellId(){}Unit* GetTarget(){return target;}
  std::string GetTargetName(){return "party target";}std::string getName(){return spellName;}
  void SetDuration(unsigned){}bool isUseful();bool Execute(Event&);};

@@ -14,6 +14,119 @@
 
 using namespace ai;
 
+GameObject* ai::AssignedSuppressionDevice(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId() != 469 ||
+        bot->IsBeingTeleported() || bot->HasCharmer() || !bot->GetGroup() ||
+        ai->IsRealPlayer() || bot->getClass() != CLASS_ROGUE || !bot->HasSpell(SPELL_DISARM_TRAP)) return nullptr;
+
+    // Use one common raid anchor, rather than each rogue's sight list. This
+    // prevents duplicate assignments and sending rogues ahead into another pack.
+    Player* anchor = nullptr;
+    std::vector<Player*> rogues;
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (!member || !member->IsInWorld() || !member->IsAlive() || !bot->IsInMap(member) ||
+            member->IsBeingTeleported() || member->HasCharmer()) continue;
+        if (member->GetObjectGuid() == bot->GetGroup()->GetLeaderGuid()) anchor = member;
+        PlayerbotAI* memberAI = member->GetPlayerbotAI();
+        const SpellEntry* disarm = sServerFacade.LookupSpellInfo(SPELL_DISARM_TRAP);
+        if (!disarm) continue;
+        if ((disarm->Attributes & SPELL_ATTR_ONLY_STEALTHED) && member->IsInCombat() &&
+            !member->HasAuraType(SPELL_AURA_MOD_STEALTH) &&
+            (!memberAI || !memberAI->CanCastSpell("vanish", member, 0))) continue;
+        if (memberAI && !memberAI->IsRealPlayer() && member->getClass() == CLASS_ROGUE &&
+            member->HasSpell(SPELL_DISARM_TRAP) && memberAI->CanMove()) rogues.push_back(member);
+    }
+    if (!anchor) return nullptr;
+    std::list<GameObject*> found;
+    MaNGOS::GameObjectEntryInPosRangeCheck check(*anchor, 179784,
+        anchor->GetPositionX(), anchor->GetPositionY(), anchor->GetPositionZ(), 30.0f);
+    MaNGOS::GameObjectListSearcher<MaNGOS::GameObjectEntryInPosRangeCheck> searcher(found, check);
+    Cell::VisitAllObjects(anchor, searcher, 30.0f);
+    std::vector<GameObject*> devices;
+    for (GameObject* go : found)
+        if (go && go->IsInWorld() && anchor->IsInMap(go) && sServerFacade.isSpawned(go) &&
+            go->GetLootState() == GO_READY &&
+            !go->HasFlag(GAMEOBJECT_FLAGS, GO_FLAG_IN_USE | GO_FLAG_NO_INTERACT) &&
+            std::fabs(go->GetPositionZ() - anchor->GetPositionZ()) <= 8.0f)
+            devices.push_back(go);
+    std::sort(rogues.begin(), rogues.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+    for (Player* rogue : rogues)
+    {
+        if (rogue->GetDistance(anchor) > 40.0f) continue;
+        GameObject* selected = nullptr;
+        float distance = 30.0f;
+        for (GameObject* go : devices)
+        {
+            const float candidate = rogue->GetDistance(go);
+            if (candidate > 30.0f || std::fabs(go->GetPositionZ() - rogue->GetPositionZ()) > 8.0f ||
+                !rogue->IsWithinLOSInMap(go)) continue;
+            if (!selected || candidate < distance ||
+                (candidate == distance && go->GetObjectGuid() < selected->GetObjectGuid()))
+            { selected = go; distance = candidate; }
+        }
+        if (rogue == bot) return selected;
+        if (selected) devices.erase(std::remove(devices.begin(), devices.end(), selected), devices.end());
+    }
+    return nullptr;
+}
+
+bool ai::SuppressionDeviceInCastRange(PlayerbotAI* ai, GameObject* device)
+{
+    Player* bot = ai->GetBot();
+    const SpellEntry* spell = sServerFacade.LookupSpellInfo(SPELL_DISARM_TRAP);
+    if (!device || !spell || !bot->IsInWorld() || !device->IsInWorld() || !bot->IsInMap(device)) return false;
+    const float range = GetSpellMaxRange(sSpellRangeStore.LookupEntry(spell->rangeIndex));
+    return range > 0 && bot->GetDistance(device) <= std::max(0.5f, range - 0.5f) && bot->IsWithinLOSInMap(device);
+}
+
+bool MoveToSuppressionDeviceAction::isUseful()
+{
+    GameObject* go = AssignedSuppressionDevice(ai);
+    return go && !SuppressionDeviceInCastRange(ai, go) && !bot->IsNonMeleeSpellCasted(true);
+}
+
+bool MoveToSuppressionDeviceAction::Execute(Event& event)
+{
+    GameObject* go = AssignedSuppressionDevice(ai);
+    if (!go || SuppressionDeviceInCastRange(ai, go) || bot->IsNonMeleeSpellCasted(true)) return false;
+    return MoveTo(bot->GetMapId(), go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), false, false, false, true);
+}
+
+bool StealthForSuppressionDeviceAction::isUseful()
+{
+    if (bot->HasAuraType(SPELL_AURA_MOD_STEALTH) || !AssignedSuppressionDevice(ai)) return false;
+    const SpellEntry* disarm = sServerFacade.LookupSpellInfo(SPELL_DISARM_TRAP);
+    return !bot->IsInCombat() || (disarm && (disarm->Attributes & SPELL_ATTR_ONLY_STEALTHED) &&
+        ai->CanCastSpell("vanish", bot, 0));
+}
+
+bool StealthForSuppressionDeviceAction::Execute(Event& event)
+{
+    return isUseful() && ai->CastSpell(bot->IsInCombat() ? "vanish" : "stealth", bot);
+}
+
+bool DisarmSuppressionDeviceAction::isUseful()
+{
+    const SpellEntry* disarm = sServerFacade.LookupSpellInfo(SPELL_DISARM_TRAP);
+    if (!disarm || ((disarm->Attributes & SPELL_ATTR_ONLY_STEALTHED) && !bot->HasAuraType(SPELL_AURA_MOD_STEALTH))) return false;
+    return !bot->IsNonMeleeSpellCasted(true) && bot->IsSpellReady(SPELL_DISARM_TRAP) &&
+        SuppressionDeviceInCastRange(ai, AssignedSuppressionDevice(ai));
+}
+
+bool DisarmSuppressionDeviceAction::Execute(Event& event)
+{
+    if (!isUseful()) return false;
+    GameObject* go = AssignedSuppressionDevice(ai);
+    if (bot->IsNonMeleeSpellCasted(true) || !bot->IsSpellReady(SPELL_DISARM_TRAP) ||
+        !SuppressionDeviceInCastRange(ai, go)) return false;
+    // Native spell validation and loot-state transition own the result and rearm timer.
+    return ai->CastSpell(SPELL_DISARM_TRAP, go);
+}
+
 bool HourglassSandAction::isUseful()
 {
     return bot->IsInWorld() && bot->IsAlive() && bot->GetMapId() == 469 && !bot->HasCharmer() &&
@@ -101,7 +214,7 @@ namespace
 
     unsigned BwlAfflictions(Unit* member)
     {
-        unsigned count = 0;
+        unsigned count = member->HasAura(22438) ? 8 : 0;
         for (uint32 spell : {23153u, 23154u, 23155u, 23169u, 23170u}) count += member->HasAura(spell) ? 1 : 0;
         return count;
     }
@@ -114,6 +227,17 @@ namespace
             case 12420: return 3; // Razorgore: Blackwing mages.
             case 12416: case 14456: return 2;
             case 12422: return 1;
+            case 12468: return 5; // Hatchers sustain the suppression-room whelp pressure.
+            case 12457: return 6; // Spellbinders: physical DPS handles their native magic immunity.
+            case 12461: return 4; // Death Talon Overseer.
+            case 12459: return 4; // Blackwing Warlock.
+            case 13996: return 3; // Goblin technician packs.
+            case 12458: return 2; // Blackwing Taskmaster.
+            case 12460: case 12463: case 12464: case 12465: case 12467: return 1;
+            case 14022: case 14023: case 14024: case 14025: return 1;
+            case 14668: return 3; // Nefarian's hostile infernals.
+            case 14101: return 3; // Warlock portal guardians.
+            case 14662: case 14663: case 14664: case 14666: case 14667: return 7; // Hostile class-call totems.
             case 14605: return 3; // Nefarian's raised bone constructs.
             case 14261: case 14262: case 14263: case 14264: case 14265: case 14302: return 2;
             default: return 0;
@@ -144,6 +268,71 @@ Unit* BlackwingLairPriorityTargetAction::GetTarget()
             !PossibleAttackTargetsValue::HasBreakableCC(unit, bot) &&
             !PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot);
     };
+    bool broodlordActive = false;
+    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (valid(unit) && unit->GetEntry() == 12017) { broodlordActive = true; break; }
+    }
+    // Damage marks are not multi-tank assignments. Keep the native boss holder
+    // anchored, and distribute engaged adds before applying the DPS kill order.
+    if (ai->IsTank(bot))
+    {
+        std::vector<Unit*> enemies;
+        for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (!valid(unit)) continue;
+            const uint32 entry = unit->GetEntry();
+            const bool boss = entry == 12435 || entry == 13020 || entry == 12017 || entry == 11983 ||
+                entry == 14601 || entry == 11981 || entry == 14020 || entry == 11583;
+            if (boss && unit->GetVictim() == bot) return unit;
+            if (BwlAddPriority(entry) && !(broodlordActive && entry >= 14022 && entry <= 14025)) enemies.push_back(unit);
+        }
+        std::sort(enemies.begin(), enemies.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+        std::vector<Player*> tanks;
+        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* tank = ref->getSource();
+            if (!BwlMember(bot, tank) || !ai->IsTank(tank) || tank->GetDistance(bot) > 80.0f ||
+                !tank->GetPlayerbotAI() || tank->GetPlayerbotAI()->IsRealPlayer()) continue;
+            // A tank holding any raid boss cannot volunteer for an add.
+            Unit* victim = tank->GetVictim();
+            if (victim && victim->GetVictim() == tank)
+            {
+                const uint32 entry = victim->GetEntry();
+                if (entry == 12435 || entry == 13020 || entry == 12017 || entry == 11983 ||
+                    entry == 14601 || entry == 11981 || entry == 14020 || entry == 11583) continue;
+            }
+            tanks.push_back(tank);
+        }
+        std::sort(tanks.begin(), tanks.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+        std::map<Player*, unsigned> load;
+        Unit* held = nullptr;
+        for (Unit* enemy : enemies)
+        {
+            Player* holder = dynamic_cast<Player*>(enemy->GetVictim());
+            if (BwlMember(bot, holder) && ai->IsTank(holder))
+            {
+                ++load[holder];
+                if (holder == bot && !held) held = enemy;
+            }
+        }
+        Unit* rescue = nullptr;
+        for (Unit* enemy : enemies)
+        {
+            Player* holder = dynamic_cast<Player*>(enemy->GetVictim());
+            if (BwlMember(bot, holder) && ai->IsTank(holder)) continue;
+            Player* owner = nullptr;
+            for (Player* tank : tanks)
+                if (!owner || load[tank] < load[owner]) owner = tank;
+            if (!owner) break;
+            ++load[owner];
+            if (owner == bot && !rescue) rescue = enemy;
+        }
+        if (rescue || held) return rescue ? rescue : held;
+        return nullptr;
+    }
     if (valid(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"))) ||
         valid(ai->GetUnit(AI_VALUE(ObjectGuid, "rti target")))) return nullptr;
     // Preserve boss ownership. Off-tanks can acquire loose adds; the active
@@ -166,6 +355,8 @@ Unit* BlackwingLairPriorityTargetAction::GetTarget()
         Unit* unit = ai->GetUnit(guid);
         if (!valid(unit)) continue;
         unsigned rank = BwlAddPriority(unit->GetEntry());
+        if (broodlordActive && unit->GetEntry() >= 14022 && unit->GetEntry() <= 14025) continue;
+        if (unit->GetEntry() == 12457 && ai->IsRanged(bot) && bot->getClass() != CLASS_HUNTER) continue;
         if (!rank) continue;
         if (controller && (unit->GetVictim() == controller || unit->GetVictim() == controlledDragon)) rank += 10;
         if (!selected || rank > priority || (rank == priority &&
@@ -183,22 +374,77 @@ bool BlackwingLairPriorityTargetAction::isUseful()
 
 bool BlackwingLairSupportAction::Select(std::string& spell, Unit*& target)
 {
-    if (!BwlReady(ai)) return false;
+    if (!BwlReady(ai) || bot->IsNonMeleeSpellCasted(true)) return false;
     const auto ready = [&](const char* name, Unit* unit) {
         if (!unit || !ai->CanCastSpell(name, unit, 0)) return false;
         spell = name; target = unit; return true;
     };
-    for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "possible targets no los"))
+    if (ai->IsTank(bot))
+    {
+        BlackwingLairPriorityTargetAction assignment(ai);
+        Unit* assigned = assignment.GetTarget();
+        Unit* victim = assigned ? assigned->GetVictim() : nullptr;
+        Player* holder = dynamic_cast<Player*>(victim);
+        if (assigned && victim != bot && !(BwlMember(bot, holder) && ai->IsTank(holder)))
+            for (const char* name : {"taunt", "growl", "hand of reckoning", "righteous defense", "dark command"})
+                if (ready(name, assigned)) return true;
+    }
+    std::vector<Unit*> demons;
+    bool otherEnemy = false;
+    for (ObjectGuid guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
     {
         Unit* enemy = ai->GetUnit(guid);
         if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || !enemy->IsInCombat() ||
             !bot->IsInMap(enemy) || enemy->HasCharmer() || sServerFacade.IsFriendlyTo(bot, enemy)) continue;
+        if (enemy->GetEntry() == 14101 || enemy->GetEntry() == 14668) demons.push_back(enemy);
+        else if (!IsProtectedBlackwingTarget(bot, enemy) &&
+            PossibleAttackTargetsValue::IsValid(enemy, bot, sPlayerbotAIConfig.sightDistance, false, true)) otherEnemy = true;
         if (((enemy->GetEntry() == 11981 && enemy->HasAura(23342)) ||
-             (enemy->GetEntry() == 14020 && enemy->HasAura(23128))) && ready("tranquilizing shot", enemy)) return true;
+             (enemy->GetEntry() == 14020 && enemy->HasAura(23128)) ||
+             (enemy->GetEntry() == 12464 && enemy->HasAura(22428))) && ready("tranquilizing shot", enemy)) return true;
+        // Native casts, not guessed encounter timers. Recheck admission at
+        // dispatch so a second interrupter cannot spend an ability on a completed cast.
+        for (CurrentSpellTypes slot : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL})
+        {
+            const Spell* cast = enemy->GetCurrentSpell(slot);
+            if (!cast || !cast->m_spellInfo || cast->getState() == SPELL_STATE_FINISHED) continue;
+            switch (cast->m_spellInfo->Id)
+            {
+                case 22458: case 22372: case 22425: case 22275: case 22274:
+                case 17290: case 22272: case 22336:
+                    for (const char* name : {"kick", "pummel", "shield bash", "counterspell", "earth shock", "wind shear", "mind freeze", "spell lock"})
+                        if (ready(name, enemy)) return true;
+                    break;
+            }
+        }
         if (enemy->GetEntry() == 11583 && enemy->GetVictim() && enemy->GetVictim()->IsPlayer())
         {
             Player* tank = static_cast<Player*>(enemy->GetVictim());
             if (BwlMember(bot, tank) && !ai->HasAura("fear ward", tank) && ready("fear ward", tank)) return true;
+        }
+    }
+    if (bot->getClass() == CLASS_WARLOCK && !demons.empty())
+    {
+        std::sort(demons.begin(), demons.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+        // Native Banish is unbreakable. Keep assignments through its aura, and
+        // release one demon at a time once the rest of the engaged pack is dead.
+        if (!otherEnemy) demons.erase(demons.begin());
+        std::vector<Player*> controllers;
+        for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+        {
+            Player* member = ref->getSource();
+            if (BwlMember(bot, member) && member->getClass() == CLASS_WARLOCK && member->GetPlayerbotAI() &&
+                !member->GetPlayerbotAI()->IsRealPlayer() && (member->HasSpell(710) || member->HasSpell(18647)) &&
+                member->GetDistance(bot) <= 80) controllers.push_back(member);
+        }
+        std::sort(controllers.begin(), controllers.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+        const auto self = std::find(controllers.begin(), controllers.end(), bot);
+        const size_t slot = size_t(self - controllers.begin());
+        if (self != controllers.end() && slot < demons.size())
+        {
+            Unit* demon = demons[slot];
+            if (!ai->HasAura("banish", demon) && !PossibleAttackTargetsValue::HasBreakableCC(demon, bot) &&
+                !PossibleAttackTargetsValue::HasUnBreakableCC(demon, bot) && ready("banish", demon)) return true;
         }
     }
     if (ai->IsHeal(bot) && RazorgoreEggPhase(ai))
@@ -221,7 +467,7 @@ bool BlackwingLairSupportAction::Select(std::string& spell, Unit*& target)
         return a->GetObjectGuid() < b->GetObjectGuid();
     });
     for (Player* member : members)
-        for (uint32 aura : {22687u, 23153u, 23154u, 23155u, 23169u})
+        for (uint32 aura : {22438u, 22274u, 22335u, 22423u, 22687u, 23153u, 23154u, 23155u, 23169u})
         {
             if (!member->HasAura(aura)) continue;
             const SpellEntry* info = sServerFacade.LookupSpellInfo(aura);
@@ -243,6 +489,42 @@ bool BlackwingLairSupportAction::Select(std::string& spell, Unit*& target)
                     for (const char* name : {"cure poison", "cleanse", "purify", "cleanse spirit", "abolish poison"}) if (ready(name, member)) return true;
                     break;
                 default: break;
+            }
+        }
+    // Chromaggus' live shield picks a vulnerable school. This is a DPS-only
+    // override after dispel/interrupt duties; never cancel an in-flight cast.
+    Unit* enemy = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
+    if (ai->IsRanged(bot) && !ai->IsHeal(bot) && !ai->IsTank(bot) && enemy && enemy->GetEntry() == 14020 &&
+        enemy->IsInWorld() && enemy->IsAlive() && enemy->IsInCombat() && bot->IsInMap(enemy))
+        for (uint32 aura : {22277u, 22278u, 22279u, 22280u, 22281u})
+        {
+            if (!enemy->HasAura(aura)) continue;
+            const SpellEntry* shield = sServerFacade.LookupSpellInfo(aura);
+            if (!shield) continue;
+            // Read the positive native modifier instead of assuming school IDs
+            // or changing the boss's resistance/aura state.
+            for (unsigned effect = 0; effect < MAX_EFFECT_INDEX; ++effect)
+            {
+                if (shield->EffectApplyAuraName[effect] != SPELL_AURA_MOD_DAMAGE_PERCENT_TAKEN ||
+                    shield->EffectBasePoints[effect] <= 0) continue;
+                switch (shield->EffectMiscValue[effect])
+                {
+                    case SPELL_SCHOOL_MASK_FIRE:
+                        for (const char* name : {"fireball", "incinerate", "searing pain"}) if (ready(name, enemy)) return true;
+                        break;
+                    case SPELL_SCHOOL_MASK_FROST:
+                        if (ready("frostbolt", enemy)) return true;
+                        break;
+                    case SPELL_SCHOOL_MASK_SHADOW:
+                        for (const char* name : {"shadow bolt", "mind blast", "mind flay"}) if (ready(name, enemy)) return true;
+                        break;
+                    case SPELL_SCHOOL_MASK_NATURE:
+                        for (const char* name : {"wrath", "lightning bolt"}) if (ready(name, enemy)) return true;
+                        break;
+                    case SPELL_SCHOOL_MASK_ARCANE:
+                        for (const char* name : {"arcane missiles", "arcane shot"}) if (ready(name, enemy)) return true;
+                        break;
+                }
             }
         }
     return false;

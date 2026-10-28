@@ -19,13 +19,14 @@ namespace
 {
     bool Ready(PlayerbotAI* ai)
     {
-#ifdef MANGOSBOT_ZERO
         Player* bot = ai->GetBot();
+#ifndef MANGOSBOT_ZERO
+        // BWL retains its native Classic encounter layout in both later cores.
+        // Do not enable Classic Naxx/Onyxia tactics in their Wrath replacements.
+        if (bot->GetMapId() != 469) return false;
+#endif
         return bot->IsInWorld() && bot->IsAlive() && bot->IsInCombat() && !bot->IsBeingTeleported() &&
             !bot->HasCharmer() && !ai->IsRealPlayer() && bot->GetGroup() && classicraid::Map(bot->GetMapId());
-#else
-        return false;
-#endif
     }
     bool Live(Player* bot, Unit* unit)
     {
@@ -350,6 +351,7 @@ ClassicRaidPlan ClassicRaidPlanValue::Calculate()
     {
         Unit* unit = ai->GetUnit(guid);
         if (!unit || !classicraid::Boss(bot->GetMapId(), unit->GetEntry()) || !Engaged(bot, unit)) continue;
+        if (bot->GetMapId() == 469 && !Attackable(ai, unit)) continue;
         if (classicraid::HorsemanMark(unit->GetEntry())) horsemen.push_back(unit);
         if (!boss || unit == current || (boss != current && unit->GetObjectGuid() < boss->GetObjectGuid())) boss = unit;
     }
@@ -1017,7 +1019,6 @@ bool ClassicRaidControlAction::UpdateControl()
 
 bool ClassicRaidCloakAction::isUseful()
 {
-#ifdef MANGOSBOT_ZERO
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsInCombat() || bot->IsBeingTeleported() ||
         bot->HasCharmer() || bot->GetMapId() != 469 || ai->IsRealPlayer()) return false;
     Item* worn = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, EQUIPMENT_SLOT_BACK);
@@ -1025,9 +1026,6 @@ bool ClassicRaidCloakAction::isUseful()
     uint16 dest;
     return (!worn || worn->GetEntry() != 15138) && cloak &&
         bot->CanEquipItem(EQUIPMENT_SLOT_BACK, dest, cloak, true) == EQUIP_ERR_OK;
-#else
-    return false;
-#endif
 }
 bool ClassicRaidCloakAction::Execute(Event& event)
 {
