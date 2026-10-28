@@ -15,11 +15,16 @@ code=r'''
 #include <map>
 #include <vector>
 using uint32=unsigned;using ObjectGuid=unsigned;
-enum{PATHFIND_NORMAL=1,FORCED_MOVEMENT_RUN=1,UNIT_STAND_STATE_STAND=0};
+enum{PATHFIND_NORMAL=1,FORCED_MOVEMENT_RUN=1,UNIT_STAND_STATE_STAND=0,SPELL_AURA_MOD_STEALTH=16,SPELL_AURA_MOD_STALKED=151,SPELL_AURA_DETECT_STEALTH=228,UNIT_FIELD_FLAGS=0,UNIT_FLAG_PLAYER_CONTROLLED=1};
 struct Point{float x=0,y=0,z=0;};
 struct Spline{bool done=true;Point end;bool Finalized(){return done;}Point FinalDestination(){return end;}};
 struct Motion{unsigned moves=0;std::vector<Point> dispatched;void MovePath(std::vector<Point>& p,unsigned,bool,bool=false){++moves;dispatched=p;}};
 struct Unit{float x=0,y=0,z=0;unsigned map=469,instance=1,guid=1;bool world=true,alive=true,combat=false,charmed=false,hostile=true;
+ bool stealth=false,detect=false,stalked=false;std::vector<unsigned> attackers;
+ bool HasAuraType(unsigned a){return a==SPELL_AURA_MOD_STEALTH?stealth:detect;}
+ bool HasAuraTypeWithCaster(unsigned,unsigned){return stalked;}const auto& getAttackers(){return attackers;}
+ bool HasFlag(unsigned,unsigned){return true;}struct Visibility{float GetStealthVisibilityDistance(Unit*,bool){return 0.5f;}} visibility;
+ Visibility& GetVisibilityData(){return visibility;}
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
  bool CanAttackOnSight(Unit*){return hostile;}float GetAttackDistance(Unit*){return 2;}unsigned GetObjectGuid(){return guid;}
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}
@@ -59,6 +64,14 @@ int main(){
  assert(!action.Execute(event)&&bot.motion.moves==1&&ai.context.value.state.rejected.count(1));
  enemy.combat=true;assert(action.Execute(event));enemy.combat=false;
  route={{0,0,0},{0,7,0},{12,7,0},{12,0,0}};assert(action.Execute(event)); // whole checked detour
+ route={{0,0,0},{0,3,0},{12,3,0},{12,0,0}};assert(!action.Execute(event));
+ bot.stealth=true;assert(action.Execute(event)); // native stealth range, not ordinary aggro
+ bot.stalked=true;assert(!action.Execute(event));bot.stalked=false;
+ bot.attackers={2};assert(!action.Execute(event));bot.attackers.clear();
+#ifndef MANGOSBOT_ZERO
+ enemy.detect=true;assert(!action.Execute(event));enemy.detect=false;
+#endif
+ bot.stealth=false;
  route={{0,0,0},{12,0,0}};enemy.instance=2;assert(action.Execute(event));enemy.instance=1;
  enemy.hostile=false;assert(action.Execute(event));enemy.hostile=true;
  ai.nearby.clear();ai.hazards.emplace_back(WorldPosition(469,6,0,0),2);assert(!action.Execute(event));ai.hazards.clear();

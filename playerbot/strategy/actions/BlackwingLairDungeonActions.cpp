@@ -168,7 +168,22 @@ bool MoveToSuppressionDeviceAction::Execute(Event& event)
         Unit* enemy = ai->GetUnit(guid);
         if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || !bot->IsInMap(enemy) ||
             enemy->IsInCombat() || enemy->HasCharmer() || !enemy->CanAttackOnSight(bot)) continue;
-        hazards.emplace_back(WorldPosition(enemy), enemy->GetAttackDistance(bot) + 2.0f);
+        float detection = enemy->GetAttackDistance(bot);
+        bool stealth = bot->HasAuraType(SPELL_AURA_MOD_STEALTH) && bot->getAttackers().empty() &&
+            !bot->HasAuraTypeWithCaster(SPELL_AURA_MOD_STALKED, enemy->GetObjectGuid());
+#ifndef MANGOSBOT_ZERO
+        stealth = stealth && !enemy->HasAuraType(SPELL_AURA_DETECT_STEALTH);
+#endif
+        if (stealth)
+        {
+            // Use this core's level/talent/detection calculation. Ordinary
+            // aggro radius would make stealth trap duty impossible in dense
+            // rooms. Keep a conservative circle even behind the creature.
+            const float hiddenRange = bot->GetVisibilityData().GetStealthVisibilityDistance(enemy,
+                bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_PLAYER_CONTROLLED));
+            if (std::isfinite(hiddenRange)) detection = std::min(detection, std::max(0.0f, hiddenRange));
+        }
+        hazards.emplace_back(WorldPosition(enemy), detection + 2.0f);
     }
     WorldPosition previous(bot);
     float length = 0;
