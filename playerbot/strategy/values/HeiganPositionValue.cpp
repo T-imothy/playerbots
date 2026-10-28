@@ -123,11 +123,13 @@ EncounterPosition HeiganPositionValue::Calculate()
     if (!bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() || bot->GetMapId() != 533 ||
         !bot->GetGroup() || bot->IsBeingTeleported() || bot->HasCharmer() || ai->IsRealPlayer() || !ai->CanMove()) return plan;
     Unit* boss = nullptr;
-    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    // Safety perception must survive a skull on an add or no skull at all.
+    for (const auto& guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
     {
         Unit* unit = ai->GetUnit(guid);
         if (!unit || !unit->IsInWorld() || !unit->IsAlive() || !unit->IsInCombat() || !bot->IsInMap(unit) ||
-            unit->HasCharmer() || unit->GetEntry() != 15936 || bot->GetDistance(unit) > 100) continue;
+            unit->HasCharmer() || unit->GetEntry() != 15936 || bot->GetDistance(unit) > 100 ||
+            !NaxxramasEncounterEngaged(bot, unit)) continue;
         if (boss && boss != unit) return plan;
         boss = unit;
     }

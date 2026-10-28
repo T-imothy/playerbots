@@ -10,30 +10,34 @@ code=r'''
 #include <list>
 #include <vector>
 #include <algorithm>
+#include <map>
 constexpr unsigned UNIT_CREATED_BY_SPELL=1;struct PlayerbotAI;using uint32=unsigned;using ObjectGuid=unsigned;using SpellEffectIndex=unsigned;constexpr unsigned MAX_EFFECT_INDEX=3;
-struct SpellEntry{unsigned Id=0,MaxAffectedTargets=0;bool damage=false,area=false;};
+struct SpellEntry{unsigned Id=0,MaxAffectedTargets=0;bool damage=false,area=false;unsigned EffectTriggerSpell[3]={};};
 bool IsSpellEffectDamage(const SpellEntry&s,unsigned){return s.damage;}bool IsAreaOfEffectSpell(const SpellEntry*s){return s->area;}
-struct Unit{unsigned entry=16506,created=0,spawner=0;unsigned GetUInt32Value(unsigned){return created;}unsigned GetSpawnerGuid(){return spawner;}bool world=true,charmed=false;float distance=10;unsigned GetEntry(){return entry;}float GetDistance(Unit*){return distance;}};
+bool IsSpellEffectTriggerSpell(const SpellEntry*s,unsigned i){return s->EffectTriggerSpell[i]!=0;}
+bool IsSpellEffectTriggerSpellByAura(const SpellEntry*,unsigned){return false;}
+struct Facade{std::map<unsigned,const SpellEntry*>spells;const SpellEntry*LookupSpellInfo(unsigned id){return spells.count(id)?spells[id]:nullptr;}}sServerFacade;
+struct Unit{unsigned entry=16506,created=0,spawner=0;unsigned GetUInt32Value(unsigned){return created;}unsigned GetSpawnerGuid(){return spawner;}bool world=true,charmed=false;float distance=10,hp=100;unsigned GetEntry(){return entry;}float GetDistance(Unit*){return distance;}float GetHealthPercent(){return hp;}};
 struct Player{unsigned map=533;bool world=true,tank=false,heal=false,buff=false;PlayerbotAI*brain=nullptr;bool HasAura(unsigned){return buff;}PlayerbotAI*GetPlayerbotAI(){return brain;}unsigned GetMapId(){return map;}};
 struct ListValue{std::list<unsigned>list;auto Get(){return list;}};
 struct Context{ListValue value;template<class T>ListValue*GetValue(const char*,const char*){return &value;}};
-struct PlayerbotAI{Player bot;Context context;Unit worshipper,student,boss,spore;std::vector<Player*>roster;bool real=false;bool ready=true;
+struct PlayerbotAI{Player bot;Context context;Unit worshipper,student,boss,spore;Unit*sacrifice=nullptr;std::vector<Player*>roster;bool real=false;bool ready=true;
  PlayerbotAI(){bot.brain=this;roster={&bot};spore.entry=16286;spore.created=29234;spore.spawner=4;student.entry=16803;boss.entry=15953;context.value.list={1,2};}
  Player*GetBot(){return &bot;}Context*GetAiObjectContext(){return &context;}Unit*GetUnit(unsigned id){return id==1?&worshipper:id==2?&student:id==3?&spore:id==4?&boss:nullptr;}bool IsTank(Player*p){return p->tank;}bool IsHeal(Player*p){return p->heal;}bool IsRealPlayer(){return real;}};
 bool Ready(PlayerbotAI*a){
-#ifdef MANGOSBOT_ZERO
 return a->ready;
-#else
-return false;
-#endif
 }
+Unit*FaerlinaSacrifice(PlayerbotAI*a,Unit*){return a->sacrifice;}
 std::vector<Player*>Members(PlayerbotAI*a){return a->roster;}float NativeEncounterSpellRadius(unsigned){return 10;}bool Engaged(Player*,Unit*){return true;}
 bool Live(Player*,Unit*u){return u&&u->world&&!u->charmed;}
 Unit*FindBoss(PlayerbotAI*a,unsigned entry){return a->boss.entry==entry?&a->boss:nullptr;}
 namespace ai{bool ClassicRaidOffenseAllowed(PlayerbotAI*,const SpellEntry*,Unit*);}
 __BODY__
 int main(){PlayerbotAI brain;SpellEntry hit{1,0,true,false},area{2,0,true,true},heal{},taunt{},flurry{13877},sweeping{12328};
-#ifdef MANGOSBOT_ZERO
+ SpellEntry tick{77,0,true,false},channel{78,0,false,true},healChannel{79};
+ channel.EffectTriggerSpell[0]=77;healChannel.EffectTriggerSpell[0]=79;sServerFacade.spells={{77,&tick},{79,&healChannel}};
+ assert(RaidDamageSpell(&channel)&&!RaidDamageSpell(&healChannel)&&!RaidDamageSpell(&taunt));
+ assert(!ai::ClassicRaidOffenseAllowed(&brain,&channel,&brain.boss));
  assert(!ai::ClassicRaidOffenseAllowed(&brain,&hit,&brain.worshipper));
  assert(!ai::ClassicRaidOffenseAllowed(&brain,&area,&brain.boss));
  assert(!ai::ClassicRaidOffenseAllowed(&brain,&flurry,&brain.bot));
@@ -41,7 +45,10 @@ int main(){PlayerbotAI brain;SpellEntry hit{1,0,true,false},area{2,0,true,true},
  assert(ai::ClassicRaidOffenseAllowed(&brain,&heal,&brain.worshipper));
  assert(ai::ClassicRaidOffenseAllowed(&brain,&taunt,&brain.worshipper));
  brain.bot.tank=true;assert(ai::ClassicRaidOffenseAllowed(&brain,&hit,&brain.worshipper));
+ brain.worshipper.hp=50;assert(!ai::ClassicRaidOffenseAllowed(&brain,&hit,&brain.worshipper));brain.worshipper.hp=100;
  assert(!ai::ClassicRaidOffenseAllowed(&brain,&area,&brain.boss));brain.bot.tank=false;
+ brain.sacrifice=&brain.worshipper;assert(ai::ClassicRaidOffenseAllowed(&brain,&hit,&brain.worshipper));
+ assert(!ai::ClassicRaidOffenseAllowed(&brain,&area,&brain.worshipper));brain.sacrifice=nullptr;
  brain.worshipper.charmed=true;assert(ai::ClassicRaidOffenseAllowed(&brain,&area,&brain.boss));brain.worshipper.charmed=false;
  brain.worshipper.distance=100;assert(ai::ClassicRaidOffenseAllowed(&brain,&area,&brain.boss));brain.worshipper.distance=10;
  brain.boss.entry=16061;assert(!ai::ClassicRaidOffenseAllowed(&brain,&hit,&brain.student));
@@ -56,12 +63,9 @@ int main(){PlayerbotAI brain;SpellEntry hit{1,0,true,false},area{2,0,true,true},
  assert(!ai::ClassicRaidOffenseAllowed(&brain,&hit,&brain.spore));brain.roster.pop_back();
  brain.bot.buff=true;assert(!ai::ClassicRaidOffenseAllowed(&brain,&hit,&brain.spore));brain.bot.buff=false;
  brain.bot.map=409;assert(ai::ClassicRaidOffenseAllowed(&brain,&area,&brain.boss));
-#else
- assert(ai::ClassicRaidOffenseAllowed(&brain,&area,&brain.boss));
-#endif
  std::cout<<"PASS actual damaging AoE/direct/cleave admission reserves Classic control actors, preserves heals/taunts/tanks and MC/era guards\n";
 }
-'''.replace('__BODY__',block(s,'    std::vector<Player*> SporeRecipients(')+'\n'+block(s,'bool ai::ClassicRaidOffenseAllowed('))
+'''.replace('__BODY__',block(s,'    bool RaidDamageSpell(')+'\n'+block(s,'    std::vector<Player*> SporeRecipients(')+'\n'+block(s,'bool ai::ClassicRaidOffenseAllowed('))
 # Healing-self targets use the same Unit interface in the server.
 code=code.replace('struct Player{','struct Player:Unit{')
 for era in ('ZERO','ONE','TWO'):

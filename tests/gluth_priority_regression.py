@@ -24,7 +24,7 @@ struct Player:Unit{Player(){player=true;}unsigned map=533;bool teleport=false;Gr
  unsigned GetMapId(){return map;}Group* GetGroup(){return group;}bool IsBeingTeleported(){return teleport;}bool IsInMap(Unit*u){return u&&u->phase==phase;}};
 struct PlayerbotAI{Player* bot;Unit* current=nullptr;std::map<unsigned,Unit*> units;std::list<unsigned> near;
  Unit* GetUnit(unsigned id){return units.count(id)?units[id]:nullptr;}
- template<class T>T value(std::string name){assert(name=="current target");return current;}
+ template<class T>T value(std::string name){assert(name=="current target");return current?current->guid:0;}
  template<class T>T qualified(std::string name,std::string qualifier){assert(name=="possible targets"&&qualifier=="100:1");return near;}};
 struct Config{float sightDistance=60;}sPlayerbotAIConfig;
 struct PossibleTargetsValue{static bool IsValid(Unit*u,Player*,bool){return u->valid;}};
@@ -63,9 +63,10 @@ for era in ('ZERO','ONE','TWO'):
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 dispatcher=(root/'playerbot/strategy/actions/DungeonAddTargetAction.cpp').read_text()
 assert dispatcher.index('ai->IsHeal(bot)')<dispatcher.index('GetGluthTarget()')
-assert dispatcher.index('commanded(ai->GetUnit')<dispatcher.index('GetGluthTarget()')
+assert dispatcher.index('overridesObjective(ai->GetUnit')<dispatcher.index('GetGluthTarget()')
+assert '(!objectiveBossCommand || objectiveBossCommand == 15932)' in dispatcher
 for era in ('classic','tbc','wotlk'):
-    core=root.parent/f'mangos-{era}-behavior/src/game'
+    core=root.parent/era/'src/game'
     native=next((core/'AI/ScriptDevAI/scripts').rglob('boss_gluth.cpp')).read_text()
     assert 'GetMaxHealth() * 0.05f' in native and '28217' in native
     assert 'SetUInt32Value(UNIT_CREATED_BY_SPELL, m_spellInfo->Id)' in (core/'Spells/SpellEffects.cpp').read_text()

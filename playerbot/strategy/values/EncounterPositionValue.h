@@ -109,6 +109,7 @@ namespace ai
     bool BlackwingLairBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
         std::vector<encounter::Circle>& threats);
     uint32 NaxxramasBurstAura(Unit* unit);
+    bool NaxxramasEncounterEngaged(Player* bot, Unit* enemy);
     float NaxxramasBurstRadius(uint32 aura);
     bool NaxxramasBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
         std::vector<encounter::Circle>& threats);
@@ -209,14 +210,19 @@ namespace ai
         EncounterPosition Calculate() override;
     };
 
+    Unit* FindOnyxiaBoss(PlayerbotAI* ai);
+    bool OnyxiaBreathThreats(uint32 spell, std::vector<encounter::Circle>& threats);
     class OnyxiaPositionValue : public CalculatedValue<EncounterPosition>
     {
     public:
         OnyxiaPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "onyxia position", 2) {}
         EncounterPosition Calculate() override;
-        void Reset() override { CalculatedValue::Reset(); breath = 0; breathUntil = 0; }
+        void Reset() override { CalculatedValue::Reset(); breath = 0; breathUntil = 0; fireballUntil = 0; owner.Clear(); instance = 0; }
     private:
         uint32 breath = 0;
         time_t breathUntil = 0;
+        time_t fireballUntil = 0;
+        ObjectGuid owner;
+        uint32 instance = 0;
     };
 }

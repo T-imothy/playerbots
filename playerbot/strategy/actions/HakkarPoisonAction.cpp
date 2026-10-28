@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "DungeonActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/strategy/ZulGurubEncounter.h"
 
 using namespace ai;
 
@@ -16,7 +17,7 @@ bool HakkarPoisonAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     Unit* cloud = ai->GetUnit(plan.source);
     const float radius = NativeEncounterSpellRadius(24320);
     return boss && boss->IsInWorld() && boss->IsAlive() && boss->IsInCombat() && !boss->HasCharmer() &&
-        boss->GetEntry() == 14834 && bot->IsInMap(boss) && IsHakkarPoisonSource(bot, cloud) &&
+        boss->GetEntry() == 14834 && bot->IsInMap(boss) && ZulGurubGroupEngaged(bot, boss) && IsHakkarPoisonSource(bot, cloud) &&
         std::isfinite(radius) && radius > 2 && radius <= 20 &&
         cloud->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= radius - 1 &&
         (boss->GetVictim() != bot || bot->GetDistance(cloud) <= radius - 2);

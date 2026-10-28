@@ -72,6 +72,8 @@ struct Player:Unit {bool teleport=false,stopped=true,casting=false;unsigned mapI
  bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}unsigned GetInstanceId(){return instance;}
  bool IsStopped(){return stopped;}Motion* GetMotionMaster(){return &motion;}};
 namespace ai {
+ bool NaxxramasEncounterEngaged(Player*,Unit* u){return u&&u->combat;}
+ bool ZulGurubGroupEngaged(Player*,Unit* u){return u&&u->combat;}
  struct EncounterPosition {bool active=false;unsigned map=0,instance=0,boss=0,spell=0;encounter::Point destination;};
  bool IsBossEscapeMap(unsigned);unsigned NativeBossEscapeSpell(unsigned,unsigned,unsigned__DIFFICULTY__);
  bool AQWhirlwindThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&);
@@ -81,7 +83,7 @@ namespace ai {
  unsigned CurrentBossPursuitSpell(Player*,Unit*);
  float BossEscapeDistance(Player*,Unit*,unsigned);
  const Spell* CurrentBossEscapeCast(Player*,Unit*);
- std::map<unsigned,float> radii{{30852,30},{28785,30},{54021,30},{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15},{34164,18},
+ std::map<unsigned,float> radii{{24024,10},{30852,30},{28785,30},{54021,30},{29973,21},{33666,34},{38795,34},{52960,20},{59835,20},{63631,15},{68989,15},{34164,18},
  {34660,15},{39132,15},{55081,15},{59842,15},{33775,20},{37371,20},{36142,8},{64216,20},{65279,100},{70123,25},{71047,25},{71048,25},{71049,25},{26084,10},{26686,10}};
  float NativeEncounterSpellRadius(unsigned id){return radii[id];}
 }
@@ -114,8 +116,11 @@ namespace ai {
 }
 using namespace ai;
 #define AI_VALUE(type,name) ai->Value<type>(name)
+#define AI_VALUE2(type,name,qualifier) ai->attackers
 __METHODS__
 int main(){
+ assert(ai::NativeBossEscapeSpell(309,14750,24024)==24024);assert(!ai::NativeBossEscapeSpell(309,14517,24024));
+
  Map map,otherMap;Player bot;bot.map=&map;Unit boss;boss.map=&map;boss.entry=16524;
  SpellEntry entry{29973};Spell cast{&entry};boss.current=&cast;
  PlayerbotAI ai{&bot};ai.attackers={1};ai.units[1]=&boss;

@@ -9,21 +9,75 @@ using namespace ai;
 
 void ai::AppendNativeEncounterActorHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards)
 {
-#ifdef MANGOSBOT_ZERO
+    AppendZulGurubActorHazards(ai, hazards);
     Player* bot = ai->GetBot();
+    if (bot->GetMapId() == 533 && bot->IsInWorld() && bot->IsAlive() &&
+        !bot->IsBeingTeleported() && !bot->HasCharmer() && !ai->IsRealPlayer() &&
+        ai->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT))
+    {
+        // The corridor blobs are passive moving actors and can explode before
+        // combat starts. Native MoveInLineOfSight trips at 4 yards plus their
+        // bounding radius; 28433 supplies the actual blast extent. Include at
+        // most one hazard-cache interval of native travel, not a fixed lane wall.
+        std::list<Unit*> poisons;
+        MaNGOS::AllCreaturesOfEntryInRangeCheck check(bot, 16027, 60.0f);
+        MaNGOS::UnitListSearcher<decltype(check)> searcher(poisons, check);
+        Cell::VisitAllObjects(bot, searcher, 60.0f);
+        const float blast = NativeEncounterSpellRadius(28433);
+        if (std::isfinite(blast) && blast > 0 && blast <= 35)
+            for (Unit* poison : poisons)
+            {
+                if (!poison->IsInWorld() || !poison->IsAlive() || poison->HasCharmer() ||
+                    !bot->IsInMap(poison) || std::fabs(poison->GetPositionZ() - bot->GetPositionZ()) > 8) continue;
+#ifdef MANGOSBOT_TWO
+                // The real summon may outlive its summoning player's departure.
+                if (!poison->GetSpawnerGuid().IsPlayer()) continue;
+#else
+                Unit* owner = ai->GetUnit(poison->GetSpawnerGuid());
+                if (!owner || !owner->IsInWorld() || !bot->IsInMap(owner)) continue;
+                if (owner->GetEntry() != 16082) continue; // native Naxxramas trigger.
+#endif
+                const float speed = poison->GetSpeed(MOVE_RUN);
+                const float collision = 4.0f + poison->GetObjectBoundingRadius();
+                if (!std::isfinite(speed) || !std::isfinite(collision) || collision < 4 || collision > 15) continue;
+                hazards.emplace_back(WorldPosition(poison), std::max(blast, collision) + 1.0f + std::min(10.0f, std::max(0.0f, speed)));
+            }
+    }
+    if (bot->GetMapId() == 533 && bot->IsInWorld() && bot->IsAlive() && bot->IsInCombat() &&
+        bot->GetGroup() && !bot->IsBeingTeleported() && !bot->HasCharmer() && !ai->IsRealPlayer() &&
+        ai->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT))
+    {
+        // The native fissure is a passive summoned creature, not a DynamicObject.
+        // Its five-second warning ends in an instant blast, so waiting for a cast
+        // or damage aura cannot provide an escape window. Follow the real actor
+        // lifetime and the era's actual damage radius instead of a guessed timer.
+        std::list<Unit*> fissures;
+        MaNGOS::AllCreaturesOfEntryInRangeCheck check(bot, 16129, 60.0f);
+        MaNGOS::UnitListSearcher<decltype(check)> searcher(fissures, check);
+        Cell::VisitAllObjects(bot, searcher, 60.0f);
+        const float radius = NativeEncounterSpellRadius(27812);
+        if (std::isfinite(radius) && radius > 0 && radius <= 35)
+            for (Unit* fissure : fissures)
+            {
+                if (!fissure->IsInWorld() || !fissure->IsAlive() || fissure->HasCharmer() ||
+                    !bot->IsInMap(fissure) || std::fabs(fissure->GetPositionZ() - bot->GetPositionZ()) > 8 ||
+                    fissure->GetUInt32Value(UNIT_CREATED_BY_SPELL) != 27810) continue;
+                Unit* boss = ai->GetUnit(fissure->GetSpawnerGuid());
+                if (boss && boss->GetEntry() == 15990 && NaxxramasEncounterEngaged(bot, boss))
+                    hazards.emplace_back(WorldPosition(fissure), radius + 1.0f);
+            }
+    }
     if (bot->GetMapId() == 249 && bot->IsInWorld() && bot->IsAlive() && bot->IsInCombat() &&
         bot->GetGroup() && !bot->IsBeingTeleported() && !bot->HasCharmer() && !ai->IsRealPlayer() &&
         ai->HasStrategy("dungeon", BotState::BOT_STATE_COMBAT))
     {
-        // Upstream Onyxia egg entrances, verified against the native Classic
-        // 176511 egg clusters. Route admission as well as emergency escape
+        // The native 176511 egg clusters occupy these entrances in all three
+        // eras, including Wrath's replacement encounter. Route admission and escape
         // keeps bots away; ordinary casts at a clear station are preserved.
         hazards.emplace_back(WorldPosition(249, -36.0f, -164.0f, -90.0f), 6.0f);
         hazards.emplace_back(WorldPosition(249, -34.0f, -262.0f, -90.0f), 6.0f);
     }
-#endif
 #ifndef MANGOSBOT_ZERO
-    Player* bot = ai->GetBot();
     const uint32 map = bot->GetMapId();
     bool supported = map == 534 || map == 546 || map == 564 || map == 568;
 #ifdef MANGOSBOT_TWO

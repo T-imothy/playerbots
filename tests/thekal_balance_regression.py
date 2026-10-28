@@ -60,7 +60,8 @@ for era in ('ZERO','ONE','TWO'):
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 dispatcher=(root/'playerbot/strategy/actions/DungeonAddTargetAction.cpp').read_text()
 assert dispatcher.index('ai->IsHeal(bot)')<dispatcher.index('GetThekalTarget()')
-assert dispatcher.index('commanded(ai->GetUnit')<dispatcher.index('GetThekalTarget()')
+assert dispatcher.index('overridesObjective(ai->GetUnit')<dispatcher.index('GetThekalTarget()')
+assert '(!objectiveBossCommand || objectiveBossCommand == 14509)' in dispatcher
 for era in ('classic','tbc','wotlk'):
     repo=root.parent/era
     if not repo.exists():repo=root.parent/f'mangos-{era}-behavior'

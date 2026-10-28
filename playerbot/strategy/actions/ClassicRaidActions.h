@@ -6,6 +6,7 @@
 
 namespace ai
 {
+    bool ClassicRaidDamageSpell(const SpellEntry* spell);
     bool ClassicRaidOffenseAllowed(PlayerbotAI* ai, const SpellEntry* spell, Unit* target);
     struct ClassicRaidPlan
     {

@@ -42,14 +42,14 @@ struct PlayerbotAI{Player*bot;Player*master;Unit*target;PullStrategy*strategy=nu
  void TellPlayerNoFacing(Player*,const std::string&s,PlayerbotSecurityLevel=PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL,bool priv=true,bool repeat=true,bool ignoreSilent=false,bool forceWhisper=false){if(s.find("Pull failed:")==0)assert(priv&&repeat&&ignoreSilent&&forceWhisper);messages.push_back(s);}void OnCombatStarted(){++combatStarts;}
  Unit*GetUnit(unsigned){return target;}bool IsTank(Player*,bool grouped){assert(grouped==bot->grouped);return tank;}
  bool IsHeal(Player*,bool grouped){assert(grouped==bot->grouped);return heal;}bool IsRanged(Player*,bool grouped){assert(grouped==bot->grouped);return ranged;}};
-struct PullStrategy{std::string action="shoot";bool possible=true;Unit*requested=nullptr;unsigned requests=0;ObjectGuid requester=0;void SetRequester(ObjectGuid guid){requester=guid;}
+struct PullStrategy{std::string action="shoot";bool possible=true;Unit*requested=nullptr;unsigned requests=0;ObjectGuid requester=0;void SetRequester(ObjectGuid guid){requester=guid;}void SetEncounterPreparationAllowed(bool){}void SetBodyPull(bool){}
  static PullStrategy*Get(PlayerbotAI*ai){return ai->strategy;}std::string GetPullActionName(){return action;}
  std::string GetSpellName(){return action;}bool CanDoPullAction(Unit*){return possible;}void RequestPull(Unit*u){requested=u;++requests;}};
 struct AttackersValue{static bool IsValid(Unit*u,Player*,void*,bool){return u&&u->valid;}};
 struct TalentSpec{std::string link="hybrid";TalentSpec()=default;TalentSpec(Player*){}
  std::string GetTalentLink(){return link;}int GetTalentPoints(int tree=-1){return tree==-1?51:tree==0?0:tree==1?32:19;}};
 struct Path{std::string name;std::vector<TalentSpec>talentSpec;};
-struct Config{float reactDistance=30;struct Specs{std::vector<Path>talentPath;};Specs classSpecs[12];}sPlayerbotAIConfig;
+struct Config{float reactDistance=30;bool explicitBodyPull=false;struct Specs{std::vector<Path>talentPath;};Specs classSpecs[12];}sPlayerbotAIConfig;
 struct ChatHelper{static std::string specName(Player*){return "fury";}};
 struct Event{std::string source,param;Player*owner;Player*getOwner(){return owner;}std::string getSource(){return source;}std::string getParam(){return param;}};
 namespace ai{
@@ -60,6 +60,7 @@ namespace ai{
  struct BotStatusAction{PlayerbotAI*ai;Player*bot;Player*GetMaster(){return ai->master;}bool Execute(Event&);};
 }
 using namespace ai;
+bool IsRazuviousCrystalPull(PlayerbotAI*,Unit*){return false;}
 __REASON__
 __READY__
 __PULL__

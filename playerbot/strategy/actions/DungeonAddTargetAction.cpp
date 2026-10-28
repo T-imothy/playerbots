@@ -83,23 +83,45 @@ Unit* DungeonAddTargetAction::GetTarget()
         return unit && unit->IsInWorld() && unit->IsAlive() && bot->IsInMap(unit) && !unit->HasCharmer() &&
             !sServerFacade.IsFriendlyTo(unit, bot) && bot->GetDistance(unit) <= sPlayerbotAIConfig.sightDistance;
     };
-    if (commanded(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"))) || commanded(ai->GetUnit(AI_VALUE(ObjectGuid, "rti target")))) return nullptr;
-    if (bot->GetMapId() == 309)
+    uint32 objectiveBossCommand = 0;
+    auto overridesObjective = [&](Unit* unit)
+    {
+        if (!commanded(unit)) return false;
+        uint32 encounter = 0;
+        const uint32 entry = unit->GetEntry();
+        // A boss mark keeps the encounter selected while its rescue/phase add
+        // is handled. Preserve explicit other targets and conflicting commands.
+        if (bot->GetMapId() == 533 && (entry == 15952 || entry == 15932)) encounter = entry;
+        if (bot->GetMapId() == 309)
+            switch (entry)
+            {
+                case 14509: case 11347: case 11348: encounter = 14509; break;
+                case 11380: case 15083: case 14834: case 14517: case 14510: case 14515: encounter = entry; break;
+            }
+        if (!encounter || (objectiveBossCommand && objectiveBossCommand != encounter)) return true;
+        objectiveBossCommand = encounter;
+        return false;
+    };
+    if (overridesObjective(ai->GetUnit(AI_VALUE(ObjectGuid, "attack target"))) ||
+        overridesObjective(ai->GetUnit(AI_VALUE(ObjectGuid, "rti target")))) return nullptr;
+    if (bot->GetMapId() == 309 && (!objectiveBossCommand || objectiveBossCommand == 14509))
         if (Unit* trio = GetThekalTarget()) return trio;
-    if (bot->GetMapId() == 533)
+    if (bot->GetMapId() == 533 && (!objectiveBossCommand || objectiveBossCommand == 15932))
         if (Unit* chow = GetGluthTarget()) return chow;
-    if (Unit* objective = GetSummonObjectiveTarget()) return objective;
+    if (!objectiveBossCommand)
+        if (Unit* objective = GetSummonObjectiveTarget()) return objective;
     if (bot->GetMapId() == 230) return GetBlackrockDepthsTarget();
-    if (Unit* totem = GetRaidTotemTarget()) return totem;
-    if (Unit* zulGurub = GetZulGurubTarget()) return zulGurub;
+    if (Unit* totem = GetRaidTotemTarget(objectiveBossCommand)) return totem;
+    if (Unit* zulGurub = GetZulGurubTarget(objectiveBossCommand)) return zulGurub;
     if (Unit* opera = GetOperaDuoTarget()) return opera;
     if (Unit* ulduar = GetUlduarObjectiveTarget()) return ulduar;
     if (Unit* twin = GetTwinEmperorTarget()) return twin;
     if (Unit* icecrown = GetIcecrownAddTarget()) return icecrown;
-    auto validBoss = [this](Unit* boss)
+    auto validBoss = [this, objectiveBossCommand](Unit* boss)
     {
         return boss && boss->IsInWorld() && boss->IsAlive() && boss->IsInCombat() && bot->IsInMap(boss) &&
-            !boss->HasCharmer() && boss->GetVictim() != bot;
+            !boss->HasCharmer() && boss->GetVictim() != bot &&
+            (!objectiveBossCommand || boss->GetEntry() == objectiveBossCommand);
     };
     auto groupPlayer = [this](Unit* unit) -> Player*
     {

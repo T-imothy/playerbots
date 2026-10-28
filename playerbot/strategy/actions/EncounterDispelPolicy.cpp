@@ -2,6 +2,8 @@
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "EncounterSpellPolicy.h"
+#include "playerbot/strategy/ZulGurubEncounter.h"
+#include "playerbot/strategy/values/EncounterPositionValue.h"
 
 namespace
 {
@@ -33,15 +35,19 @@ namespace
 #else
         const bool totem = spell->Id == 8166;
 #endif
-        if (!direct && !periodic && !totem) return false;
+        // Classic/TBC Stoneform gains poison immunity through20612; Wrath
+        // carries it directly. Immunity removal is not SPELL_EFFECT_DISPEL.
+        const bool stoneform = spell->Id == 20594;
+        if (!direct && !periodic && !totem && !stoneform) return false;
         bool engaged = false;
-        for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
+        for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets", "100:1")->Get())
         {
             Unit* boss = ai->GetUnit(guid);
             if (boss && boss->GetEntry() == 14834 && boss->IsInWorld() && bot->IsInMap(boss) &&
-                boss->IsAlive() && boss->IsInCombat()) { engaged = true; break; }
+                boss->IsAlive() && boss->IsInCombat() && ai::ZulGurubGroupEngaged(bot, boss)) { engaged = true; break; }
         }
         if (!engaged) return false;
+        if (stoneform) return bot->HasAura(24321);
         // Native BloodSiphon chooses damage 24323 instead of healing 24322
         // only while the player still has Poisonous Blood 24321.
         if (direct && target && target->IsInWorld() && bot->IsInMap(target) &&
@@ -112,11 +118,11 @@ bool ai::ShouldAvoidEncounterDispel(PlayerbotAI* ai, const SpellEntry* spell, Un
     // Do not prepare a continuing cleanse that will remove the next injection.
     // This only withholds new automatic casts: no existing human aura/totem is
     // deleted and manual spell commands retain their separate native path.
-    for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("attackers")->Get())
+    for (const auto& guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets", "100:1")->Get())
     {
         Unit* enemy = ai->GetUnit(guid);
         if (enemy && enemy->IsInWorld() && bot->IsInMap(enemy) && enemy->IsAlive() &&
-            enemy->IsInCombat() && enemy->GetEntry() == 15931) return true;
+            enemy->IsInCombat() && enemy->GetEntry() == 15931 && NaxxramasEncounterEngaged(bot, enemy)) return true;
     }
     if (Group* group = bot->GetGroup())
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())

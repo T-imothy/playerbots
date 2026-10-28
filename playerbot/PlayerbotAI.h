@@ -820,6 +820,7 @@ protected:
     std::atomic<bool> urgentCombatPending{false};
     ObjectGuid urgentRecoveryTarget;
     bool moltenCoreFeared = false;
+    bool naxxControlScopeActive = false;
     ObjectGuid raidPetGuid;
     uint32 raidPetNumber = 0;
     std::set<uint32> raidPetSuppressedSpells;

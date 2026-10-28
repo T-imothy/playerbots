@@ -34,6 +34,10 @@ namespace ai
     {
     public:
         OnyxiaStartFightTrigger(PlayerbotAI* ai) : StartBossFightTrigger(ai, "start onyxia fight", "onyxia", 10184) {}
+        bool IsActive() override
+        {
+            return !ai->HasStrategy("onyxia", BotState::BOT_STATE_COMBAT) && FindOnyxiaBoss(ai);
+        }
     };
 
     class OnyxiaEndFightTrigger : public EndBossFightTrigger

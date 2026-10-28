@@ -1,5 +1,7 @@
 #pragma once
 #include "playerbot/strategy/actions/ClassicRaidActions.h"
+#include "playerbot/strategy/actions/NaxxramasPreparationActions.h"
+#include "playerbot/strategy/actions/RazuviousPullActions.h"
 
 #include "HealthTriggers.h"
 #include "playerbot/strategy/actions/EncounterCastActions.h"
@@ -395,6 +397,8 @@ namespace ai
                 creators["blackwing lair safe position"] = [](PlayerbotAI* ai) { return new BlackwingLairPositionTrigger(ai); };
                 creators["use hourglass sand"] = [](PlayerbotAI* ai) { return new HourglassSandTrigger(ai); };
                 creators["naxxramas safe position"] = [](PlayerbotAI* ai) { return new NaxxramasPositionTrigger(ai); };
+                creators["prepare gothik sides"] = [](PlayerbotAI* ai) { return new NaxxramasGothikPrepareTrigger(ai); };
+                creators["razuvious preparation"] = [](PlayerbotAI* ai) { return new RazuviousPreparationTrigger(ai); };
 
                 creators["start netherspite fight"] = [](PlayerbotAI* ai) { return new NetherspiteStartFightTrigger(ai); };
                 creators["end netherspite fight"] = [](PlayerbotAI* ai) { return new NetherspiteEndFightTrigger(ai); };

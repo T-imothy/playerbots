@@ -62,6 +62,7 @@ namespace Cell{
 }
 struct Event{};
 namespace ai{
+ bool NaxxramasEncounterEngaged(Player*,Unit* u){return u&&u->combat;}
  uint32 HeiganNextWave(Unit*);uint32 HeiganUpcomingWave(Unit*,Unit*);bool HeiganCloudSafe(Player*,Unit*,const encounter::Point&);
  bool HeiganFloorThreats(PlayerbotAI*,const EncounterPosition&,std::vector<encounter::Circle>&,std::vector<encounter::Point>&);
  struct HeiganPositionValue{PlayerbotAI*ai;Player*bot;EncounterPosition Calculate();};
@@ -69,6 +70,7 @@ namespace ai{
  bool IsReaction(){return false;}void SetDuration(unsigned){}bool MoveTo(unsigned,float,float,float,bool,bool,bool,bool){++ai->moves;return true;}};
 }
 #define AI_VALUE(type,key) ai->attackers
+#define AI_VALUE2(type,key,qualifier) ai->attackers
 __METHODS__
 int main(){
  Player bot;bot.guid=10;bot.x=20;Unit boss,controller;boss.x=-40;controller.guid=2;controller.entry=17293;Aura wave;controller.slow=&wave;nativeControllers={&controller};

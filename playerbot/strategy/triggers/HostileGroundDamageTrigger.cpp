@@ -71,13 +71,22 @@ namespace
 
 bool HostileGroundDamageTrigger::IsActive()
 {
-    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || !bot->IsInCombat() ||
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
+        (!bot->IsInCombat() && bot->GetMapId() != 533 && bot->GetMapId() != 309) ||
         !bot->GetMap()->IsDungeon()) return false;
     WorldObjectList areas;
     HostileDamageAreaCheck check{bot};
     MaNGOS::WorldObjectListSearcher<HostileDamageAreaCheck> searcher(areas, check);
     Cell::VisitAllObjects(bot, searcher, 30.0f);
     bool inside = false;
+    if (bot->GetMapId() == 533 || bot->GetMapId() == 249 || bot->GetMapId() == 309)
+    {
+        std::list<HazardPosition> warnings;
+        AppendNativeEncounterActorHazards(ai, warnings);
+        const WorldPosition here(bot);
+        for (const auto& warning : warnings)
+            if (here.distance(warning.first) <= warning.second) inside = true;
+    }
     for (WorldObject* object : areas)
     {
         DynamicObject* area = static_cast<DynamicObject*>(object);

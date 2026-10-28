@@ -6,7 +6,7 @@
 
 using namespace ai;
 
-Unit* DungeonAddTargetAction::GetZulGurubTarget()
+Unit* DungeonAddTargetAction::GetZulGurubTarget(uint32 commandedBoss)
 {
     if (bot->GetMapId() != 309 || !bot->GetGroup() || !bot->IsInWorld() || !bot->IsAlive() ||
         !bot->IsInCombat() || bot->HasCharmer() || bot->IsBeingTeleported()) return nullptr;
@@ -35,6 +35,7 @@ Unit* DungeonAddTargetAction::GetZulGurubTarget()
             case 15163: bossEntry = 15083; break; // Hazza'rah: lethal, low-health illusions.
             default: continue;
         }
+        if (commandedBoss && bossEntry != commandedBoss) continue;
         if (!PossibleTargetsValue::IsValid(add, bot, false) ||
             !PossibleAttackTargetsValue::IsPossibleTarget(add, bot, sPlayerbotAIConfig.sightDistance, false) ||
             PossibleAttackTargetsValue::HasBreakableCC(add, bot)) continue;

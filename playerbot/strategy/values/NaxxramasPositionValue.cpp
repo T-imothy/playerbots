@@ -4,6 +4,25 @@
 
 using namespace ai;
 
+bool ai::NaxxramasEncounterEngaged(Player* bot, Unit* enemy)
+{
+    if (!bot || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
+        bot->HasCharmer() || bot->GetMapId() != 533 || !bot->GetGroup() ||
+        !enemy || !enemy->IsInWorld() || !enemy->IsAlive() || !enemy->IsInCombat() ||
+        enemy->HasCharmer() || !bot->IsInMap(enemy)) return false;
+    Unit* victim = enemy->GetVictim();
+    if (victim && !victim->IsPlayer()) victim = victim->GetMaster();
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (!member || !member->IsInWorld() || !member->IsAlive() || member->HasCharmer() ||
+            member->IsBeingTeleported() || !bot->IsInMap(member)) continue;
+        if (victim == member || member->GetVictim() == enemy || enemy->getAttackers().count(member) ||
+            enemy->getThreatManager().getThreat(member) > 0.0f) return true;
+    }
+    return false;
+}
+
 uint32 ai::NaxxramasBurstAura(Unit* unit)
 {
     if (!unit) return 0;

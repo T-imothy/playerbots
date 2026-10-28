@@ -74,7 +74,7 @@ struct PossibleAttackTargetsValue {
 struct Action{std::string name;std::string getName(){return name;}};
 struct InnerDemonAction{static Unit* GetDemon(PlayerbotAI*){return nullptr;}};
 struct DungeonAddTargetAction {PlayerbotAI*ai;Player*bot;DungeonAddTargetAction(PlayerbotAI*a):ai(a),bot(a->bot){}
- Unit*GetTarget();bool isUseful();Unit*GetThekalTarget(){return nullptr;}Unit*GetGluthTarget(){return nullptr;}Unit*GetSummonObjectiveTarget(){return ai->objective;}Unit*GetRaidTotemTarget();Unit*GetZulGurubTarget();Unit*GetOperaDuoTarget();Unit*GetUlduarObjectiveTarget();Unit*GetTwinEmperorTarget(){return nullptr;}Unit*GetIcecrownAddTarget(){return nullptr;}Unit*GetBlackrockDepthsTarget(){return nullptr;}};
+ Unit*GetTarget();bool isUseful();Unit*GetThekalTarget(){return nullptr;}Unit*GetGluthTarget(){return nullptr;}Unit*GetSummonObjectiveTarget(){return ai->objective;}Unit*GetRaidTotemTarget(uint32=0);Unit*GetZulGurubTarget(uint32=0);Unit*GetOperaDuoTarget();Unit*GetUlduarObjectiveTarget();Unit*GetTwinEmperorTarget(){return nullptr;}Unit*GetIcecrownAddTarget(){return nullptr;}Unit*GetBlackrockDepthsTarget(){return nullptr;}};
 struct PreserveDungeonAddTargetMultiplier{PlayerbotAI*ai;float GetValue(Action*);};
 struct BotState{enum{BOT_STATE_COMBAT};};
 struct MeleeCcCheck{MeleeCcCheck(PlayerbotAI*){}bool Protected(Unit*u){return u->assignedCC;}};
@@ -178,8 +178,11 @@ int main(){
   PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&add},{3,&second},{4,&trigger}};ai.possible={1,2,4};
   DungeonAddTargetAction action(&ai);assert(action.GetTarget()==&add);
   ai.current=&add;ai.possible.push_back(3);assert(action.GetTarget()==&add);ai.possible.pop_back();
-  ai.command=1;assert(!action.GetTarget());ai.command=0;
-  ai.marked=&boss;assert(!action.GetTarget());ai.marked=nullptr;
+  ai.command=1;assert(action.GetTarget()==&add);ai.command=0;
+  ai.marked=&boss;assert(action.GetTarget()==&add);ai.marked=nullptr;
+  ai.command=2;assert(!action.GetTarget());ai.command=0; // explicit add choice keeps ordinary command ownership
+  Unit otherEncounter=boss;otherEncounter.guid=5;otherEncounter.entry=row.first==14517?14510:14517;ai.units[5]=&otherEncounter;
+  ai.command=5;assert(!action.GetTarget());ai.marked=&boss;assert(!action.GetTarget());ai.command=0;ai.marked=nullptr;
   ai.healer=true;assert(!action.GetTarget());ai.healer=false;
   ai.tank=true;assert(!action.GetTarget());ai.tank=false;
   bot.teleport=true;assert(!action.GetTarget());bot.teleport=false;
@@ -243,7 +246,24 @@ int main(){
   boss.entry=11381;assert(!action.GetTarget());boss.entry=11380;
   boss.combat=false;assert(!action.GetTarget());boss.combat=true;
   ai.tank=true;assert(!action.GetTarget());ai.tank=false;ai.healer=true;assert(!action.GetTarget());ai.healer=false;
-  ai.command=1;assert(!action.GetTarget());ai.command=0;
+  ai.command=1;assert(action.GetTarget()==&control);ai.command=0;
+  ai.marked=&boss;assert(action.GetTarget()==&control);ai.marked=nullptr;
+  ai.command=2;assert(!action.GetTarget());ai.command=0;
+ }
+ // Witherbark Speaker wards are a distinct owner contract, not Jin'do objectives.
+ {
+  Group group,foreign;Player bot,tank;bot.group=tank.group=&group;bot.map=tank.map=309;
+  Unit speaker,ward,jindo;speaker.guid=1;speaker.entry=11388;speaker.map=309;speaker.victim=&tank;
+  ward.guid=2;ward.entry=10218;ward.map=309;ward.spawner=1;ward.combat=false;ward.x=3;
+  jindo.guid=3;jindo.entry=11380;jindo.map=309;jindo.victim=&tank;
+  PlayerbotAI ai{&bot};ai.units={{1,&speaker},{2,&ward},{3,&jindo}};ai.possible={1,2,3};
+  DungeonAddTargetAction action(&ai);assert(action.GetTarget()==&ward);
+  ward.spawner=3;assert(!action.GetTarget());ward.spawner=1; // A Jin'do-owned10218 is not a Speaker ward.
+  speaker.entry=11389;assert(!action.GetTarget());speaker.entry=11388;
+  tank.group=&foreign;assert(!action.GetTarget());tank.group=&group;
+  ai.marked=&jindo;assert(!action.GetTarget());ai.marked=nullptr;
+  ai.command=3;assert(!action.GetTarget());ai.command=0;
+  assert(action.GetTarget()==&ward);
  }
  // Passive ZF and Uldaman wards remain valid across the next AI tick.
  struct WardCase{unsigned map,owner,entry;};
@@ -334,7 +354,9 @@ int main(){
   bot.auras.insert(24321);assert(action.GetTarget()==&son);member.auras.insert(24321);assert(!action.GetTarget());member.auras.clear();
   member.group=nullptr;assert(!action.GetTarget());member.group=&group;
   son.breakCC=true;assert(!action.GetTarget());son.breakCC=false;
-  ai.command=1;assert(!action.GetTarget());ai.command=0;
+  ai.command=1;assert(action.GetTarget()==&son);ai.command=0;
+  ai.marked=&boss;assert(action.GetTarget()==&son);ai.marked=nullptr;
+  ai.command=2;assert(!action.GetTarget());ai.command=0;
   boss.combat=false;assert(!action.GetTarget());boss.combat=true;
  }
  // Rescue objects are summoned by the trapped group member.
@@ -367,7 +389,9 @@ int main(){
   boss.victim=&bot;none();boss.victim=nullptr;boss.combat=false;none();boss.combat=true;
   boss.phase=2;none();boss.phase=1;boss.alive=false;none();boss.alive=true;
   ai.possible.push_back(4);none();ai.possible.remove(4);
-  ai.command=1;none();ai.command=0;ai.marked=&boss;none();ai.marked=nullptr;
+  ai.command=1;if(rescue.map==533)assert(action.GetTarget()==&wrap);else none();ai.command=0;
+  ai.marked=&boss;if(rescue.map==533)assert(action.GetTarget()==&wrap);else none();ai.marked=nullptr;
+  ai.command=2;none();ai.command=0;
   ai.healer=true;none();ai.healer=false;ai.tank=true;none();ai.tank=false;ai.real=true;none();ai.real=false;
   bot.group=nullptr;none();bot.group=&group;bot.teleport=true;none();bot.teleport=false;
   bot.alive=false;none();bot.alive=true;bot.combat=false;none();bot.combat=true;

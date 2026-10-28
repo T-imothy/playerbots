@@ -24,6 +24,7 @@ code=r'''
 #include <cassert>
 #include <iostream>
 #include <string>
+#define MANTECH_DIAG_SCOPE(...)
 using time_t=long long;time_t fakeNow=100;
 struct Monitor{int start(int,std::string,void*){return 0;}}sPerformanceMonitor;
 enum{PERF_MON_VALUE};

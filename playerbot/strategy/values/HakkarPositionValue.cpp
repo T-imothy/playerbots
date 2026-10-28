@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/strategy/ZulGurubEncounter.h"
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
@@ -33,11 +34,12 @@ EncounterPosition HakkarPositionValue::Calculate()
     }
     if (!needsPoison) { preparationSon = ObjectGuid(); return plan; }
     Unit* boss = nullptr;
-    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    for (const auto& guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
     {
         Unit* unit = ai->GetUnit(guid);
         if (!unit || !unit->IsInWorld() || !unit->IsAlive() || !unit->IsInCombat() ||
-            unit->HasCharmer() || !bot->IsInMap(unit) || unit->GetEntry() != 14834) continue;
+            unit->HasCharmer() || !bot->IsInMap(unit) || unit->GetEntry() != 14834 ||
+            !ZulGurubGroupEngaged(bot, unit)) continue;
         if (boss && boss != unit) return plan;
         boss = unit;
     }

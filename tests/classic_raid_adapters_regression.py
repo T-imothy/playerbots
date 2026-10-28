@@ -60,12 +60,17 @@ int main(){using namespace ai::classicraid;
  for(unsigned map:{249u,309u,469u,509u,531u,533u})assert(Map(map));
  for(unsigned map:{0u,1u,409u,489u,529u,30u,532u,603u,631u})assert(!Map(map));
  assert(Boss(249,10184)&&Boss(469,11583)&&Boss(309,14834)&&Boss(509,15339)&&Boss(531,15727)&&Boss(533,15990));
- assert(!Boss(409,11982)&&!Boss(533,30549)&&!Boss(531,11982));
+ assert(!Boss(409,11982)&&!Boss(531,11982));
+#ifdef MANGOSBOT_TWO
+ assert(Boss(533,30549)&&HorsemanMark(30549)==28834);
+#else
+ assert(!Boss(533,30549)&&HorsemanMark(30549)==0);
+#endif
  assert(AddPriority(15953,16506,true,false)==0); // native Classic worshipper reserved for Embrace
  assert(AddPriority(15953,16505,false,false)>0); // native follower killed first
  assert(AddPriority(15932,16360,false,false)==0&&AddPriority(15932,16360,false,true)>0);
  assert(AddPriority(15990,16428,false,false)>AddPriority(15990,16427,false,false));
- assert(HorsemanMark(16062)==28834&&HorsemanMark(30549)==0); // Mograine, not Wrath Rivendare
+ assert(HorsemanMark(16062)==28834);
  unsigned marks[4]={3,0,0,0};assert(ReliefCorner(marks,4,0)==1);
  marks[1]=3;assert(ReliefCorner(marks,4,0)==2);marks[2]=marks[3]=3;assert(ReliefCorner(marks,4,0)==-1);
  marks[0]=0;assert(ReliefCorner(marks,4,3)==0);assert(ReliefCorner(marks,4,-1)==-1);
@@ -76,7 +81,6 @@ int main(){using namespace ai::classicraid;
  float x1,y1,x2,y2;Corner(16063,x1,y1);Corner(16065,x2,y2);assert(std::hypot(x1-x2,y1-y2)>50);
  PlayerbotAI brain;auto&bot=brain.bot;auto&plan=brain.context.value.plan;plan.position.active=true;plan.position.destination={10,0,0};
  ClassicRaidPositionAction action{&brain,&bot};Event event;
-#ifdef MANGOSBOT_ZERO
  assert(action.isUseful());bot.casting=true;assert(!action.Execute(event)&&brain.moves==0); // preserve ordinary casts/channels
  assert(!action.ShouldReactionInterruptCast());plan.emergency=true;assert(action.ShouldReactionInterruptCast());
  assert(action.Execute(event)&&brain.moves==1);bot.casting=false;bot.x=10;assert(!action.isUseful());
@@ -95,14 +99,16 @@ int main(){using namespace ai::classicraid;
  plan.boss={};assert(!action.isUseful());bot.auras.insert(28832);assert(action.isUseful());bot.auras.clear();
  plan.boss={1};plan.emergency=false;plan.position.spell=15928;assert(action.Execute(event)&&brain.jumps==1&&brain.moves==1);
  brain.jumpAccepted=false;assert(!action.Execute(event)&&brain.jumps==2&&brain.moves==1); // native rejected trajectory is not a teleport/move success
+ for (unsigned map : {249u,309u,469u,509u,531u,533u,409u,532u,631u}) {
+  bot.map=map;
+#ifdef MANGOSBOT_ZERO
+  assert(Ready(&brain)==Map(map));
+#elif defined(MANGOSBOT_ONE)
+  assert(Ready(&brain)==(map==249||map==309||map==469||map==533));
 #else
- assert(!action.isUseful()&&!action.Execute(event)); // Classic Naxx remains disabled in later cores.
- bot.map=469;plan.position.map=469;brain.boss.entry=11983;
- assert(Ready(&brain)&&action.isUseful());
- bot.casting=true;assert(!action.Execute(event));bot.casting=false;
- brain.boss.victim=&bot;assert(!action.isUseful());brain.boss.victim=nullptr;
- bot.map=249;assert(!Ready(&brain));bot.map=533;assert(!Ready(&brain));
+  assert(Ready(&brain)==(map==309||map==469||map==533));
 #endif
+ }
  std::cout<<"PASS actual Classic raid scope, native target/mark policy, movement/cast and lifecycle admission\n";
 }
 '''

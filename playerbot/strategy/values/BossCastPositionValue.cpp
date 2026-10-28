@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/strategy/ZulGurubEncounter.h"
 
 using namespace ai;
 
@@ -18,6 +19,7 @@ bool ai::IsBossEscapeMap(uint32 map)
 
 uint32 ai::NativeBossEscapeSpell(uint32 map, uint32 entry, uint32 cast, bool regular)
 {
+    if (map == 309 && entry == 14750 && cast == 24024) return cast; // Native Unstable Concoction cast, not Jeklik's flying bombers.
     if (map == 531 && entry == 15516 && cast == 26083) return 26084;
     if (map == 531 && entry == 15984 && cast == 26038) return 26686;
     if (map == 533 && entry == 15956 && cast == 28785) return cast; // Anub'Rekhan's Locust Swarm, including its periodic damage payload.
@@ -156,12 +158,16 @@ EncounterPosition BossCastPositionValue::Calculate()
         plan.active = false;
         return plan;
     }
-    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+    const auto sources = bot->GetMapId() == 533 || bot->GetMapId() == 309 ?
+        AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1") : AI_VALUE(std::list<ObjectGuid>, "attackers");
+    for (const auto& guid : sources)
     {
         Unit* boss = ai->GetUnit(guid);
         if (!boss || !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() || boss->HasCharmer() ||
             !bot->IsInMap(boss) || bot->GetDistance(boss) > 100 ||
-            std::fabs(boss->GetPositionZ() - here.z) > 8) continue;
+            std::fabs(boss->GetPositionZ() - here.z) > 8 ||
+            (bot->GetMapId() == 533 && !NaxxramasEncounterEngaged(bot, boss)) ||
+            (bot->GetMapId() == 309 && !ZulGurubGroupEngaged(bot, boss))) continue;
         const uint32 spell = CurrentBossEscapeSpell(bot, boss);
         if (!spell)
         {

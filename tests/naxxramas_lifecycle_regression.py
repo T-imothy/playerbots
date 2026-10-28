@@ -93,7 +93,7 @@ int main(){
 '''
 
 for realm in ('classic', 'tbc', 'wotlk'):
-    repo=root.parent/f'mangos-{realm}-behavior'
+    repo=root.parent/realm
     area='northrend' if realm=='wotlk' else 'eastern_kingdoms'
     relative=f'src/game/AI/ScriptDevAI/scripts/{area}/naxxramas/boss_thaddius.cpp'
     source=(repo/relative).read_text()

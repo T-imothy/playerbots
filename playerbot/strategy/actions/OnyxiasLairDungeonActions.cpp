@@ -26,11 +26,30 @@ bool OnyxiaPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("onyxia position")->Get();
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
     Unit* boss = ai->GetUnit(plan.boss);
-    if (!boss || !boss->IsInWorld() || !bot->IsInMap(boss) || !boss->IsAlive() || !boss->IsInCombat()) return false;
+    if (!boss || !boss->IsInWorld() || !bot->IsInMap(boss) || !boss->IsAlive() || !boss->IsInCombat() ||
+        boss->HasCharmer() || boss->GetEntry() != 10184) return false;
     // An off-tank assigned to adds must be allowed to chase them, not get
     // dragged back to the boss's flank. A breath escape still takes precedence.
     Unit* current = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
     if (!plan.exclusive && current && current != boss) return false;
+    if (!plan.exclusive)
+    {
+        // A fear/knockback or threat change can occur inside the value-cache
+        // interval. Never execute the previous flank move on the new tank.
+        if (boss->GetVictim() == bot || boss->IsLevitating() || boss->GetPositionZ() - bot->GetPositionZ() > 10) return false;
+        const float angle = std::atan2(plan.destination.y - boss->GetPositionY(), plan.destination.x - boss->GetPositionX());
+        if (std::fabs(std::cos(angle - boss->GetOrientation())) >= 0.70710678f) return false;
+    }
+#ifdef MANGOSBOT_TWO
+    if (plan.spell == 68958)
+    {
+        Unit* guard = ai->GetUnit(plan.source);
+        if (!guard || !guard->IsInWorld() || !bot->IsInMap(guard) || !guard->IsAlive() ||
+            !guard->IsInCombat() || guard->HasCharmer() || guard->GetEntry() != 36561) return false;
+        const Spell* cast = guard->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+        if (!cast || !cast->m_spellInfo || cast->getState() == SPELL_STATE_FINISHED || cast->m_spellInfo->Id != 68958) return false;
+    }
+#endif
     const float oldZ = plan.destination.z;
     bot->UpdateAllowedPositionZ(plan.destination.x, plan.destination.y, plan.destination.z);
     return std::isfinite(plan.destination.z) && std::fabs(plan.destination.z - oldZ) < 8;
@@ -67,14 +86,7 @@ Unit* OnyxiaAddsAction::GetTarget()
 {
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
         bot->GetMapId() != 249 || !bot->IsInCombat() || ai->IsHeal(bot)) return nullptr;
-    Unit* boss = nullptr;
-    for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
-    {
-        Unit* unit = ai->GetUnit(guid);
-        if (unit && unit->IsInWorld() && bot->IsInMap(unit) && unit->GetEntry() == 10184 &&
-            unit->IsAlive() && unit->IsInCombat())
-        { boss = unit; break; }
-    }
+    Unit* boss = FindOnyxiaBoss(ai);
     if (!boss || boss->GetVictim() == bot) return nullptr;
     const bool airborne = boss->IsLevitating() || boss->GetPositionZ() - bot->GetPositionZ() > 10;
     if (!airborne && !ai->IsTank(bot)) return nullptr;
@@ -90,6 +102,8 @@ Unit* OnyxiaAddsAction::GetTarget()
     Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     Unit* nearest = nullptr;
     Unit* retained = nullptr;
+    Unit* rescue = nullptr;
+    Unit* markedAdd = nullptr;
     for (const auto& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
     {
         Unit* unit = ai->GetUnit(guid);
@@ -99,11 +113,21 @@ Unit* OnyxiaAddsAction::GetTarget()
         if (!IsOnyxiaAddEntry(unit->GetEntry()) || PossibleAttackTargetsValue::HasBreakableCC(unit, bot) ||
             PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot) ||
             !PossibleAttackTargetsValue::IsValid(unit, bot, sPlayerbotAIConfig.sightDistance, false, true)) continue;
-        if (unit == marked) return unit;
+        if (unit == marked)
+        {
+            if (!ai->IsTank(bot)) return unit;
+            markedAdd = unit;
+        }
+        // Retaining a safely held whelp must not suppress the tank assist
+        // rescue that this encounter action replaces while adds are alive.
+        Player* victim = dynamic_cast<Player*>(unit->GetVictim());
+        if (ai->IsTank(bot) && victim && victim != bot && victim->IsInWorld() && victim->IsAlive() &&
+            bot->IsInMap(victim) && bot->GetGroup() && victim->GetGroup() == bot->GetGroup() && !ai->IsTank(victim) &&
+            (!rescue || bot->GetDistance(unit) < bot->GetDistance(rescue))) rescue = unit;
         if (unit == current) retained = unit;
         if (!nearest || bot->GetDistance(unit) < bot->GetDistance(nearest)) nearest = unit;
     }
-    return retained ? retained : nearest;
+    return rescue ? rescue : markedAdd ? markedAdd : retained ? retained : nearest;
 }
 
 bool OnyxiaAddsAction::isUseful()

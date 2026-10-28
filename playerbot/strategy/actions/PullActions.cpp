@@ -5,6 +5,8 @@
 #include "PullActions.h"
 #include "PullDiagnostics.h"
 #include "BotCommandAccess.h"
+#include "NaxxramasPreparationActions.h"
+#include "RazuviousPullActions.h"
 #include "playerbot/strategy/values/PositionValue.h"
 
 using namespace ai;
@@ -98,7 +100,9 @@ bool PullRequestAction::Execute(Event& event)
 
     // A previous command must never leave this request in fallback mode.
     strategy->SetBodyPull(false);
-    if (!strategy->CanDoPullAction(target))
+    const bool crystalPull = IsRazuviousCrystalPull(ai, target) &&
+        (event.getSource() == "pull" || event.getSource() == "pull rti") && CanManageBotCommands(ai, requester);
+    if (!crystalPull && !strategy->CanDoPullAction(target))
     {
         const PullFailure reason = GetPullReadiness(ai, target);
         const bool explicitRequest = (event.getSource() == "pull" || event.getSource() == "pull rti") &&
@@ -121,6 +125,8 @@ bool PullRequestAction::Execute(Event& event)
 
     strategy->RequestPull(target);
     strategy->SetRequester(requester ? requester->GetObjectGuid() : ObjectGuid());
+    strategy->SetEncounterPreparationAllowed((event.getSource() == "pull" || event.getSource() == "pull rti") &&
+        CanManageBotCommands(ai, requester));
 
     // Force change combat state to have a faster reaction time
     ai->OnCombatStarted();
@@ -153,8 +159,16 @@ Unit* PullRTITargetAction::GetTarget(Event& event)
 
 bool PullStartAction::Execute(Event& event)
 {
-    bool result = false;
     PullStrategy* strategy = PullStrategy::Get(ai);
+    // Encounter preparation uses the original request deadline. Never start
+    // the shot while a closed-side raid or controlled tank is not ready.
+    if (strategy && strategy->IsEncounterPreparationAllowed())
+    {
+        if (!NaxxramasGothikPullReady(ai) || !RazuviousCrystalPullReady(ai)) return false;
+        if (IsRazuviousCrystalPull(ai, strategy->GetTarget()))
+        { strategy->OnPullStarted(); return true; }
+    }
+    bool result = false;
     if (strategy)
     {
         Unit* target = strategy->GetTarget();
@@ -204,6 +218,7 @@ bool PullAction::Execute(Event& event)
         Unit* target = strategy->GetTarget();
         if (target)
         {
+            if (strategy->IsEncounterPreparationAllowed() && IsRazuviousCrystalPull(ai, target)) return ExecuteRazuviousCrystalPull(ai);
             if ((strategy->IsBodyPull() || ai->IsMelee(bot)) && bot->CanReachWithMeleeAttack(target))
             {
                 SET_AI_VALUE(ObjectGuid, "current target", target->GetObjectGuid());
@@ -261,6 +276,8 @@ bool PullAction::isUseful()
     // strategy's spell before the inherited capability check runs.
     InitPullAction();
     PullStrategy* strategy = PullStrategy::Get(ai);
+    if (strategy && strategy->IsEncounterPreparationAllowed() && IsRazuviousCrystalPull(ai, strategy->GetTarget()))
+        return !strategy->HasPullActionIssued() && !strategy->IsPullPendingToStart();
     return strategy && !strategy->HasPullActionIssued() && (strategy->IsBodyPull() || CastSpellAction::isUseful());
 }
 
@@ -272,6 +289,7 @@ bool PullAction::isPossible()
     if (strategy)
     {
         Unit* target = strategy->GetTarget();
+        if (strategy->IsEncounterPreparationAllowed() && IsRazuviousCrystalPull(ai, target)) return RazuviousCrystalPullReady(ai);
         if (strategy->IsBodyPull()) return target && target->IsAlive() && bot->IsInMap(target);
         std::string spellName = strategy->GetSpellName();
         if (!spellName.empty() && target)
@@ -347,7 +365,11 @@ bool PullEndAction::Execute(Event& event)
             SET_AI_VALUE(ObjectGuid, "current target", pullTarget->GetObjectGuid());
             ai->OnCombatStarted();
             // Uses ordinary attack/encounter validation, not fabricated threat.
-            if (ai->IsMelee(bot)) ai->DoSpecificAction("melee", event, true);
+            Unit* charm = bot->GetCharm();
+            const bool nativeControlCleanup = event.getSource() == "naxx pull lifecycle" && bot->GetMapId() == 533 &&
+                charm && charm->IsInWorld() && bot->IsInMap(charm) && charm->HasCharmer(bot->GetObjectGuid()) &&
+                (charm->GetEntry() == 16803 || charm->GetEntry() == 16506);
+            if (!nativeControlCleanup && ai->IsMelee(bot)) ai->DoSpecificAction("melee", event, true);
         }
         else if (expired)
         {
@@ -355,7 +377,10 @@ bool PullEndAction::Execute(Event& event)
                 SET_AI_VALUE(ObjectGuid, "current target", ObjectGuid());
             Unit* requester = requesterGuid ? ai->GetUnit(requesterGuid) : nullptr;
             if (requester && requester->IsPlayer())
-                ai->TellPlayerNoFacing(static_cast<Player*>(requester), "Pull stopped: the target did not engage before the timeout.");
+                ai->TellPlayerNoFacing(static_cast<Player*>(requester),
+                    pullTarget && bot->GetMapId() == 533 && pullTarget->GetEntry() == 16060 ?
+                    "Gothik pull stopped: both sides need a tank and healer in position, with an open, reachable gate. Prepare the raid and issue a new pull." :
+                    "Pull stopped: the target did not engage before the timeout.");
         }
         return true;
     }

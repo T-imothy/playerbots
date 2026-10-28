@@ -5,7 +5,7 @@ from behavior_regression import block
 root=Path(__file__).resolve().parents[2]
 variants=[]
 for era in ['classic','tbc','wotlk']:
- core=root/f'mangos-{era}-behavior'
+ core=root/era
  s=(core/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/zulgurub/boss_arlokk.cpp').read_text()
  variants.append((block(s,'struct ArlokkVanish'),block(s,'    void ReceiveAIEvent(')))
  sql=(core/'sql/scriptdev2/spell.sql').read_text();assert "(24223,'spell_arlokk_vanish')" in sql and "(24228,'spell_arlokk_vanish')" not in sql

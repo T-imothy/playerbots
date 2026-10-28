@@ -1,16 +1,11 @@
 #include "playerbot/playerbot.h"
 #include "BlackwingLairDungeonStrategies.h"
 #include "DungeonMultipliers.h"
-#include "playerbot/strategy/actions/ClassicRaidActions.h"
 
 using namespace ai;
 
 void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-#ifndef MANGOSBOT_ZERO
-    triggers.push_back(new TriggerNode("classic raid position", NextAction::array(0, new NextAction("classic raid position", ACTION_MOVE + 5), NULL)));
-    triggers.push_back(new TriggerNode("classic raid support", NextAction::array(0, new NextAction("classic raid support", ACTION_DISPEL + 4), NULL)));
-#endif
     triggers.push_back(new TriggerNode("suppression device need stealth",
         NextAction::array(0, new NextAction("stealth for suppression device", ACTION_MOVE + 9), NULL)));
     triggers.push_back(new TriggerNode("suppression device in sight",
@@ -36,9 +31,6 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
 
 void BlackwingLairDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
-#ifndef MANGOSBOT_ZERO
-    triggers.push_back(new TriggerNode("classic raid emergency", NextAction::array(0, new NextAction("classic raid position", ACTION_EMERGENCY + 2), NULL)));
-#endif
     triggers.push_back(new TriggerNode("blackwing lair safe position",
         NextAction::array(0, new NextAction("blackwing lair safe position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("corrupted healing cast",
@@ -47,9 +39,6 @@ void BlackwingLairDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>&
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
-#ifndef MANGOSBOT_ZERO
-    triggers.push_back(new TriggerNode("classic raid cloak", NextAction::array(0, new NextAction("classic raid cloak", ACTION_HIGH), NULL)));
-#endif
     triggers.push_back(new TriggerNode("razorgore orb",
         NextAction::array(0, new NextAction("razorgore orb", 100.0f), NULL)));
     triggers.push_back(new TriggerNode("use hourglass sand",
@@ -71,17 +60,11 @@ void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>
 
 void BlackwingLairDungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
 {
-#ifndef MANGOSBOT_ZERO
-    multipliers.push_back(new PreserveClassicRaidPlan(ai));
-#endif
     multipliers.push_back(new PreserveBlackwingLairPositionMultiplier(ai));
 }
 
 void BlackwingLairDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
-#ifndef MANGOSBOT_ZERO
-    multipliers.push_back(new PreserveClassicRaidPlan(ai));
-#endif
     multipliers.push_back(new PreserveBlackwingLairPositionMultiplier(ai));
 }
 

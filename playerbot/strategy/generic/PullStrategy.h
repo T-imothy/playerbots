@@ -40,6 +40,8 @@ namespace ai
         bool HasSavedPetReactState() const { return petReactStateSaved; }
         void SetRequester(ObjectGuid guid) { requesterGuid = guid; }
         ObjectGuid GetRequester() const { return requesterGuid; }
+        void SetEncounterPreparationAllowed(bool value) { encounterPreparationAllowed = value; }
+        bool IsEncounterPreparationAllowed() const { return encounterPreparationAllowed; }
         void OnPullEnded();
         ReactStates GetPetReactState() const { return petReactState; }
         void SetPetReactState(ReactStates reactState) { petReactState = reactState; petReactStateSaved = true; }
@@ -61,6 +63,7 @@ namespace ai
         time_t pullActionTime = 0;
         bool petReactStateSaved = false;
         ObjectGuid requesterGuid;
+        bool encounterPreparationAllowed = false;
         ReactStates petReactState;
     };
 

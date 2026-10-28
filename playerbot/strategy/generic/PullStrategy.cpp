@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/PassiveMultiplier.h"
 #include "PullStrategy.h"
+#include "playerbot/strategy/actions/RazuviousPullActions.h"
 
 using namespace ai;
 
@@ -240,12 +241,14 @@ void PullStrategy::OnPullEnded()
     pullActionTime = 0;
     petReactStateSaved = false;
     requesterGuid.Clear();
+    encounterPreparationAllowed = false;
     bodyPull = false;
     SetTarget(nullptr);
 }
 
 void PullStrategy::RequestPull(Unit* target, bool resetTime)
 {
+    encounterPreparationAllowed = false;
     SetTarget(target);
     pendingToStart = true;
     if(resetTime)
@@ -260,12 +263,19 @@ float PullMultiplier::GetValue(Action* action)
     const PullStrategy* strategy = PullStrategy::Get(ai);
     if (strategy && strategy->HasTarget())
     {
+        if (strategy->IsPullPendingToStart() && strategy->IsEncounterPreparationAllowed() &&
+            ai->GetBot()->GetMapId() == 533 &&
+            (strategy->GetTarget()->GetEntry() == 16060 || IsRazuviousCrystalPull(ai, strategy->GetTarget())) &&
+            (action->getName() == "reach pull" || action->getName() == "return to pull position" ||
+                action->getName() == "pull action")) return 0.0f;
         if ((action->getName() == "pull my target") ||
             (action->getName() == "attack my target") ||
             (action->getName() == "attack rti target") ||
             (action->getName() == "pull rti target") ||
             (action->getName() == "reach pull") ||
             (action->getName() == "pull start") ||
+            (action->getName() == "prepare gothik sides") ||
+            (action->getName() == "razuvious preparation") ||
             (action->getName() == "pull action") ||
             (action->getName() == "return to pull position") ||
             (action->getName() == "pull end"))

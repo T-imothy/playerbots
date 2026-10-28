@@ -155,8 +155,9 @@ for era in ('ZERO','ONE','TWO'):
 
 for era in ('tbc','wotlk'):
     native=(root.parents[2]/f'{era}/src/game/AI/ScriptDevAI/scripts/outland/hellfire_citadel/magtheridons_lair/boss_magtheridon.cpp').read_text()
-    debris=block(native,'struct DebrisMagtheridon')
-    assert 'OnPersistentAreaAuraEnd' in debris and '30631' in debris and 'dynGo->GetObjectGuid()' in debris
+    debris=block(native,'struct DebrisMagtheridon : public AuraScript')
+    assert 'OnPersistentAreaAuraEnd' in debris and 'dynGo->GetObjectGuid()' in debris
+    assert '30631' in debris or ('SPELL_DEBRIS_DAMAGE' in debris and 'SPELL_DEBRIS_DAMAGE         = 30631' in native)
 
 # Wiring checks supplement runtime tests; they are not encounter completion tests.
 actions = (root / 'actions/KarazhanDungeonActions.cpp').read_text()

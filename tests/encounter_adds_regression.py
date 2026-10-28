@@ -10,6 +10,8 @@ for filename, cls in (("MechanarDungeonActions.cpp", "PathaleonAddsAction"),
                       ("OnyxiasLairDungeonActions.cpp", "OnyxiaAddsAction")):
     text = (root / "playerbot/strategy/actions" / filename).read_text()
     if filename == 'OnyxiasLairDungeonActions.cpp':
+        onyxia = (root / 'playerbot/strategy/values/OnyxiaPositionValue.cpp').read_text()
+        methods.append(block(onyxia, 'Unit* ai::FindOnyxiaBoss(').replace('ai::', ''))
         methods.append(block(text, 'bool IsOnyxiaAddEntry('))
     methods.append(block(text, f"Unit* {cls}::GetTarget("))
     methods.append(block(text, f"bool {cls}::isUseful("))
@@ -34,6 +36,7 @@ using uint32=unsigned;
 struct {float sightDistance=60.0f;} sPlayerbotAIConfig;
 struct Map {};
 struct Unit {
+ virtual ~Unit()=default;bool HasCharmer(){return false;}
  unsigned guid=0;float health=100;unsigned GetObjectGuid(){return guid;} unsigned GetGUIDLow(){return guid;} float GetHealthPercent(){return health;}
  unsigned entry=0;bool world=true,alive=true,combat=true,levitating=false,breakCC=false,hardCC=false;
  bool assignedCC=false,attackable=true;unsigned phase=1;
@@ -48,6 +51,9 @@ struct Player:Unit {bool charmed=false,teleport=false;unsigned mapId=554;
  bool IsInMap(Unit* unit){return map==unit->map&&phase==unit->phase;}
  void* GetGroup(){return this;}bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}unsigned GetMapId(){return mapId;}};
 struct PlayerbotAI {
+ Player* botptr=nullptr;Player* GetBot(){return botptr;}PlayerbotAI* GetAiObjectContext(){return this;}
+ template<class T>struct Access{PlayerbotAI* ai;std::string key;T Get(){return ai->Value<T>(key.c_str());}};
+ template<class T>Access<T>* GetValue(const char* key,const char* =nullptr){static Access<T> v;v={this,key};return &v;}
  bool healer=false,tank=false,ranged=false;bool IsRanged(Player*){return ranged;}std::list<ObjectGuid> attackers,possible;std::map<unsigned,Unit*> units;
  Unit* current=nullptr;Unit* marked=nullptr;
  ObjectGuid commanded=0;
@@ -61,7 +67,7 @@ struct PlayerbotAI {
    for(auto const& entry:units)if(entry.second==wanted)return entry.first;
    return 0;
   }
-  else return std::string(key)=="attackers"?attackers:possible;
+  else {if(std::string(key)=="possible targets"){auto raw=attackers;raw.insert(raw.end(),possible.begin(),possible.end());return raw;}return std::string(key)=="attackers"?attackers:possible;}
  }
 };
 namespace ai {
@@ -129,7 +135,7 @@ int main(){
 #else
  CheckSelection(pathaleon,bot,ai,boss,add,second,other);
 #endif
- bot.mapId=249;boss.entry=10184;add.entry=second.entry=11262;boss.levitating=true;
+ ai.botptr=&bot;bot.mapId=249;boss.entry=10184;add.entry=second.entry=11262;boss.levitating=true;
  OnyxiaAddsAction onyxia{&bot,&ai};CheckSelection(onyxia,bot,ai,boss,add,second,other);
  add.entry=second.entry=36561;ai.current=nullptr;
 #ifdef MANGOSBOT_TWO

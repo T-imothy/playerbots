@@ -2,6 +2,7 @@
 #include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/actions/ClassicRaidActions.h"
+#include "playerbot/strategy/actions/NaxxramasControlCommands.h"
 #include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
 #include "playerbot/strategy/actions/MovementActions.h"
 #include "playerbot/strategy/actions/AttackAction.h"
@@ -415,13 +416,16 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
         if (auto* controller = dynamic_cast<ai::RazorgoreOrbAction*>(aiObjectContext->GetAction("razorgore orb")))
             if (controller->UpdateControl()) return;
 
-#ifdef MANGOSBOT_ZERO
-    // Native Classic priest possession is a channel on the stationary owner.
+    // Native priest/crystal possession is owned by the stationary player.
     // Direct its owned understudy/worshipper before ordinary class delays.
-    if (bot->IsInWorld() && bot->GetMapId() == 533 && bot->GetCharm() && aiObjectContext)
-        if (auto* controller = dynamic_cast<ai::ClassicRaidControlAction*>(aiObjectContext->GetAction("classic raid control")))
-            if (controller->UpdateControl()) return;
-#endif
+    if (bot->IsInWorld() && (bot->GetMapId() == 533 || naxxControlScopeActive) && aiObjectContext)
+    {
+        naxxControlScopeActive = bot->GetMapId() == 533;
+        ai::ProcessNaxxramasControlCommands(this, !chatCommands.empty());
+        if (bot->IsInWorld() && bot->GetMapId() == 533 && aiObjectContext)
+            if (auto* controller = dynamic_cast<ai::ClassicRaidControlAction*>(aiObjectContext->GetAction("classic raid control")))
+                if (controller->UpdateControl()) return;
+    }
 
     AiObjectContext* context = aiObjectContext;
     std::unique_ptr<PerformanceMonitorOperation> pmo;

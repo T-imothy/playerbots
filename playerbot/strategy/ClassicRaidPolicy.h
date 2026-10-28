@@ -41,6 +41,9 @@ namespace ai { namespace classicraid
                     entry == 15516 || entry == 15510 || entry == 15509 || entry == 15275 ||
                     entry == 15276 || entry == 15299 || entry == 15517 || entry == 15589 || entry == 15727;
             case 533:
+#ifdef MANGOSBOT_TWO
+                if (entry == 30549) return true; // Wrath's Baron Rivendare replaces Mograine.
+#endif
                 return entry == 15956 || entry == 15953 || entry == 15952 || entry == 15954 ||
                     entry == 15936 || entry == 16011 || entry == 16061 || entry == 16060 ||
                     (entry >= 16062 && entry <= 16065) || entry == 16028 || entry == 15931 ||
@@ -52,6 +55,9 @@ namespace ai { namespace classicraid
     {
         switch (entry)
         {
+#ifdef MANGOSBOT_TWO
+            case 30549: return 28834;
+#endif
             case 16062: return 28834;
             case 16063: return 28835;
             case 16064: return 28832;
@@ -95,7 +101,7 @@ namespace ai { namespace classicraid
             case 16060: return entry == 16125 || entry == 16126 || entry == 16127 ||
                 entry == 16124 || entry == 16148 || entry == 16149 || entry == 16150 ? 3 : 0;
             case 15932: return entry == 16360 && decimated ? 6 : 0;
-            case 15990: return entry == 16428 ? 7 : entry == 16429 ? 6 : entry == 16427 ? 5 : 0;
+            case 15990: return entry == 16429 ? 7 : entry == 16428 ? 6 : entry == 16427 ? 5 : 0;
         }
         return 0;
     }
@@ -109,6 +115,6 @@ namespace ai { namespace classicraid
         return Dragon(entry) || entry == 12435 || entry == 12017 || entry == 14020 || entry == 12460 ||
             entry == 12416 || entry == 12422 || entry == 12461 || entry == 12467 || entry == 14456 ||
             entry == 15956 || entry == 15952 || entry == 16028 || entry == 15931 || entry == 15932 ||
-            entry == 15517 || entry == 15510;
+            entry == 15517 || entry == 15510 || entry == 15114; // Gahz'ranka's native Frost Breath is a cone.
     }
 } }

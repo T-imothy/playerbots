@@ -9,6 +9,7 @@ root=Path(__file__).resolve().parents[1]
 policy=(root/'playerbot/strategy/actions/EncounterDispelPolicy.cpp').read_text()
 if '--before-hakkar' in sys.argv:
     policy=subprocess.check_output(['git','-c','safe.directory='+root.as_posix(),'-C',str(root),'show','88f43c09:playerbot/strategy/actions/EncounterDispelPolicy.cpp'],text=True)
+zghelper=(root/'playerbot/strategy/ZulGurubEncounter.h').read_text().replace('#pragma once','')
 policy='\n'.join(line for line in policy.splitlines() if not line.startswith('#include'))
 selector=(root/'playerbot/strategy/values/PartyMemberToDispel.cpp').read_text()
 trigger=(root/'playerbot/strategy/triggers/CureTriggers.cpp').read_text()
@@ -38,19 +39,19 @@ constexpr unsigned DISPEL_ALL_MASK=0x1e,MAX_EFFECT_INDEX=3,SPELL_EFFECT_DISPEL=3
 __NATIVE_MASK__
 struct SpellEntry{unsigned Id=0,Effect[3]{},EffectApplyAuraName[3]{},EffectTriggerSpell[3]{};int EffectMiscValue[3]{};};
 struct Unit{static inline unsigned nextGuid=0;unsigned guid=++nextGuid;unsigned GetObjectGuid(){return guid;}virtual ~Unit()=default;unsigned map=533,phase=1,entry=0;bool world=true,alive=true,charmed=false,combat=true,friendly=true;
- float distance=0;std::set<unsigned> auras,cures;bool IsInWorld(){return world;}bool IsAlive(){return alive;}
+ Unit* victim=nullptr;Unit* GetVictim(){return victim;}Unit* GetMaster(){return nullptr;}std::set<Unit*> attackers;auto& getAttackers(){return attackers;}virtual bool IsPlayer(){return false;}float distance=0;std::set<unsigned> auras,cures;bool IsInWorld(){return world;}bool IsAlive(){return alive;}
  bool HasCharmer(){return charmed;}bool IsInCombat(){return combat;}bool HasAura(unsigned id){return auras.count(id);}
  unsigned GetMapId(){return map;}unsigned GetEntry(){return entry;}};
 struct Group;
-struct Player:Unit{bool teleport=false;Group* group=nullptr;bool IsBeingTeleported(){return teleport;}
+struct Player:Unit{bool IsPlayer()override{return true;}bool teleport=false;Group* group=nullptr;bool IsBeingTeleported(){return teleport;}
  bool IsInMap(Unit* unit){return unit&&world&&unit->world&&map==unit->map&&phase==unit->phase;}Group* GetGroup(){return group;}};
 struct Pet:Unit{unsigned type=0;unsigned getPetType(){return type;}};
 struct GroupReference{Player* source;GroupReference* following=nullptr;Player* getSource(){return source;}GroupReference* next(){return following;}};
 struct Group{GroupReference* first;GroupReference* GetFirstMember(){return first;}};
 template<class T>struct Value{T value{};T Get(){return value;}};
-struct Context{Value<std::list<ObjectGuid>> attackers;Value<ObjectGuid> party;std::string lastQualifier;
- template<class T>Value<T>* GetValue(const char*,std::string q=""){
-  if constexpr(std::is_same_v<T,std::list<ObjectGuid>>)return &attackers;else{lastQualifier=q;return &party;}}};
+struct Context{Value<std::list<ObjectGuid>> attackers,nearby;Value<ObjectGuid> party;std::string lastQualifier;
+ template<class T>Value<T>* GetValue(const char* key,std::string q=""){
+  if constexpr(std::is_same_v<T,std::list<ObjectGuid>>)return std::string(key)=="possible targets"?&nearby:&attackers;else{lastQualifier=q;return &party;}}};
 struct PlayerbotAI{Player* bot;Context context;std::map<ObjectGuid,Unit*> units;std::map<std::string,unsigned> spellIds;
  Player* GetBot(){return bot;}Context* GetAiObjectContext(){return &context;}float GetRange(const char*){return 30;}
  Unit* GetUnit(ObjectGuid guid){auto i=units.find(guid);return i==units.end()?nullptr:i->second;}
@@ -58,7 +59,8 @@ struct PlayerbotAI{Player* bot;Context context;std::map<ObjectGuid,Unit*> units;
 struct Facade{std::map<unsigned,SpellEntry> spells;bool IsFriendlyTo(Unit*,Unit* target){return target->friendly;}
  bool IsAlive(Unit* u){return u&&u->alive;}float GetDistance2d(Unit*,Unit* u){return u?u->distance:999;}
  const SpellEntry* LookupSpellInfo(unsigned id){auto i=spells.find(id);return i==spells.end()?nullptr:&i->second;}}sServerFacade;
-namespace ai{bool IsProtectedEncounterDispel(Unit*,uint32);bool ShouldAvoidEncounterDispel(PlayerbotAI*,const SpellEntry*,Unit*);}
+namespace ai{bool NaxxramasEncounterEngaged(Player*,Unit* u){return u&&u->combat;}bool IsProtectedEncounterDispel(Unit*,uint32);bool ShouldAvoidEncounterDispel(PlayerbotAI*,const SpellEntry*,Unit*);}
+__ZGHELPER__
 __POLICY__
 using namespace ai;
 bool PlayerbotAI::HasAuraToDispel(Unit* u,unsigned type){return u&&u->world&&bot->IsInMap(u)&&u->cures.count(type)&&!IsProtectedEncounterDispel(u,type);}
@@ -112,11 +114,11 @@ int main(){
  party.GetTargetValue();assert(ai.context.lastQualifier=="1,cleanse");
  assert(ShouldAvoidEncounterDispel(&ai,&totem,&bot)); // Live injection remains after boss dies.
  infected.auras.clear();assert(!ShouldAvoidEncounterDispel(&ai,&totem,&bot));
- ai.context.attackers.value={1};assert(ShouldAvoidEncounterDispel(&ai,&totem,&bot)&&ShouldAvoidEncounterDispel(&ai,&abolish,&healthy));
+ ai.context.nearby.value={1};assert(ShouldAvoidEncounterDispel(&ai,&totem,&bot)&&ShouldAvoidEncounterDispel(&ai,&abolish,&healthy));
  assert(!ShouldAvoidEncounterDispel(&ai,&cure,&healthy)); // Ordinary direct cures remain available before injection.
  boss.combat=false;assert(!ShouldAvoidEncounterDispel(&ai,&totem,&bot));boss.combat=true;
  boss.phase=2;assert(!ShouldAvoidEncounterDispel(&ai,&totem,&bot));boss.phase=1;boss.world=false;
- assert(!ShouldAvoidEncounterDispel(&ai,&totem,&bot));boss.world=true;ai.context.attackers.value.clear();
+ assert(!ShouldAvoidEncounterDispel(&ai,&totem,&bot));boss.world=true;ai.context.nearby.value.clear();
  infected.auras={28169};infected.phase=2;assert(!ShouldAvoidEncounterDispel(&ai,&totem,&bot));infected.phase=1;
  infected.teleport=true;assert(!ShouldAvoidEncounterDispel(&ai,&totem,&bot));infected.teleport=false;
  infected.charmed=true;assert(!ShouldAvoidEncounterDispel(&ai,&totem,&bot));infected.charmed=false;
@@ -127,7 +129,7 @@ int main(){
  malformed.EffectMiscValue[0]=31;assert(!ShouldAvoidEncounterDispel(&ai,&malformed,&infected));
  malformed.EffectMiscValue[0]=-1;assert(!ShouldAvoidEncounterDispel(&ai,&malformed,&infected));
  // Hakkar's native Blood Siphon requires the poison to remain on its recipient.
- bot.map=infected.map=healthy.map=boss.map=309;boss.entry=14834;ai.context.attackers.value={1};infected.auras={24321};
+ bot.map=infected.map=healthy.map=boss.map=309;boss.entry=14834;boss.victim=&healthy;ai.context.attackers.value.clear();ai.context.nearby.value={1};infected.auras={24321};
  SpellEntry poison=cure;poison.Id=526;poison.EffectMiscValue[0]=DISPEL_POISON;
  assert(ShouldAvoidEncounterDispel(&ai,&poison,&infected)&&ShouldAvoidEncounterDispel(&ai,&cleanse,&infected));
  assert(!ShouldAvoidEncounterDispel(&ai,&cure,&infected)&&!ShouldAvoidEncounterDispel(&ai,&magic,&infected));
@@ -147,10 +149,13 @@ int main(){
  boss.combat=false;assert(!ShouldAvoidEncounterDispel(&ai,&poison,&infected)&&!ShouldAvoidEncounterDispel(&ai,&poisonTotem,&bot));boss.combat=true;
  boss.phase=2;assert(!ShouldAvoidEncounterDispel(&ai,&poison,&infected));boss.phase=1;
  boss.entry=1;assert(!ShouldAvoidEncounterDispel(&ai,&poison,&infected));boss.entry=14834;
+ SpellEntry stone;stone.Id=20594;bot.auras={24321};assert(ShouldAvoidEncounterDispel(&ai,&stone,&bot));bot.auras.clear();assert(!ShouldAvoidEncounterDispel(&ai,&stone,&bot));
+ boss.victim=nullptr;assert(!ShouldAvoidEncounterDispel(&ai,&poison,&infected));boss.victim=&healthy;
+ Group foreignGroup{};healthy.group=&foreignGroup;assert(!ShouldAvoidEncounterDispel(&ai,&poison,&infected));healthy.group=&group;
  infected.auras.clear();assert(!ShouldAvoidEncounterDispel(&ai,&poison,&infected));
  std::cout<<"PASS: actual native-mask dispel guard, multi-effect Cleanse, periodic/totem prevention and spell-aware party selection\n";
 }
-'''.replace('__POLICY__',policy).replace('__METHODS__',methods)
+'''.replace('__ZGHELPER__',zghelper).replace('__POLICY__',policy).replace('__METHODS__',methods)
 for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
     core=root.parent/realm/'src/game'
     if not core.is_dir():core=root.parent/f'mangos-{realm}-behavior/src/game'

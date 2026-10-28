@@ -26,6 +26,7 @@ time_t time(std::nullptr_t) { return now; }
 struct Unit {
  bool alive=true,world=true,combat=false,los=false,moving=true,casting=false;
  float distance=25;
+ Unit* GetObjectGuid(){return this;}
  bool IsAlive(){return alive;} bool IsInWorld(){return world;}
  bool IsInCombat(){return combat;} float GetDistance(Unit*){return distance;}
  bool IsInMap(Unit*){return true;} bool IsNonMeleeSpellCasted(bool){return casting;}
@@ -51,6 +52,7 @@ struct PullStrategy {
  static PullStrategy* Get(PlayerbotAI*){return active;}
  Unit* GetTarget()const{return target;}
  bool HasTarget()const{return target;}
+ bool IsEncounterPreparationAllowed()const{return false;}
  bool HasPullStarted()const{return started>0;}
  bool IsPullPendingToStart()const{return pending;}
  bool HasPullActionIssued()const{return issued;}
@@ -69,6 +71,8 @@ struct PullAction {
 };
 struct PullActionTrigger {PlayerbotAI* ai;Player* bot;bool IsActive();};
 #define SET_AI_VALUE(T,N,V) ai->selected=V
+bool IsRazuviousCrystalPull(PlayerbotAI*,Unit*){return false;}
+bool ExecuteRazuviousCrystalPull(PlayerbotAI*){return false;}
 '''
 code += extract('playerbot/strategy/actions/PullActions.cpp', 'bool PullAction::Execute')
 code += extract('playerbot/strategy/triggers/PullTriggers.cpp', 'bool PullActionTrigger::IsActive')

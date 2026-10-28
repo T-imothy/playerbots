@@ -65,6 +65,7 @@ struct PlayerbotAI{Player*bot;Context context;bool real=false,canMove=true,path=
 bool ValidateEncounterDestination(PlayerbotAI*ai,EncounterPosition&plan){++ai->pathChecks;return ai->path;}
 struct Event{};
 namespace ai {
+ bool NaxxramasEncounterEngaged(Player*,Unit* u){return u&&u->combat;}
  std::vector<encounter::Circle> spacing;
  bool GruulShatterThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&out){out=spacing;return !out.empty();}
  unsigned CurrentBossEscapeSpell(Player*,Unit*b){return b->cast&&b->cast->state==SPELL_STATE_CASTING&&b->cast->m_spellInfo->Id==70123?70123:0;}

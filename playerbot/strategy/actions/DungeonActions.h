@@ -165,13 +165,13 @@ namespace ai
         Unit* GetTarget() override;
         bool isUseful() override;
         Unit* GetThekalTarget();
-        Unit* GetZulGurubTarget();
+        Unit* GetZulGurubTarget(uint32 commandedBoss = 0);
         Unit* GetOperaDuoTarget();
         Unit* GetUlduarObjectiveTarget();
         Unit* GetGluthTarget();
         Unit* GetSummonObjectiveTarget();
         Unit* GetBlackrockDepthsTarget();
-        Unit* GetRaidTotemTarget();
+        Unit* GetRaidTotemTarget(uint32 commandedBoss = 0);
         Unit* GetTwinEmperorTarget();
         Unit* GetIcecrownAddTarget();
     };

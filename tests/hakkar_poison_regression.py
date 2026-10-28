@@ -6,7 +6,9 @@ from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
 value=(root/'playerbot/strategy/values/HakkarPositionValue.cpp').read_text()
 action=(root/'playerbot/strategy/actions/HakkarPoisonAction.cpp').read_text()
+helper=(root/'playerbot/strategy/ZulGurubEncounter.h').read_text().replace('#pragma once','')
 methods='\n'.join(block(value,s) for s in ('bool ai::IsHakkarPoisonSource(', 'EncounterPosition HakkarPositionValue::Calculate(', 'bool ai::HasHakkarPoisonPreparation('))
+methods=helper+'\n'+methods
 methods+='\n'+'\n'.join(block(action,'bool HakkarPoisonAction::'+s+'(') for s in ('GetPlan','isUseful','Execute'))
 code=r'''
 #include <cassert>
@@ -22,7 +24,7 @@ enum class BotState{BOT_STATE_COMBAT};
 enum{UNIT_CREATED_BY_SPELL=1,IDLE_MOTION_TYPE=0};
 struct Unit{unsigned guid=1,entry=14834,map=309,instance=1,phase=1,createdSpell=24319;float x=0,y=0,z=0;
  bool world=true,alive=true,combat=true,charmed=false,player=false;float health=100;Unit*victim=nullptr;std::set<unsigned>auras;
- bool IsPlayer(){return player;}float GetHealthPercent(){return health;}
+ Unit* GetMaster(){return nullptr;}std::set<Unit*> attackers;auto& getAttackers(){return attackers;}bool IsPlayer(){return player;}float GetHealthPercent(){return health;}
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charmed;}
  unsigned GetObjectGuid(){return guid;}unsigned GetEntry(){return entry;}unsigned GetMapId(){return map;}unsigned GetUInt32Value(unsigned){return createdSpell;}
  float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}Unit*GetVictim(){return victim;}
@@ -43,7 +45,7 @@ struct EncounterPosition{bool active=false,exclusive=true;unsigned map=0,instanc
 template<class T>struct Cached{T data;T Get(){return data;}};
 struct Context{Cached<EncounterPosition>position;template<class T>Cached<T>*GetValue(const char*){return &position;}};
 struct PlayerbotAI{Player*bot;Context context;bool real=false,canMove=true,path=true;unsigned paths=0,moves=0,stops=0;
- std::list<ObjectGuid>attackers;std::map<unsigned,Unit*>units;
+ std::list<ObjectGuid>attackers,nearby;std::map<unsigned,Unit*>units;
  Player*GetBot(){return bot;}bool IsRealPlayer(){return real;}bool CanMove(){return canMove;}
  bool HasStrategy(const char*,BotState){return true;}
  Context*GetAiObjectContext(){return &context;}Unit*GetUnit(unsigned g){auto i=units.find(g);return i==units.end()?nullptr:i->second;}
@@ -69,12 +71,13 @@ namespace ai{
 }
 using namespace ai;
 #define AI_VALUE(type,key) ai->attackers
+#define AI_VALUE2(type,key,qualifier) ai->nearby
 #define time(x) clockNow
 __METHODS__
 int main(){
  Player bot,member;bot.guid=10;member.guid=11;member.x=15;Group group;GroupReference memberRef{&member},botRef{&bot,&memberRef};group.first=&botRef;bot.group=member.group=&group;
  Unit boss,cloud;cloud.guid=2;cloud.entry=11357;cloud.x=15;cloud.victim=&member;nativeClouds={&cloud};
- PlayerbotAI ai{&bot},memberAi{&member};bot.ai=&ai;member.ai=&memberAi;ai.attackers={1};ai.units={{1,&boss},{2,&cloud}};
+ PlayerbotAI ai{&bot},memberAi{&member};bot.ai=&ai;member.ai=&memberAi;ai.attackers={2};ai.nearby={1,2};boss.victim=&member;bot.victim=&boss;ai.units={{1,&boss},{2,&cloud}};
  HakkarPositionValue planner{&ai,&bot};HakkarPoisonAction action{&ai,&bot};Event event;
  auto calculate=[&](){ai.context.position.data=planner.Calculate();return ai.context.position.data;};
  auto plan=calculate();assert(plan.active&&plan.destination.x==15&&action.Execute(event)&&ai.moves==1);

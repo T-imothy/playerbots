@@ -1,9 +1,14 @@
 #include "playerbot/playerbot.h"
 #include "ClassicRaidActions.h"
+#include "WrathHorsemenActions.h"
+#include "NaxxramasRoleActions.h"
+#include "NaxxramasControlCommands.h"
+#include "GluthRoleActions.h"
 #include "EncounterSpellPolicy.h"
 #include "ReachTargetActions.h"
 #include "GenericSpellActions.h"
 #include "MovementPathSafety.h"
+#include "playerbot/strategy/NaxxramasNativePolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
@@ -20,10 +25,14 @@ namespace
     bool Ready(PlayerbotAI* ai)
     {
         Player* bot = ai->GetBot();
-#ifndef MANGOSBOT_ZERO
-        // BWL retains its native Classic encounter layout in both later cores.
-        // Do not enable Classic Naxx/Onyxia tactics in their Wrath replacements.
-        if (bot->GetMapId() != 469) return false;
+#if defined(MANGOSBOT_ONE)
+        // These raids retain their Classic encounter contracts in TBC.
+        if (bot->GetMapId() != 249 && bot->GetMapId() != 309 &&
+            bot->GetMapId() != 469 && bot->GetMapId() != 533) return false;
+#elif defined(MANGOSBOT_TWO)
+        // Naxx uses explicit native difficulty/control/Horsemen variants below.
+        // Wrath Onyxia retains its separate level-80 encounter planner.
+        if (bot->GetMapId() != 309 && bot->GetMapId() != 469 && bot->GetMapId() != 533) return false;
 #endif
         return bot->IsInWorld() && bot->IsAlive() && bot->IsInCombat() && !bot->IsBeingTeleported() &&
             !bot->HasCharmer() && !ai->IsRealPlayer() && bot->GetGroup() && classicraid::Map(bot->GetMapId());
@@ -72,6 +81,53 @@ namespace
             if (unit && unit->GetEntry() == entry && Engaged(ai->GetBot(), unit)) return unit;
         }
         return nullptr;
+    }
+    bool NaxxRegular(PlayerbotAI* ai)
+    {
+#ifdef MANGOSBOT_TWO
+        return ai->GetBot()->GetMap()->IsRegularDifficulty();
+#else
+        return true;
+#endif
+    }
+    bool RaidDamageSpell(const SpellEntry* spell)
+    {
+        if (!spell) return false;
+        // Channels can deal their damage through a native tick spell. Inspect
+        // a bounded graph so a damage pause still admits non-damaging CC/taunts.
+        std::vector<const SpellEntry*> pending{spell};
+        std::vector<uint32> visited;
+        for (size_t next = 0; next < pending.size() && next < 16; ++next)
+        {
+            const SpellEntry* current = pending[next];
+            if (!current || std::find(visited.begin(), visited.end(), current->Id) != visited.end()) continue;
+            visited.push_back(current->Id);
+            for (unsigned i = 0; i < MAX_EFFECT_INDEX; ++i)
+            {
+                const auto effect = SpellEffectIndex(i);
+                if (IsSpellEffectDamage(*current, effect)) return true;
+                if ((IsSpellEffectTriggerSpell(current, effect) || IsSpellEffectTriggerSpellByAura(current, effect)) &&
+                    current->EffectTriggerSpell[i] && pending.size() < 16)
+                    pending.push_back(sServerFacade.LookupSpellInfo(current->EffectTriggerSpell[i]));
+            }
+        }
+        return false;
+    }
+    Unit* FaerlinaSacrifice(PlayerbotAI* ai, Unit* boss)
+    {
+        if (!boss || !naxxnative::WorshipperDeathEmbrace(NaxxRegular(ai)) ||
+            !boss->HasAura(naxxnative::FaerlinaFrenzy(NaxxRegular(ai)))) return nullptr;
+        const float radius = NativeEncounterSpellRadius(naxxnative::FaerlinaEmbrace(NaxxRegular(ai)));
+        if (!std::isfinite(radius) || radius <= 1 || radius > 30) return nullptr;
+        Unit* selected = nullptr;
+        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets", "100:1")->Get())
+        {
+            Unit* add = ai->GetUnit(guid);
+            if (!Live(ai->GetBot(), add) || add->GetEntry() != 16506 || !Engaged(ai->GetBot(), add) ||
+                add->GetDistance(boss) >= radius - 1 || PossibleAttackTargetsValue::HasBreakableCC(add, ai->GetBot())) continue;
+            if (!selected || add->GetObjectGuid() < selected->GetObjectGuid()) selected = add;
+        }
+        return selected;
     }
     bool Attackable(PlayerbotAI* ai, Unit* unit)
     {
@@ -237,10 +293,11 @@ namespace
         charm->GetMotionMaster()->MovePoint(28732, x, y, z, FORCED_MOVEMENT_RUN, true);
         return false; // Wait for actual native arrival before spending the worshipper.
     }
-    Unit* ControlledRelief(PlayerbotAI* ai)
+    Unit* ControlledRelief(PlayerbotAI* ai, Unit* boss)
     {
         const SpellEntry* wall = sServerFacade.LookupSpellInfo(29061);
-        if (!wall) return nullptr;
+        const SpellEntry* taunt = sServerFacade.LookupSpellInfo(29060);
+        if (!wall || !taunt || !boss) return nullptr;
         Unit* selected = nullptr;
         for (Player* owner : Members(ai))
         {
@@ -249,6 +306,8 @@ namespace
             if (!student || student->GetEntry() != 16803 || !student->IsInWorld() || !student->IsAlive() ||
                 !owner->IsInMap(student) || !student->HasCharmer(owner->GetObjectGuid()) ||
                 !student->HasSpell(29061) || student->IsNonMeleeSpellCasted(false) ||
+                !student->CanReachWithMeleeAttack(boss) || !student->IsWithinLOSInMap(boss) ||
+                (boss->GetVictim() != student && (!student->HasSpell(29060) || !student->IsSpellReady(*taunt))) ||
                 (!student->HasAura(29061) && !student->IsSpellReady(*wall))) continue;
             if (!selected || student->GetObjectGuid() < selected->GetObjectGuid()) selected = student;
         }
@@ -336,11 +395,18 @@ ClassicRaidPlan ClassicRaidPlanValue::Calculate()
 {
     ClassicRaidPlan plan;
     if (!Ready(ai)) return plan;
+    if (NaxxramasRolePlan(ai, plan)) return plan;
     auto nearby = AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1");
     if (bot->GetMapId() == 533)
         if (auto* instance = dynamic_cast<ScriptedInstance*>(bot->GetMap()->GetInstanceData()))
             if (instance->GetData(8) == IN_PROGRESS)
-                for (uint32 entry : {16062u, 16063u, 16064u, 16065u})
+                for (uint32 entry : {
+#ifdef MANGOSBOT_TWO
+                    30549u,
+#else
+                    16062u,
+#endif
+                    16063u, 16064u, 16065u})
                     if (Unit* horseman = instance->GetSingleCreatureFromStorage(entry, true))
                         if (Engaged(bot, horseman) && std::find(nearby.begin(), nearby.end(), horseman->GetObjectGuid()) == nearby.end())
                             nearby.push_back(horseman->GetObjectGuid());
@@ -376,6 +442,14 @@ ClassicRaidPlan ClassicRaidPlanValue::Calculate()
             if (!ai->IsHeal(bot) && Attackable(ai, boss)) plan.target = boss->GetObjectGuid();
         }
     }
+    // Wrath's stationary rear casters and Rivendare need different assignments.
+#ifdef MANGOSBOT_TWO
+    if (!horsemen.empty())
+    {
+        BuildWrathHorsemenPlan(ai, horsemen, previousHorseman, plan);
+        return plan;
+    }
+#endif
     // Classic has four melee Horsemen, including Mograine. Their actual marks
     // select relief; no Wrath back-corner ranged tank or invented immunity.
     if (!horsemen.empty())
@@ -517,7 +591,6 @@ chosen:
     }
     if (entry == 15932)
     {
-        const auto tanks = Members(ai, true);
         if (boss->GetVictim() == bot && !SpecialPosition(ai))
         {
             // The 40-player layout separates the boss from the chow circuit.
@@ -531,7 +604,7 @@ chosen:
             if (ValidateEncounterDestination(ai, p)) plan.position = p;
             return plan;
         }
-        if (tanks.size() >= 3 && tanks[2] == bot)
+        if (GluthKiter(ai, boss) == bot)
         {
             Unit* chow = nullptr;
             bool pursued = false;
@@ -606,6 +679,8 @@ chosen:
         }
         if (selected) plan.target = selected->GetObjectGuid();
     }
+    if (entry == 15953 && !ai->IsHeal(bot) && boss->GetVictim() != bot)
+        if (Unit* sacrifice = FaerlinaSacrifice(ai, boss)) plan.target = sacrifice->GetObjectGuid();
     if ((entry == 15953 || entry == 16061) && !ai->IsTank(bot) && !ai->IsHeal(bot) &&
         plan.target.IsEmpty() && Attackable(ai, boss)) plan.target = boss->GetObjectGuid();
     Unit* target = ai->GetUnit(plan.target);
@@ -651,7 +726,8 @@ chosen:
             }
         }
     }
-    if (entry == 16061 && bot->getClass() == CLASS_PRIEST) return plan; // Controller must hold its channel.
+    if (entry == 16061 && !naxxnative::ObedienceCrystal(NaxxRegular(ai)) &&
+        bot->getClass() == CLASS_PRIEST) return plan; // Priest controller must hold its native channel.
     if (entry == 15989 && boss->HasAura(18430)) return plan;
     if (entry == 15928 || entry == 16060) return plan; // Phase-specific platforms/gate retain native travel.
     const bool ranged = ai->IsRanged(bot) || ai->IsHeal(bot);
@@ -718,13 +794,13 @@ bool ClassicRaidPositionAction::GetPlan(PlayerbotAI* ai, ClassicRaidPlan& plan)
     return true;
 }
 
+bool ai::ClassicRaidDamageSpell(const SpellEntry* spell) { return RaidDamageSpell(spell); }
+
 bool ai::ClassicRaidOffenseAllowed(PlayerbotAI* ai, const SpellEntry* spell, Unit* target)
 {
     if (!Ready(ai) || ai->GetBot()->GetMapId() != 533) return true;
     Player* bot = ai->GetBot();
-    bool damage = !spell; // nullptr is native melee/pet attack admission.
-    if (spell) for (unsigned i = 0; i < MAX_EFFECT_INDEX; ++i)
-        damage |= IsSpellEffectDamage(*spell, SpellEffectIndex(i));
+    const bool damage = !spell || RaidDamageSpell(spell); // nullptr is native melee/pet attack admission.
     const bool cleaveBuff = spell && (spell->Id == 13877 || spell->Id == 12328);
     if (!damage && !cleaveBuff) return true; // heals, CC and native taunts remain admitted normally.
     const bool area = spell && (IsAreaOfEffectSpell(spell) || spell->MaxAffectedTargets > 1 || cleaveBuff);
@@ -749,7 +825,9 @@ bool ai::ClassicRaidOffenseAllowed(PlayerbotAI* ai, const SpellEntry* spell, Uni
         if (!Live(bot, reserved) || (reserved->GetEntry() != 16506 && reserved->GetEntry() != 16803)) continue;
         Unit* boss = FindBoss(ai, reserved->GetEntry() == 16506 ? 15953 : 16061);
         if (!boss || reserved->GetDistance(boss) > 80) continue;
-        if (target == reserved && !ai->IsTank(bot)) return false;
+        if (target == reserved && reserved->GetEntry() == 16506 &&
+            FaerlinaSacrifice(ai, boss) == reserved && !area) continue;
+        if (target == reserved && (!ai->IsTank(bot) || reserved->GetHealthPercent() <= 50)) return false;
         // All classes' damaging AoE/proc-cleave admission reserves the actual
         // Classic control actors. No disease/curse removal or taunt is blocked.
         if (area) return false;
@@ -805,6 +883,7 @@ bool ClassicRaidTargetAction::isUseful()
 bool ClassicRaidSupportAction::Select(std::string& spell, Unit*& target)
 {
     if (!Ready(ai) || bot->GetCharm()) return false;
+    if (NaxxramasRoleSupport(ai, spell, target)) return true;
     auto cast = [&](const char* name, Unit* unit) {
         if (!unit || !ai->CanCastSpell(name, unit, 0)) return false;
         spell = name; target = unit; return true;
@@ -831,7 +910,13 @@ bool ClassicRaidSupportAction::Select(std::string& spell, Unit*& target)
         FindBoss(ai, 11583) && cast("ice block", bot)) return true;
     if (Unit* gluth = FindBoss(ai, 15932))
     {
-        if (gluth->HasAura(28371) && cast("tranquilizing shot", gluth)) return true;
+        if (GluthTankRelief(ai, gluth))
+        {
+            for (const char* name : {"taunt", "growl", "dark command", "hand of reckoning"})
+                if (cast(name, gluth)) return true;
+            if (Unit* victim = gluth->GetVictim()) if (cast("righteous defense", victim)) return true;
+        }
+        if ((gluth->HasAura(28371) || gluth->HasAura(54427)) && cast("tranquilizing shot", gluth)) return true;
         for (ObjectGuid guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
         {
             Unit* chow = ai->GetUnit(guid);
@@ -851,8 +936,9 @@ bool ClassicRaidSupportAction::Select(std::string& spell, Unit*& target)
         {
             const Spell* active = boss->GetCurrentSpell(slot);
             if (!active || !active->m_spellInfo || active->getState() == SPELL_STATE_FINISHED ||
-                (active->m_spellInfo->Id != 28478 && active->m_spellInfo->Id != 28479)) continue;
-            for (const char* name : {"kick", "pummel", "shield bash", "counterspell", "earth shock"})
+                (active->m_spellInfo->Id != 28478 && active->m_spellInfo->Id != 28479 &&
+                    active->m_spellInfo->Id != 55802)) continue;
+            for (const char* name : {"kick", "pummel", "shield bash", "counterspell", "wind shear", "mind freeze", "earth shock"})
                 if (cast(name, boss)) return true;
         }
     auto members = Members(ai);
@@ -860,7 +946,7 @@ bool ClassicRaidSupportAction::Select(std::string& spell, Unit*& target)
     // Actual native dispel types; injection, polarity, Hakkar poison and other
     // deliberate encounter auras remain governed by existing dispel policy.
     for (Player* member : members)
-        for (uint32 id : {29213u, 28776u, 28542u, 28167u})
+        for (uint32 id : {29213u, 28776u, 54121u, 28542u, 28167u})
         {
             const SpellEntry* aura = member->HasAura(id) ? sServerFacade.LookupSpellInfo(id) : nullptr;
             if (!aura) continue;
@@ -871,9 +957,17 @@ bool ClassicRaidSupportAction::Select(std::string& spell, Unit*& target)
             if (aura->Dispel == DISPEL_MAGIC) { spells[0] = "dispel magic"; spells[1] = "cleanse"; }
             for (const char* name : spells) if (name && cast(name, member)) return true;
         }
+#ifdef MANGOSBOT_TWO
+    if (Unit* relief = WrathHorsemanReliefTarget(ai))
+        for (const char* name : {"taunt", "growl", "dark command", "hand of reckoning"})
+            if (cast(name, relief)) return true;
+#endif
     for (ObjectGuid guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
     {
         Unit* boss = ai->GetUnit(guid);
+#ifdef MANGOSBOT_TWO
+        if (bot->GetMapId() == 533) continue; // Wrath's native front-pair relief is handled above.
+#endif
         if (!Engaged(bot, boss) || !classicraid::HorsemanMark(boss->GetEntry()) || !ai->IsTank(bot)) continue;
         Unit* victim = boss->GetVictim();
         if (!victim || !victim->IsPlayer() || !Member(bot, static_cast<Player*>(victim)) || victim == bot || Stacks(bot, boss) != 0) continue;
@@ -915,12 +1009,16 @@ bool ClassicRaidSupportAction::Execute(Event& event)
 
 Unit* ClassicRaidControlAction::SelectUnderstudy()
 {
-    if (!Ready(ai) || bot->GetMapId() != 533 || bot->getClass() != CLASS_PRIEST || bot->GetCharm() || !bot->HasSpell(10912)) return nullptr;
+    if (!Ready(ai) || bot->GetMapId() != 533 || bot->GetCharm()) return nullptr;
+    if (!NaxxramasControlAllowed(ai)) return nullptr;
     Unit* boss = FindBoss(ai, 16061);
     if (!boss) boss = FindBoss(ai, 15953);
     if (!boss) return nullptr;
     const bool faerlina = boss->GetEntry() == 15953;
-    if (faerlina && !boss->HasAura(28798)) return nullptr;
+    const bool crystal = !faerlina && naxxnative::ObedienceCrystal(NaxxRegular(ai));
+    if (faerlina && (naxxnative::WorshipperDeathEmbrace(NaxxRegular(ai)) ||
+        !boss->HasAura(naxxnative::FaerlinaFrenzy(NaxxRegular(ai))))) return nullptr;
+    if (!crystal && (bot->getClass() != CLASS_PRIEST || !bot->HasSpell(naxxnative::MindControl()))) return nullptr;
     std::vector<Unit*> students;
     for (ObjectGuid guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
     {
@@ -931,22 +1029,50 @@ Unit* ClassicRaidControlAction::SelectUnderstudy()
     std::sort(students.begin(), students.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
     std::vector<Player*> priests;
     unsigned controlled = 0;
-    const SpellEntry* mindControl = sServerFacade.LookupSpellInfo(10912);
+    const SpellEntry* mindControl = sServerFacade.LookupSpellInfo(naxxnative::MindControl());
     for (Player* member : Members(ai))
     {
         Unit* charm = member->GetCharm();
-        if (charm && charm->GetEntry() == (faerlina ? 16506 : 16803) && charm->IsAlive()) { ++controlled; continue; }
-        if (mindControl && member->getClass() == CLASS_PRIEST && member->HasSpell(10912) && member->IsSpellReady(*mindControl) &&
-            member->GetPower(POWER_MANA) >= Spell::CalculatePowerCost(mindControl, member) &&
-            !member->GetCharm() && !member->hasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL) &&
-            member->GetPlayerbotAI() && !member->GetPlayerbotAI()->IsRealPlayer() &&
-            !member->IsNonMeleeSpellCasted(false)) priests.push_back(member);
+        if (charm && charm->GetEntry() == (faerlina ? 16506 : 16803) && charm->IsInWorld() &&
+            charm->IsAlive() && member->IsInMap(charm) &&
+            charm->HasCharmer(member->GetObjectGuid())) { ++controlled; continue; }
+        if (member->GetCharm() || member->hasUnitState(UNIT_STAT_CAN_NOT_REACT_OR_LOST_CONTROL)) continue;
+        // Count a real in-flight control cast as a reservation, so later bot
+        // updates do not nominate additional priests for the same free actor.
+        bool claiming = false;
+        for (auto slot : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL})
+            if (const Spell* cast = member->GetCurrentSpell(slot))
+                if (cast->m_spellInfo && cast->m_spellInfo->Id == naxxnative::MindControl() &&
+                    cast->getState() != SPELL_STATE_FINISHED)
+                    if (Unit* target = cast->m_targets.getUnitTarget())
+                        if (target->GetEntry() == (faerlina ? 16506 : 16803) && Live(bot, target))
+                        {
+                            ++controlled; claiming = true;
+                            students.erase(std::remove(students.begin(), students.end(), target), students.end());
+                        }
+        if (claiming || member->IsNonMeleeSpellCasted(false) ||
+            !member->GetPlayerbotAI() || member->GetPlayerbotAI()->IsRealPlayer()) continue;
+        if (crystal ? ai->IsTank(member) : (mindControl && member->getClass() == CLASS_PRIEST &&
+            member->HasSpell(naxxnative::MindControl()) && member->IsSpellReady(*mindControl) &&
+            member->GetPower(POWER_MANA) >= Spell::CalculatePowerCost(mindControl, member))) priests.push_back(member);
     }
     const unsigned required = faerlina ? 1 : 2;
     if (controlled >= required || priests.empty()) return nullptr;
     const auto self = std::find(priests.begin(), priests.end(), bot);
     const size_t slot = self == priests.end() ? priests.size() : size_t(self - priests.begin());
     if (slot >= required - controlled || slot >= students.size()) return nullptr;
+    if (crystal)
+    {
+        std::vector<Unit*> crystals;
+        for (ObjectGuid guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
+        {
+            Unit* unit = ai->GetUnit(guid);
+            if (Live(bot, unit) && unit->GetEntry() == 29912 && !unit->IsInCombat() &&
+                !unit->IsNonMeleeSpellCasted(true) && unit->GetDistance(boss) < 80) crystals.push_back(unit);
+        }
+        std::sort(crystals.begin(), crystals.end(), [](Unit* a, Unit* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+        return slot < crystals.size() ? crystals[slot] : nullptr;
+    }
     return students[slot];
 }
 bool ClassicRaidControlAction::isUseful() { return SelectUnderstudy() != nullptr; }
@@ -954,6 +1080,24 @@ bool ClassicRaidControlAction::Execute(Event& event)
 {
     Unit* student = SelectUnderstudy();
     if (!student || bot->IsNonMeleeSpellCasted(false)) return false;
+#ifdef MANGOSBOT_TWO
+    if (student->GetEntry() == 29912)
+    {
+        if (!bot->IsWithinDistInMap(student, INTERACTION_DISTANCE) || !bot->IsWithinLOSInMap(student))
+            return MoveNear(student, INTERACTION_DISTANCE - 1);
+        const uint32 now = WorldTimer::getMSTime();
+        if (static_cast<int32>(nextControl - now) > 0) return false;
+        nextControl = now + 1000;
+        WorldPacket packet(CMSG_SPELLCLICK);
+        packet << student->GetObjectGuid();
+        bot->GetSession()->HandleSpellClick(packet);
+        SetDuration(300);
+        // Native spellclick may reject or find no free student; do not report
+        // ownership or suppress the class rotation until the charm is real.
+        return bot->GetCharm() && bot->GetCharm()->GetEntry() == 16803 &&
+            bot->GetCharm()->HasCharmer(bot->GetObjectGuid());
+    }
+#endif
     if (ai->CanCastSpell("mind control", student, 0))
     {
         uint32 duration = sPlayerbotAIConfig.globalCoolDown;
@@ -964,11 +1108,16 @@ bool ClassicRaidControlAction::Execute(Event& event)
 }
 bool ClassicRaidControlAction::UpdateControl()
 {
-#ifdef MANGOSBOT_ZERO
-    if (!Ready(ai) || bot->GetMapId() != 533 || bot->getClass() != CLASS_PRIEST) return false;
     Unit* charm = bot->GetCharm();
     if (!charm || !charm->IsInWorld() || !charm->IsAlive() || !bot->IsInMap(charm) ||
-        !charm->HasCharmer(bot->GetObjectGuid()) || (charm->GetEntry() != 16803 && charm->GetEntry() != 16506)) return false;
+        !charm->HasCharmer(bot->GetObjectGuid()))
+    {
+        configuredCharm.Clear(); nextControl = 0;
+        return false;
+    }
+    if (!Ready(ai) || bot->GetMapId() != 533 ||
+        (bot->getClass() != CLASS_PRIEST && !naxxnative::ObedienceCrystal(NaxxRegular(ai)))) return false;
+    if (charm->GetEntry() != 16803 && charm->GetEntry() != 16506) return false;
     Unit* boss = FindBoss(ai, charm->GetEntry() == 16803 ? 16061 : 15953);
     if (!boss) return false; // Native channel/cleanup completes normally after death/reset.
     if (configuredCharm != charm->GetObjectGuid())
@@ -977,7 +1126,7 @@ bool ClassicRaidControlAction::UpdateControl()
         // Native charm initialization enables autocastable spells. Disable
         // only our managed abilities through the ordinary ownership-checked
         // packet, so PetAI cannot race the explicit raid timing/controller.
-        for (uint32 id : {29061u, 29060u, 28732u})
+        for (uint32 id : {29061u, 29060u, naxxnative::FaerlinaEmbrace(NaxxRegular(ai))})
             if (charm->HasSpell(id) && IsAutocastable(id))
             {
                 WorldPacket packet(CMSG_PET_SPELL_AUTOCAST);
@@ -990,10 +1139,13 @@ bool ClassicRaidControlAction::UpdateControl()
     nextControl = now + 300;
     if (charm->GetEntry() == 16506)
     {
-        // Classic requires the possessed worshipper's native Widow's Embrace;
-        // killing an uncontrolled worshipper is the Wrath tactic, not Classic.
-        if (boss->HasAura(28798) && ControlledInRadius(ai, charm, boss, NativeEncounterSpellRadius(28732)))
-            SubmitControlledSpell(bot, charm, 28732, nullptr);
+        // Classic/TBC and Wrath25 use the actual possessed worshipper ability.
+        // Wrath10 instead reserves one nearby worshipper for death sacrifice.
+        const uint32 embrace = naxxnative::FaerlinaEmbrace(NaxxRegular(ai));
+        if (!naxxnative::WorshipperDeathEmbrace(NaxxRegular(ai)) &&
+            boss->HasAura(naxxnative::FaerlinaFrenzy(NaxxRegular(ai))) &&
+            ControlledInRadius(ai, charm, boss, NativeEncounterSpellRadius(embrace)))
+            SubmitControlledSpell(bot, charm, embrace, nullptr);
         return true;
     }
     // Two native controlled students alternate on real Shield Wall expiry.
@@ -1007,14 +1159,11 @@ bool ClassicRaidControlAction::UpdateControl()
         attack << charm->GetObjectGuid() << uint32((ACT_COMMAND << 24) | COMMAND_ATTACK) << boss->GetObjectGuid();
         bot->GetSession()->HandlePetAction(attack);
     }
-    const bool elected = relief && ControlledRelief(ai) == charm;
+    const bool elected = relief && ControlledRelief(ai, boss) == charm;
     if (elected && (!charm->CanReachWithMeleeAttack(boss) || !charm->IsWithinLOSInMap(boss))) return true;
     if (elected && !charm->HasAura(29061) && SubmitControlledSpell(bot, charm, 29061, charm)) return true;
     if (elected && victim != charm && charm->HasAura(29061) && SubmitControlledSpell(bot, charm, 29060, boss)) return true;
     return true;
-#else
-    return false;
-#endif
 }
 
 bool ClassicRaidCloakAction::isUseful()
@@ -1046,11 +1195,14 @@ bool ClassicRaidPauseAction::isUseful()
     if (!Ready(ai)) return false;
     const bool hold = AI_VALUE(ClassicRaidPlan, "classic raid plan").holdDamage;
     if (hold && bot->GetVictim()) return true;
+    if (Pet* pet = bot->GetPet())
+        if (pet->GetVictim() && (hold || !ClassicRaidOffenseAllowed(ai, nullptr, pet->GetVictim()))) return true;
     if (bot->GetVictim() && !ClassicRaidOffenseAllowed(ai, nullptr, bot->GetVictim())) return true;
     for (auto slot : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL, CURRENT_AUTOREPEAT_SPELL})
         if (Spell* cast = bot->GetCurrentSpell(slot))
-            if (cast->m_spellInfo && ((!ClassicRaidOffenseAllowed(ai, cast->m_spellInfo, cast->m_targets.getUnitTarget())) ||
-                (hold && !IsPositiveSpell(cast->m_spellInfo, bot, cast->m_targets.getUnitTarget())))) return true;
+            if (cast->getState() != SPELL_STATE_FINISHED && cast->m_spellInfo && ((!ClassicRaidOffenseAllowed(ai, cast->m_spellInfo, cast->m_targets.getUnitTarget())) ||
+                (hold && RaidDamageSpell(cast->m_spellInfo) &&
+                    !IsPositiveSpell(cast->m_spellInfo, bot, cast->m_targets.getUnitTarget())))) return true;
     return false;
 }
 bool ClassicRaidPauseAction::Execute(Event& event)
@@ -1060,10 +1212,12 @@ bool ClassicRaidPauseAction::Execute(Event& event)
     if (hold || (bot->GetVictim() && !ClassicRaidOffenseAllowed(ai, nullptr, bot->GetVictim()))) bot->AttackStop();
     for (auto slot : {CURRENT_GENERIC_SPELL, CURRENT_CHANNELED_SPELL, CURRENT_AUTOREPEAT_SPELL})
         if (Spell* cast = bot->GetCurrentSpell(slot))
-            if (cast->m_spellInfo && ((!ClassicRaidOffenseAllowed(ai, cast->m_spellInfo, cast->m_targets.getUnitTarget())) ||
-                (hold && !IsPositiveSpell(cast->m_spellInfo, bot, cast->m_targets.getUnitTarget()))))
+            if (cast->getState() != SPELL_STATE_FINISHED && cast->m_spellInfo && ((!ClassicRaidOffenseAllowed(ai, cast->m_spellInfo, cast->m_targets.getUnitTarget())) ||
+                (hold && RaidDamageSpell(cast->m_spellInfo) &&
+                    !IsPositiveSpell(cast->m_spellInfo, bot, cast->m_targets.getUnitTarget()))))
                 bot->InterruptSpell(slot);
-    if (Pet* pet = hold ? bot->GetPet() : nullptr)
+    Pet* pet = bot->GetPet();
+    if (pet && (hold || (pet->GetVictim() && !ClassicRaidOffenseAllowed(ai, nullptr, pet->GetVictim()))))
     {
         WorldPacket packet(CMSG_PET_ACTION);
         packet << pet->GetObjectGuid() << uint32((ACT_COMMAND << 24) | COMMAND_FOLLOW) << ObjectGuid();
@@ -1074,6 +1228,13 @@ bool ClassicRaidPauseAction::Execute(Event& event)
 
 bool ClassicRaidTrigger::IsActive()
 {
+#ifndef MANGOSBOT_ZERO
+    // The BWL strategy previously registered only these common helpers in
+    // later eras. Keep that behavior when registering them centrally.
+    if (bot->GetMapId() == 469 && getName() != "classic raid position" &&
+        getName() != "classic raid support" && getName() != "classic raid emergency" &&
+        getName() != "classic raid cloak") return false;
+#endif
     if (getName() == "classic raid cloak") { ClassicRaidCloakAction action(ai); return action.isUseful(); }
     if (!Ready(ai)) return false;
     if (getName() == "classic raid egg hazard")
@@ -1092,6 +1253,7 @@ float PreserveClassicRaidPlan::GetValue(Action* action)
 {
     if (!action || !Ready(ai) || dynamic_cast<ClassicRaidPositionAction*>(action) ||
         dynamic_cast<ClassicRaidControlAction*>(action) || dynamic_cast<MoveAwayFromHazard*>(action)) return 1.0f;
+    if (NaxxramasRoleMultiplier(ai, action) == 0.0f) return 0.0f;
     const std::string& name = action->getName();
     if (const char* duty = ResistanceDuty(ai))
     {
@@ -1108,7 +1270,7 @@ float PreserveClassicRaidPlan::GetValue(Action* action)
         if (dynamic_cast<AttackAction*>(action)) return 0.0f;
         if (CastSpellAction* cast = dynamic_cast<CastSpellAction*>(action))
             if (const SpellEntry* spell = sServerFacade.LookupSpellInfo(cast->GetDecisionSpellId()))
-                if (!IsPositiveSpell(spell, ai->GetBot(), action->GetTarget())) return 0.0f;
+                if (RaidDamageSpell(spell) && !IsPositiveSpell(spell, ai->GetBot(), action->GetTarget())) return 0.0f;
     }
     if (!assigned.target.IsEmpty() && (name == "dps assist" || name == "tank assist") &&
         action->GetTarget() && action->GetTarget()->GetObjectGuid() != assigned.target) return 0.0f;

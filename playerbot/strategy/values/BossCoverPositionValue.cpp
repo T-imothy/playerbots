@@ -120,7 +120,7 @@ EncounterPosition BossCoverPositionValue::Calculate()
         return plan;
     }
     Unit* source = nullptr;
-    std::list<ObjectGuid> sources = bot->GetMapId() == 469 ?
+    std::list<ObjectGuid> sources = (bot->GetMapId() == 469 || bot->GetMapId() == 533) ?
         AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1") : AI_VALUE(std::list<ObjectGuid>, "attackers");
 #ifdef MANGOSBOT_TWO
     if (bot->GetMapId() == 631 && bot->IsAlive() && bot->IsInCombat())
@@ -136,6 +136,7 @@ EncounterPosition BossCoverPositionValue::Calculate()
     for (const auto& guid : sources)
     {
         Unit* boss = ai->GetUnit(guid);
+        if (bot->GetMapId() == 533 && !NaxxramasEncounterEngaged(bot, boss)) continue;
         const uint32 mechanic = BossCoverMechanic(ai, boss, boss && boss->GetObjectGuid() == shelterBoss);
         if (!mechanic) continue;
         if (source && source != boss) { shelterBoss.Clear(); return EncounterPosition{}; }

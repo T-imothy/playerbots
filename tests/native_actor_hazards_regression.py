@@ -12,19 +12,60 @@ fixture=fixture.replace('float panicRadius=8;float NativeEncounterSpellRadius(un
 fixture=fixture.replace('Unit*GetVictim(){return victim;}', 'unsigned created=0;unsigned GetUInt32Value(unsigned){return created;}Unit*GetVictim(){return victim;}')
 fixture=fixture.replace('void Add(Player*p){', 'bool IsMember(ObjectGuid g){for(auto&r:refs)if(r.p->guid==g)return true;return false;}void Add(Player*p){')
 fixture=fixture.replace('__METHODS__','')
+fixture=fixture.replace('bool IsEmpty()const{return !id;}', 'bool IsEmpty()const{return !id;}bool IsPlayer()const{return id>0&&id<10;}')
+fixture=fixture.replace('float GetCollisionHeight(){return 2;}', 'float GetCollisionHeight(){return 2;}float speed=2,body=1;float GetSpeed(unsigned){return speed;}float GetObjectBoundingRadius(){return body;}')
+fixture='enum{MOVE_RUN=1};\n'+fixture
 fixture=fixture.replace('WorldPosition(Unit*u):', 'WorldPosition(unsigned,float a,float b,float c):x(a),y(b),z(c){}WorldPosition(Unit*u):')
-fixture+='\nenum{UNIT_CREATED_BY_SPELL=777};\nnamespace ai{void AppendNativeEncounterActorHazards(PlayerbotAI*,std::list<HazardPosition>&);}\n'
+fixture+='\nenum{UNIT_CREATED_BY_SPELL=777};\nnamespace ai{bool NaxxramasEncounterEngaged(Player* bot,Unit* u){return u&&u->world&&u->alive&&u->combat&&!u->charm&&bot->IsInMap(u);}void AppendNativeEncounterActorHazards(PlayerbotAI*,std::list<HazardPosition>&);}\n'
+fixture+='\nnamespace ai{void AppendZulGurubActorHazards(PlayerbotAI*,std::list<HazardPosition>&){}}\n'
 fixture+=block((root/'playerbot/strategy/values/NativeEncounterActorHazards.cpp').read_text(),'void ai::AppendNativeEncounterActorHazards(')
 fixture+=r'''
 int main(){
-#ifdef MANGOSBOT_ZERO
+ {Player bot,owner;bot.map=owner.map=533;bot.combat=false;owner.guid=2;owner.entry=16082;PlayerbotAI ai(&bot);
+  Creature poison;poison.guid=80;poison.map=533;poison.entry=16027;poison.spawner=owner.guid;poison.combat=false;
+  units={&owner,&poison};radii[28433]=5;std::list<HazardPosition>h;
+  auto collect=[&](){h.clear();AppendNativeEncounterActorHazards(&ai,h);};
+  collect();assert(h.size()==1&&h.front().second==8); // native blast/collision +1sec actor travel
+  poison.x=22;collect();assert(h.front().first.x==22);poison.speed=0;collect();assert(h.front().second==6);poison.speed=2;
+  poison.alive=false;collect();assert(h.empty());poison.alive=true;
+  poison.instance=2;collect();assert(h.empty());poison.instance=1;
+  poison.charm=true;collect();assert(h.empty());poison.charm=false;
+  poison.z=20;collect();assert(h.empty());poison.z=0;
+  poison.spawner=99;collect();assert(h.empty());poison.spawner=owner.guid;
+#ifdef MANGOSBOT_TWO
+  units={&poison};collect();assert(h.size()==1);units={&owner,&poison}; // summoned blob survives owner departure
+#else
+  owner.entry=1;collect();assert(h.empty());owner.entry=16082;
+#endif
+  radii[28433]=0;collect();assert(h.empty());radii[28433]=5;
+  bot.teleport=true;collect();assert(h.empty());bot.teleport=false;
+  ai.dungeon=false;collect();assert(h.empty());ai.dungeon=true;
+  units.clear();collect();assert(h.empty());}
+ {Player bot;bot.map=533;PlayerbotAI ai(&bot);Group group;group.Add(&bot);
+  Creature boss,fissure;boss.guid=10;boss.entry=15990;boss.map=533;
+  fissure.guid=11;fissure.entry=16129;fissure.map=533;fissure.combat=false;
+  fissure.spawner=boss.guid;fissure.created=27810;units={&boss,&fissure};radii[27812]=5;
+  std::list<HazardPosition> h;auto collect=[&](){h.clear();AppendNativeEncounterActorHazards(&ai,h);};
+  collect();assert(h.size()==1&&h.front().second==6); // no aura/cast needed during native warning
+  fissure.created=1;collect();assert(h.empty());fissure.created=27810;
+  fissure.alive=false;collect();assert(h.empty());fissure.alive=true;
+  fissure.world=false;collect();assert(h.empty());fissure.world=true;
+  fissure.instance=2;collect();assert(h.empty());fissure.instance=1;
+  fissure.charm=true;collect();assert(h.empty());fissure.charm=false;
+  boss.combat=false;collect();assert(h.empty());boss.combat=true;
+  boss.entry=1;collect();assert(h.empty());boss.entry=15990;
+  fissure.spawner=42;collect();assert(h.empty());fissure.spawner=boss.guid;
+  radii[27812]=0;collect();assert(h.empty());radii[27812]=5;
+  bot.teleport=true;collect();assert(h.empty());bot.teleport=false;
+  bot.combat=false;collect();assert(h.empty());bot.combat=true;
+  ai.dungeon=false;collect();assert(h.empty());ai.dungeon=true;
+  units.clear();collect();assert(h.empty());}
  {Player bot;bot.map=249;PlayerbotAI ai(&bot);Group group;group.Add(&bot);
   std::list<HazardPosition> h;AppendNativeEncounterActorHazards(&ai,h);assert(h.size()==2);
   bot.alive=false;h.clear();AppendNativeEncounterActorHazards(&ai,h);assert(h.empty());bot.alive=true;
   bot.combat=false;AppendNativeEncounterActorHazards(&ai,h);assert(h.empty());bot.combat=true;
   ai.dungeon=false;AppendNativeEncounterActorHazards(&ai,h);assert(h.empty());ai.dungeon=true;
   bot.map=409;AppendNativeEncounterActorHazards(&ai,h);assert(h.empty());}
-#endif
  struct Row{unsigned map,boss,actor,aura,payload,ownerSpell;float padding;};
  const Row rows[]={
   {534,17968,18095,31945,31943,0,2},{546,17770,17990,31690,34168,31692,1},

@@ -48,6 +48,7 @@ float BossEscapeDistance(Player*,Unit*,unsigned){return 14;}
 namespace encounter {struct Circle {Point center;float radius;};}
 std::list<HazardPosition> ground;
 void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>& out){out.insert(out.end(),ground.begin(),ground.end());}
+void AppendBlackwingGroundHazards(PlayerbotAI*,std::list<HazardPosition>&){}
 std::vector<encounter::Circle> whirlwinds;
 bool AQWhirlwindThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>& out){out=whirlwinds;return !out.empty();}
 bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&,bool requireWalkingPath=true);

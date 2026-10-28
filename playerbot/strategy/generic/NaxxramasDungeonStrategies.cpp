@@ -2,11 +2,14 @@
 #include "playerbot/playerbot.h"
 #include "NaxxramasDungeonStrategies.h"
 #include "DungeonMultipliers.h"
+#include "playerbot/strategy/actions/NaxxramasPreparationActions.h"
 
 using namespace ai;
 
 void NaxxramasDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("prepare gothik sides", NextAction::array(0, new NextAction("prepare gothik sides", ACTION_MOVE + 10), NULL)));
+    triggers.push_back(new TriggerNode("razuvious preparation", NextAction::array(0, new NextAction("razuvious preparation", ACTION_MOVE + 10), NULL)));
     triggers.push_back(new TriggerNode("naxxramas safe position",
         NextAction::array(0, new NextAction("naxxramas safe position", ACTION_EMERGENCY + 2), NULL)));
 	triggers.push_back(new TriggerNode(
@@ -16,6 +19,9 @@ void NaxxramasDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 
 void NaxxramasDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("hostile ground damage", NextAction::array(0, new NextAction("move away from hazard", ACTION_EMERGENCY + 2), NULL)));
+    triggers.push_back(new TriggerNode("prepare gothik sides", NextAction::array(0, new NextAction("prepare gothik sides", ACTION_MOVE + 10), NULL)));
+    triggers.push_back(new TriggerNode("razuvious preparation", NextAction::array(0, new NextAction("razuvious preparation", ACTION_MOVE + 10), NULL)));
     triggers.push_back(new TriggerNode("naxxramas safe position",
         NextAction::array(0, new NextAction("naxxramas safe position", ACTION_EMERGENCY + 2), NULL)));
 }
@@ -33,11 +39,13 @@ void NaxxramasDungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& m
 
 void NaxxramasDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveNaxxramasPreparation(ai));
     multipliers.push_back(new PreserveNaxxramasPositionMultiplier(ai));
 }
 
 void NaxxramasDungeonStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveNaxxramasPreparation(ai));
     multipliers.push_back(new PreserveNaxxramasPositionMultiplier(ai));
 }
 
