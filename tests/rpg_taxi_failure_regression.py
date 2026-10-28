@@ -15,10 +15,11 @@ stubs = r'''
 #include <initializer_list>
 using uint32 = uint32_t;
 constexpr unsigned UNIT_NPC_FLAG_FLIGHTMASTER=1;
+constexpr unsigned UNIT_FIELD_FLAGS=1,UNIT_FLAG_CLIENT_CONTROL_LOST=2;
 struct Event{}; struct Creature{};
 struct GuidPosition {float getX(){return 0;} float getY(){return 0;} float getZ(){return 0;} unsigned getMapId(){return 0;}};
 struct TaxiPathEntry {unsigned from=1,to=2;};
-struct TaxiNodesEntry {const char* name[1]={"node"};};
+struct TaxiNodesEntry {const char* name[1]={"node"};unsigned map_id=0;float x=0,y=0,z=0;};
 struct Paths {bool empty=false; TaxiPathEntry entry; unsigned GetNumRows(){return empty?0:1;} TaxiPathEntry* LookupEntry(unsigned){return &entry;}} sTaxiPathStore;
 struct Nodes {bool missing=false;TaxiNodesEntry entry;TaxiNodesEntry* LookupEntry(unsigned){return missing?nullptr:&entry;}} sTaxiNodesStore;
 struct ObjMgr {unsigned GetNearestTaxiNode(float,float,float,unsigned,unsigned){return 1;}} sObjectMgr;
@@ -30,6 +31,8 @@ struct Bot {
  unsigned GetMoney(){return money;} void SetMoney(unsigned n){money=n;}
  unsigned GetTeam(){return 0;} bool isTaxiCheater(){return false;}
  const char* GetName(){return "bot";} unsigned GetGUIDLow(){return 1;}
+ unsigned GetMapId(){return 0;}float GetPositionX(){return 0;}float GetPositionY(){return 0;}float GetPositionZ(){return 0;}
+ bool IsInCombat(){return false;}bool IsNonMeleeSpellCasted(bool){return false;}unsigned GetMountID(){return 0;}bool HasFlag(unsigned,unsigned){return false;}
  Creature* GetNPCIfCanInteractWith(GuidPosition,unsigned){return master?&creature:nullptr;}
  void OnTaxiFlightEject(bool){} void ResolvePendingMount(){}
  bool ActivateTaxiPathTo(std::initializer_list<unsigned>,Creature*,unsigned){++attempts; if(success)money-=10;return success;}

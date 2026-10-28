@@ -215,7 +215,14 @@ bool RpgTaxiAction::Execute(Event& event)
     bot->SetMoney(money);
     if (!activated)
     {
-        sLog.outError("Bot %s cannot fly %u (%zu location available)", bot->GetName(), path, nodes.size());
+        // Keep the native admission checks authoritative. Record enough state
+        // to distinguish a bad route from a busy bot or a displaced taxi NPC.
+        sLog.outError("Bot %s cannot fly %u (%zu location available): guid=%u from=%u to=%u bot_map=%u bot_pos=%.2f,%.2f,%.2f node_map=%u node_pos=%.2f,%.2f,%.2f combat=%u casting=%u mounted=%u control_lost=%u",
+            bot->GetName(), path, nodes.size(), bot->GetGUIDLow(), entry->from, entry->to,
+            bot->GetMapId(), bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(),
+            nodeFrom->map_id, nodeFrom->x, nodeFrom->y, nodeFrom->z,
+            uint32(bot->IsInCombat()), uint32(bot->IsNonMeleeSpellCasted(false)),
+            bot->GetMountID(), uint32(bot->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_CLIENT_CONTROL_LOST)));
         return failed();
     }
 
