@@ -803,8 +803,8 @@ void PlayerbotFactory::InitPetSpells()
             // Screech
             {8,  24423},
             {24, 24577},
-            {40, 24578},
-            {56, 27051}
+            {48, 24578},
+            {56, 24579}
         };
 
         hunterPetSpells[PET_BEAR] = {
@@ -898,8 +898,8 @@ void PlayerbotFactory::InitPetSpells()
             // Screech
             {8,  24423},
             {24, 24577},
-            {40, 24578},
-            {56, 27051}
+            {48, 24578},
+            {56, 24579}
         };
 
         hunterPetSpells[PET_CAT] = {
@@ -1046,7 +1046,7 @@ void PlayerbotFactory::InitPetSpells()
             // Screech
             {8,  24423},
             {24, 24577},
-            {40, 24578},
+            {48, 24578},
             {56, 24579}
         };
 
@@ -1254,6 +1254,16 @@ void PlayerbotFactory::InitPetSpells()
 
         HunterPetType petType = GetHunterPetTypeFromEntry(pet->GetEntry());
 
+        // Repair ranks taught too early by the old family table before
+        // learning the valid chain again. Do not regenerate or replace pets.
+        if (petType == PET_BAT || petType == PET_CARRION_BIRD || petType == PET_OWL)
+        {
+            const std::pair<uint32, uint32> correctedScreechRanks[] = {{48, 24578}, {56, 24579}};
+            for (const auto& rank : correctedScreechRanks)
+                if (pet->GetLevel() < rank.first && pet->HasSpell(rank.second))
+                    pet->unlearnSpell(rank.second, false);
+        }
+
         auto it = hunterPetSpells.find(petType);
         if (it != hunterPetSpells.end())
         {
@@ -1446,8 +1456,9 @@ void PlayerbotFactory::InitPetSpells()
             // Screech
             {8,  24423},
             {24, 24577},
-            {40, 24578},
-            {56, 27051}
+            {48, 24578},
+            {56, 24579},
+            {64, 27051}
         };
 
         hunterPetSpells[PET_BEAR] = {
@@ -1544,8 +1555,9 @@ void PlayerbotFactory::InitPetSpells()
             // Screech
             {8,  24423},
             {24, 24577},
-            {40, 24578},
-            {56, 27051}
+            {48, 24578},
+            {56, 24579},
+            {64, 27051}
         };
 
         hunterPetSpells[PET_CAT] = {
@@ -1728,8 +1740,9 @@ void PlayerbotFactory::InitPetSpells()
             // Screech
             {8,  24423},
             {24, 24577},
-            {40, 24578},
-            {56, 24579}
+            {48, 24578},
+            {56, 24579},
+            {64, 27051}
         };
 
         hunterPetSpells[PET_RAPTOR] = {
@@ -2025,6 +2038,16 @@ void PlayerbotFactory::InitPetSpells()
         };
 
         HunterPetType petType = GetHunterPetTypeFromEntry(pet->GetEntry());
+
+        // Repair ranks taught too early by the old family table before
+        // learning the valid chain again. Do not regenerate or replace pets.
+        if (petType == PET_BAT || petType == PET_CARRION_BIRD || petType == PET_OWL)
+        {
+            const std::pair<uint32, uint32> correctedScreechRanks[] = {{48, 24578}, {56, 24579}, {64, 27051}};
+            for (const auto& rank : correctedScreechRanks)
+                if (pet->GetLevel() < rank.first && pet->HasSpell(rank.second))
+                    pet->unlearnSpell(rank.second, false);
+        }
 
         auto it = hunterPetSpells.find(petType);
         if (it != hunterPetSpells.end())
