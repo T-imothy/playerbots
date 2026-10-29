@@ -4,6 +4,7 @@
 #include "PossibleTargetsValue.h"
 #include "playerbot/strategy/MeleeCombatPolicy.h"
 #include "playerbot/strategy/actions/DungeonActions.h"
+#include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
 #include "PossibleAttackTargetsValue.h"
 #include "EnemyPlayerValue.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -43,6 +44,15 @@ bool InvalidTargetValue::Calculate()
         if (priority.GetTarget() == target) return false;
     }
 
+    // A room assignment can begin beyond ordinary sight range. Keep only the
+    // freshly elected, engaged add while native movement closes that distance.
+    // The world, hostility, CC and selection checks above still apply.
+    if (qualifier == "current target")
+    {
+        bool defense = false;
+        Unit* assigned = RazorgoreDefenseTarget(ai, defense);
+        if (defense && assigned == target) return false;
+    }
     const bool validTarget = PossibleAttackTargetsValue::IsValid(target, bot);
     if (!validTarget)
     {

@@ -15,6 +15,9 @@ assert 'GetData(0) != SPECIAL' in protected
 assert 'GetEntry() == 10162' in protected and 'HasAura(22663)' in protected
 assert 'SetData' not in protected and 'CastSpell' not in protected
 priority=block(a,'Unit* BlackwingLairPriorityTargetAction::GetTarget(')
+assert priority.index('RazorgoreDefenseTarget') < priority.index('BwlReady')
+assert 'blackwing lair priority target' in block(read('playerbot/strategy/generic/BlackwingLairDungeonStrategies.cpp'),
+    'void BlackwingLairDungeonStrategy::InitNonCombatTriggers(')
 for guard in ('BwlReady(ai)','ai->IsHeal(bot)','"attack target"','"rti target"','HasBreakableCC','HasUnBreakableCC','unit->GetVictim() == bot'):
     assert guard in priority,guard
 support=block(a,'bool BlackwingLairSupportAction::Select(')

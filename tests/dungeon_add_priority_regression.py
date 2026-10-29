@@ -79,10 +79,23 @@ struct PreserveDungeonAddTargetMultiplier{PlayerbotAI*ai;float GetValue(Action*)
 struct BotState{enum{BOT_STATE_COMBAT};};
 struct MeleeCcCheck{MeleeCcCheck(PlayerbotAI*){}bool Protected(Unit*u){return u->assignedCC;}};
 struct InvalidTargetValue{PlayerbotAI*ai;Player*bot;std::string qualifier="current target";bool Calculate();};
+bool defenseActive=false;Unit* defenseTarget=nullptr;
+Unit* RazorgoreDefenseTarget(PlayerbotAI*,bool& active){active=defenseActive;return defenseTarget;}
 #define AI_VALUE(type,key) ai->Value<type>(key)
 #define AI_VALUE2(type,key,qualifier) ai->Value<type>(key)
 __METHODS__
 int main(){
+ {
+  Player bot;bot.map=469;Unit add;add.map=469;add.guid=99;add.x=100;
+  PlayerbotAI ai{&bot};ai.current=&add;ai.units[99]=&add;bot.selection=99;
+  InvalidTargetValue invalid{&ai,&bot};defenseActive=true;defenseTarget=&add;
+  assert(!invalid.Calculate()); // exact live assignment survives ordinary cache rejection
+  add.assignedCC=true;assert(invalid.Calculate());add.assignedCC=false;
+  add.friendly=true;assert(invalid.Calculate());add.friendly=false;
+  add.alive=false;assert(invalid.Calculate());add.alive=true;
+  bot.selection=98;assert(invalid.Calculate());bot.selection=99;
+  defenseActive=false;assert(invalid.Calculate());defenseTarget=nullptr;
+ }
  // Ulduar objectives exercise the actual dispatcher, including role/command
  // arbitration and release of the target hold when a prisoner is freed.
  for(unsigned kind:{0u,1u,2u,3u}) {

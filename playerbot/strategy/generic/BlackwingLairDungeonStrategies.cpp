@@ -59,6 +59,12 @@ void BlackwingLairDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>&
 
 void BlackwingLairDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+#ifdef MANGOSBOT_ZERO
+    // A controller is fighting through the dragon; its idle defenders must
+    // acquire already-engaged room adds without waiting for body damage.
+    triggers.push_back(new TriggerNode("blackwing lair priority target",
+        NextAction::array(0, new NextAction("blackwing lair priority target", 90.0f), NULL)));
+#endif
     triggers.push_back(new TriggerNode("razorgore orb",
         NextAction::array(0, new NextAction("razorgore orb", 100.0f), NULL)));
     triggers.push_back(new TriggerNode("use hourglass sand",

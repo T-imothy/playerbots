@@ -48,6 +48,8 @@ int main(){
  assert(picked.size()==4);pa.guids["attack target"]=200;pa.guids["rti target"]=201;
  assert(select(&pa).second==&adds[15]);
  BlackwingLairPriorityTargetAction action{&pa,&dps};assert(action.GetTarget()==&adds[15]);
+ dps.combat=false;assert(action.GetTarget()==&adds[15]);dps.combat=true;
+ adds[15].x=100;assert(select(&aa).second==&adds[15]);adds[15].x=5;
  // Holding one add cannot prevent the other three tanks picking up theirs.
  adds[15].victim=&a;a.victim=&adds[15];picked.clear();
  for(auto*x:{&aa,&ba,&ca,&da}){auto r=select(x);assert(r.second);picked.insert(r.second);}
