@@ -66,8 +66,9 @@ for(int type:{CHAT_MSG_CHANNEL,CHAT_MSG_SAY,CHAT_MSG_PARTY,CHAT_MSG_YELL,CHAT_MS
  active=true;packet.bytes.resize(0x1001);accepted=false;Decode(packet);assert(!accepted);++cases;
 }
 WorldPacket empty;empty.Initialize(SMSG_MESSAGECHAT);accepted=false;Decode(empty);assert(!accepted);
+WorldPacket blank;BuildChatPacket(blank,CHAT_MSG_SAY,"",LANG_UNIVERSAL,CHAT_TAG_NONE,ObjectGuid(12345),"Sender",ObjectGuid(),"Recipient","World");accepted=false;Decode(blank);assert(!accepted);
 WorldPacket missing;BuildChatPacket(missing,CHAT_MSG_SAY,"hello",LANG_UNIVERSAL,CHAT_TAG_NONE,ObjectGuid(),"Sender",ObjectGuid(),"Recipient","World");accepted=false;Decode(missing);assert(!accepted);
-std::cout<<"PASS "<<cases+2<<" native builder/decoder field, channel, sender, activity and size cases\n";
+std::cout<<"PASS "<<cases+3<<" native builder/decoder field, channel, sender, activity and size cases\n";
 }
 '''
 a.output.parent.mkdir(parents=True,exist_ok=True)

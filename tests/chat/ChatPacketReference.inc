@@ -107,3 +107,7 @@
                 break;
             }
 #endif
+
+            if (message.empty())
+                return;
+
