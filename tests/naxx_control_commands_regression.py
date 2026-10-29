@@ -12,6 +12,9 @@ helper = (root/'playerbot/strategy/actions/NaxxramasControlCommands.cpp').read_t
 helper = '\n'.join(line for line in helper.splitlines() if not line.startswith('#include'))
 ai_source = (root/'playerbot/PlayerbotAI.cpp').read_text()
 chat_source = (root/'playerbot/strategy/generic/ChatCommandHandlerStrategy.cpp').read_text()
+chat_header = (root/'playerbot/strategy/generic/ChatCommandHandlerStrategy.h').read_text()
+cast_constants = '\n'.join(re.findall(r'        static constexpr const char\* CastNc\w+ = "[^"]+";', chat_header))
+assert cast_constants.count('static constexpr') == 2
 pull_source = (root/'playerbot/strategy/actions/PullActions.cpp').read_text()
 supported = re.findall(r'supported.push_back\("([^"]+)"\)', chat_source)
 assert 'naxxControlScopeActive' in ai_source
@@ -95,6 +98,7 @@ struct PassTroughStrategy{std::vector<std::string>supported;float relevance=100;
  void InitNonCombatTriggers(std::list<TriggerNode*>&nodes){for(auto&s:supported)nodes.push_back(new TriggerNode(s,NextAction::array(0,new NextAction(s,relevance),nullptr)));}};
 struct ChatCommandHandlerStrategy:PassTroughStrategy{ChatCommandHandlerStrategy(PlayerbotAI*){supported={__SUPPORTED__};}
  void InitTriggers(std::list<TriggerNode*>&nodes,BotState){InitReactionTriggers(nodes);}void InitReactionTriggers(std::list<TriggerNode*>&);};
+__CAST_CONSTANTS__
 struct PullEndAction{PlayerbotAI*ai;Player*bot;bool Execute(Event&);};
 #define AI_VALUE(T,N) ([&]()->T {if constexpr(std::is_same_v<T,PositionMap&>)return ai->positions;else return ai->target;}())
 #define SET_AI_VALUE(T,N,V) ai->target=V
@@ -150,7 +154,7 @@ int main(){
 # A type-directed helper keeps the actual AI_VALUE expressions intact.
 code=code.replace('#define AI_VALUE(T,N) ([&]()->T {if constexpr(std::is_same_v<T,PositionMap&>)return ai->positions;else return ai->target;}())',
                   'template<class T>T fixtureValue(PlayerbotAI*a){if constexpr(std::is_same_v<T,PositionMap&>)return a->positions;else return a->target;}\n#define AI_VALUE(T,N) fixtureValue<T>(ai)')
-code=code.replace('__SUPPORTED__',','.join('"'+s+'"' for s in supported))
+code=code.replace('__SUPPORTED__',','.join('"'+s+'"' for s in supported)).replace('__CAST_CONSTANTS__',cast_constants)
 code=code.replace('__CHAT__',block(chat_source,'void ChatCommandHandlerStrategy::InitReactionTriggers('))
 code=code.replace('__QUEUE__',block(ai_source,'void PlayerbotAI::HandleCommands('))
 code=code.replace('__END__',block(pull_source,'bool PullEndAction::Execute(')).replace('__HELPER__',helper)

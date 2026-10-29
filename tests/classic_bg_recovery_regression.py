@@ -31,7 +31,7 @@ constexpr float ACTION_MOVE=10,ACTION_HIGH=50;
 struct BattleGround{unsigned type=2,actual=2,status=STATUS_IN_PROGRESS;
  unsigned GetTypeId(bool real=false){return real?actual:type;}unsigned GetStatus(){return status;}};
 struct Player{BattleGround bg;bool inBg=true,world=true,transfer=false,alive=true,cast=false;
- BattleGround*GetBattleGround(){return inBg?&bg:nullptr;}bool IsAlive(){return alive;}bool IsInWorld(){return world;}bool IsBeingTeleported(){return transfer;}bool IsNonMeleeSpellCasted(bool){return cast;}};
+ BattleGround*GetBattleGround(){return inBg?&bg:nullptr;}bool IsAlive(){return alive;}bool IsInWorld(){return world;}bool IsBeingTeleported(){return transfer;}bool IsNonMeleeSpellCasted(bool,bool=false,bool=false){return cast;}};
 namespace ai{BattleGroundTypeId ActualBattlegroundType(Player*);bool SupportsBattlegroundObjectiveRecovery(Player*);}
 __HELPERS__
 using namespace ai;

@@ -64,18 +64,18 @@ struct PartyMemberToHeal{Player* bot;PlayerbotAI* ai;bool Check(Unit*);};
     cases=r'''
 int main(){
  Player bot,current,secondary;bot.guid=1;current.guid=2;secondary.guid=3;Group group;bot.group=&group;
- PlayerbotAI a{&bot};bot.ai=&a;AiObjectContext* context=&a.context;
- context->GetValue<std::string>("rti cc")->Set("none");context->GetValue<Unit*>("current target")->Set(&current);
+ PlayerbotAI a{&bot};bot.ai=&a;AiObjectContext* context=&a.context;a.units[current.guid]=&current;a.units[secondary.guid]=&secondary;
+ context->GetValue<std::string>("rti cc")->Set("none");context->GetValue<ObjectGuid>("current target")->Set(current.guid);
  FindTargetForCcStrategy cc(&a,"polymorph");cc.CheckAttacker(&secondary,nullptr);assert(cc.result==&secondary);
  FindTargetForCcStrategy skipCurrent(&a,"polymorph");skipCurrent.CheckAttacker(&current,nullptr);assert(!skipCurrent.result);
  a.cast=false;FindTargetForCcStrategy immune(&a,"polymorph");immune.CheckAttacker(&secondary,nullptr);assert(!immune.result);a.cast=true;
  secondary.periodic=true;FindTargetForCcStrategy dotted(&a,"polymorph");dotted.CheckAttacker(&secondary,nullptr);assert(!dotted.result);secondary.periodic=false;
  secondary.alive=false;FindTargetForCcStrategy dead(&a,"polymorph");dead.CheckAttacker(&secondary,nullptr);assert(!dead.result);secondary.alive=true;
  secondary.map=1;FindTargetForCcStrategy otherMap(&a,"polymorph");otherMap.CheckAttacker(&secondary,nullptr);assert(!otherMap.result);secondary.map=489;
- context->GetValue<Unit*>("rti cc target")->Set(&secondary);a.cc=false;
+ context->GetValue<ObjectGuid>("rti cc target")->Set(secondary.guid);a.cc=false;
  FindTargetForCcStrategy marked(&a,"polymorph");marked.CheckAttacker(&secondary,nullptr);assert(marked.result==&secondary);
  a.cast=false;FindTargetForCcStrategy markedImmune(&a,"polymorph");markedImmune.CheckAttacker(&secondary,nullptr);assert(!markedImmune.result);a.cast=true;
- CastSapAction sap(&a);context->GetValue<Unit*>("cc target::sap")->Set(&secondary);
+ CastSapAction sap(&a);context->GetValue<ObjectGuid>("cc target::sap")->Set(secondary.guid);
  assert(sap.GetTarget()==&secondary);sap.useful=false;assert(!sap.isUseful());
  CastWindShearAction interrupt(&a);CastWindShearOnEnemyHealerAction healerInterrupt(&a);
  WindShearInterruptSpellTrigger trigger(&a);WindShearInterruptEnemyHealerSpellTrigger healerTrigger(&a);
@@ -85,7 +85,7 @@ int main(){
  const std::string native="earth shock";
 #endif
  assert(interrupt.name==native&&trigger.name==native&&healerInterrupt.name==native&&healerTrigger.name==native);
- context->GetValue<Unit*>("enemy healer target::"+native)->Set(&secondary);assert(healerInterrupt.GetTarget()==&secondary);
+ context->GetValue<ObjectGuid>("enemy healer target::"+native)->Set(secondary.guid);assert(healerInterrupt.GetTarget()==&secondary);
  NoCurseTrigger curse{&a,&current};assert(curse.IsActive());current.ownAuras["curse of exhaustion"]=true;assert(!curse.IsActive());
  current.ownAuras.clear();current.ownAuras["curse of agony"]=true;assert(!curse.IsActive());
  NoCurseOnAttackerTrigger curseOther{&a,context};a.units[secondary.guid]=&secondary;

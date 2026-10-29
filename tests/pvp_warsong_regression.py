@@ -76,7 +76,7 @@ struct BattleGroundEY:BattleGround{ObjectGuid carrier;ObjectGuid GetFlagCarrierG
 struct ValueBase{virtual ~ValueBase(){}};
 template<class T>struct Value:ValueBase{std::remove_reference_t<T> value{};T Get(){return value;}void Set(T v){value=v;}};
 struct AiObjectContext{std::map<std::string,std::unique_ptr<ValueBase>> values;
- template<class T>Value<T>* GetValue(std::string k){auto& p=values[k];if(!p)p=std::make_unique<Value<T>>();return static_cast<Value<T>*>(p.get());}};
+ template<class T>Value<T>* GetValue(std::string k){auto& p=values[k];if(!p)p=std::make_unique<Value<T>>();auto*typed=dynamic_cast<Value<T>*>(p.get());assert(typed);return typed;}};
 struct PlayerbotAI{Player* bot;AiObjectContext context;bool real=false,master=false,canMove=true;
  Player* GetBot(){return bot;}AiObjectContext* GetAiObjectContext(){return &context;}bool IsHeal(Player* p){return p->healer;}
  Unit* GetUnit(ObjectGuid g){return bot->bg->map.GetPlayer(g);}

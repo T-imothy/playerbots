@@ -2818,8 +2818,11 @@ bool BGTactics::Execute(Event& event)
             battlegroundObjectiveCheck = 0;
             return true;
         }
-        // Accepted banner channels and damage/heal casts must complete.
-        if (bot->IsNonMeleeSpellCasted(false) && getName() != "check objective") return false;
+        // Accepted banner channels and damage/heal casts must complete. Auto Shot
+        // and wand auto-repeat are persistent modes, not casts to wait out before
+        // moving; native movement pauses them while travelling to the objective.
+        const bool movement = getName() == "move to objective" || getName() == "move to start";
+        if (bot->IsNonMeleeSpellCasted(false, false, movement) && getName() != "check objective") return false;
     }
 
     if (getName() == "move to start")
@@ -4033,6 +4036,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
     BattleBotPath* pClosestPath = nullptr;
     uint32 closestPoint = 0;
     float closestDistanceToTarget = FLT_MAX;
+    const bool recover = SupportsBattlegroundObjectiveRecovery(bot);
     bool reverse = false;
     float maxDistanceToPoint = 50.0f;
 #ifdef MANGOSBOT_TWO
@@ -4042,6 +4046,7 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
 
     for (const auto& pPath : vPaths)
     {
+        if (!pPath || pPath->empty()) continue;
         // skip mine paths of own faction
         if (bot->GetTeam() == ALLIANCE && std::find(vPaths_AllyMine.begin(), vPaths_AllyMine.end(), pPath) != vPaths_AllyMine.end())
             continue;
@@ -4051,7 +4056,10 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
         {
             BattleBotWaypoint& lastPoint = ((*pPath)[pPath->size() - 1]);
             float const distanceFromPathEndToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0.f).GetDistance(Position(lastPoint.x, lastPoint.y, lastPoint.z, 0.f)));
-            if (closestDistanceToTarget > distanceFromPathEndToTarget)
+            // A completed leg cannot make progress, even if an earlier point
+            // on that same leg is also nearby. Consider connected legs instead.
+            if ((!recover || bot->GetDistance(lastPoint.x, lastPoint.y, lastPoint.z, DIST_CALC_NONE) > 9.0f) &&
+                closestDistanceToTarget > distanceFromPathEndToTarget)
             {
                 float closestDistanceFromMeToPoint = FLT_MAX;
 
@@ -4084,7 +4092,8 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
         {
             BattleBotWaypoint& firstPoint = ((*pPath)[0]);
             float const distanceFromPathBeginToTarget = sqrt(Position(pos.x, pos.y, pos.z, 0).GetDistance(Position(firstPoint.x, firstPoint.y, firstPoint.z, 0.f)));
-            if (closestDistanceToTarget > distanceFromPathBeginToTarget)
+            if ((!recover || bot->GetDistance(firstPoint.x, firstPoint.y, firstPoint.z, DIST_CALC_NONE) > 9.0f) &&
+                closestDistanceToTarget > distanceFromPathBeginToTarget)
             {
                 float closestDistanceFromMeToPoint = FLT_MAX;
 
@@ -4108,17 +4117,13 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
     if (!pClosestPath)
         return false;
 
-    // Prevent picking last point of path.
-    // It means we are already there.
-    if (reverse)
+    // The nearest point can be the endpoint while still up to 50 yards away.
+    // Reach it; only endpoints already reached were excluded during selection.
+    if ((reverse && closestPoint == 0) || (!reverse && closestPoint + 1 == pClosestPath->size()))
     {
-        if (closestPoint == 0)
-            return false;
-    }
-    else
-    {
-        if (closestPoint == pClosestPath->size() - 1)
-            return false;
+        if (!recover) return false;
+        const BattleBotWaypoint& endpoint = pClosestPath->at(closestPoint);
+        return MoveTo(bot->GetMapId(), endpoint.x, endpoint.y, endpoint.z);
     }
 
     BattleBotPath* currentPath = pClosestPath;
@@ -4144,7 +4149,7 @@ bool BGTactics::resetObjective()
     if (SupportsBattlegroundObjectiveRecovery(bot))
     {
         if (!bot->IsInWorld() || bot->IsBeingTeleported() || !bot->IsAlive() ||
-            bg->GetStatus() != STATUS_IN_PROGRESS || bot->IsNonMeleeSpellCasted(false)) return false;
+            bg->GetStatus() != STATUS_IN_PROGRESS || bot->IsNonMeleeSpellCasted(false, false, true)) return false;
         const uint32 now = WorldTimer::getMSTime();
         if (battlegroundObjectiveCheck && WorldTimer::getMSTimeDiff(battlegroundObjectiveCheck, now) < 10000) return false;
         battlegroundObjectiveCheck = now;

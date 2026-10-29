@@ -9,9 +9,31 @@
 #include "LootObjectStack.h"
 #include "strategy/values/Formations.h"
 #include "strategy/values/PositionValue.h"
+#include "strategy/values/PvpValues.h"
 INSTANTIATE_SINGLETON_1(PlayerbotDbStore);
 
 using namespace ai;
+
+namespace
+{
+    void RestoreBattlegroundStrategies(PlayerbotAI* ai)
+    {
+        // A saved PvE preset replaces the default engines. Keep its class/role
+        // choices, but restore the current match's mandatory objective handlers.
+        // Do not rewrite the saved preset or alter explicit stay commands.
+        if (!SupportsBattlegroundObjectiveRecovery(ai->GetBot())) return;
+        const BattleGroundTypeId type = ActualBattlegroundType(ai->GetBot());
+        const char* objective = type == BATTLEGROUND_WS ? "+warsong" :
+            type == BATTLEGROUND_AB ? "+arathi" : "+alterac";
+        for (BotState state : {BotState::BOT_STATE_COMBAT, BotState::BOT_STATE_NON_COMBAT})
+        {
+            ai->ChangeStrategy("-warsong,-arathi,-alterac,-travel,-rpg,-grind,-wander,-follow", state);
+            ai->ChangeStrategy("+battleground", state);
+            ai->ChangeStrategy(objective, state);
+        }
+        ai->ChangeStrategy("+battleground", BotState::BOT_STATE_DEAD);
+    }
+}
 
 void PlayerbotDbStore::Load(PlayerbotAI *ai, std::string preset)
 {
@@ -42,6 +64,7 @@ void PlayerbotDbStore::Load(PlayerbotAI *ai, std::string preset)
         } while (results->NextRow());
 
         ai->GetAiObjectContext()->Load(values);
+        RestoreBattlegroundStrategies(ai);
     }
 }
 
