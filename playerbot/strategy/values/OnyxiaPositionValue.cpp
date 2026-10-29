@@ -3,6 +3,10 @@
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/ServerFacade.h"
 #include "Spells/SpellMgr.h"
+#ifdef MANGOSBOT_ZERO
+#include "playerbot/strategy/OnyxiaFormation.h"
+#include "playerbot/strategy/mage/MageCombatPolicy.h"
+#endif
 
 using namespace ai;
 
@@ -58,15 +62,128 @@ bool ai::OnyxiaBreathThreats(uint32 spellId, std::vector<encounter::Circle>& thr
     return true;
 }
 
+#ifdef MANGOSBOT_ZERO
+bool ai::OnyxiaMeleeAirAdd(PlayerbotAI* ai, Unit* boss)
+{
+    Player* bot = ai->GetBot();
+    if (ai->IsRanged(bot) || ai->IsHeal(bot)) return false;
+    Unit* target = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
+    return target && target != boss && target->IsInWorld() && bot->IsInMap(target) &&
+        target->IsAlive() && target->IsInCombat() && !target->HasCharmer() && target->GetEntry() == 11262;
+}
+
+namespace
+{
+    const char* OnyxiaRangeSpell(PlayerbotAI* ai)
+    {
+        Player* bot = ai->GetBot();
+        if (ai->IsHeal(bot)) return bot->getClass() == CLASS_PALADIN ? "flash of light" :
+            bot->getClass() == CLASS_SHAMAN ? "healing wave" : bot->getClass() == CLASS_DRUID ? "healing touch" : "flash heal";
+        switch (bot->getClass())
+        {
+            case CLASS_HUNTER: return "auto shot";
+            case CLASS_WARLOCK: return "shadow bolt";
+            case CLASS_PRIEST: return "mind blast";
+            case CLASS_SHAMAN: return "lightning bolt";
+            case CLASS_DRUID: return "wrath";
+            default: return MagePrimaryDamageSpell(ai);
+        }
+    }
+
+    bool PlanOnyxiaFlight(PlayerbotAI* ai, Unit* boss, EncounterPosition& result,
+        const std::vector<encounter::Circle>& danger, bool targeted, encounter::Point& station, time_t& until)
+    {
+        Player* bot = ai->GetBot();
+        if (danger.empty() && !targeted && OnyxiaMeleeAirAdd(ai, boss)) { until = 0; return false; }
+        const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+        std::vector<Player*> members;
+        if (bot->GetGroup())
+            for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+            {
+                Player* member = ref->getSource();
+                if (member && member->IsInWorld() && member->IsAlive() && !member->IsBeingTeleported() &&
+                    bot->IsInMap(member)) members.push_back(member);
+            }
+        if (std::find(members.begin(), members.end(), bot) == members.end()) members.push_back(bot);
+        std::sort(members.begin(), members.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+        const unsigned slot = unsigned(std::distance(members.begin(), std::find(members.begin(), members.end(), bot)));
+        float splash = NativeEncounterSpellRadius(18392);
+        if (!std::isfinite(splash) || splash <= 0 || splash > 20) return false;
+        std::vector<encounter::Circle> neighbors;
+        std::vector<encounter::Point> positions;
+        for (Player* member : members)
+        {
+            positions.push_back({member->GetPositionX(), member->GetPositionY(), member->GetPositionZ()});
+            if (member != bot) neighbors.push_back({{member->GetPositionX(), member->GetPositionY(), member->GetPositionZ()}, splash + 2});
+        }
+
+        Unit* patient = nullptr;
+        float range = 0;
+        if (ai->IsHeal(bot))
+        {
+            // Real patients, rather than the flying boss, determine healing reach.
+            for (Player* member : members)
+                if (member != bot && (!patient || member->GetHealthPercent() < patient->GetHealthPercent() ||
+                    (member->GetHealthPercent() == patient->GetHealthPercent() && bot->GetDistance(member) < bot->GetDistance(patient)))) patient = member;
+        }
+        else if (ai->IsRanged(bot))
+        {
+            patient = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
+            if (!patient || !patient->IsInWorld() || !bot->IsInMap(patient) || !patient->IsAlive() || !patient->IsInCombat()) patient = boss;
+        }
+        if (patient && (!ai->GetSpellRange(OnyxiaRangeSpell(ai), &range) || !std::isfinite(range) || range <= 5)) return false;
+        const auto usableRange = [&](encounter::Point point) {
+            if (!patient || !danger.empty() || targeted) return true; // Escape takes precedence over DPS/healing reach.
+            const float legal = range + bot->GetCombatReach() + patient->GetCombatReach() - 2;
+            const float dx = point.x - patient->GetPositionX(), dy = point.y - patient->GetPositionY(), dz = point.z - patient->GetPositionZ();
+            return dx * dx + dy * dy + dz * dz <= legal * legal &&
+                patient->IsWithinLOS(point.x, point.y, point.z + bot->GetCollisionHeight(), true);
+        };
+        const auto admit = [&](encounter::Point point) {
+            result.active = true;
+            result.destination = point;
+            return onyxia::InRoom(point) && encounter::OutsideCircles(point, danger) && usableRange(point) &&
+                ValidateEncounterDestination(ai, result) && usableRange(result.destination) && encounter::OutsideCircles(result.destination, danger);
+        };
+        result.exclusive = true;
+        if (!result.spell) result.spell = 18392; // Phase-checked air station, not an instruction to cast Fireball.
+        if (targeted) result.source = bot->GetObjectGuid();
+        // Commit to a short route instead of changing direction every sample as
+        // neighbors run. A new breath immediately invalidates an unsafe station.
+        if (time(nullptr) < until && encounter::Distance2d(here, station) > 1.5f &&
+            (!targeted || encounter::SpreadOverlap(station, neighbors) <= 1.0f) && admit(station)) return true;
+        if (danger.empty() && !targeted && !onyxia::YieldSpacing(here, slot, positions, splash + 2) && admit(here))
+        { station = here; until = 0; return true; }
+        if (encounter::SpreadOverlap(here, neighbors) <= 1.0f && admit(here)) { station = here; until = 0; return true; }
+        unsigned checked = 0;
+        for (const auto& point : onyxia::Candidates(here, slot, neighbors, danger))
+        {
+            if (!usableRange(point)) continue;
+            if (++checked > 16) break;
+            if (admit(point)) { station = result.destination; until = time(nullptr) + 3; return true; }
+        }
+        result.active = false;
+        until = 0;
+        return false;
+    }
+}
+#endif
+
 EncounterPosition OnyxiaPositionValue::Calculate()
 {
     EncounterPosition result;
+    const auto clear = [&]() {
+        breath = 0; breathUntil = 0; fireballUntil = 0; owner.Clear();
+#ifdef MANGOSBOT_ZERO
+        flightUntil = 0;
+#endif
+    };
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() || bot->GetMapId() != 249 || !bot->IsInCombat())
-    { breath = 0; breathUntil = 0; fireballUntil = 0; owner.Clear(); return result; }
+    { clear(); return result; }
     Unit* boss = FindOnyxiaBoss(ai);
-    if (!boss) { breath = 0; breathUntil = 0; fireballUntil = 0; owner.Clear(); return result; }
+    if (!boss) { clear(); return result; }
     if (owner != boss->GetObjectGuid() || instance != bot->GetInstanceId())
-    { breath = 0; breathUntil = 0; fireballUntil = 0; owner = boss->GetObjectGuid(); instance = bot->GetInstanceId(); }
+    { clear(); owner = boss->GetObjectGuid(); instance = bot->GetInstanceId(); }
     result.map = bot->GetMapId();
     result.instance = bot->GetInstanceId();
     result.boss = boss->GetObjectGuid();
@@ -122,6 +239,15 @@ EncounterPosition OnyxiaPositionValue::Calculate()
     fireball = fireball || spell == 68926; // Wrath 25-player fireball only.
 #endif
     if (airborne && fireball && cast->m_targets.getUnitTarget() == bot) fireballUntil = time(nullptr) + 2;
+#ifdef MANGOSBOT_ZERO
+    if (airborne)
+    {
+        PlanOnyxiaFlight(ai, boss, result, threats, time(nullptr) < fireballUntil, flightStation, flightUntil);
+        return result;
+    }
+    flightUntil = 0;
+    fireballUntil = 0;
+#endif
     if (time(nullptr) < fireballUntil && bot->GetGroup())
     {
         std::vector<encounter::Point> neighbors;
@@ -154,7 +280,10 @@ EncounterPosition OnyxiaPositionValue::Calculate()
         result.active = false;
         return result;
     }
-    if (airborne || boss->GetVictim() == bot || bot->GetDistance(boss) > 30) return result;
+    if (airborne || boss->GetVictim() == bot) return result;
+#ifndef MANGOSBOT_ZERO
+    if (bot->GetDistance(boss) > 30) return result;
+#endif
     // Avoid both the frontal breath/cleave and tail cone. Do not reposition
     // the active tank or impose Wrath add rules on the old encounter.
     const float facing = boss->GetOrientation();

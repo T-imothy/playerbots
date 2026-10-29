@@ -69,6 +69,15 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan, 
         }
     if (plan.map == 409) AppendMoltenCoreGroundHazards(ai, hazards);
     if (plan.map == 469) AppendBlackwingGroundHazards(ai, hazards);
+#ifdef MANGOSBOT_ZERO
+    if (plan.map == 249 && plan.spell != 18392 && plan.spell)
+    {
+        std::vector<encounter::Circle> breath;
+        if (OnyxiaBreathThreats(plan.spell, breath))
+            for (const auto& circle : breath)
+                hazards.emplace_back(WorldPosition(plan.map, circle.center.x, circle.center.y, circle.center.z), circle.radius - 1);
+    }
+#endif
     if (plan.map == 531)
     {
         EncounterPosition current;

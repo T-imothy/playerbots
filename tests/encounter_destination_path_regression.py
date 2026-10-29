@@ -50,6 +50,8 @@ std::list<HazardPosition> ground;
 void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>& out){out.insert(out.end(),ground.begin(),ground.end());}
 void AppendBlackwingGroundHazards(PlayerbotAI*,std::list<HazardPosition>&){}
 std::vector<encounter::Circle> whirlwinds;
+std::vector<encounter::Circle> onyxiaBreath;
+bool OnyxiaBreathThreats(unsigned id,std::vector<encounter::Circle>& out){if(id!=17086)return false;out=onyxiaBreath;return !out.empty();}
 bool AQWhirlwindThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>& out){out=whirlwinds;return !out.empty();}
 bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&,bool requireWalkingPath=true);
 bool LavaTrashRouteSafe(PlayerbotAI*,const std::vector<WorldPosition>&){return true;}
@@ -112,10 +114,19 @@ int main(){
  pursuer.pursuit=false;assert(ValidateEncounterDestination(&ai,plan));pursuer.pursuit=true;
  pursuer.x=15;assert(!ValidateEncounterDestination(&ai,plan));
  path={{309,0,0,0},{309,0,15,0},{309,30,15,0},{309,30,0,0}};assert(ValidateEncounterDestination(&ai,plan));
+#ifdef MANGOSBOT_ZERO
+ ai.pursuer=nullptr;ai.bot.map=plan.map=249;plan.spell=17086;plan.destination={30,0,0};
+ onyxiaBreath={{{15,0,0},10}};path={{249,0,0,0},{249,30,0,0}};
+ assert(!ValidateEncounterDestination(&ai,plan)); // clear endpoint, unsafe crossing
+ path={{249,0,0,0},{249,0,15,0},{249,30,15,0},{249,30,0,0}};assert(ValidateEncounterDestination(&ai,plan));
+ onyxiaBreath={{{-1,0,0},10}};path={{249,0,0,0},{249,30,0,0}};assert(ValidateEncounterDestination(&ai,plan));
+ path={{249,0,0,0},{249,-2,0,0},{249,30,0,0}};assert(!ValidateEncounterDestination(&ai,plan));
+#endif
  std::cout<<"PASS: actual encounter endpoint and bounded route validation, crossing/outward hazards and lifecycle gates\n";
 }
 '''.replace('__HELPERS__',helpers).replace('__METHOD__',method)
 with tempfile.TemporaryDirectory(prefix='mantech-encounter-path-') as tmp:
  tmp=Path(tmp);(tmp/'test.cpp').write_text(code)
- subprocess.run(['cl','/nologo','/EHsc','/std:c++17','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
- subprocess.run([str(tmp/'test.exe')],check=True)
+ for era in ('ZERO','ONE','TWO'):
+  subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
+  subprocess.run([str(tmp/'test.exe')],check=True)

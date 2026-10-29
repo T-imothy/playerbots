@@ -12,15 +12,18 @@ code=r'''
 #include <cassert>
 #include <string>
 #include <iostream>
-struct PlayerbotAI{bool active=true,exclusive=true,stack=false;};
+struct Unit{bool air=false;float z=0;unsigned guid=1;bool IsLevitating(){return air;}float GetPositionZ(){return z;}unsigned GetObjectGuid(){return guid;}};
+struct PlayerbotAI{bool active=true,exclusive=true,stack=false,ranged=false,healer=false,add=false;unsigned spell=0,source=0;Unit bot;Unit*boss=nullptr;
+ Unit*GetBot(){return &bot;}bool IsRanged(Unit*){return ranged;}bool IsHeal(Unit*){return healer;}};
+Unit* FindOnyxiaBoss(PlayerbotAI*a){return a->boss;}bool OnyxiaMeleeAirAdd(PlayerbotAI*a,Unit*){return a->add;}
 bool MoltenCorePackStackRequired(PlayerbotAI*a){return a->stack;}bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}
 struct Action{virtual ~Action()=default;virtual std::string getName(){return "action";}};
 struct MovementAction:Action{};struct NamedMove:MovementAction{std::string name;NamedMove(const char*n):name(n){}std::string getName()override{return name;}};struct AttackAction:MovementAction{};struct MoveAwayFromHazard:MovementAction{};struct SetBehindTargetAction:MovementAction{};
 struct CastSpellAction:Action{bool moves=false;bool HasMovementEffect(){return moves;}};
-struct EncounterPosition{bool exclusive=true;};
+struct EncounterPosition{bool exclusive=true;unsigned spell=0,source=0;};
 struct MoltenCorePositionAction:MovementAction{static bool GetPlan(PlayerbotAI* ai,EncounterPosition&){return ai->active;}};
 struct MechanarPositionAction:MovementAction{static bool GetPlan(PlayerbotAI* ai,EncounterPosition&){return ai->active;}};
-struct OnyxiaPositionAction:MovementAction{static bool GetPlan(PlayerbotAI* ai,EncounterPosition& p){p.exclusive=ai->exclusive;return ai->active;}};
+struct OnyxiaPositionAction:MovementAction{static bool GetPlan(PlayerbotAI* ai,EncounterPosition& p){p.exclusive=ai->exclusive;p.spell=ai->spell;p.source=ai->source;return ai->active;}};
 struct MoltenCorePriorityTargetAction{MoltenCorePriorityTargetAction(PlayerbotAI*){}void* GetTarget(){return nullptr;}};
 struct PathaleonAddsAction{PathaleonAddsAction(PlayerbotAI*){}void* GetTarget(){return nullptr;}};
 struct OnyxiaAddsAction{OnyxiaAddsAction(PlayerbotAI*){}void* GetTarget(){return nullptr;}};
@@ -49,6 +52,17 @@ int main(){
  ai.exclusive=false;assert(onyxia.GetValue(&blink)==1&&onyxia.GetValue(&chase)==1&&onyxia.GetValue(&behind)==0);
  ai.active=false;assert(mechanar.GetValue(&blink)==1&&onyxia.GetValue(&blink)==1);
  assert(mechanar.GetValue(nullptr)==1&&onyxia.GetValue(nullptr)==1);
+#ifdef MANGOSBOT_ZERO
+ Unit dragon;dragon.air=true;ai.boss=&dragon;NamedMove melee("reach melee"),healReach("reach party member to heal");
+ assert(onyxia.GetValue(&melee)==0&&onyxia.GetValue(&blink)==0); // Failed plan cannot restart aerial chase.
+ ai.add=true;assert(onyxia.GetValue(&melee)==1&&onyxia.GetValue(&blink)==1);ai.add=false;
+ ai.ranged=true;assert(onyxia.GetValue(&melee)==1);ai.ranged=false;
+ dragon.air=false;assert(onyxia.GetValue(&melee)==1);dragon.air=true;
+ ai.active=true;ai.exclusive=true;ai.healer=true;ai.spell=18392;
+ assert(onyxia.GetValue(&healReach)==1&&onyxia.GetValue(&chase)==0&&onyxia.GetValue(&heal)==1);
+ ai.spell=17086;assert(onyxia.GetValue(&healReach)==0&&onyxia.GetValue(&heal)==1);
+ ai.spell=18392;ai.source=1;assert(onyxia.GetValue(&healReach)==0);
+#endif
  std::cout<<"PASS: movement-spell holds preserve healing, attacks, hazard escape, non-exclusive flank guidance and expiry\n";
 }
 '''.replace('__METHODS__',methods)

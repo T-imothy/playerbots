@@ -212,17 +212,28 @@ namespace ai
 
     Unit* FindOnyxiaBoss(PlayerbotAI* ai);
     bool OnyxiaBreathThreats(uint32 spell, std::vector<encounter::Circle>& threats);
+#ifdef MANGOSBOT_ZERO
+    bool OnyxiaMeleeAirAdd(PlayerbotAI* ai, Unit* boss);
+#endif
     class OnyxiaPositionValue : public CalculatedValue<EncounterPosition>
     {
     public:
         OnyxiaPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "onyxia position", 2) {}
         EncounterPosition Calculate() override;
-        void Reset() override { CalculatedValue::Reset(); breath = 0; breathUntil = 0; fireballUntil = 0; owner.Clear(); instance = 0; }
+        void Reset() override { CalculatedValue::Reset(); breath = 0; breathUntil = 0; fireballUntil = 0; owner.Clear(); instance = 0;
+#ifdef MANGOSBOT_ZERO
+            flightUntil = 0;
+#endif
+        }
     private:
         uint32 breath = 0;
         time_t breathUntil = 0;
         time_t fireballUntil = 0;
         ObjectGuid owner;
         uint32 instance = 0;
+#ifdef MANGOSBOT_ZERO
+        encounter::Point flightStation;
+        time_t flightUntil = 0;
+#endif
     };
 }

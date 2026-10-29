@@ -31,6 +31,15 @@ bool OnyxiaPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
     // An off-tank assigned to adds must be allowed to chase them, not get
     // dragged back to the boss's flank. A breath escape still takes precedence.
     Unit* current = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
+#ifdef MANGOSBOT_ZERO
+    if (plan.spell == 18392)
+    {
+        // Landing releases air stations immediately, even within the value
+        // cache interval. Live whelp work can resume without waiting for a tick.
+        if (!(boss->IsLevitating() || boss->GetPositionZ() - bot->GetPositionZ() > 10)) return false;
+        if (plan.source != bot->GetObjectGuid() && OnyxiaMeleeAirAdd(ai, boss)) return false;
+    }
+#endif
     if (!plan.exclusive && current && current != boss) return false;
     if (!plan.exclusive)
     {
@@ -58,23 +67,39 @@ bool OnyxiaPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
 bool OnyxiaPositionAction::isUseful()
 {
     EncounterPosition plan;
-    return GetPlan(ai, plan) && (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f ||
+    if (!GetPlan(ai, plan)) return false;
+#ifdef MANGOSBOT_ZERO
+    // Routine spacing waits for the current cast/channel. Breath and targeted
+    // Fireball escape may interrupt; a safe stationary hold never does.
+    if (plan.spell == 18392 && plan.source != bot->GetObjectGuid() && bot->IsNonMeleeSpellCasted(false)) return false;
+#endif
+    return (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f ||
         (plan.exclusive && EncounterMovementRequired(bot, plan.destination, 1.5f)));
 }
 
 bool OnyxiaPositionAction::ShouldReactionInterruptCast() const
 {
     EncounterPosition plan;
-    return GetPlan(ai, plan) && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
+    if (!GetPlan(ai, plan)) return false;
+#ifdef MANGOSBOT_ZERO
+    if (plan.spell == 18392 && plan.source != bot->GetObjectGuid()) return false;
+#endif
+    return bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
 }
 
 bool OnyxiaPositionAction::Execute(Event& event)
 {
     EncounterPosition plan;
     if (!GetPlan(ai, plan) || !ai->CanMove() || !ValidateEncounterDestination(ai, plan)) return false;
+#ifdef MANGOSBOT_ZERO
+    if (plan.spell == 18392 && plan.source != bot->GetObjectGuid() && bot->IsNonMeleeSpellCasted(false)) return false;
+#endif
     if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= 1.5f)
     {
         if (!plan.exclusive) return false;
+#ifdef MANGOSBOT_ZERO
+        if (!EncounterMovementRequired(bot, plan.destination, 1.5f)) return false;
+#endif
         ai->StopMoving();
         SetDuration(100);
         return true;
@@ -87,8 +112,13 @@ Unit* OnyxiaAddsAction::GetTarget()
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
         bot->GetMapId() != 249 || !bot->IsInCombat() || ai->IsHeal(bot)) return nullptr;
     Unit* boss = FindOnyxiaBoss(ai);
-    if (!boss || boss->GetVictim() == bot) return nullptr;
+    if (!boss) return nullptr;
     const bool airborne = boss->IsLevitating() || boss->GetPositionZ() - bot->GetPositionZ() > 10;
+#ifdef MANGOSBOT_ZERO
+    if (!airborne && boss->GetVictim() == bot) return nullptr;
+#else
+    if (boss->GetVictim() == bot) return nullptr;
+#endif
     if (!airborne && !ai->IsTank(bot)) return nullptr;
     auto validOrder = [this](Unit* unit)
     {

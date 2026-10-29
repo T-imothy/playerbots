@@ -281,6 +281,21 @@ float PreserveMoltenCorePositionMultiplier::GetValue(Action* action)
 
 float PreserveOnyxiaPositionMultiplier::GetValue(Action* action)
 {
+#ifdef MANGOSBOT_ZERO
+    // Even a failed floor/LOS search must not restart melee chase on a flying
+    // boss. Damage target selection and actual ground-add work remain available.
+    if (action && !ai->IsRanged(ai->GetBot()) && !ai->IsHeal(ai->GetBot()))
+    {
+        const std::string& name = action->getName();
+        if (name == "reach melee" || name == "set behind" || name == "move out of enemy contact" ||
+            (dynamic_cast<CastSpellAction*>(action) && static_cast<CastSpellAction*>(action)->HasMovementEffect()))
+        {
+            Unit* boss = FindOnyxiaBoss(ai);
+            if (boss && (boss->IsLevitating() || boss->GetPositionZ() - ai->GetBot()->GetPositionZ() > 10) &&
+                !OnyxiaMeleeAirAdd(ai, boss)) return 0.0f;
+        }
+    }
+#endif
     if (action && (action->getName() == "dps assist" || action->getName() == "tank assist"))
     {
         OnyxiaAddsAction adds(ai);
@@ -292,6 +307,12 @@ float PreserveOnyxiaPositionMultiplier::GetValue(Action* action)
     if (!movement && !(spell && spell->HasMovementEffect())) return 1.0f;
     EncounterPosition plan;
     if (!OnyxiaPositionAction::GetPlan(ai, plan)) return 1.0f;
+#ifdef MANGOSBOT_ZERO
+    // Healers may reach a newly selected patient while no lethal breath is
+    // active. The next spacing pass uses the actual patient and native range.
+    if (plan.spell == 18392 && plan.source != ai->GetBot()->GetObjectGuid() &&
+        (action->getName() == "reach party member to heal" || action->getName() == "reach party member to dispel")) return 1.0f;
+#endif
     if (!plan.exclusive) return dynamic_cast<SetBehindTargetAction*>(action) ? 0.0f : 1.0f;
     return 0.0f;
 }
