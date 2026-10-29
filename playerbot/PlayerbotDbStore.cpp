@@ -28,7 +28,7 @@ namespace
         for (BotState state : {BotState::BOT_STATE_COMBAT, BotState::BOT_STATE_NON_COMBAT})
         {
             ai->ChangeStrategy("-warsong,-arathi,-alterac,-travel,-rpg,-grind,-wander,-follow", state);
-            ai->ChangeStrategy("+battleground", state);
+            ai->ChangeStrategy("+default,+pvp,+battleground", state);
             ai->ChangeStrategy(objective, state);
         }
         ai->ChangeStrategy("+battleground", BotState::BOT_STATE_DEAD);

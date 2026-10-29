@@ -84,6 +84,8 @@ int main(){
   auto&co=ai.strategies[BotState::BOT_STATE_COMBAT];auto&nc=ai.strategies[BotState::BOT_STATE_NON_COMBAT];
   assert(co.count("frost")&&co.count("heal")&&co.count("stay"));assert(ai.context.loaded==1);
   assert(bool(co.count("battleground"))==supported&&bool(nc.count("battleground"))==supported);
+  assert(bool(co.count("pvp"))==supported&&bool(nc.count("pvp"))==supported);
+  assert(bool(co.count("default"))==supported&&bool(nc.count("default"))==supported);
   assert(bool(nc.count("follow"))==!supported&&bool(nc.count("travel"))==!supported);
   assert(bool(ai.strategies[BotState::BOT_STATE_DEAD].count("battleground"))==supported);
   if(supported){const char*goal=type==2?"warsong":type==3?"arathi":"alterac";assert(co.count(goal)&&nc.count(goal));}
