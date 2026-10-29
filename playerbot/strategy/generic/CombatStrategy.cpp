@@ -12,6 +12,14 @@ void CombatStrategy::InitCombatTriggers(std::list<TriggerNode*> &triggers)
         NextAction::array(0, new NextAction("select new target", 89.0f), NULL)));
 
     triggers.push_back(new TriggerNode(
+        "combat standoff",
+        NextAction::array(0, new NextAction("drop standoff", 91.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
+        "movement loop stuck",
+        NextAction::array(0, new NextAction("release stuck movement", 101.0f), NULL)));
+
+    triggers.push_back(new TriggerNode(
         "mounted",
         NextAction::array(0, new NextAction("check mount state", 88.0f), NULL)));
 
@@ -108,7 +116,7 @@ void WaitForAttackStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers
 {
     triggers.push_back(new TriggerNode(
         "wait for attack safe distance",
-        NextAction::array(0, new NextAction("wait for attack keep safe distance", 60.0f), NULL)));
+        NextAction::array(0, new NextAction("wait for attack keep safe distance", ACTION_MOVE), NULL)));
 }
 
 void WaitForAttackStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)

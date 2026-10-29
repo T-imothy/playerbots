@@ -1966,6 +1966,9 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
             }
 #endif
 
+            if (message.empty())
+                return;
+
             bool isAiChat = sPlayerbotAIConfig.llmEnabled > 0 && (HasStrategy("ai chat", BotState::BOT_STATE_NON_COMBAT) || sPlayerbotAIConfig.llmEnabled == 3);
 
             if (m_recordIncommingMessages)
@@ -2101,7 +2104,6 @@ void PlayerbotAI::HandleBotOutgoingPacket(const WorldPacket& packet)
                     }
                 }
 
-                MANGOS_ASSERT(!message.empty());     
                 QueueChatResponse(msgtype, guid1, ObjectGuid(), message, chanName, name, isAiChat);
                 GetAiObjectContext()->GetValue<time_t>("last said", "chat")->Set(time(0) + urand(5, 25));
 
@@ -2386,12 +2388,25 @@ void PlayerbotAI::DoNextAction(bool min)
 
     Group *group = bot->GetGroup();
 
+    if (tickResetStrategiesPending && time(NULL) - lastTickResetStrategies >= 2)
+    {
+        lastTickResetStrategies = time(NULL);
+        tickResetStrategiesPending = false;
+        ResetStrategies();
+    }
+
     //Remove bot masters not in our group.
     if (master && master != bot && !HasActivePlayerMaster() && (!group || group->GetLeaderGuid() != master->GetObjectGuid()))
     {
         master = IsRealPlayer() ? bot : nullptr;
         SetMaster(master);
-        ResetStrategies();
+        if (time(NULL) - lastTickResetStrategies >= 2)
+        {
+            lastTickResetStrategies = time(NULL);
+            ResetStrategies();
+        }
+        else
+            tickResetStrategiesPending = true;
     }
 
     // test BG master set
@@ -2486,7 +2501,13 @@ void PlayerbotAI::DoNextAction(bool min)
         {
             master = newMaster;
             SetMaster(newMaster);
-            ResetStrategies();
+            if (time(NULL) - lastTickResetStrategies >= 2)
+            {
+                lastTickResetStrategies = time(NULL);
+                ResetStrategies();
+            }
+            else
+                tickResetStrategiesPending = true;
 
             if (sRandomPlayerbotMgr.IsFreeBot(bot))
             {
@@ -2507,11 +2528,17 @@ void PlayerbotAI::DoNextAction(bool min)
 
     // fix bots in BG not having proper strategies
 #ifdef MANGOSBOT_ZERO
-    if (bot->InBattleGround() && !HasStrategy("battleground", BotState::BOT_STATE_NON_COMBAT))
+    if (bot->InBattleGround() && !HasStrategy("battleground", BotState::BOT_STATE_NON_COMBAT) && time(NULL) - lastTickResetStrategies >= 2)
+    {
+        lastTickResetStrategies = time(NULL);
         ResetStrategies();
+    }
 #else
-    if ((bot->InBattleGround() && (!bot->IsBeingTeleported() && !bot->InArena()) && !HasStrategy("battleground", BotState::BOT_STATE_NON_COMBAT)) || ((!bot->IsBeingTeleported()&&bot->InArena()) && !HasStrategy("arena", BotState::BOT_STATE_NON_COMBAT)))
+    if (((bot->InBattleGround() && (!bot->IsBeingTeleported() && !bot->InArena()) && !HasStrategy("battleground", BotState::BOT_STATE_NON_COMBAT)) || ((!bot->IsBeingTeleported()&&bot->InArena()) && !HasStrategy("arena", BotState::BOT_STATE_NON_COMBAT))) && time(NULL) - lastTickResetStrategies >= 2)
+    {
+        lastTickResetStrategies = time(NULL);
         ResetStrategies();
+    }
 #endif
 
     if (master && master->IsInWorld())
