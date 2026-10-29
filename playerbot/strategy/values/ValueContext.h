@@ -447,6 +447,7 @@ namespace ai
                 creators["group and"] = [](PlayerbotAI* ai) { return new GroupBoolANDValue(ai); };
                 creators["group or"] = [](PlayerbotAI* ai) { return new GroupBoolORValue(ai); };
                 creators["group ready"] = [](PlayerbotAI* ai) { return new GroupReadyValue(ai); };
+                creators["movement loop age"] = [](PlayerbotAI* ai) { return new IntManualSetValue(ai); };
 
                 creators["closest entry"] = [](PlayerbotAI* ai) { return new ClosestEntryValue(ai); };
 

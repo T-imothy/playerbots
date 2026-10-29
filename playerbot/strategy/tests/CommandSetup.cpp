@@ -8,6 +8,7 @@
 #include "TestAction.h"
 #include "TestRegistry.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/LootObjectStack.h"
 
 using namespace ai;
 
@@ -150,6 +151,8 @@ TestResult CommandSetupClearMobs::Execute(const std::string& params, Player* bot
     if (pos != std::string::npos)
     {
         std::string radStr = params.substr(pos + 6);
+        if (!radStr.empty() && radStr[0] == '=')
+            radStr = radStr.substr(1);
         radius = atof(radStr.c_str());
     }
 
@@ -170,7 +173,7 @@ TestResult CommandSetupClearMobs::Execute(const std::string& params, Player* bot
     std::list<Creature*> creatures;
     MaNGOS::AnyUnitInObjectRangeCheck checker(bot, radius);
     MaNGOS::CreatureListSearcher<MaNGOS::AnyUnitInObjectRangeCheck> searcher(creatures, checker);
-    Cell::VisitWorldObjects(bot, searcher, radius);
+    Cell::VisitAllObjects(bot, searcher, radius);
 
     uint32 cleared = 0;
     for (auto& creature : creatures)
@@ -485,6 +488,22 @@ TestResult CommandSpawnMob::Execute(const std::string& params, Player* bot,
         return TestResult::IMPOSSIBLE;
     }
 
+    uint32 spawnLevel = 0;
+    size_t levelPos = params.find("level=");
+    if (levelPos != std::string::npos)
+        spawnLevel = (uint32)atoi(params.c_str() + levelPos + 6);
+
+    float leashRange = 0.0f;
+    size_t leashPos = params.find("leash=");
+    if (leashPos != std::string::npos)
+        leashRange = atof(params.c_str() + leashPos + 6);
+
+    if (leashPos != std::string::npos && leashRange <= 0.0f)
+    {
+        message = "Invalid leash range: " + params;
+        return TestResult::IMPOSSIBLE;
+    }
+
     float x = bot->GetPositionX() + distance;
     float y = bot->GetPositionY();
 
@@ -515,8 +534,15 @@ TestResult CommandSpawnMob::Execute(const std::string& params, Player* bot,
 
     bot->GetMap()->ForceLoadGrid(bot->GetPositionX(), bot->GetPositionY());
 
-    Creature* spawned = bot->SummonCreature(entryId, x, y, bot->GetPositionZ(),
+    TempSpawnSettings settings(bot, entryId, x, y, bot->GetPositionZ(),
         bot->GetOrientation() + M_PI_F, TEMPSPAWN_MANUAL_DESPAWN, 0);
+    settings.level = spawnLevel;
+
+#ifdef MANGOSBOT_TWO
+    Creature* spawned = WorldObject::SummonCreature(settings, bot->GetMap(), bot->GetPhaseMask());
+#else
+    Creature* spawned = WorldObject::SummonCreature(settings, bot->GetMap());
+#endif
 
     if (!spawned)
     {
@@ -527,6 +553,16 @@ TestResult CommandSpawnMob::Execute(const std::string& params, Player* bot,
     ctx.focusMobEntry = entryId;
     ctx.focusMobGuid = spawned->GetObjectGuid();
     ctx.focusMobPassive = true;
+
+    if (leashRange > 0.0f)
+    {
+        float const sx = spawned->GetPositionX();
+        float const sy = spawned->GetPositionY();
+        spawned->GetCombatManager().SetLeashingCheck([sx, sy, leashRange](Unit*, float x, float y, float z)
+        {
+            return sqrt((x - sx) * (x - sx) + (y - sy) * (y - sy)) > leashRange;
+        });
+    }
 
     if (params.find("aggro") != std::string::npos && spawned->AI())
         spawned->AI()->AttackStart(bot);
@@ -541,6 +577,85 @@ TestResult CommandSpawnMob::Execute(const std::string& params, Player* bot,
     sLog.outString("[TestAction] Bot %s spawned creature %s (entry %u) at distance %.1f",
         bot->GetName(), spawned->GetName(), entryId, bot->GetDistance(spawned));
     return TestResult::PASS;
+}
+
+TestResult CommandFollowFocus::Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message)
+{
+    Creature* focus = bot->IsInWorld() && bot->GetMap() ? bot->GetMap()->GetCreature(ctx.focusMobGuid) : nullptr;
+    if (!focus || !focus->IsInWorld())
+    {
+        message = "follow focus: no focus mob spawned yet";
+        return TestResult::PENDING;
+    }
+
+    ai->ChangeStrategy("+follow,-rpg,-travel,-stay,-guard,-wander,-passive", BotState::BOT_STATE_NON_COMBAT);
+    ai->ChangeStrategy("-stay,-guard,-wander", BotState::BOT_STATE_COMBAT);
+    AiObjectContext* context = ai->GetAiObjectContext();
+    SET_AI_VALUE(GuidPosition, "manual follow target", focus);
+
+    return TestResult::PASS;
+}
+
+TestResult CommandKillFocus::Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message)
+{
+    Creature* focus = bot->IsInWorld() && bot->GetMap() ? bot->GetMap()->GetCreature(ctx.focusMobGuid) : nullptr;
+    if (!focus)
+    {
+        message = "kill focus: no focus mob spawned yet";
+        return TestResult::PENDING;
+    }
+
+    if (!focus->IsAlive())
+    {
+        message = "kill focus: focus mob already dead";
+        return TestResult::PASS;
+    }
+
+    Unit::Kill(bot, focus, DIRECT_DAMAGE, nullptr, false, false);
+
+    return TestResult::PASS;
+}
+
+TestResult CommandAwaitFocusCorpse::Execute(const std::string& params, Player* bot,
+                    PlayerbotAI* ai, TestContext& ctx, std::string& message)
+{
+    uint32 graceSeconds = 20;
+    if (!params.empty())
+    {
+        std::string graceStr = params;
+        if (TryParseUInt32Strict(graceStr, graceSeconds, message, GetName()) != TestResult::PASS)
+            return TestResult::IMPOSSIBLE;
+    }
+
+    Creature* focus = bot->IsInWorld() && bot->GetMap() ? bot->GetMap()->GetCreature(ctx.focusMobGuid) : nullptr;
+    if (!focus)
+    {
+        message = "await focus corpse: focus mob despawned";
+        return TestResult::FAIL;
+    }
+
+    if (focus->IsAlive())
+        return TestResult::PENDING;
+
+    if (sServerFacade.GetDeathState(focus) == CORPSE && focus->HasFlag(UNIT_DYNAMIC_FLAGS, UNIT_DYNFLAG_LOOTABLE))
+    {
+        AiObjectContext* context = bot->GetPlayerbotAI()->GetAiObjectContext();
+        AI_VALUE(LootObjectStack*, "available loot")->Add(focus->GetObjectGuid());
+        ctx.waitTime = 0;
+        message = "focus corpse lootable and registered";
+        return TestResult::PASS;
+    }
+
+    if (!ctx.waitTime)
+        ctx.waitTime = WorldTimer::getMSTime();
+
+    if (WorldTimer::getMSTimeDiff(ctx.waitTime, WorldTimer::getMSTime()) < graceSeconds * 1000)
+        return TestResult::PENDING;
+
+    message = "await focus corpse: corpse never became lootable (no loot recipient?)";
+    return TestResult::FAIL;
 }
 
 TestResult CommandSetValue::Execute(const std::string& params, Player* bot, PlayerbotAI* ai, TestContext& ctx, std::string& message)

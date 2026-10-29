@@ -3126,12 +3126,31 @@ bool MovementAction::Flee(Unit *target)
         fleeDelay = 1;
     }
 
-    if (lastFlee && sServerFacade.isMoving(bot))
+    if (lastFlee && (now - lastFlee) <= fleeDelay &&
+        (sServerFacade.isMoving(bot) || (!bot->GetGroup() && !ai->HasRealPlayerMaster() &&
+            WorldPosition(bot).isOverworld())))
     {
-        if ((now - lastFlee) <= fleeDelay)
-        {
+        if (sServerFacade.isMoving(bot))
             return true;
+
+        WorldPosition const fleeTo = AI_VALUE(LastMovement&, "last movement").lastFleeTo;
+        if (fleeTo && fleeTo.isFinite() && fleeTo.getMapId() == bot->GetMapId())
+        {
+            WorldPosition const botPos(bot);
+            float const dx = fleeTo.getX() - botPos.getX();
+            float const dy = fleeTo.getY() - botPos.getY();
+            float const len = sqrt(dx * dx + dy * dy);
+            if (len > 5.0f)
+            {
+                float const ring = std::min(len, ai->GetRange("flee") * 2);
+                float const nx = botPos.getX() + dx / len * ring;
+                float const ny = botPos.getY() + dy / len * ring;
+                if (MoveTo(bot->GetMapId(), nx, ny, botPos.getZ()))
+                    return true;
+            }
         }
+
+        return false;
     }
     
     const bool isHealer = ai->IsHeal(bot);
@@ -3243,30 +3262,6 @@ bool MovementAction::Flee(Unit *target)
         succeeded = MoveNear(fleeTarget);
     }
 
-    if (!ai->HasRealPlayerMaster() && !ai->IsRealPlayer(target))
-    {
-        bool fullDistance = false;
-        if (target->IsPlayer())
-            fullDistance = true;
-        if (WorldPosition(bot).isOverworld())
-            fullDistance = true;
-
-        float distance = fullDistance ? (ai->GetRange("flee") * 2) : ai->GetRange("flee");
-
-        MotionMaster* mm = bot->GetMotionMaster();
-
-        if (mm->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
-        {
-            ChaseMovementGenerator* chase = (ChaseMovementGenerator*)mm->GetCurrent();
-
-            if (chase->GetCurrentTarget() == target && sServerFacade.GetChaseOffset(bot) == distance)
-                return true;
-        }
-
-        mm->MoveChase(target, distance, WorldPosition(bot).getAngleTo(target), true, false, true, false);
-        return true;
-    }
-
     // Generate a position to flee
     if(!succeeded)
     {
@@ -3296,9 +3291,7 @@ bool MovementAction::Flee(Unit *target)
 
         FleeManager manager(bot, fullDistance ? (ai->GetRange("flee") * 2) : ai->GetRange("flee"), bot->GetAngle(target) + M_PI);
         if (!manager.isUseful())
-        {
             return false;
-        }
 
         if (!urand(0, 50) && ai->HasStrategy("emote", BotState::BOT_STATE_NON_COMBAT))
         {
@@ -3311,13 +3304,31 @@ bool MovementAction::Flee(Unit *target)
         float rx, ry, rz;
         if (!manager.CalculateDestination(&rx, &ry, &rz))
         {
-            ai->TellError(GetMaster(), "Nowhere to flee");
-            return false;
+            AI_VALUE(LastMovement&, "last movement").lastFlee = time(0);
+
+            if (ai->HasRealPlayerMaster() || ai->IsRealPlayer(target))
+                return false;
+
+            float distance = fullDistance ? (ai->GetRange("flee") * 2) : ai->GetRange("flee");
+
+            MotionMaster* mm = bot->GetMotionMaster();
+
+            if (mm->GetCurrentMovementGeneratorType() == CHASE_MOTION_TYPE)
+            {
+                ChaseMovementGenerator* chase = (ChaseMovementGenerator*)mm->GetCurrent();
+
+                if (chase->GetCurrentTarget() == target && sServerFacade.GetChaseOffset(bot) == distance)
+                    return true;
+            }
+
+            mm->MoveChase(target, distance, WorldPosition(bot).getAngleTo(target), true, false, true, false);
+            return true;
         }
 
         if(MoveTo(target->GetMapId(), rx, ry, rz))
         {
             AI_VALUE(LastMovement&, "last movement").lastFlee = time(0);
+            AI_VALUE(LastMovement&, "last movement").lastFleeTo = WorldPosition(target->GetMapId(), rx, ry, rz);
             succeeded = true;
         }
     }

@@ -12,6 +12,7 @@ namespace ai
     {
     public:
         static void RegisterMoveTests();
+        static void RegisterFleeTests();
         static void RegisterSpawnTests();
         static void RegisterRandomizeTests();
         static void RegisterInstanceTests();
@@ -22,6 +23,7 @@ namespace ai
         static void RegisterLabTests();
         static void RegisterLabMicroTests();
         static void RegisterLabStayGuardTests();
+        static void RegisterLabLootTests();
 
         static void RegisterTest(const std::string& name, const std::vector<std::string>& script);
         static void RegisterNamedLocation(const std::string& name, const GuidPosition& pos);

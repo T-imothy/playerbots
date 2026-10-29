@@ -245,6 +245,8 @@ namespace ai
                 creators["reset"] = [](PlayerbotAI* ai) { return new ResetAction(ai); };
                 creators["interrupt current spell"] = [](PlayerbotAI* ai) { return new InterruptCurrentSpellAction(ai); };
                 creators["initialize pet"] = [](PlayerbotAI* ai) { return new InitializePetAction(ai); };
+                creators["drop standoff"] = [](PlayerbotAI* ai) { return new DropStandoffAction(ai); };
+                creators["release stuck movement"] = [](PlayerbotAI* ai) { return new ReleaseStuckMovementAction(ai); };
 
                 // item helpers
                 creators["goblin sapper"] = [](PlayerbotAI* ai) { return new UseGoblinSapperChargeAction(ai); };

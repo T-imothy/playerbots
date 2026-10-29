@@ -97,6 +97,13 @@ public:
                     member->IsBeingTeleported() || member == bot || !bot->IsInMap(member))
                     continue;
 
+                PlayerbotAI* memberAI = member->GetPlayerbotAI();
+                ObjectGuid engagedTarget = memberAI
+                    ? memberAI->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get()
+                    : member->GetSelectionGuid();
+                if (engagedTarget == creature->GetObjectGuid())
+                    return;
+
                 if (!ai->IsTank(member))
                     continue;
 

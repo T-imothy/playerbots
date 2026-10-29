@@ -245,6 +245,8 @@ namespace ai
                 creators["combat stuck"] = [](PlayerbotAI* ai) { return new CombatStuckTrigger(ai); };
                 creators["combat long stuck"] = [](PlayerbotAI* ai) { return new CombatLongStuckTrigger(ai); };
                 creators["leader is afk"] = [](PlayerbotAI* ai) { return new LeaderIsAfkTrigger(ai); };
+                creators["combat standoff"] = [](PlayerbotAI* ai) { return new CombatStandoffTrigger(ai); };
+                creators["movement loop stuck"] = [](PlayerbotAI* ai) { return new MovementLoopStuckTrigger(ai); };
 
                 creators["petition signed"] = [](PlayerbotAI* ai) { return new PetitionTurnInTrigger(ai); };
                 creators["buy tabard"] = [](PlayerbotAI* ai) { return new BuyTabardTrigger(ai); };

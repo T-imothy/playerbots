@@ -71,6 +71,7 @@ namespace ai
         // Ordinary useless actions (e.g. an already-present buff) do not.
         virtual bool ShouldTryAlternativesWhenUseless() { return false; }
         virtual bool isUsefulWhenStunned() { return false; }
+        virtual bool IsMovement() { return false; }
         virtual NextAction** getPrerequisites() { return NULL; }
         virtual NextAction** getAlternatives() { return NULL; }
         virtual NextAction** getContinuers() { return NULL; }

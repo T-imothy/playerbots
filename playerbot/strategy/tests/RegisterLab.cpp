@@ -195,6 +195,36 @@ void TestRegistry::RegisterLabStayGuardTests()
     }
 }
 
+void TestRegistry::RegisterLabLootTests()
+{
+    RegisterTest("lab_loot_follow_far_corpse", {
+        "# Screenshot repro 2026-10-25 (bot Ruth): a following bot ping-pongs between 'move to loot'",
+        "# [far from current loot] and 'follow' [out of free move range] on loot it can never reach.",
+        "# The Rabbit anchor has no loot table on purpose: the far corpse is the only loot in the stack.",
+        "# The far Fang is planted AFTER the follow is running and the loot strategy is wide: a lootable",
+        "# corpse decays to bones in ~15-35 s, so planting it first made the wide-strategy window a race",
+        "# the setup kept losing. Loot appearing while already following is the real scenario anyway.",
+        "# Expected: the follower stays with its anchor; repeated 'move to loot' attempts are the defect.",
+        "monitor not on map 34 => abort \"Bot left the lab map\"",
+        "monitor bot dead => abort \"Bot died during the loot ping-pong probe\"",
+        "monitor distance to lab_stockade_center > 60 => fail \"Chase drifted the bot > 60m off its anchor, now at <current position>\"",
+        "monitor loot stack > 90 => fail \"The far corpse never registered as loot - repro setup failed\"",
+        "monitor action spam move to loot > 3 => fail \"Follower ping-pongs between move-to-loot and follow on the far corpse at <current position>\"",
+        "monitor value bool can loot == true => pass \"Follower reached the far corpse in <time elapsed>\"",
+        "monitor time > 150 => pass \"Follower ignored the far loot and stayed with its follow point for <time elapsed>\"",
+        "monitor time > 420 => fail \"Timeout: loot neither reached nor ignored after <time elapsed>\"",
+        "require bot is level=60",
+        "teleport lab_stockade_center",
+        "clear mobs radius=1500",
+        "spawn mob 721 dist=5",
+        "follow focus",
+        "set value string loot strategy => equip,quest,skill,disenchant,use,vendor,trash",
+        "spawn mob 471 dist=22 aggro",
+        "await focus corpse 60",
+        "observe"
+    });
+}
+
 void TestRegistry::RegisterLabMicroTests()
 {
     RegisterTest("lab_micro1_stockade", {
@@ -223,6 +253,154 @@ void TestRegistry::RegisterLabMicroTests()
         "monitor time > 300 => pass \"Stand clean with attacker monitor\"",
         "teleport lab_stockade_center",
         "wait 30",
+        "observe"
+    });
+}
+
+void TestRegistry::RegisterFleeTests()
+{
+    static const uint32 DUMMY_ENTRY = 6788;
+    static const uint32 GRAY_ENTRY = 2346;
+
+    RegisterNamedLocation("lab_flee_center",
+        GuidPosition(ObjectGuid(), WorldPosition(1, -7150.9f, -2282.4f, -266.0f)));
+    RegisterNamedLocation("lab_flee_far",
+        GuidPosition(ObjectGuid(), WorldPosition(1, -7301.5f, -2279.1f, -265.2f)));
+
+    std::string failFledSolo =
+        "monitor distance to lab_flee_center > 60 => fail \"Bot fled a fight it should have fought\"";
+
+    RegisterTest("lab_flee_solo", {
+        "# 1v1 at the anchor: one hard hostile must be fought and killed, not fled - bot pinned so drift means fled",
+        "nc -rpg,+stay",
+        "gm visible on",
+        "gm on",
+        "monitor not on map 1 => abort \"Bot left the lab map\"",
+        "monitor bot dead => abort \"Bot died to a single hostile\"",
+        failFledSolo,
+        std::string("monitor mob ") + std::to_string(DUMMY_ENTRY) +
+            " is dead => pass \"Single hostile engaged and killed without fleeing\"",
+        "monitor time > 420 => fail \"Single hostile not resolved in 7 min\"",
+        "require bot is level=80 faction=alliance",
+        "teleport lab_flee_center",
+        "wait 30",
+        "clear mobs radius=1500",
+        "nc -rpg,+stay",
+        "accept quest 2139",
+        "gm off",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=12 toward lab_flee_far aggro level=75",
+        "observe"
+    });
+
+    RegisterTest("lab_flee_pack", {
+        "# Doomed pack: five hard hostiles on a full-health warrior - it must disengage and survive, not stand and die",
+        "gm visible on",
+        "gm on",
+        "monitor not on map 1 => abort \"Bot left the lab map\"",
+        "monitor bot dead => abort \"Bot stood and died against the pack it predicted it could not win\"",
+        "monitor not in combat => pass \"Bot disengaged the doomed pack (combat cleared after engaging)\"",
+        "monitor time > 420 => pass \"Bot survived the doomed pack for 7 min without dying\"",
+        "require bot is level=80 class=1 faction=alliance",
+        "teleport lab_flee_center",
+        "wait 30",
+        "clear mobs radius=1500",
+        "accept quest 2139",
+        "gm off",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=10 toward lab_flee_far aggro level=75",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=14 toward lab_flee_far aggro level=75",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=18 toward lab_flee_far aggro level=75",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=22 toward lab_flee_far aggro level=75",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=26 toward lab_flee_far aggro level=75",
+        "observe"
+    });
+
+    RegisterTest("lab_flee_pack_leash", {
+        "# Doomed pack, leashed: the disengage is only real when the pack resets home after the bot breaks contact",
+        "gm visible on",
+        "gm on",
+        "monitor not on map 1 => abort \"Bot left the lab map\"",
+        "monitor bot dead => abort \"Bot stood and died against the pack it predicted it could not win\"",
+        std::string("monitor mob ") + std::to_string(DUMMY_ENTRY) +
+            " is home => pass \"Pack reset home after the bot disengaged (leash proof)\"",
+        "monitor time > 420 => fail \"Pack never reset within 7 min - the bot never truly left the pack\"",
+        "require bot is level=80 class=1 faction=alliance",
+        "teleport lab_flee_center",
+        "wait 30",
+        "clear mobs radius=1500",
+        "accept quest 2139",
+        "gm off",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=10 toward lab_flee_far aggro level=75 leash=30",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=14 toward lab_flee_far aggro level=75 leash=30",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=18 toward lab_flee_far aggro level=75 leash=30",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=22 toward lab_flee_far aggro level=75 leash=30",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=26 toward lab_flee_far aggro level=75 leash=30",
+        "observe"
+    });
+
+    RegisterTest("lab_flee_pack_casters", {
+        "# Doomed pack on a caster: a kiting mage must still end the chase (pack resets home), not kite forever",
+        "gm visible on",
+        "gm on",
+        "monitor not on map 1 => abort \"Bot left the lab map\"",
+        "monitor bot dead => abort \"Bot stood and died against the pack it predicted it could not win\"",
+        std::string("monitor mob ") + std::to_string(DUMMY_ENTRY) +
+            " is home => pass \"Caster ended the chase - pack reset home (leash proof)\"",
+        "monitor time > 420 => fail \"Caster never ended the chase within 7 min - endless kite wedge\"",
+        "require bot is level=80 class=8 faction=alliance",
+        "teleport lab_flee_center",
+        "wait 30",
+        "clear mobs radius=1500",
+        "accept quest 2139",
+        "gm off",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=10 toward lab_flee_far aggro level=75 leash=30",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=14 toward lab_flee_far aggro level=75 leash=30",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=18 toward lab_flee_far aggro level=75 leash=30",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=22 toward lab_flee_far aggro level=75 leash=30",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=26 toward lab_flee_far aggro level=75 leash=30",
+        "observe"
+    });
+
+    RegisterTest("lab_flee_grays", {
+        "# Numbers alone do not trigger flee: four forced grays never disengage the bot in 7 min",
+        "nc -rpg,+stay",
+        "gm visible on",
+        "gm on",
+        "monitor not on map 1 => abort \"Bot left the lab map\"",
+        "monitor bot dead => abort \"Bot died to grays\"",
+        failFledSolo,
+        "monitor time > 420 => pass \"Gray attackers for 7 min never triggered flee\"",
+        "require bot is level=80 faction=alliance",
+        "teleport lab_flee_center",
+        "wait 30",
+        "clear mobs radius=1500",
+        "nc -rpg,+stay",
+        "accept quest 2139",
+        "gm off",
+        std::string("spawn mob ") + std::to_string(GRAY_ENTRY) + " dist=8 toward lab_flee_far aggro",
+        std::string("spawn mob ") + std::to_string(GRAY_ENTRY) + " dist=9 toward lab_flee_far aggro",
+        std::string("spawn mob ") + std::to_string(GRAY_ENTRY) + " dist=10 toward lab_flee_far aggro",
+        std::string("spawn mob ") + std::to_string(GRAY_ENTRY) + " dist=11 toward lab_flee_far aggro",
+        "observe"
+    });
+
+    RegisterTest("lab_flee_dungeon", {
+        "# Dungeon exclusion: a pack inside a dungeon must be resolved by fighting, fleeing stays off",
+        "gm visible on",
+        "gm on",
+        "monitor not on map 34 => abort \"Bot left the lab map\"",
+        "monitor bot dead => abort \"Bot died resolving the dungeon pack\"",
+        "monitor distance to lab_stockade_center > 150 => fail \"Bot fled inside a dungeon where outnumbered is disabled\"",
+        "monitor not in combat => pass \"Dungeon pack resolved by fighting (flee exclusion honored)\"",
+        "monitor time > 420 => fail \"Dungeon pack not resolved in 7 min\"",
+        "require bot is level=80 class=1",
+        "teleport lab_stockade_center",
+        "wait 30",
+        "clear mobs radius=1500",
+        "accept quest 2139",
+        "gm off",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=10 toward lab_stockade_far aggro",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=14 toward lab_stockade_far aggro",
+        std::string("spawn mob ") + std::to_string(DUMMY_ENTRY) + " dist=18 toward lab_stockade_far aggro",
         "observe"
     });
 }
