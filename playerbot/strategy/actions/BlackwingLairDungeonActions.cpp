@@ -10,6 +10,7 @@
 #include "playerbot/ServerFacade.h"
 
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "playerbot/strategy/values/PossibleTargetsValue.h"
 #include "playerbot/strategy/values/SuppressionDutyValue.h"
 #include "MovementPathSafety.h"
 #include "Combat/ThreatManager.h"
@@ -407,6 +408,7 @@ bool BlackwingLairPositionAction::Execute(Event& event)
 namespace
 {
     Unit* RazorgoreCreature(WorldObject* center, uint32 entry);
+    std::vector<GameObject*> RazorgoreObjects(WorldObject* center, uint32 entry);
     bool RazorgoreEggPhase(PlayerbotAI* ai);
 
     bool BwlReady(PlayerbotAI* ai)
@@ -485,8 +487,121 @@ bool ai::IsProtectedBlackwingTarget(Player* bot, Unit* target)
     return instance && instance->GetData(0) != SPECIAL;
 }
 
+Unit* ai::RazorgoreDefenseTarget(PlayerbotAI* ai, bool& active)
+{
+    active = false;
+#ifdef MANGOSBOT_ZERO
+    Player* bot = ai->GetBot();
+    if (!RazorgoreEggPhase(ai) || bot->GetCharm() || ai->IsHeal(bot)) return nullptr;
+    const auto orbs = RazorgoreObjects(bot, 177808);
+    if (orbs.empty()) return nullptr;
+    // The orb is a fixed room anchor. Per-bot sight lists give different tanks
+    // different assignments, particularly between the floor and the platform.
+    GameObject* orb = orbs.front();
+    Unit* dragon = RazorgoreCreature(orb, 12435);
+    Player* controller = dragon ? dynamic_cast<Player*>(dragon->GetCharmer()) : nullptr;
+    if (!BwlMember(bot, controller)) controller = nullptr;
+    active = true;
+    std::list<Unit*> nearby;
+    MaNGOS::AnyUnitInObjectRangeCheck check(orb, 150.0f);
+    MaNGOS::UnitListSearcher<MaNGOS::AnyUnitInObjectRangeCheck> searcher(nearby, check);
+    Cell::VisitAllObjects(orb, searcher, 150.0f);
+    std::vector<Unit*> enemies;
+    for (Unit* enemy : nearby)
+    {
+        if (!enemy || (enemy->GetEntry() != 12416 && enemy->GetEntry() != 12420 &&
+            enemy->GetEntry() != 12422 && enemy->GetEntry() != 12557 && enemy->GetEntry() != 14456)) continue;
+        if (!BwlGroupEngaged(ai, enemy) || enemy->HasCharmer() ||
+            !PossibleTargetsValue::IsAttackable(enemy, bot) || sServerFacade.IsFriendlyTo(bot, enemy) ||
+            PossibleAttackTargetsValue::IsCcTarget(enemy, bot) ||
+            PossibleAttackTargetsValue::HasBreakableCC(enemy, bot) ||
+            PossibleAttackTargetsValue::HasUnBreakableCC(enemy, bot)) continue;
+        const Creature* creature = dynamic_cast<const Creature*>(enemy);
+        if (!creature || creature->GetCombatManager().IsInEvadeMode()) continue;
+        enemies.push_back(enemy);
+    }
+    const auto threatened = [&](Unit* enemy) {
+        Unit* victim = enemy->GetVictim();
+        if (controller && victim == controller) return 3;
+        if (dragon && victim == dragon) return 2;
+        Player* player = dynamic_cast<Player*>(victim);
+        return BwlMember(bot, player) && !ai->IsTank(player) ? 1 : 0;
+    };
+    std::sort(enemies.begin(), enemies.end(), [&](Unit* a, Unit* b) {
+        if (threatened(a) != threatened(b)) return threatened(a) > threatened(b);
+        if (BwlAddPriority(a->GetEntry()) != BwlAddPriority(b->GetEntry()))
+            return BwlAddPriority(a->GetEntry()) > BwlAddPriority(b->GetEntry());
+        return a->GetObjectGuid() < b->GetObjectGuid();
+    });
+    if (!ai->IsTank(bot))
+    {
+        // Rescue the controller/controlled dragon even when a damage mark is
+        // elsewhere. Keep explicit kill orders for the ordinary wave cleanup.
+        if (!enemies.empty() && threatened(enemies.front()) >= 2) return enemies.front();
+        for (const char* value : {"attack target", "rti target"})
+        {
+            Unit* ordered = ai->GetUnit(AI_VALUE(ObjectGuid, value));
+            if (std::find(enemies.begin(), enemies.end(), ordered) != enemies.end()) return ordered;
+        }
+        return enemies.empty() ? nullptr : enemies.front();
+    }
+    std::vector<Player*> tanks;
+    std::map<Player*, unsigned> load;
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* tank = ref->getSource();
+        if (BwlMember(bot, tank) && ai->IsTank(tank) && !tank->GetCharm() &&
+            tank->GetDistance(orb) <= 150 && tank->GetPlayerbotAI() &&
+            !tank->GetPlayerbotAI()->IsRealPlayer() && tank->GetPlayerbotAI()->CanMove()) tanks.push_back(tank);
+    }
+    std::sort(tanks.begin(), tanks.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+    Unit* held = nullptr;
+    for (Unit* enemy : enemies)
+    {
+        Player* holder = dynamic_cast<Player*>(enemy->GetVictim());
+        if (BwlMember(bot, holder) && ai->IsTank(holder))
+        {
+            ++load[holder];
+            if (holder == bot && !held) held = enemy;
+        }
+    }
+    Unit* rescue = nullptr;
+    for (Unit* enemy : enemies)
+    {
+        Player* holder = dynamic_cast<Player*>(enemy->GetVictim());
+        if (BwlMember(bot, holder) && ai->IsTank(holder)) continue;
+        Player* owner = nullptr;
+        for (Player* tank : tanks)
+            if (!owner || load[tank] < load[owner] ||
+                (load[tank] == load[owner] && tank->GetDistance(enemy) < owner->GetDistance(enemy))) owner = tank;
+        if (!owner) break;
+        ++load[owner];
+        if (owner == bot && !rescue) rescue = enemy;
+    }
+    return rescue ? rescue : held;
+#else
+    return nullptr;
+#endif
+}
+
+bool ai::NeedsRazorgoreControllerHealing(PlayerbotAI* ai, Unit* target)
+{
+#ifdef MANGOSBOT_ZERO
+    if (!RazorgoreEggPhase(ai) || !target || !target->IsPlayer() ||
+        !BwlMember(ai->GetBot(), static_cast<Player*>(target)) || target->GetHealthPercent() >= 100) return false;
+    Unit* dragon = target->GetCharm();
+    return dragon && dragon->IsInWorld() && dragon->IsAlive() && target->IsInMap(dragon) &&
+        dragon->GetEntry() == 12435 && dragon->GetCharmer() == target;
+#else
+    return false;
+#endif
+}
+
 Unit* BlackwingLairPriorityTargetAction::GetTarget()
 {
+    bool defense = false;
+    Unit* assigned = RazorgoreDefenseTarget(ai, defense);
+    if (defense) return assigned;
     if (!BwlReady(ai) || ai->IsHeal(bot)) return nullptr;
     auto valid = [this](Unit* unit) {
         return unit && unit->IsInWorld() && unit->IsAlive() && unit->IsInCombat() &&

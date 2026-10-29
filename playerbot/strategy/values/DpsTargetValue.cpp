@@ -6,12 +6,16 @@
 #include "playerbot/strategy/MeleeCombatPolicy.h"
 #include "playerbot/strategy/actions/DungeonActions.h"
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
+#include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
 
 using namespace ai;
 
 
 ObjectGuid DpsTargetValue::Calculate()
 {
+    bool defense = false;
+    Unit* assigned = RazorgoreDefenseTarget(ai, defense);
+    if (defense) return assigned ? assigned->GetObjectGuid() : ObjectGuid();
     Unit* healer = nullptr;
     std::set<ObjectGuid> engagedHealers;
     if (bot->IsInWorld() && !bot->IsBeingTeleported() && bot->GetMap()->IsDungeon() &&
@@ -97,6 +101,9 @@ protected:
 
 ObjectGuid DpsAoeTargetValue::Calculate()
 {
+    bool defense = false;
+    Unit* assigned = RazorgoreDefenseTarget(ai, defense);
+    if (defense) return assigned ? assigned->GetObjectGuid() : ObjectGuid();
     if (bot->IsInWorld() && bot->GetMapId()==409 && !ai->IsTank(bot) && !ai->IsHeal(bot))
     {
         MoltenCorePriorityTargetAction priority(ai);

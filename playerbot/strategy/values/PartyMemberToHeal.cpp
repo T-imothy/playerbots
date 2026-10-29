@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "PartyMemberToHeal.h"
+#include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/actions/EncounterSpellPolicy.h"
@@ -154,7 +155,8 @@ ObjectGuid PartyMemberToHeal::Calculate()
     // Distribute healers within the most urgent health band. A second healer
     // must not be sent to a healthy tank while the only injured player waits.
     std::map<Unit*, bool> burstTanks;
-    for (Unit* target : needHeals) burstTanks[target] = NeedsMoltenCoreBurstHealing(ai, target);
+    for (Unit* target : needHeals) burstTanks[target] = NeedsMoltenCoreBurstHealing(ai, target) ||
+        NeedsRazorgoreControllerHealing(ai, target);
     const auto urgency = [&](Unit* target) {
         if (target->GetHealthPercent() < sPlayerbotAIConfig.criticalHealth) return 0;
         if (burstTanks.at(target)) return 1;

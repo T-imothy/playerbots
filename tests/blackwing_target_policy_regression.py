@@ -84,6 +84,7 @@ struct Facade{bool IsFriendlyTo(Player*,Unit*u){return u->friendly;}}sServerFaca
 struct Config{float sightDistance=60;}sPlayerbotAIConfig;
 struct PossibleAttackTargetsValue{static bool IsValid(Unit*u,Player*,float,bool,bool){return u->valid;}static bool HasBreakableCC(Unit*u,Player*){return u->cc;}static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}};
 struct BlackwingLairPriorityTargetAction{PlayerbotAI* ai;Player* bot;Unit* GetTarget();};
+Unit* RazorgoreDefenseTarget(PlayerbotAI*,bool& active){active=false;return nullptr;}
 bool RazorgoreEggPhase(PlayerbotAI*){return false;}Unit* RazorgoreCreature(Unit*,unsigned){return nullptr;}bool IsProtectedBlackwingTarget(Player*,Unit*){return false;}
 #define AI_VALUE(type,name) ai->value<type>(name)
 __ROLES__
@@ -117,3 +118,6 @@ for era in ('ZERO','ONE','TWO'):
         tmp=Path(folder);(tmp/'test.cpp').write_text(role_code)
         subprocess.run(['cl','/nologo','/EHsc','/std:c++17',f'/DMANGOSBOT_{era}','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
+
+from razorgore_defense_cases import run
+run(source,role_code)

@@ -12,6 +12,8 @@
 
 namespace ai
 {
+    Unit* RazorgoreDefenseTarget(PlayerbotAI* ai, bool& active);
+    bool NeedsRazorgoreControllerHealing(PlayerbotAI* ai, Unit* target);
     // One action instance owns retry state for its bot; no shared mutable raid state.
     class BlackwingStopUnsafeMovementAction : public Action
     {

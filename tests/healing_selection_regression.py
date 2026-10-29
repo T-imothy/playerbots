@@ -82,6 +82,7 @@ struct Facade{bool IsFriendlyTo(Unit*,Unit* u){return u&&u->friendly;}bool IsAli
 struct Config{unsigned almostFullHealth=95,lowMana=20,criticalHealth=20,lowHealth=50;}sPlayerbotAIConfig;
 struct SpellEntryPredicate{virtual bool Check(const SpellEntry*)=0;};
 struct PartyMemberValue{PlayerbotAI* ai;Player* bot;bool IsTargetOfSpellCast(Unit*,SpellEntryPredicate&);};
+bool NeedsRazorgoreControllerHealing(PlayerbotAI*,Unit*){return false;}
 Unit* burstPatient=nullptr;bool NeedsMoltenCoreBurstHealing(PlayerbotAI*,Unit*u){return u&&u==burstPatient;}
 Unit* raidObjective=nullptr;Unit* FindRaidHealingObjective(PlayerbotAI*){return raidObjective;}
 struct PartyMemberToHeal:PartyMemberValue{ObjectGuid CalculateRaw();Unit* Calculate(){return ai->GetUnit(CalculateRaw());}bool CanHealPet(Pet*);bool Check(Unit*);std::vector<Player*> GetPartyMembers();};

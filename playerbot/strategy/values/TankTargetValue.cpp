@@ -3,6 +3,7 @@
 #include "TankTargetValue.h"
 #include "PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/MeleeCombatPolicy.h"
+#include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
 
 using namespace ai;
 
@@ -55,6 +56,9 @@ protected:
 
 ObjectGuid TankTargetValue::Calculate()
 {
+    bool defense = false;
+    Unit* assigned = RazorgoreDefenseTarget(ai, defense);
+    if (defense) return assigned ? assigned->GetObjectGuid() : ObjectGuid();
     FindTargetForTankStrategy strategy(ai);
     Unit* target = FindTarget(&strategy);
     if (target && strategy.HasRescueTarget()) return target->GetObjectGuid();
