@@ -11,7 +11,7 @@ namespace
     {
     public:
         PreserveSuppressionDutyMovementMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve suppression duty movement") {}
-        float GetValue(Action* action) override
+        float GetValue(ai::Action* action) override
         {
             if (!action || !SuppressionDutyOwnsMovement(ai)) return 1.0f;
             const std::string name = action->getName();
