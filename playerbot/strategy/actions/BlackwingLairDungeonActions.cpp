@@ -10,7 +10,7 @@
 #include "playerbot/ServerFacade.h"
 
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
-#include "playerbot/strategy/values/PossibleTargetsValue.h"
+#include "playerbot/strategy/MeleeCombatPolicy.h"
 #include "playerbot/strategy/values/SuppressionDutyValue.h"
 #include "MovementPathSafety.h"
 #include "Combat/ThreatManager.h"
@@ -507,13 +507,14 @@ Unit* ai::RazorgoreDefenseTarget(PlayerbotAI* ai, bool& active)
     MaNGOS::UnitListSearcher<MaNGOS::AnyUnitInObjectRangeCheck> searcher(nearby, check);
     Cell::VisitAllObjects(orb, searcher, 150.0f);
     std::vector<Unit*> enemies;
+    MeleeCcCheck cc(ai);
     for (Unit* enemy : nearby)
     {
         if (!enemy || (enemy->GetEntry() != 12416 && enemy->GetEntry() != 12420 &&
             enemy->GetEntry() != 12422 && enemy->GetEntry() != 12557 && enemy->GetEntry() != 14456)) continue;
         if (!BwlGroupEngaged(ai, enemy) || enemy->HasCharmer() ||
-            !PossibleTargetsValue::IsAttackable(enemy, bot) || sServerFacade.IsFriendlyTo(bot, enemy) ||
-            PossibleAttackTargetsValue::IsCcTarget(enemy, bot) ||
+            !bot->CanAttack(enemy) || sServerFacade.IsFriendlyTo(bot, enemy) || cc.Protected(enemy) ||
+            enemy->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_UNTARGETABLE | UNIT_FLAG_UNINTERACTIBLE) ||
             PossibleAttackTargetsValue::HasBreakableCC(enemy, bot) ||
             PossibleAttackTargetsValue::HasUnBreakableCC(enemy, bot)) continue;
         const Creature* creature = dynamic_cast<const Creature*>(enemy);
@@ -535,6 +536,7 @@ Unit* ai::RazorgoreDefenseTarget(PlayerbotAI* ai, bool& active)
     });
     if (!ai->IsTank(bot))
     {
+        AiObjectContext* context = ai->GetAiObjectContext();
         // Rescue the controller/controlled dragon even when a damage mark is
         // elsewhere. Keep explicit kill orders for the ordinary wave cleanup.
         if (!enemies.empty() && threatened(enemies.front()) >= 2) return enemies.front();
@@ -559,7 +561,7 @@ Unit* ai::RazorgoreDefenseTarget(PlayerbotAI* ai, bool& active)
     for (Unit* enemy : enemies)
     {
         Player* holder = dynamic_cast<Player*>(enemy->GetVictim());
-        if (BwlMember(bot, holder) && ai->IsTank(holder))
+        if (BwlMember(bot, holder) && holder != controller && !holder->GetCharm() && ai->IsTank(holder))
         {
             ++load[holder];
             if (holder == bot && !held) held = enemy;
@@ -569,7 +571,7 @@ Unit* ai::RazorgoreDefenseTarget(PlayerbotAI* ai, bool& active)
     for (Unit* enemy : enemies)
     {
         Player* holder = dynamic_cast<Player*>(enemy->GetVictim());
-        if (BwlMember(bot, holder) && ai->IsTank(holder)) continue;
+        if (BwlMember(bot, holder) && holder != controller && !holder->GetCharm() && ai->IsTank(holder)) continue;
         Player* owner = nullptr;
         for (Player* tank : tanks)
             if (!owner || load[tank] < load[owner] ||

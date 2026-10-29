@@ -8,12 +8,14 @@ def run(source,role_code):
     code=code.replace('unsigned guid=0,entry=0,map=469,instance=1;', 'float x=0,hp=100;Unit* controlled=nullptr;Unit* GetCharm(){return controlled;}float GetHealthPercent(){return hp;}\n unsigned guid=0,entry=0,map=469,instance=1;')
     code=code.replace('float GetDistance(Unit*){return 10;}', 'float GetDistance(Unit*u){return std::fabs(x-u->x);}')
     code=code.replace('bool tank=false,healer=false,ranged=false,transfer=false;', 'bool CanAttack(Unit*u){return u->valid;}bool tank=false,healer=false,ranged=false,transfer=false;')
-    code=code.replace('Player* GetBot(){return bot;}', 'bool movable=true;bool CanMove(){return movable;}Player* GetBot(){return bot;}')
+    code=code.replace('Player* GetBot(){return bot;}', 'PlayerbotAI* GetAiObjectContext(){return this;}bool movable=true;bool CanMove(){return movable;}Player* GetBot(){return bot;}')
+    code=code.replace('virtual bool IsPlayer()const', 'bool HasFlag(unsigned,unsigned){return !valid;}virtual bool IsPlayer()const')
     code=code.replace('struct Unit{virtual', 'struct Combat{bool evade=false;bool IsInEvadeMode()const{return evade;}};\nstruct Unit{Combat state;const Combat& GetCombatManager()const{return state;}virtual')
     code=code.replace('struct PossibleAttackTargetsValue{', 'struct PossibleAttackTargetsValue{static bool IsCcTarget(Unit*u,Player*){return u->cc;}')
     code=code.replace('Unit* RazorgoreDefenseTarget(PlayerbotAI*,bool& active){active=false;return nullptr;}\nbool RazorgoreEggPhase(PlayerbotAI*){return false;}Unit* RazorgoreCreature(Unit*,unsigned){return nullptr;}', r'''
-using WorldObject=Unit;using Creature=Unit;struct GameObject:Unit{};
-struct PossibleTargetsValue{static bool IsAttackable(Unit*u,Player*){return u->valid;}};
+using AiObjectContext=PlayerbotAI;using WorldObject=Unit;using Creature=Unit;struct GameObject:Unit{};
+enum{UNIT_FIELD_FLAGS=0,UNIT_FLAG_NOT_ATTACKABLE_1=1,UNIT_FLAG_UNTARGETABLE=2,UNIT_FLAG_UNINTERACTIBLE=4};
+struct MeleeCcCheck{MeleeCcCheck(PlayerbotAI*){}bool Protected(Unit*u){return u->cc;}};
 bool eggPhase=true;Unit* dragon=nullptr;GameObject* orb=nullptr;std::list<Unit*> room;
 Unit* RazorgoreDefenseTarget(PlayerbotAI*,bool&);bool NeedsRazorgoreControllerHealing(PlayerbotAI*,Unit*);
 bool RazorgoreEggPhase(PlayerbotAI*a){auto*b=a->bot;return eggPhase&&b->world&&b->alive&&b->map==469&&!b->transfer&&!b->charm&&!a->real&&b->group;}
@@ -56,7 +58,11 @@ int main(){
  for(auto&u:adds)assert(dynamic_cast<Player*>(u.victim)->tank);
  room={&adds[15]};adds[15].victim=&human;a.alive=b.alive=c.alive=false;
  assert(!select(&aa).first&&select(&da).second==&adds[15]);da.movable=false;assert(!select(&da).second);da.movable=true;
- human.tank=true;assert(!select(&da).second);human.tank=false;
+ // A controller whose normal role is tank is still defenseless while using
+ // the orb. Only an actual, non-controlling human tank retains ownership.
+ human.tank=true;assert(select(&da).second==&adds[15]);
+ human.controlled=nullptr;boss.charmer=nullptr;assert(!select(&da).second);
+ human.controlled=&boss;boss.charmer=&human;human.tank=false;
  adds[15].cc=true;assert(!select(&pa).second);adds[15].cc=false;adds[15].hardCC=true;assert(!select(&pa).second);adds[15].hardCC=false;
  adds[15].instance=2;assert(!select(&pa).second);adds[15].instance=1;
  adds[15].combat=false;assert(!select(&pa).second);adds[15].combat=true;
