@@ -53,6 +53,8 @@ std::vector<encounter::Circle> whirlwinds;
 bool AQWhirlwindThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>& out){out=whirlwinds;return !out.empty();}
 bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&,bool requireWalkingPath=true);
 bool LavaTrashRouteSafe(PlayerbotAI*,const std::vector<WorldPosition>&){return true;}
+bool bwlRouteSafe=true;
+bool BlackwingMovementRouteSafe(PlayerbotAI*,const std::vector<WorldPosition>&){return bwlRouteSafe;}
 __HELPERS__
 }
 using namespace ai;
@@ -84,6 +86,11 @@ int main(){
  path={{409,0,0,0},{409,10,0,0}};assert(!ValidateEncounterDestination(&ai,plan));
  path={{409,0,0,0},{409,0,5,0},{409,10,5,0},{409,10,0,0}};assert(ValidateEncounterDestination(&ai,plan));
  ground.clear();path={{409,0,0,0},{409,10,0,0}};assert(ValidateEncounterDestination(&ai,plan));
+ ai.bot.map=plan.map=469;path={{469,0,0,0},{469,10,0,0}};bwlRouteSafe=false;
+ assert(!ValidateEncounterDestination(&ai,plan));
+ plan.destination={0.5f,0,0};assert(!ValidateEncounterDestination(&ai,plan)); // Short movement still checks fresh packs.
+ bwlRouteSafe=true;plan.destination={10,0,0};assert(ValidateEncounterDestination(&ai,plan));
+ ai.bot.map=plan.map=409;path={{409,0,0,0},{409,10,0,0}};
  plan.spell=21155;WorldPosition::liquid=true;assert(!ValidateEncounterDestination(&ai,plan,false));
  WorldPosition::liquid=false;assert(ValidateEncounterDestination(&ai,plan,false));plan.spell=0;
  // Uncached Sartura/guard auras must constrain the whole route as well.

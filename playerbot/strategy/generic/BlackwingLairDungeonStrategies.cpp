@@ -1,8 +1,26 @@
 #include "playerbot/playerbot.h"
 #include "BlackwingLairDungeonStrategies.h"
 #include "DungeonMultipliers.h"
+#include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
 
 using namespace ai;
+
+namespace
+{
+    class PreserveSuppressionDutyMovementMultiplier : public Multiplier
+    {
+    public:
+        PreserveSuppressionDutyMovementMultiplier(PlayerbotAI* ai) : Multiplier(ai, "preserve suppression duty movement") {}
+        float GetValue(Action* action) override
+        {
+            if (!action || !SuppressionDutyOwnsMovement(ai)) return 1.0f;
+            const std::string name = action->getName();
+            // Do not suppress attacks, healing, defenses, casts or escapes.
+            // Only idle regrouping must not replace an already checked duty path.
+            return name == "follow" || name == "follow master" || name == "move random" ? 0.0f : 1.0f;
+        }
+    };
+}
 
 void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
@@ -31,6 +49,8 @@ void BlackwingLairDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& t
 
 void BlackwingLairDungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("blackwing unsafe movement",
+        NextAction::array(0, new NextAction("blackwing stop unsafe movement", ACTION_EMERGENCY + 3), NULL)));
     triggers.push_back(new TriggerNode("blackwing lair safe position",
         NextAction::array(0, new NextAction("blackwing lair safe position", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("corrupted healing cast",
@@ -65,11 +85,13 @@ void BlackwingLairDungeonStrategy::InitReactionMultipliers(std::list<Multiplier*
 
 void BlackwingLairDungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveSuppressionDutyMovementMultiplier(ai));
     multipliers.push_back(new PreserveBlackwingLairPositionMultiplier(ai));
 }
 
 void BlackwingLairDungeonStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveSuppressionDutyMovementMultiplier(ai));
     multipliers.push_back(new PreserveBlackwingLairPositionMultiplier(ai));
 }
 
@@ -103,11 +125,13 @@ void SuppressionRoomStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& tri
 
 void SuppressionRoomStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveSuppressionDutyMovementMultiplier(ai));
     // Device priorities must not disable survival, combat or follow actions.
 }
 
 void SuppressionRoomStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveSuppressionDutyMovementMultiplier(ai));
     // Device priorities must not disable survival, combat or follow actions.
 }
 

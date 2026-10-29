@@ -12,10 +12,22 @@
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "playerbot/strategy/values/SuppressionDutyValue.h"
 #include "MovementPathSafety.h"
+#include "Combat/ThreatManager.h"
 
 #include "AI/ScriptDevAI/include/sc_instance.h"
 
 using namespace ai;
+
+bool ai::SuppressionDutyOwnsMovement(PlayerbotAI* ai)
+{
+    Player* bot = ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId() != 469 ||
+        bot->IsBeingTeleported() || bot->HasCharmer() || ai->IsRealPlayer()) return false;
+    const auto state = ai->GetAiObjectContext()->GetValue<SuppressionDuty>("suppression duty")->Get();
+    return state.routeOwned && state.instance == bot->GetInstanceId() &&
+        state.generation == ai->GetTransitionGeneration() && bot->movespline &&
+        !bot->movespline->Finalized() && bot->movespline->GetId() == state.splineId;
+}
 
 GameObject* ai::AssignedSuppressionDevice(PlayerbotAI* ai)
 {
@@ -28,7 +40,8 @@ GameObject* ai::AssignedSuppressionDevice(PlayerbotAI* ai)
         if (instance->GetData(2) == IN_PROGRESS || instance->GetData(2) == DONE) return nullptr;
 
     // Use one common raid anchor, rather than each rogue's sight list. This
-    // prevents duplicate assignments and sending rogues ahead into another pack.
+    // prevents duplicate assignments. The 40-yard look-ahead still requires
+    // a full native route of at most 45 yards, checked against every nearby pack.
     Player* anchor = nullptr;
     std::vector<Player*> rogues;
     for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
@@ -49,9 +62,9 @@ GameObject* ai::AssignedSuppressionDevice(PlayerbotAI* ai)
     if (!anchor) return nullptr;
     std::list<GameObject*> found;
     MaNGOS::GameObjectEntryInPosRangeCheck check(*anchor, 179784,
-        anchor->GetPositionX(), anchor->GetPositionY(), anchor->GetPositionZ(), 30.0f);
+        anchor->GetPositionX(), anchor->GetPositionY(), anchor->GetPositionZ(), 40.0f);
     MaNGOS::GameObjectListSearcher<MaNGOS::GameObjectEntryInPosRangeCheck> searcher(found, check);
-    Cell::VisitAllObjects(anchor, searcher, 30.0f);
+    Cell::VisitAllObjects(anchor, searcher, 40.0f);
     std::vector<GameObject*> devices;
     for (GameObject* go : found)
         if (go && go->IsInWorld() && anchor->IsInMap(go) && sServerFacade.isSpawned(go) &&
@@ -66,8 +79,15 @@ GameObject* ai::AssignedSuppressionDevice(PlayerbotAI* ai)
     {
         PlayerbotAI* owner = rogue->GetPlayerbotAI();
         auto state = owner->GetAiObjectContext()->GetValue<SuppressionDuty>("suppression duty")->Get();
-        if (state.anchor != anchor->GetObjectGuid() || state.instance != rogue->GetInstanceId() ||
+        if (state.instance != rogue->GetInstanceId() ||
             state.generation != owner->GetTransitionGeneration()) state = SuppressionDuty{};
+        else if (state.anchor != anchor->GetObjectGuid())
+        {
+            // A new raid leader invalidates claims, but cannot erase ownership
+            // of an already running native spline before it can be retired.
+            state.device.Clear(); state.rejected.clear();
+            if (state.routeOwned) { state.returning = true; state.recoveryAt = now; }
+        }
         state.anchor = anchor->GetObjectGuid(); state.instance = rogue->GetInstanceId();
         state.generation = owner->GetTransitionGeneration();
         for (auto it = state.rejected.begin(); it != state.rejected.end();)
@@ -76,7 +96,9 @@ GameObject* ai::AssignedSuppressionDevice(PlayerbotAI* ai)
         duties[rogue] = state;
     }
     auto eligible = [&](Player* rogue, GameObject* go) {
-        return rogue->GetDistance(anchor) <= 40.0f && rogue->GetDistance(go) <= 30.0f &&
+        return !duties[rogue].returning &&
+            !(duties[rogue].routeOwned && duties[rogue].routeStealthed && !rogue->HasAuraType(SPELL_AURA_MOD_STEALTH)) &&
+            rogue->GetDistance(anchor) <= 40.0f && rogue->GetDistance(go) <= 40.0f &&
             std::fabs(go->GetPositionZ() - rogue->GetPositionZ()) <= 8.0f &&
             rogue->IsWithinLOSInMap(go) && !duties[rogue].rejected.count(go->GetObjectGuid());
     };
@@ -106,7 +128,7 @@ GameObject* ai::AssignedSuppressionDevice(PlayerbotAI* ai)
         GameObject* selected = assignments.count(rogue) ? assignments[rogue] : nullptr;
         if (!selected)
         {
-            float distance = 30.0f;
+            float distance = 40.0f;
             for (GameObject* go : devices)
             {
                 if (!eligible(rogue, go)) continue;
@@ -140,24 +162,78 @@ bool ai::SuppressionDeviceInCastRange(PlayerbotAI* ai, GameObject* device)
 
 bool MoveToSuppressionDeviceAction::isUseful()
 {
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId() != 469 ||
+        bot->IsBeingTeleported() || bot->HasCharmer() || ai->IsRealPlayer()) return false;
     GameObject* go = AssignedSuppressionDevice(ai);
+    const auto state = ai->GetAiObjectContext()->GetValue<SuppressionDuty>("suppression duty")->Get();
+    if (state.routeOwned || state.returning) return true; // Also retire an interrupted native spline.
     return go && !SuppressionDeviceInCastRange(ai, go) && !bot->IsNonMeleeSpellCasted(true);
 }
 
 bool MoveToSuppressionDeviceAction::Execute(Event& event)
 {
     GameObject* go = AssignedSuppressionDevice(ai);
-    if (!go || SuppressionDeviceInCastRange(ai, go) || bot->IsNonMeleeSpellCasted(true) || !ai->CanMove()) return false;
+    auto* value = ai->GetAiObjectContext()->GetValue<SuppressionDuty>("suppression duty");
+    auto state = value->Get();
+    // Transfers, death, encounter transitions and explicit replacement movement
+    // relinquish ownership. Never stop a newer escape, follow or combat spline.
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId() != 469 ||
+        bot->IsBeingTeleported() || bot->HasCharmer() || ai->IsRealPlayer() ||
+        state.instance != bot->GetInstanceId() || state.generation != ai->GetTransitionGeneration())
+    {
+        state.routeOwned = state.returning = false; value->Set(state); return false;
+    }
+    const bool ownSpline = SuppressionDutyOwnsMovement(ai);
+    InstanceData* instance = bot->GetMap()->GetInstanceData();
+    if (!bot->GetGroup() || (instance && (instance->GetData(2) == IN_PROGRESS || instance->GetData(2) == DONE)))
+    {
+        if (ownSpline) ai->StopMoving();
+        state.device.Clear(); state.routeOwned = state.returning = false; value->Set(state);
+        return false;
+    }
+    if (state.routeOwned && bot->movespline && !bot->movespline->Finalized() && !ownSpline)
+    {
+        state.rejected[state.movingDevice] = WorldTimer::getMSTime();
+        state.device.Clear(); state.routeOwned = state.returning = false; value->Set(state);
+        return false;
+    }
+    if (state.returning && ownSpline)
+    {
+        const auto end = bot->movespline->FinalDestination();
+        if (WorldPosition(bot->GetMapId(), state.originX, state.originY, state.originZ).distance(
+            WorldPosition(bot->GetMapId(), end.x, end.y, end.z)) > 1.0f)
+        {
+            // An anchor change can request return before this action runs.
+            // Retire its old outbound leg before yielding to a current cast.
+            ai->StopMoving(); state.routeOwned = false; value->Set(state);
+        }
+    }
+    const bool interrupted = state.routeOwned && !state.returning &&
+        (!go || go->GetObjectGuid() != state.movingDevice ||
+            (state.routeStealthed && !bot->HasAuraType(SPELL_AURA_MOD_STEALTH)));
+    if (interrupted)
+    {
+        if (ownSpline) ai->StopMoving();
+        state.rejected[state.movingDevice] = WorldTimer::getMSTime();
+        state.device.Clear(); state.routeOwned = false; state.returning = true;
+        state.recoveryAt = WorldTimer::getMSTime(); value->Set(state);
+        go = nullptr;
+    }
     auto reject = [&]() {
-        auto* value = ai->GetAiObjectContext()->GetValue<SuppressionDuty>("suppression duty");
-        auto state = value->Get();
-        state.rejected[go->GetObjectGuid()] = WorldTimer::getMSTime();
-        state.device.Clear(); value->Set(state);
-        ai->StopMoving();
+        if (go) state.rejected[go->GetObjectGuid()] = WorldTimer::getMSTime();
+        state.device.Clear(); state.routeOwned = state.returning = false; value->Set(state);
+        if (ownSpline) ai->StopMoving();
         return false;
     };
+    if (state.returning && (WorldTimer::getMSTimeDiff(state.recoveryAt, WorldTimer::getMSTime()) >= 8000 ||
+        bot->GetDistance(state.originX, state.originY, state.originZ) <= 2.0f)) return reject();
+    // Do not cancel a cast or fight native crowd control to service a trap.
+    if (bot->IsNonMeleeSpellCasted(true) || !ai->CanMove()) return false;
+    if (!state.returning && (!go || SuppressionDeviceInCastRange(ai, go))) return false;
+    const WorldPosition destination = state.returning ?
+        WorldPosition(bot->GetMapId(), state.originX, state.originY, state.originZ) : WorldPosition(go);
     PathFinder path(bot);
-    if (!path.calculate(go->GetPositionX(), go->GetPositionY(), go->GetPositionZ(), false) ||
+    if (!path.calculate(destination.getX(), destination.getY(), destination.getZ(), false) ||
         path.getPathType() != PATHFIND_NORMAL || path.getPath().size() < 2 || path.getPath().size() > 256) return reject();
     auto hazards = AI_VALUE(std::list<HazardPosition>, "hazards");
     AppendBlackwingGroundHazards(ai, hazards);
@@ -167,7 +243,14 @@ bool MoveToSuppressionDeviceAction::Execute(Event& event)
     {
         Unit* enemy = ai->GetUnit(guid);
         if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || !bot->IsInMap(enemy) ||
-            enemy->IsInCombat() || enemy->HasCharmer() || !enemy->CanAttackOnSight(bot)) continue;
+            enemy->HasCharmer() || !enemy->CanAttackOnSight(bot)) continue;
+        if (enemy->IsInCombat())
+        {
+            // Native Growing Flames (22442) pulses around engaged Hatchers.
+            // Stealth does not prevent its damage from revealing a duty rogue.
+            if (enemy->GetEntry() == 12468) hazards.emplace_back(WorldPosition(enemy), 17.0f);
+            continue;
+        }
         float detection = enemy->GetAttackDistance(bot);
         bool stealth = bot->HasAuraType(SPELL_AURA_MOD_STEALTH) && bot->getAttackers().empty() &&
             !bot->HasAuraTypeWithCaster(SPELL_AURA_MOD_STALKED, enemy->GetObjectGuid());
@@ -196,12 +279,18 @@ bool MoveToSuppressionDeviceAction::Execute(Event& event)
     }
     for (const auto& hazard : hazards)
         if (previous.distance(hazard.first) <= hazard.second) return reject();
-    // Dispatch the exact checked route, rather than allowing a cached travel
-    // route to substitute a different path. Never teleport for device duty.
-    if (bot->movespline && !bot->movespline->Finalized())
+    if (previous.distance(destination) > 2.0f) return reject();
+    // Dispatch precisely the checked native route. Returning uses the same
+    // current detection/hazard checks, not a blind reversal through a fresh pack.
+    if (ownSpline && bot->movespline && !bot->movespline->Finalized())
     {
         const auto end = bot->movespline->FinalDestination();
-        if (go->GetDistance(end.x, end.y, end.z) <= 1.0f) return true;
+        if (destination.distance(WorldPosition(bot->GetMapId(), end.x, end.y, end.z)) <= 1.0f) return true;
+    }
+    if (!state.routeOwned && !state.returning)
+    {
+        state.originX = bot->GetPositionX(); state.originY = bot->GetPositionY(); state.originZ = bot->GetPositionZ();
+        state.movingDevice = go->GetObjectGuid();
     }
     ai->StopMoving();
     bot->SetStandState(UNIT_STAND_STATE_STAND);
@@ -210,6 +299,10 @@ bool MoveToSuppressionDeviceAction::Execute(Event& event)
 #else
     bot->GetMotionMaster()->MovePath(path.getPath(), FORCED_MOVEMENT_RUN, false);
 #endif
+    state.routeOwned = true;
+    state.routeStealthed = bot->HasAuraType(SPELL_AURA_MOD_STEALTH);
+    state.splineId = bot->movespline->GetId();
+    value->Set(state);
     SetDuration(250);
     return true;
 }
@@ -330,6 +423,22 @@ namespace
             member->GetGroup() == bot->GetGroup() && !member->HasCharmer() && !member->IsBeingTeleported();
     }
 
+    bool BwlGroupEngaged(PlayerbotAI* ai, Unit* enemy)
+    {
+        Player* bot=ai->GetBot();
+        if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || !bot->IsInMap(enemy) || !enemy->IsInCombat()) return false;
+        const auto member=[bot](Unit* unit) {
+            if (!unit || !unit->IsInWorld() || !unit->IsAlive() || !bot->IsInMap(unit)) return false;
+            if (!unit->IsPlayer()) unit=unit->GetMaster();
+            return BwlMember(bot,dynamic_cast<Player*>(unit));
+        };
+        if (member(enemy->GetVictim())) return true;
+        for (Unit* attacker:enemy->getAttackers()) if (member(attacker)) return true;
+        for (const auto* threat:enemy->getThreatManager().getThreatList())
+            if (threat && member(ai->GetUnit(threat->getUnitGuid()))) return true;
+        return false;
+    }
+
     unsigned BwlAfflictions(Unit* member)
     {
         unsigned count = member->HasAura(22438) ? 8 : 0;
@@ -381,7 +490,7 @@ Unit* BlackwingLairPriorityTargetAction::GetTarget()
     if (!BwlReady(ai) || ai->IsHeal(bot)) return nullptr;
     auto valid = [this](Unit* unit) {
         return unit && unit->IsInWorld() && unit->IsAlive() && unit->IsInCombat() &&
-            !unit->HasCharmer() && bot->IsInMap(unit) && !sServerFacade.IsFriendlyTo(bot, unit) &&
+            !unit->HasCharmer() && bot->IsInMap(unit) && BwlGroupEngaged(ai, unit) && !sServerFacade.IsFriendlyTo(bot, unit) &&
             PossibleAttackTargetsValue::IsValid(unit, bot, sPlayerbotAIConfig.sightDistance, false, true) &&
             !PossibleAttackTargetsValue::HasBreakableCC(unit, bot) &&
             !PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot);
@@ -465,7 +574,6 @@ Unit* BlackwingLairPriorityTargetAction::GetTarget()
     Unit* controller = controlledDragon ? controlledDragon->GetCharmer() : nullptr;
     if (!controller || !controller->IsPlayer() || !BwlMember(bot, static_cast<Player*>(controller)))
     { controlledDragon = nullptr; controller = nullptr; }
-    Unit* current = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
     Unit* selected = nullptr;
     unsigned priority = 0;
     for (ObjectGuid guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
@@ -476,9 +584,14 @@ Unit* BlackwingLairPriorityTargetAction::GetTarget()
         if (broodlordActive && unit->GetEntry() >= 14022 && unit->GetEntry() <= 14025) continue;
         if (unit->GetEntry() == 12457 && ai->IsRanged(bot) && bot->getClass() != CLASS_HUNTER) continue;
         if (!rank) continue;
+        // Split already-engaged mixed trash by damage role. This does not
+        // acquire the next pack, override a player's kill mark/order, or
+        // redistribute the separately elected tanks.
+        if ((!ai->IsRanged(bot) && unit->GetEntry()==12459) ||
+            (ai->IsRanged(bot) && unit->GetEntry()==13996)) rank=8;
         if (controller && (unit->GetVictim() == controller || unit->GetVictim() == controlledDragon)) rank += 10;
         if (!selected || rank > priority || (rank == priority &&
-            (unit == current || (selected != current && bot->GetDistance(unit) < bot->GetDistance(selected)))))
+            unit->GetObjectGuid() < selected->GetObjectGuid()))
         { selected = unit; priority = rank; }
     }
     return selected;

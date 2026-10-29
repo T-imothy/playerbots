@@ -8,6 +8,7 @@ namespace ai
 {
     bool ClassicRaidDamageSpell(const SpellEntry* spell);
     bool ClassicRaidOffenseAllowed(PlayerbotAI* ai, const SpellEntry* spell, Unit* target);
+    bool BlackwingSuppressionChaseAllowed(PlayerbotAI* ai, Unit* target);
     struct ClassicRaidPlan
     {
         ObjectGuid boss, target;

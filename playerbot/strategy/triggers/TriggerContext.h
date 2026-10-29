@@ -395,6 +395,7 @@ namespace ai
                 creators["blackwing lair support"] = [](PlayerbotAI* ai) { return new BlackwingLairSupportTrigger(ai); };
                 creators["blackwing lair priority target"] = [](PlayerbotAI* ai) { return new BlackwingLairPriorityTargetTrigger(ai); };
                 creators["blackwing lair safe position"] = [](PlayerbotAI* ai) { return new BlackwingLairPositionTrigger(ai); };
+                creators["blackwing unsafe movement"] = [](PlayerbotAI* ai) { return new BlackwingUnsafeMovementTrigger(ai); };
                 creators["use hourglass sand"] = [](PlayerbotAI* ai) { return new HourglassSandTrigger(ai); };
                 creators["naxxramas safe position"] = [](PlayerbotAI* ai) { return new NaxxramasPositionTrigger(ai); };
                 creators["prepare gothik sides"] = [](PlayerbotAI* ai) { return new NaxxramasGothikPrepareTrigger(ai); };

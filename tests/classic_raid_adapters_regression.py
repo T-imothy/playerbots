@@ -25,11 +25,11 @@ struct Player{bool world=true,alive=true,combat=true,transfer=false,charmed=fals
  unsigned map=533,instance=17;float x=0;Spline spline;Spline*movespline=&spline;std::set<unsigned>auras;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}
  bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charmed;}bool HasAura(unsigned id){return auras.count(id);}
- unsigned GetMapId(){return map;}unsigned GetInstanceId(){return instance;}void*GetGroup(){return this;}
+ unsigned GetMapId(){return map;}unsigned GetInstanceId(){return instance;}void*GetGroup(){return this;}Guid GetObjectGuid(){return {1};}
  void*GetCharm(){return nullptr;}bool IsNonMeleeSpellCasted(bool){return casting;}
  float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+b*b+c*c);}void AttackStop(){}void*GetPet(){return nullptr;}
 };
-namespace ai {struct EncounterPosition{bool active=false;unsigned map=533,instance=17,spell=0;ai::encounter::Point destination{};};
+namespace ai {struct EncounterPosition{bool active=false;unsigned map=533,instance=17,spell=0;Guid source;ai::encounter::Point destination{};};
 struct ClassicRaidPlan{Guid boss{1},target;EncounterPosition position;bool emergency=false,holdDamage=false;};
 bool EncounterMovementRequired(Player*,const encounter::Point&,float=1.5f);}
 using namespace ai;
@@ -38,10 +38,10 @@ struct Value{ClassicRaidPlan plan;ClassicRaidPlan Get(){return plan;}};
 struct Context{Value value;template<class T>Value*GetValue(const char*){return &value;}};
 struct PositionEntry{void Set(float,float,float,unsigned){}};using PositionMap=std::map<std::string,PositionEntry>;
 struct Event{};
-struct PlayerbotAI{Player bot;Unit boss;Context context;PositionMap positions;bool real=false,special=false,move=true,valid=true,jumpAccepted=true;unsigned moves=0,jumps=0;
+struct PlayerbotAI{Player bot;Unit boss;Context context;PositionMap positions;bool real=false,special=false,move=true,valid=true,jumpAccepted=true,room=true,leader=true;unsigned moves=0,jumps=0,stops=0;
  Player*GetBot(){return &bot;}bool IsRealPlayer(){return real;}Context*GetAiObjectContext(){return &context;}
  Unit*GetUnit(Guid guid){return guid.id==1?&boss:nullptr;}bool CanMove(){return move;}
- bool DoSpecificAction(const char*,Event,bool){++jumps;return jumpAccepted;}};
+ bool DoSpecificAction(const char*,Event,bool){++jumps;return jumpAccepted;}void StopMoving(){++stops;bot.spline.done=true;}};
 #define AI_VALUE(type,name) ai->positions
 struct Pet{Guid GetObjectGuid(){return {};}};
 struct WorldPacket{WorldPacket(int){}template<class T>WorldPacket&operator<<(T){return *this;}};
@@ -50,6 +50,9 @@ constexpr int CMSG_PET_ACTION=0,ACT_COMMAND=0,COMMAND_FOLLOW=0;
 __READY__
 bool SpecialPosition(PlayerbotAI*a){return a->special;}
 bool Engaged(Player*,Unit*u){return u&&u->engaged;}
+Player*SuppressionLeader(PlayerbotAI*a){return a->leader?&a->bot:nullptr;}
+bool SuppressionStationActive(PlayerbotAI*a){return a->room;}
+bool SuppressionTrash(Unit*u){return u&&u->entry==12458;}
 bool ValidateEncounterDestination(PlayerbotAI*a,EncounterPosition&,bool=true){return a->valid;}
 struct ClassicRaidPositionAction{PlayerbotAI*ai;Player*bot;
  static bool GetPlan(PlayerbotAI*,ClassicRaidPlan&);bool isUseful();bool ShouldReactionInterruptCast()const;bool Execute(Event&);
@@ -109,6 +112,15 @@ int main(){using namespace ai::classicraid;
   assert(Ready(&brain)==(map==309||map==469||map==533));
 #endif
  }
+ bot.map=469;plan.position.map=469;plan.position.spell=179784;plan.position.source={1};
+ plan.position.destination={bot.x,0,0};brain.boss.entry=12458;brain.boss.victim=&bot;
+ bot.spline.done=false;bot.spline.end={bot.x+15,0,0};const auto moves=brain.moves;
+ assert(action.isUseful()&&action.Execute(event)&&brain.stops==1&&brain.moves==moves); // obsolete room leg stops at safe station
+ assert(!action.isUseful());bot.spline.done=false;brain.room=false;assert(!action.isUseful());brain.room=true;
+ plan.position.source={2};assert(!action.isUseful());plan.position.source={1};
+ brain.leader=false;assert(!action.isUseful());plan.position.source={};assert(action.isUseful()); // missing leader current-station hold remains admitted
+ brain.leader=true;assert(!action.isUseful());plan.position.source={1};
+ plan.position.spell=12017;brain.boss.entry=12017;plan.position.destination={bot.x+10,0,0};assert(action.isUseful()); // actual Broodlord holder may reposition
  std::cout<<"PASS actual Classic raid scope, native target/mark policy, movement/cast and lifecycle admission\n";
 }
 '''

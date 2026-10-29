@@ -19,7 +19,7 @@ struct WorldTimer{static unsigned getMSTime(){return tick;}static unsigned getMS
 enum{IN_PROGRESS=1,DONE=3};
 struct InstanceData{unsigned phase=0;unsigned GetData(unsigned){return phase;}};
 struct Map{InstanceData instance;InstanceData* GetInstanceData(){return &instance;}};
-struct SuppressionDuty{unsigned device=0,anchor=0,instance=0,generation=0,progressAt=0;float distance=0;std::map<unsigned,unsigned> rejected;};
+struct SuppressionDuty{unsigned device=0,anchor=0,instance=0,generation=0,progressAt=0,recoveryAt=0;float distance=0;bool returning=false,routeOwned=false,routeStealthed=false;std::map<unsigned,unsigned> rejected;};
 struct StoredDuty{SuppressionDuty data;SuppressionDuty Get(){return data;}void Set(SuppressionDuty s){data=s;}};
 struct Context{StoredDuty duty;template<class T>StoredDuty* GetValue(const char*){return &duty;}};
 enum {CLASS_ROGUE=4,SPELL_DISARM_TRAP=1842,GO_READY=1,GO_FLAG_IN_USE=1,GO_FLAG_NO_INTERACT=2,
@@ -61,6 +61,7 @@ int main(){
  GroupReference r3{&b},r2{&a,&r3},r1{&leader,&r2};Group group{&r1};a.group=b.group=leader.group=&group;
  GameObject first,second;first.guid=10;first.x=2;second.guid=11;second.x=5;grid={&second,&first};
  assert(ai::AssignedSuppressionDevice(&aa)==&first);assert(ai::AssignedSuppressionDevice(&bb)==&second);
+ // Bounded look-ahead reaches devices without walking the raid into them.
  // Completing one job must not steal the other rogue's live lease.
  first.state=2;assert(!ai::AssignedSuppressionDevice(&aa));assert(ai::AssignedSuppressionDevice(&bb)==&second);
  auto reset=[&](){aa.context.duty.data={};bb.context.duty.data={};first.state=second.state=GO_READY;};
@@ -82,6 +83,13 @@ int main(){
  reset();sServerFacade.spell.Attributes=0;aa.vanish=false;assert(ai::AssignedSuppressionDevice(&aa)==&first);
  reset();first.state=second.state=2;assert(!ai::AssignedSuppressionDevice(&aa));
  first.state=GO_READY;assert(ai::AssignedSuppressionDevice(&aa)==&first);
+ reset();grid={&first};first.x=39;assert(ai::AssignedSuppressionDevice(&aa)==&first);
+ reset();first.x=41;assert(!ai::AssignedSuppressionDevice(&aa));first.x=2;grid={&first,&second};
+ reset();aa.context.duty.data.anchor=leader.guid;aa.context.duty.data.instance=1;aa.context.duty.data.generation=aa.generation;
+ aa.context.duty.data.returning=true;assert(!ai::AssignedSuppressionDevice(&aa));assert(ai::AssignedSuppressionDevice(&bb)==&first);
+ reset();aa.context.duty.data.anchor=leader.guid;aa.context.duty.data.instance=1;aa.context.duty.data.generation=aa.generation;
+ aa.context.duty.data.routeOwned=true;aa.context.duty.data.routeStealthed=true;
+ assert(!ai::AssignedSuppressionDevice(&aa));assert(ai::AssignedSuppressionDevice(&bb)==&first);
  reset();a.mapData.instance.phase=IN_PROGRESS;assert(!ai::AssignedSuppressionDevice(&aa));
  a.mapData.instance.phase=DONE;assert(!ai::AssignedSuppressionDevice(&aa));a.mapData.instance.phase=0;
  reset();assert(ai::AssignedSuppressionDevice(&aa)==&first);

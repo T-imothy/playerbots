@@ -10,6 +10,7 @@
 #include "Movement/MoveSpline.h"
 #include "playerbot/strategy/actions/MovementPathSafety.h"
 #include "playerbot/strategy/actions/MoltenCoreLavaTrashActions.h"
+#include "playerbot/strategy/actions/BlackwingMovementSafety.h"
 
 using namespace ai;
 
@@ -80,12 +81,14 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan, 
     }
     for (const auto& hazard : hazards)
         if (destination.distance(hazard.first) < hazard.second + 1) return false;
-    if (!requireWalkingPath || bot->GetDistance(point.x, point.y, point.z) <= 1.0f) return true;
+    if (!requireWalkingPath || bot->GetDistance(point.x, point.y, point.z) <= 1.0f)
+        return plan.map != 469 || BlackwingMovementRouteSafe(ai, {destination});
     // A safe endpoint can still require crossing a void zone. Check one bounded
     // native normal route; incomplete/shortcut paths cannot establish safety.
     const auto path = destination.getPathStepFrom(WorldPosition(bot), bot, true);
     if (path.size() < 2 || path.size() > 256 || !destination.isPathTo(path, 1.0f, 2.0f)) return false;
     if (plan.map == 409 && !LavaTrashRouteSafe(ai, path)) return false;
+    if (plan.map == 469 && !BlackwingMovementRouteSafe(ai, path)) return false;
     WorldPosition previous(bot);
     for (const WorldPosition& waypoint : path)
     {

@@ -51,6 +51,7 @@ namespace ai
             bool isWalking);
 
         bool DispatchMovement(TravelPath movePath, bool generatePath, bool masterWalking);
+        bool MoveBlackwingPath(const WorldPosition& destination);
 
         Unit* GetMover(Player* bot);
 

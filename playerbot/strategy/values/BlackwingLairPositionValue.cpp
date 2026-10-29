@@ -31,7 +31,10 @@ bool ai::BlackwingLairBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
             if (!std::isfinite(radius) || radius <= 0 || radius > 45) continue;
             const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
             const encounter::Point center{lord->GetPositionX(), lord->GetPositionY(), lord->GetPositionZ()};
-            if (encounter::Distance2d(here, center) >= radius + 10) continue;
+            // Once outside the blast, let the encounter's checked stack plan
+            // organize the raid. A perpetual safe-hold plan here used to veto
+            // every normal move even though no escape was necessary.
+            if (encounter::Distance2d(here, center) >= radius + 2) continue;
             plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId();
             plan.boss = lord->GetObjectGuid(); plan.spell = 23331;
             threats.push_back({center, radius + 2});

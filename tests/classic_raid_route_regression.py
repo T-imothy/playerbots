@@ -61,7 +61,7 @@ path=(root/'playerbot/strategy/actions/MovementPathSafety.h').read_text()
 code=code.replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix())
 code=code.replace('__POLICY__',(root/'playerbot/strategy/ClassicRaidPolicy.h').as_posix())
 code=code.replace('__SEGMENT__',block(path,'    inline bool IsFiniteMovementPoint(')+'\n'+block(path,'    inline bool IsHazardSafeSegment('))
-code=code.replace('__HELPERS__',block(s,'    bool ControlledInRadius(')+'\n'+block(s,'    bool LocalCircleRoute(')+'\n'+block(s,'    bool KeepFormationRoute('))
+code=code.replace('__HELPERS__',block(s,'    bool ControlledInRadius(')+'\n'+block(s,'    bool LocalCircleRoute(PlayerbotAI* ai, const EncounterPosition& p, const std::vector<encounter::Circle>& circles)\n    {')+'\n'+block(s,'    bool KeepFormationRoute('))
 with tempfile.TemporaryDirectory(prefix='classic-routes-') as folder:
  p=Path(folder);(p/'test.cpp').write_text(code)
  subprocess.run(['cl','/nologo','/EHsc','/std:c++17','test.cpp','/Fe:test.exe'],cwd=p,check=True)

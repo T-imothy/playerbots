@@ -119,6 +119,8 @@ int main(){
  boss.entry=12017;boss.alive=true;boss.victim=nullptr;boss.combat=true;boss.map=&map;
  ai.units[3]=&boss;ai.context.attackers.value={3};bot.auras.clear();ally.auras.clear();ai.ranged=true;radius=10;
  assert(get()&&plan.spell==23331&&lastRadius==23331);
+ bot.x=12.5f;assert(!get()); // Outside native blast+margin: release ordinary checked stack movement.
+ assert(multiplier.GetValue(&follow)==1&&multiplier.GetValue(&attack)==1);bot.x=0;
  boss.victim=&bot;assert(!get());boss.victim=nullptr;
  ai.ranged=false;assert(!get());ai.healer=true;assert(get());
  ai.healer=false;

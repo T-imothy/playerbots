@@ -153,6 +153,15 @@ bool WaitForAttackStrategy::HasExplicitAttackOrder(PlayerbotAI* ai, time_t comba
     return orderedCombatStart && combatStart==orderedCombatStart;
 }
 
+Unit* WaitForAttackStrategy::GetExplicitAttackTarget(PlayerbotAI* ai)
+{
+    Player* owner = ai->GetMaster();
+    if (!owner || !owner->IsInWorld() || !owner->IsAlive() || owner->IsBeingTeleported() ||
+        owner->HasCharmer() || !CanManageBotCommands(ai, owner) ||
+        !HasExplicitAttackOrder(ai, ai->GetCombatStartTime())) return nullptr;
+    return ai->GetUnit(orderedTarget);
+}
+
 bool WaitForAttackStrategy::ShouldWait(PlayerbotAI* ai)
 {
     // Only check if the bot has the strategy enabled

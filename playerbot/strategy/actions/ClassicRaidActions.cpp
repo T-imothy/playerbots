@@ -4,6 +4,11 @@
 #include "NaxxramasRoleActions.h"
 #include "NaxxramasControlCommands.h"
 #include "GluthRoleActions.h"
+#include "BlackwingMovementSafety.h"
+#include "BroodlordFormation.h"
+#include "BotCommandAccess.h"
+#include "playerbot/strategy/generic/PullStrategy.h"
+#include "playerbot/strategy/generic/CombatStrategy.h"
 #include "EncounterSpellPolicy.h"
 #include "ReachTargetActions.h"
 #include "GenericSpellActions.h"
@@ -217,6 +222,207 @@ namespace
         return anchor->GetDistance(p.x, p.y, p.z) <= range &&
             anchor->IsWithinLOS(p.x, p.y, p.z + ai->GetBot()->GetCollisionHeight(), true);
     }
+    bool SuppressionTrash(Unit* unit)
+    {
+        if (!unit) return false;
+        const uint32 entry = unit->GetEntry();
+        return entry == 12458 || entry == 12468 || (entry >= 14022 && entry <= 14025);
+    }
+    bool SuppressionStationActive(PlayerbotAI* ai)
+    {
+        if (!BlackwingSuppressionMovementActive(ai)) return false;
+        if (InstanceData* instance = ai->GetBot()->GetMap()->GetInstanceData())
+            if (instance->GetData(2) == IN_PROGRESS || instance->GetData(2) == DONE) return false;
+        return true;
+    }
+    Player* SuppressionLeader(PlayerbotAI* ai)
+    {
+        Player* bot = ai->GetBot();
+        if (!bot->GetGroup()) return nullptr;
+        for (Player* member : Members(ai))
+            if (member->GetObjectGuid() == bot->GetGroup()->GetLeaderGuid() && member->isRealPlayer()) return member;
+        return nullptr;
+    }
+    std::vector<encounter::Circle> SuppressionFlames(PlayerbotAI* ai)
+    {
+        std::vector<encounter::Circle> flames;
+        const float radius = NativeEncounterSpellRadius(22442);
+        if (!std::isfinite(radius) || radius <= 0 || radius >= 40) return flames;
+        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets", "100:1")->Get())
+        {
+            Unit* hatcher = ai->GetUnit(guid);
+            if (hatcher && hatcher->GetEntry() == 12468 && Engaged(ai->GetBot(), hatcher))
+                flames.push_back({{hatcher->GetPositionX(), hatcher->GetPositionY(), hatcher->GetPositionZ()}, radius + 2.0f});
+        }
+        return flames;
+    }
+    bool LocalCircleRoute(PlayerbotAI* ai, const EncounterPosition& p, const std::vector<encounter::Circle>& circles);
+    bool SuppressionCombatStation(PlayerbotAI* ai, Unit* boss, Unit* target, ClassicRaidPlan& plan)
+    {
+        if (!SuppressionTrash(boss) || !SuppressionTrash(target) || !SuppressionStationActive(ai) ||
+            classicraid::Front(target->GetEntry())) return false;
+        Player* leader = SuppressionLeader(ai);
+        Player* bot = ai->GetBot();
+        const bool tank = ai->IsTank(bot);
+        const bool ranged = !tank && (ai->IsRanged(bot) || ai->IsHeal(bot));
+        const auto flames = SuppressionFlames(ai);
+        if (!leader)
+        {
+            // A dead/loading leader is not a request to resume generic outward
+            // spacing. Preserve class actions while the shared anchor recovers.
+            EncounterPosition hold; hold.active = true; hold.exclusive = false;
+            hold.map = bot->GetMapId(); hold.instance = bot->GetInstanceId();
+            hold.boss = boss->GetObjectGuid(); hold.spell = 179784;
+            hold.destination = {bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+            if (ranged && !encounter::OutsideCircles(hold.destination, flames))
+            {
+                const auto here = hold.destination;
+                unsigned checks = 0;
+                for (const auto point : encounter::EscapeCircles(here, flames))
+                {
+                    if (encounter::Distance2d(here, point) > 24.0f) continue;
+                    hold.destination = point;
+                    if (!ValidateEncounterDestination(ai, hold, false)) continue;
+                    if (++checks > 20) break;
+                    if (!ValidateEncounterDestination(ai, hold) || !LocalCircleRoute(ai, hold, flames)) continue;
+                    plan.position = hold; plan.emergency = true;
+                    return true;
+                }
+                hold.destination = here;
+            }
+            if (ValidateEncounterDestination(ai, hold)) plan.position = hold;
+            return true;
+        }
+        const bool holder = boss->GetVictim() == bot;
+        // Hatcher pulse requires a separate melee/tank work area. Otherwise
+        // packs are brought into the compact area around the human leader.
+        const float workRadius = flames.empty() ? 6.0f : 20.0f;
+        const float meleeReach = std::max(2.0f, target->GetCombatReach() + bot->GetCombatReach() - 1.0f);
+        if (tank && !holder) return true; // Actual tank pickup retains native chase/taunt admission.
+        const bool hatcherHolder = tank && boss->GetEntry() == 12468;
+        const bool hatcherAtLeader = hatcherHolder &&
+            boss->GetDistance(leader) < NativeEncounterSpellRadius(22442) + 2.0f;
+        // The mob stops within native melee reach of its tank. Position the
+        // tank beyond that reach, otherwise a safe-looking tank ring can leave
+        // the actual Hatcher pulse on the leader.
+        float tankRadius = hatcherHolder ? std::max(workRadius, NativeEncounterSpellRadius(22442) +
+            4.0f + boss->GetCombatReach() + bot->GetCombatReach()) : workRadius;
+        if (hatcherAtLeader)
+            tankRadius = std::max(tankRadius, std::min(tankRadius + 4.0f, bot->GetDistance(leader) + 2.0f));
+
+        Unit* castAnchor = target;
+        if (ai->IsHeal(bot))
+        {
+            Unit* victim = boss->GetVictim();
+            if (Live(bot, victim) && (victim->IsPlayer() || victim->GetCharmer())) castAnchor = victim;
+        }
+        float maximum = ranged ? Range(ai, castAnchor) + 2.0f : meleeReach;
+        float minimum = 0;
+        if (ranged && bot->getClass() == CLASS_HUNTER &&
+            (!ai->GetSpellRange("auto shot", &maximum, &minimum) || !std::isfinite(minimum) || minimum < 0)) return true;
+        if (!std::isfinite(maximum) || maximum <= minimum + 1) return true;
+        const bool localTarget = target->GetDistance(leader) <= workRadius + meleeReach;
+        // A distant mob must come to the raid. Failure to reach it from the
+        // leader area is not permission for every DPS to chase the tank ahead.
+        const bool requireCastRange = ranged && (ai->IsHeal(bot) || castAnchor->GetDistance(leader) <= maximum + 3.0f);
+        const bool meleeContact = !ranged && !tank && localTarget;
+        const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
+        const encounter::Point lead{leader->GetPositionX(), leader->GetPositionY(), leader->GetPositionZ()};
+        EncounterPosition p; p.active = true; p.exclusive = false; p.map = bot->GetMapId();
+        p.instance = bot->GetInstanceId(); p.boss = boss->GetObjectGuid(); p.source = leader->GetObjectGuid();
+        p.spell = 179784; // Native suppression context; never submitted as a spell.
+        p.destination = here;
+        auto legal = [&](EncounterPosition& candidate) {
+            const auto& point = candidate.destination;
+            const float limit = ranged ? 24.0f : tank ? tankRadius + 2.0f : workRadius + meleeReach + 2;
+            const float fromLeader = encounter::Distance2d(point, lead);
+            if (fromLeader > limit && fromLeader >= encounter::Distance2d(here, lead) - 1) return false;
+            if (ranged && (!encounter::OutsideCircles(point, flames) ||
+                castAnchor->GetDistance(point.x, point.y, point.z) < minimum)) return false;
+            if (requireCastRange && (castAnchor->GetDistance(point.x, point.y, point.z) > maximum ||
+                !castAnchor->IsWithinLOS(point.x, point.y, point.z + bot->GetCollisionHeight(), true))) return false;
+            if (meleeContact && !PositionLegal(ai, target, candidate, meleeReach)) return false;
+            if (!meleeContact && !ValidateEncounterDestination(ai, candidate)) return false;
+            return !ranged || flames.empty() || bot->GetDistance(point.x, point.y, point.z) <= 1.0f ||
+                LocalCircleRoute(ai, candidate, flames);
+        };
+        const bool assembled = tank ? !hatcherAtLeader && bot->GetDistance(leader) <= tankRadius + 1 :
+            meleeContact ? bot->CanReachWithMeleeAttack(target) : bot->GetDistance(leader) <= 3.0f;
+        if (assembled && legal(p))
+        {
+            plan.position = p; // Suppress competing generic chase even while holding still.
+            return true;
+        }
+        std::vector<encounter::Point> candidates;
+        if (tank)
+        {
+            const float angle = leader->GetAngle(bot);
+            // A bounded walking leg brings the owned mob back. Never drag a
+            // currently nearby mob away just to achieve a decorative radius.
+            for (float radius : {tankRadius, hatcherHolder ? tankRadius : std::max(2.0f, tankRadius - 2.0f)})
+                for (float offset : {0.0f, 0.2f, -0.2f, 0.4f, -0.4f})
+                    candidates.push_back({lead.x + radius * std::cos(angle + offset),
+                        lead.y + radius * std::sin(angle + offset), here.z});
+        }
+        else if (meleeContact)
+        {
+            const float angle = target->GetAngle(bot);
+            for (unsigned i = 0; i < 16; ++i)
+            {
+                const float offset = i == 0 ? 0 : ((i + 1) / 2) * 0.18f * (i % 2 ? 1 : -1);
+                candidates.push_back({target->GetPositionX() + meleeReach * std::cos(angle + offset),
+                    target->GetPositionY() + meleeReach * std::sin(angle + offset), here.z});
+            }
+        }
+        else
+        {
+            candidates.push_back(lead);
+            const float start = leader->GetAngle(bot);
+            for (float radius : {1.5f, 3.0f, 6.0f, 10.0f, 18.0f, 22.0f})
+                for (unsigned i = 0; i < 16; ++i)
+                {
+                    const float angle = start + i * M_PI_F / 8;
+                    candidates.push_back({lead.x + radius * std::cos(angle), lead.y + radius * std::sin(angle), here.z});
+                }
+            if (ranged)
+                for (const auto& flame : flames)
+                {
+                    const float angle = std::atan2(lead.y - flame.center.y, lead.x - flame.center.x);
+                    candidates.push_back({flame.center.x + (flame.radius + 0.25f) * std::cos(angle),
+                        flame.center.y + (flame.radius + 0.25f) * std::sin(angle), here.z});
+                }
+        }
+        std::stable_sort(candidates.begin(), candidates.end(), [&](const encounter::Point& a, const encounter::Point& b) {
+            const auto center = (tank || meleeContact) ? here : lead;
+            const float da = encounter::Distance2d(center, a), db = encounter::Distance2d(center, b);
+            return da != db ? da < db : encounter::Distance2d(here, a) < encounter::Distance2d(here, b);
+        });
+        unsigned checks = 0;
+        for (auto point : candidates)
+        {
+            if (ranged && (!encounter::OutsideCircles(point, flames) ||
+                castAnchor->GetDistance(point.x, point.y, point.z) < minimum)) continue;
+            if (requireCastRange && castAnchor->GetDistance(point.x, point.y, point.z) > maximum) continue;
+            // Long return/pullback uses validated, bounded walking legs.
+            const float distance = encounter::Distance2d(here, point);
+            if (distance > 50) { point.x = here.x + (point.x - here.x) * 50 / distance; point.y = here.y + (point.y - here.y) * 50 / distance; }
+            p.destination = point;
+            // Reject native ground/height hazards before spending a bounded
+            // pathfinding attempt, so a fire patch at the leader cannot use
+            // the entire route budget on overlapping close candidates.
+            if (!ValidateEncounterDestination(ai, p, false)) continue;
+            if (++checks > 20) break;
+            if (!legal(p)) continue;
+            plan.position = p;
+            plan.emergency = ranged && !encounter::OutsideCircles(here, flames);
+            return true;
+        }
+        // A blocked route must not become permission to resume an unsafe chase.
+        // Holding still does not pause attacks, heals, taunts or native defenses.
+        p.destination = here;
+        if (ValidateEncounterDestination(ai, p)) plan.position = p;
+        return true;
+    }
     bool LocalCircleRoute(PlayerbotAI* ai, const EncounterPosition& p, const std::vector<encounter::Circle>& circles)
     {
         Player* bot = ai->GetBot();
@@ -389,6 +595,32 @@ namespace
         }
         return nullptr;
     }
+}
+
+bool ai::BlackwingSuppressionChaseAllowed(PlayerbotAI* ai, Unit* target)
+{
+    if (!SuppressionTrash(target) || !SuppressionStationActive(ai)) return true;
+    Player* leader = SuppressionLeader(ai);
+    Player* bot = ai->GetBot();
+    if (PullStrategy* pull = PullStrategy::Get(ai))
+        if (pull->IsEncounterPreparationAllowed() && pull->HasPullStarted() && pull->GetTarget() == target)
+        {
+            const time_t elapsed = time(nullptr) - pull->GetPullStartTime();
+            Unit* owner = ai->GetUnit(pull->GetRequester());
+            Player* requester = owner && owner->IsPlayer() ? static_cast<Player*>(owner) : nullptr;
+            if (elapsed >= 0 && elapsed < pull->GetMaxPullTime() && requester && requester->isRealPlayer() &&
+                Member(bot, requester) && CanManageBotCommands(ai, requester)) return true;
+        }
+    if (ai->IsTank(bot))
+    {
+        if (Engaged(bot, target)) return true;
+        WaitForAttackStrategy* wait = WaitForAttackStrategy::Get(ai);
+        return wait && wait->GetExplicitAttackTarget(ai) == target;
+    }
+    if (!leader || !Engaged(bot, target) || ai->IsRanged(bot) || ai->IsHeal(bot)) return false;
+    const float workRadius = SuppressionFlames(ai).empty() ? 6.0f : 20.0f;
+    const float reach = std::max(2.0f, target->GetCombatReach() + bot->GetCombatReach() - 1.0f);
+    return target->GetDistance(leader) <= workRadius + reach && bot->GetDistance(leader) <= workRadius + reach + 2;
 }
 
 ClassicRaidPlan ClassicRaidPlanValue::Calculate()
@@ -730,6 +962,8 @@ chosen:
         bot->getClass() == CLASS_PRIEST) return plan; // Priest controller must hold its native channel.
     if (entry == 15989 && boss->HasAura(18430)) return plan;
     if (entry == 15928 || entry == 16060) return plan; // Phase-specific platforms/gate retain native travel.
+    if (BroodlordFormationPlan(ai, boss, target, plan)) return plan;
+    if (SuppressionCombatStation(ai, boss, target, plan)) return plan;
     const bool ranged = ai->IsRanged(bot) || ai->IsHeal(bot);
     Unit* anchor = target;
     if (ai->IsHeal(bot))
@@ -786,8 +1020,15 @@ bool ClassicRaidPositionAction::GetPlan(PlayerbotAI* ai, ClassicRaidPlan& plan)
         (ai->GetBot()->HasAura(28832) || ai->GetBot()->HasAura(28833) || ai->GetBot()->HasAura(28834) || ai->GetBot()->HasAura(28835));
     // Recalculate after a fear/knockback, target change, boss turn or relocation.
     if (!Engaged(ai->GetBot(), boss)) return false;
+    if (plan.position.spell == 179784)
+    {
+        Player* leader = SuppressionLeader(ai);
+        return SuppressionTrash(boss) && SuppressionStationActive(ai) &&
+            (leader ? plan.position.source == leader->GetObjectGuid() : plan.position.source.IsEmpty());
+    }
     if (boss->GetVictim() == ai->GetBot())
-        return (plan.position.spell == 12460 && boss->GetEntry() == 12460) ||
+        return (plan.position.spell == 12017 && boss->GetEntry() == 12017) ||
+            (plan.position.spell == 12460 && boss->GetEntry() == 12460) ||
             (plan.position.spell == 28137 && boss->GetEntry() == 15931) ||
             (plan.position.spell == 28235 && boss->GetEntry() == 15932) ||
             (classicraid::HorsemanMark(boss->GetEntry()) && plan.position.spell == classicraid::HorsemanMark(boss->GetEntry()));
@@ -861,6 +1102,11 @@ bool ClassicRaidPositionAction::Execute(Event& event)
     }
     if (!EncounterMovementRequired(bot, plan.position.destination)) return false;
     const auto& p = plan.position.destination;
+    if (plan.position.spell == 179784 && plan.position.map == 469 && bot->GetDistance(p.x, p.y, p.z) <= 1.5f)
+    {
+        ai->StopMoving(); // Cancel only the obsolete suppression formation leg.
+        return true;
+    }
     if (plan.position.spell == 15928)
     {
         AI_VALUE(PositionMap&, "position")["classic thaddius"].Set(p.x, p.y, p.z, plan.position.map);

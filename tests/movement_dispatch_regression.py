@@ -46,7 +46,9 @@ struct WorldPosition {unsigned map=1;float x=0,y=0,z=0;
  std::vector<G3D::Vector3> toPointsArray(const std::vector<WorldPosition>& p){std::vector<G3D::Vector3> out;for(auto& point:p)out.push_back(point.getVector3());return out;}};
 using HazardPosition=std::pair<WorldPosition,float>;
 struct TravelPath {std::vector<WorldPosition> path;std::vector<WorldPosition> getPointPath(){return path;}};
-struct PlayerbotAI {std::list<HazardPosition> hazards;bool lava=false,routeSafe=true;};
+struct PlayerbotAI {std::list<HazardPosition> hazards;bool lava=false,routeSafe=true,bwl=false,bwlSafe=true;unsigned stops=0;void StopMoving(){++stops;}};
+bool BlackwingSuppressionMovementActive(PlayerbotAI*a){return a->bwl;}
+bool BuildBlackwingMovementPath(PlayerbotAI*a,const WorldPosition&p,std::vector<WorldPosition>&out){out={{p.map,p.x-1,p.y,p.z},p};return a->bwlSafe;}
 bool LavaTrashCombatActive(PlayerbotAI*a){return a->lava;}
 bool LavaTrashRouteSafe(PlayerbotAI*a,const std::vector<WorldPosition>&){return a->routeSafe;}
 struct MovementAction {PlayerbotAI* ai;Unit* bot;Unit* mover;bool detour=false;float waited=0;
@@ -97,6 +99,10 @@ int main(){
  assert(!action.DispatchMovement(route,true,false)&&bot.motion.clears==priorClears);
  ai.routeSafe=true;assert(action.DispatchMovement(route,true,false)&&bot.motion.paths>1); // MC validates and dispatches the actual normal route without a fire hazard.
  ai.lava=false;
+ ai.bwl=true;ai.bwlSafe=false;const auto beforeBwl=bot.motion.paths;
+ assert(!action.DispatchMovement(route,true,false)&&ai.stops==1&&bot.motion.paths==beforeBwl);
+ ai.bwlSafe=true;assert(action.DispatchMovement(route,true,false)&&bot.motion.paths==beforeBwl+1);
+ ai.bwl=false;
  Unit vehicle;action.mover=&vehicle;ai.hazards.clear();
  assert(action.DispatchMovement(route,true,false));assert(vehicle.motion.points==1);
  action.mover=nullptr;assert(!action.DispatchMovement(route,true,false));

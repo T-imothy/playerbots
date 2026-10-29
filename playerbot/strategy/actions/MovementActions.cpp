@@ -6,8 +6,11 @@
 #include "MoltenCoreDungeonActions.h"
 #include "MoltenCoreLavaTrashActions.h"
 #include "MovementPathSafety.h"
+#include "BlackwingMovementSafety.h"
+#include "ClassicRaidActions.h"
 #include "MotionGenerators/MotionMaster.h"
 #include "MotionGenerators/MovementGenerator.h"
+#include "Movement/MoveSpline.h"
 #include "playerbot/FleeManager.h"
 #include "playerbot/LootObjectStack.h"
 #include "playerbot/PlayerbotAIConfig.h"
@@ -1086,6 +1089,53 @@ bool MovementAction::BuildSafeHazardPath(std::vector<WorldPosition>& path, Unit*
     return true;
 }
 
+bool MovementAction::MoveBlackwingPath(const WorldPosition& destination)
+{
+    if (!ai->CanMove() || bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==EFFECT_MOTION_TYPE)
+        return false;
+    // Admission precedes standing or interrupting spells. A rejected approach
+    // must not cancel the healer/caster's current spell, or leave an old native
+    // follow/chase generator advancing into the same fresh pack.
+    std::vector<WorldPosition> path;
+    if (!BuildBlackwingMovementPath(ai, destination, path))
+    {
+        ai->StopMoving();
+        return false;
+    }
+    if (WorldPosition(bot).distance(path.back()) < 0.5f)
+    {
+        ai->StopMoving();
+        return false;
+    }
+    if (bot->movespline && !bot->movespline->Finalized())
+    {
+        const auto end=bot->movespline->FinalDestination();
+        if (path.back().distance(WorldPosition(bot->GetMapId(),end.x,end.y,end.z))<0.5f &&
+            !StopUnsafeBlackwingMovement(ai))
+        {
+            SetDuration(250);
+            return true;
+        }
+    }
+    UpdateMovementState();
+    bot->HandleEmoteState(0);
+    if (!bot->IsStandState()) bot->SetStandState(UNIT_STAND_STATE_STAND);
+    if (bot->IsNonMeleeSpellCasted(true, false, true)) ai->InterruptSpell(false);
+    MotionMaster& mm = *bot->GetMotionMaster();
+    mm.Clear(false, true);
+    auto points = WorldPosition().toPointsArray(path);
+#ifndef MANGOSBOT_TWO
+    mm.MovePath(points, FORCED_MOVEMENT_RUN, false, false);
+#else
+    mm.MovePath(points, FORCED_MOVEMENT_RUN, false);
+#endif
+    // Reassess changing combat/leader positions promptly instead of sleeping
+    // for the full walk and retaining a native dynamic follow or chase.
+    SetDuration(250);
+    ClearIdleState();
+    return true;
+}
+
 bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bool masterWalking)
 {
     Unit* mover = GetMover(bot);
@@ -1119,6 +1169,17 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
             return false;
     }
     if (mover == bot && !LavaTrashRouteSafe(ai, path)) return false;
+    if (mover == bot && BlackwingSuppressionMovementActive(ai))
+    {
+        std::vector<WorldPosition> checked;
+        if (!BuildBlackwingMovementPath(ai, path.back(), checked))
+        {
+            ai->StopMoving();
+            return false;
+        }
+        path.swap(checked);
+        useHazardPath = true;
+    }
 
     // Keep the existing movement intact until the replacement has been checked.
     MotionMaster& mm = *mover->GetMotionMaster();
@@ -1181,6 +1242,9 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 
     if (!mover)
         return false;
+
+    if (mover == bot && BlackwingSuppressionMovementActive(ai))
+        return MoveBlackwingPath(endPos);
 
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
 
@@ -2501,6 +2565,16 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
 
     distance = distance <= target->GetObjectBoundingRadius() ? 0 : distance - target->GetObjectBoundingRadius();
 
+    if (BlackwingSuppressionMovementActive(ai))
+    {
+        if (!bot->IsInMap(target)) return false;
+        float x, y, z;
+        target->GetNearPoint(bot, x, y, z, bot->GetObjectBoundingRadius(),
+            distance + target->GetObjectBoundingRadius() + bot->GetObjectBoundingRadius(),
+            target->GetOrientation() + angle);
+        return MoveBlackwingPath(WorldPosition(bot->GetMapId(), x, y, z));
+    }
+
     UpdateMovementState();
 
     if (FollowOnTransport(target))
@@ -2761,6 +2835,24 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
 
     if (!ai->IsSafe(obj))
         return false;
+
+    if (BlackwingSuppressionMovementActive(ai))
+    {
+        Unit* target = dynamic_cast<Unit*>(obj);
+        if (!target || !bot->IsInMap(target) || !BlackwingSuppressionChaseAllowed(ai, target))
+        {
+            ai->StopMoving();
+            return false;
+        }
+        // Closest useful approach avoids an unnecessary trip around a pulled
+        // enemy toward an untouched pack. Encounter tank facing remains owned
+        // by the suppression-room station action.
+        const float reach = distance > 0 ? distance : std::max(1.0f,
+            (bot->GetCombatReach() + target->GetCombatReach()) * 0.8f);
+        float x, y, z;
+        target->GetNearPoint(bot, x, y, z, bot->GetObjectBoundingRadius(), reach, target->GetAngle(bot));
+        return MoveBlackwingPath(WorldPosition(bot->GetMapId(), x, y, z));
+    }
 
     if (UnsafeFleeingPursuit(ai, obj))
     {

@@ -125,7 +125,8 @@ namespace ai
     public:
         MeleeFormation(PlayerbotAI* ai) : FollowFormation(ai, "melee") {}
         virtual std::string GetTargetName() override { return "master target"; }
-        virtual float GetAngle() override { return GetFollowAngle(); }
+        // GetLocation uses a world angle. Inherit Formation's conversion to a
+        // relative angle: native follow adds the leader's orientation itself.
         virtual float GetOffset() override { return ai->GetRange("follow"); }
     };
 

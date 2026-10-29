@@ -6,12 +6,23 @@
 #include "MovementActions.h"
 #include "UseItemAction.h"
 #include "EncounterSpellPolicy.h"
+#include "BlackwingMovementSafety.h"
 #include "playerbot/strategy/values/EncounterPositionValue.h"
 #include "playerbot/strategy/values/GuidPositionValues.h"
 
 namespace ai
 {
     // One action instance owns retry state for its bot; no shared mutable raid state.
+    class BlackwingStopUnsafeMovementAction : public Action
+    {
+    public:
+        BlackwingStopUnsafeMovementAction(PlayerbotAI* ai) : Action(ai, "blackwing stop unsafe movement", 0) {}
+        bool isUseful() override { return BlackwingActiveMovementUnsafe(ai); }
+        bool Execute(Event& event) override { return StopUnsafeBlackwingMovement(ai); }
+        bool ShouldReactionInterruptCast() const override { return false; }
+        bool ShouldReactionInterruptMovement() const override { return false; }
+    };
+
     class RazorgoreOrbAction : public MovementAction
     {
     public:
@@ -96,12 +107,15 @@ namespace ai
 
     // Shared assignment: triggers and execution must agree on the same active device.
     GameObject* AssignedSuppressionDevice(PlayerbotAI* ai);
+    bool SuppressionDutyOwnsMovement(PlayerbotAI* ai);
     bool SuppressionDeviceInCastRange(PlayerbotAI* ai, GameObject* device);
 
     class MoveToSuppressionDeviceAction : public MovementAction
     {
     public:
         MoveToSuppressionDeviceAction(PlayerbotAI* ai) : MovementAction(ai, "move to suppression device") {}
+        bool ShouldReactionInterruptCast() const override { return false; }
+        bool ShouldReactionInterruptMovement() const override { return false; }
         bool Execute(Event& event) override;
         bool isPossible() override { return ai->CanMove(); }
         bool isUseful() override;

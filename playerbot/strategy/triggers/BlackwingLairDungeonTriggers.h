@@ -6,6 +6,13 @@
 
 namespace ai
 {
+    class BlackwingUnsafeMovementTrigger : public Trigger
+    {
+    public:
+        BlackwingUnsafeMovementTrigger(PlayerbotAI* ai) : Trigger(ai, "blackwing unsafe movement", 1) {}
+        bool IsActive() override { return BlackwingActiveMovementUnsafe(ai); }
+    };
+
     class RazorgoreOrbTrigger : public Trigger
     {
     public:
