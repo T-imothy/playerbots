@@ -64,15 +64,16 @@ struct MoveToSuppressionDeviceAction{PlayerbotAI* ai;Player* bot;bool Execute(Ev
 #define AI_VALUE2(type,key,qualifier) ai->nearby
 namespace ai{bool SuppressionDutyOwnsMovement(PlayerbotAI*);}
 __OWNERSHIP__
-struct Action{std::string name;std::string getName(){return name;}};
-struct Multiplier{PlayerbotAI* ai;Multiplier(PlayerbotAI* a,const char*):ai(a){}virtual float GetValue(Action*){return 1;}};
+class Action; // Native headers also forward-declare a distinct global Action.
+namespace ai { struct Action{std::string name;std::string getName(){return name;}}; }
+struct Multiplier{PlayerbotAI* ai;Multiplier(PlayerbotAI* a,const char*):ai(a){}virtual float GetValue(ai::Action*){return 1;}};
 __MULTIPLIER__
 __METHOD__
 int main(){
  Player bot;PlayerbotAI ai{&bot};MoveToSuppressionDeviceAction action{&ai,&bot};Event event;device.x=12;
  auto fresh=[&](){ai.context.value.state={};bot.spline.done=true;return action.Execute(event);};
  assert(fresh()&&bot.motion.moves==1&&bot.motion.dispatched.size()==2);
- PreserveSuppressionDutyMovementMultiplier preserve(&ai);Action follow{"follow"},attack{"melee"},heal{"flash heal"},escape{"move away from hazard"},defense{"vanish"};
+ PreserveSuppressionDutyMovementMultiplier preserve(&ai);ai::Action follow{"follow"},attack{"melee"},heal{"flash heal"},escape{"move away from hazard"},defense{"vanish"};
  assert(preserve.GetValue(&follow)==0 && preserve.GetValue(&attack)==1 && preserve.GetValue(&heal)==1 && preserve.GetValue(&escape)==1 && preserve.GetValue(&defense)==1);
  Unit enemy;enemy.x=6;enemy.guid=2;ai.units[2]=&enemy;ai.nearby={2};
  assert(!fresh()&&bot.motion.moves==1&&ai.context.value.state.rejected.count(1));
