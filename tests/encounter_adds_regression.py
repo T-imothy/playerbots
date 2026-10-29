@@ -115,7 +115,16 @@ template<class T>void CheckSelection(T& action,Player& bot,PlayerbotAI& ai,Unit&
  add.alive=false;assert(!action.GetTarget());add.alive=true;
  add.combat=false;assert(!action.GetTarget());add.combat=true;
  Map* original=add.map;add.map=&other;assert(!action.GetTarget());add.map=original;
- boss.victim=&bot;assert(!action.GetTarget());boss.victim=nullptr;
+ boss.victim=&bot;
+#ifdef MANGOSBOT_ZERO
+ if constexpr(std::is_same_v<T,OnyxiaAddsAction>) {
+  assert(boss.levitating&&action.GetTarget()==&add); // Former ground tank helps with airborne whelps.
+  boss.levitating=false;assert(!action.GetTarget());boss.levitating=true;
+ } else assert(!action.GetTarget());
+#else
+ assert(!action.GetTarget());
+#endif
+ boss.victim=nullptr;
  boss.combat=false;assert(!action.GetTarget());boss.combat=true;
  boss.map=&other;assert(!action.GetTarget());boss.map=original;
  boss.phase=2;assert(!action.GetTarget());boss.phase=1;

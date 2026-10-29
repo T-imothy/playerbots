@@ -50,10 +50,10 @@ struct Player;
 struct Unit{Player* victim=nullptr;Player* GetVictim(){return victim;}};
 struct Player{float x=0,y=0,z=0;bool stopped=false,casting=false;Motion motion;Spline spline;Spline*movespline=&spline;
  bool IsStopped(){return stopped;}Motion* GetMotionMaster(){return &motion;}
- bool IsNonMeleeSpellCasted(bool,bool,bool){return casting;}
+ bool IsNonMeleeSpellCasted(bool,bool=false,bool=false){return casting;}unsigned GetObjectGuid(){return 7;}
  float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c));}};
 constexpr int IDLE_MOTION_TYPE=0;
-namespace ai{struct EncounterPosition{bool exclusive=true;unsigned spell=0,boss=1;encounter::Point destination;};
+namespace ai{struct EncounterPosition{bool exclusive=true;unsigned spell=0,boss=1,source=0;encounter::Point destination;};
  bool EncounterMovementRequired(Player*,const encounter::Point&,float=1.5f);}
 struct PlayerbotAI{bool active=true,urgent=false;ai::EncounterPosition plan;Unit boss;Unit*GetUnit(unsigned){return &boss;}};
 bool OssirianNeedsCrystal(Unit*){return false;}
@@ -68,6 +68,12 @@ __CASES__
  assert(!EncounterMovementRequired(&bot,{0,0,0},-1));
  // Arrival must not cancel a valid channel while recovering Loken's close phase.
  BossCastPositionAction loken{&brain,&bot};brain.plan.spell=59414;bot.x=10;bot.casting=true;assert(!loken.isUseful());
+#ifdef MANGOSBOT_ZERO
+ OnyxiaPositionAction onyxia{&brain,&bot};brain.plan.spell=18392;brain.plan.source=0;
+ assert(!onyxia.isUseful()); // routine air spacing waits for a valid cast
+ brain.plan.source=bot.GetObjectGuid();assert(onyxia.isUseful()); // targeted Fireball may interrupt
+ brain.plan.spell=17086;brain.plan.source=0;assert(onyxia.isUseful()); // Deep Breath takes priority
+#endif
  std::cout<<"PASS actual arrival predicates for 16 raid/dungeon movement actions, native spline/facing, expiry and Loken casting\n";
 }
 '''.replace('__GEOMETRY__',(base/'EncounterGeometry.h').as_posix()).replace('__DECLARATIONS__','\n'.join(declarations))
