@@ -9,12 +9,13 @@
 
 using namespace ai;
 TestResult CommandRaidLabStaging::Execute(const std::string& params, Player* bot, PlayerbotAI*,
-                                         TestContext&, std::string& message)
+                                         TestContext& ctx, std::string& message)
 {
  // This direct encounter fixture is deliberately limited to Magmadar. It does
  // not alter native trash, combat logic, or any production placement policy.
  if (!RaidLab::Enabled() || !bot->IsInWorld() || bot->IsBeingTeleported() ||
-     !bot->IsGameMaster() || bot->GetMapId()!=409 || params!="11982") {
+     !bot->IsGameMaster() || bot->GetMapId()!=409 ||
+     (params!="11982" && params!="11982 cleared-room")) {
   message="BLOCKED: Magmadar staging requires settled local setup observer";
   return TestResult::IMPOSSIBLE;
  }
@@ -27,6 +28,24 @@ TestResult CommandRaidLabStaging::Execute(const std::string& params, Player* bot
  }
  if(!boss || boss->IsInCombat()) {
   message="BLOCKED: native Magmadar unavailable for staging";return TestResult::IMPOSSIBLE;
+ }
+ if(params=="11982 cleared-room") {
+  if(ctx.testName.find("_cleared_room")==std::string::npos) {
+   message="BLOCKED: cleared-room fixture requires an explicitly named scenario";
+   return TestResult::IMPOSSIBLE;
+  }
+  std::vector<Creature*> trash;
+  for(auto i=store.begin<Creature>();i!=store.end<Creature>();++i) {
+   auto c=i->second;
+   if(c && c->GetEntry()==11671 && c->IsAlive() && c->IsInWorld() && boss->GetDistance(c)<100.0f)
+    trash.push_back(c);
+  }
+  for(auto c:trash) {
+   sLog.outString("RAID_LAB_FIXTURE: cleared_room despawn entry=%u guid=%s; NOT trash validation",
+       c->GetEntry(),c->GetObjectGuid().GetString().c_str());
+   c->SetRespawnDelay(3600,true);
+   c->ForcedDespawn();
+  }
  }
  unsigned floorRejected=0, losRejected=0, pathRejected=0, trashRejected=0;
  for(float radius : {30.0f,35.0f,40.0f,45.0f,50.0f}) for(unsigned sector=0;sector<24;++sector) {
@@ -125,6 +144,8 @@ TestResult CommandRaidLab::Execute(const std::string& params, Player* bot, Playe
   message="BLOCKED: telemetry could not start";return TestResult::IMPOSSIBLE;
  }
  ctx.focusMobGuid=boss->GetObjectGuid();ctx.focusMobEntry=entry;
+ if(ctx.testName.find("_cleared_room")!=std::string::npos)
+  RaidLab::Event(bot,"fixture_precleared_room_not_trash_validation");
  ctx.focusMobPassive=true; // Never run BossFocusManager's spawn/leash/force-attack helpers.
  // A passive synthetic player must not supply damage/heals that wake followers.
  // The test strategy's lab-only multiplier suppresses this leader's ordinary

@@ -472,10 +472,14 @@ void TestRegistry::GenerateBossEncounterTest()
             if (RaidLab::Enabled() && RaidLab::AllowedMap(mapEntry->MapID))
             {
                 std::string approach = ComputeBossApproachCoords(mapEntry, *point, bossInfo->MinLevel, 60);
-                const std::string staging = mapEntry->MapID == 409 && bossInfo->Entry == 11982
-                    ? "raidlab staging 11982" : "wait 1";
+                const bool magmadar = mapEntry->MapID == 409 && bossInfo->Entry == 11982;
+                const std::vector<std::string> fixtures = magmadar
+                    ? std::vector<std::string>{"", "_cleared_room"} : std::vector<std::string>{""};
+                for(const auto& fixture:fixtures) {
+                const std::string staging = magmadar
+                    ? "raidlab staging 11982" + std::string(fixture.empty()?"":" cleared-room") : "wait 1";
                 for (std::string mode : {"bot", "leader"})
-                    RegisterTest("raidlab_" + std::to_string(mapEntry->MapID) + "_" + std::to_string(bossInfo->Entry) + "_" + mode, {
+                    RegisterTest("raidlab_" + std::to_string(mapEntry->MapID) + "_" + std::to_string(bossInfo->Entry) + "_" + mode + fixture, {
                         "require bot is level=60",
                         "mgroup size=" + maxPlayers + " gear=best",
                         "wait group " + maxPlayers + " 180",
@@ -490,6 +494,7 @@ void TestRegistry::GenerateBossEncounterTest()
                         "monitor group size < " + maxPlayers + " => abort \"Group lost members\"",
                         "observe"
                     });
+                }
             }
 #endif
 

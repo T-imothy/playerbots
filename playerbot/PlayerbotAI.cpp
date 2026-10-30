@@ -1,4 +1,7 @@
 #include "Util/DevDiagnostics.h"
+#ifdef MANTECH_RAID_LAB
+#include "World/RaidLab.h"
+#endif
 #include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/actions/ClassicRaidActions.h"
@@ -1493,7 +1496,17 @@ void PlayerbotAI::PrepareForUrgentHazard()
     // Owning-map update only; native fear/root and spell readiness still apply.
     if (!bot || IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() ||
         bot->IsBeingTeleported() || bot->HasCharmer()) return;
-    bot->InterruptNonMeleeSpells(false);
+    // Magmadar's fire polling runs every update. An unexecuted escape must
+    // not cancel each newly started heal/damage cast again on the next tick.
+    // The admitted reaction still interrupts via ShouldReactionInterruptCast;
+    // waking a search alone is not proof that movement can actually execute.
+    const bool magmadar = bot->GetMapId()==409 && HasStrategy("magmadar", BotState::BOT_STATE_COMBAT);
+#ifdef MANTECH_RAID_LAB
+    if (bot->IsNonMeleeSpellCasted(false,false,true))
+        RaidLab::Event(bot,magmadar?"hazard_wake_preserve_cast":"urgent_hazard_interrupt");
+    RaidLab::Count(bot,"urgent_hazard_wake",0,0);
+#endif
+    if (!magmadar) bot->InterruptNonMeleeSpells(false);
     reactionEngine->NotifyHazard();
     ResetAIInternalUpdateDelay();
     isWaiting=false;
