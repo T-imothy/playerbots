@@ -2857,8 +2857,9 @@ bool BGTactics::Execute(Event& event)
             // Keep the actual flag/carrier destination. The coordinate-based
             // shortcut planner can reverse at ramp bends and graveyard exits
             // before the native path reaches its destination.
-            if (moveToObjective()) return true;
-            // A navigation failure must not launch a different, backward leg.
+            if (moveToObjective() || selectObjectiveWp(*vPaths)) return true;
+            // Native navigation can need shorter graph legs on a long route.
+            // Neither failure is permission to start a random/backward route.
             warsongRetryUntil = WorldTimer::getMSTime() + 1000;
             return false;
         }
@@ -2884,6 +2885,9 @@ bool BGTactics::Execute(Event& event)
         }
         else
             return true;
+
+        // Do not replace a failed WS/AB/AV objective route with random roaming.
+        if (SupportsBattlegroundObjectiveRecovery(bot)) return false;
 
         // bot with flag should only move to objective
 #ifdef MANGOSBOT_ZERO
@@ -3065,10 +3069,7 @@ bool BGTactics::selectObjective(bool reset)
 
         if (hasObjective)
         {
-            if (!pos.isSet())
-            {
-                pos.Set(objectiveLocation.coord_x, objectiveLocation.coord_y, objectiveLocation.coord_z, objectiveLocation.mapid);
-            }
+            pos.Set(objectiveLocation.coord_x, objectiveLocation.coord_y, objectiveLocation.coord_z, objectiveLocation.mapid);
 
             posMap["bg objective"] = pos;
 
@@ -3977,7 +3978,7 @@ bool BGTactics::moveToObjective()
         }
 #endif
 
-        if (bgType != BATTLEGROUND_WS &&
+        if (!SupportsBattlegroundObjectiveRecovery(bot) &&
             sServerFacade.IsDistanceGreaterThan(sServerFacade.GetDistance2d(bot, pos.x, pos.y), 100.0f))
         {
             //ostringstream out; out << "It is too far away! " << pos.x << ", " << pos.y << ", Distance: " << sServerFacade.GetDistance2d(bot, pos.x, pos.y);
@@ -4026,9 +4027,8 @@ bool BGTactics::selectObjectiveWp(std::vector<BattleBotPath*> const& vPaths)
     if (!pos.isSet())
         return false;
 
-    if (bgType == BATTLEGROUND_WS && (wsgRoofJump() || wsgPaths()))
-        return true;
-    // A failed WSG shortcut falls through to the normal objective-directed graph.
+    // Use the objective-directed graph when native navigation needs a shorter
+    // leg. Coordinate-selected WSG shortcuts can reverse an unfinished route.
 
 #ifndef MANGOSBOT_ZERO
     // Eye of the Storm jump
@@ -4160,7 +4160,8 @@ bool BGTactics::resetObjective()
         // Preserve the native job while refreshing changed AB/AV ownership.
         PositionEntry& objective = AI_VALUE(PositionMap&, "position")["bg objective"];
         PositionEntry previous = objective;
-        objective.Reset();
+        // AV needs the previous destination to retain an assignment that is
+        // still valid. The selector replaces it when ownership/priority changes.
         if (!selectObjective(true)) { objective = previous; return false; }
         return !previous.isSet() || previous.mapId != objective.mapId || previous.x != objective.x ||
             previous.y != objective.y || previous.z != objective.z;

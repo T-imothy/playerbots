@@ -2,6 +2,27 @@
 #include "BattleGround/BattleGround.h"
 #include "BattleGround/BattleGroundAV.h"
 #include "BattleGroundTactics.h"
+#include "playerbot/strategy/values/PositionValue.h"
+
+namespace
+{
+    bool MatchesAvObjective(ai::PositionEntry current, const WorldLocation& location)
+    {
+        return current.isSet() && current.mapId == location.mapid &&
+            std::abs(current.x - location.coord_x) < 1.0f &&
+            std::abs(current.y - location.coord_y) < 1.0f &&
+            std::abs(current.z - location.coord_z) < 1.0f;
+    }
+
+    WorldLocation ChooseAvObjective(const std::vector<WorldLocation>& locations, ai::PositionEntry current)
+    {
+        // Refresh ownership without rerolling an unfinished valid assignment.
+        // Higher-priority captain/defense/boss branches are evaluated first.
+        for (const WorldLocation& location : locations)
+            if (MatchesAvObjective(current, location)) return location;
+        return locations[urand(0, locations.size() - 1)];
+    }
+}
 
 static std::tuple<uint32, uint32, std::string> AV_HordeAttackObjectives[] =
 {
@@ -101,6 +122,7 @@ static std::tuple<uint32, uint32, std::string> AV_AllianceDefendObjectives[] =
 
 bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 {
+    const ai::PositionEntry currentObjective = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
     BattleGround* bg = bot->GetBattleGround();
     if (!bg)
     {
@@ -198,7 +220,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 
         if (!objectiveLocations.empty())
         {
-            objectiveLocation = objectiveLocations[urand(0, objectiveLocations.size() - 1)];
+            objectiveLocation = ChooseAvObjective(objectiveLocations, currentObjective);
             return true;
         }
     }
@@ -236,23 +258,23 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
                 continue;
             }
 
-            // Split team to capture 2 towers at same time
+            WorldLocation location;
+            if (!sRandomPlayerbotMgr.GetNamedLocation(locationName, location)) continue;
+
+            // Split initial assignments; do not reroll a valid tower in transit.
 #ifndef MANGOSBOT_TWO  
-            if (urand(0, 1) && nodeId == BG_AV_NODES_FROSTWOLF_ETOWER && bg->IsActiveEvent(BG_AV_NODES_FROSTWOLF_WTOWER, BG_AV_NODE_STATUS_HORDE_OCCUPIED))
+            if (!MatchesAvObjective(currentObjective, location) && urand(0, 1) && nodeId == BG_AV_NODES_FROSTWOLF_ETOWER && bg->IsActiveEvent(BG_AV_NODES_FROSTWOLF_WTOWER, BG_AV_NODE_STATUS_HORDE_OCCUPIED))
 #else
-            if (urand(0, 1) && nodeId == BG_AV_NODE_FROSTWOLF_EAST && bg->IsActiveEvent(BG_AV_NODE_FROSTWOLF_WEST, BG_AV_NODE_STATUS_HORDE_OCCUPIED))
+            if (!MatchesAvObjective(currentObjective, location) && urand(0, 1) && nodeId == BG_AV_NODE_FROSTWOLF_EAST && bg->IsActiveEvent(BG_AV_NODE_FROSTWOLF_WEST, BG_AV_NODE_STATUS_HORDE_OCCUPIED))
 #endif
                 continue;
 
-            if (WorldLocation location; sRandomPlayerbotMgr.GetNamedLocation(locationName, location))
-            {
-                objectiveLocations.push_back(location);
-            }
+            objectiveLocations.push_back(location);
         }
 
         if (!objectiveLocations.empty())
         {
-            objectiveLocation = objectiveLocations[urand(0, objectiveLocations.size() - 1)];
+            objectiveLocation = ChooseAvObjective(objectiveLocations, currentObjective);
             return true;
         }
     }
@@ -262,6 +284,7 @@ bool BGTactics::SelectAvObjectiveAlliance(WorldLocation& objectiveLocation)
 
 bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
 {
+    const ai::PositionEntry currentObjective = context->GetValue<ai::PositionMap&>("position")->Get()["bg objective"];
     BattleGround* bg = bot->GetBattleGround();
     if (!bg)
     {
@@ -359,7 +382,7 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
 
         if (!objectiveLocations.empty())
         {
-            objectiveLocation = objectiveLocations[urand(0, objectiveLocations.size() - 1)];
+            objectiveLocation = ChooseAvObjective(objectiveLocations, currentObjective);
             return true;
         }
     }
@@ -403,23 +426,23 @@ bool BGTactics::SelectAvObjectiveHorde(WorldLocation& objectiveLocation)
                 continue;
             }
 
-            // Split team to capture 2 towers at same time
+            WorldLocation location;
+            if (!sRandomPlayerbotMgr.GetNamedLocation(locationName, location)) continue;
+
+            // Split initial assignments; do not reroll a valid tower in transit.
 #ifndef MANGOSBOT_TWO  
-            if (urand(0, 1) && nodeId == BG_AV_NODES_DUNBALDAR_SOUTH && bg->IsActiveEvent(BG_AV_NODES_DUNBALDAR_NORTH, BG_AV_NODE_STATUS_ALLY_OCCUPIED))
+            if (!MatchesAvObjective(currentObjective, location) && urand(0, 1) && nodeId == BG_AV_NODES_DUNBALDAR_SOUTH && bg->IsActiveEvent(BG_AV_NODES_DUNBALDAR_NORTH, BG_AV_NODE_STATUS_ALLY_OCCUPIED))
 #else
-            if (urand(0, 1) && nodeId == BG_AV_NODE_DUNBALDAR_SOUTH && bg->IsActiveEvent(BG_AV_NODE_DUNBALDAR_NORTH, BG_AV_NODE_STATUS_ALLY_OCCUPIED))
+            if (!MatchesAvObjective(currentObjective, location) && urand(0, 1) && nodeId == BG_AV_NODE_DUNBALDAR_SOUTH && bg->IsActiveEvent(BG_AV_NODE_DUNBALDAR_NORTH, BG_AV_NODE_STATUS_ALLY_OCCUPIED))
 #endif
                 continue;
 
-            if (WorldLocation location; sRandomPlayerbotMgr.GetNamedLocation(locationName, location))
-            {
-                objectiveLocations.push_back(location);
-            }
+            objectiveLocations.push_back(location);
         }
 
         if (!objectiveLocations.empty())
         {
-            objectiveLocation = objectiveLocations[urand(0, objectiveLocations.size() - 1)];
+            objectiveLocation = ChooseAvObjective(objectiveLocations, currentObjective);
             return true;
         }
     }

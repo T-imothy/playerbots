@@ -32,7 +32,7 @@ COMMON=r'''
 #include "playerbot/strategy/values/WarsongPolicy.h"
 using uint8=uint8_t;using uint32=uint32_t;using int32=int32_t;
 enum Team{ALLIANCE,HORDE};
-enum BattleGroundTypeId{BATTLEGROUND_TYPE_NONE,BATTLEGROUND_WS,BATTLEGROUND_EY,BATTLEGROUND_AB,BATTLEGROUND_RB,BATTLEGROUND_IC};
+enum BattleGroundTypeId{BATTLEGROUND_TYPE_NONE,BATTLEGROUND_WS,BATTLEGROUND_EY,BATTLEGROUND_AB,BATTLEGROUND_RB,BATTLEGROUND_IC,BATTLEGROUND_AV};
 enum{STATUS_WAIT_JOIN,STATUS_IN_PROGRESS,STATUS_WAIT_LEAVE,TEAM_INDEX_ALLIANCE=0,TEAM_INDEX_HORDE=1,
  DIST_CALC_NONE=0,POWER_MANA=0,BG_WS_FLAG_STATE_ON_BASE=0,BG_WS_FLAG_STATE_ON_PLAYER=1,BG_WS_FLAG_STATE_ON_GROUND=-1};
 int GetTeamIndexByTeamId(Team t){return int(t);}
@@ -108,7 +108,7 @@ def wsg_code():
     declarations=r'''
 namespace ai{
 BattleGroundTypeId ActualBattlegroundType(Player*);
-bool IsBattlegroundFlagCarrier(Player*);bool ShouldAdvanceWarsongObjective(PlayerbotAI*);
+bool IsBattlegroundFlagCarrier(Player*);bool SupportsBattlegroundObjectiveRecovery(Player*);bool ShouldAdvanceWarsongObjective(PlayerbotAI*);
 bool IsWarsongLocalThreat(PlayerbotAI*,Unit*,Unit*);Unit* SelectWarsongCombatTarget(PlayerbotAI*);
 struct WarsongObjectiveValue{PlayerbotAI* ai;Player* bot;WarsongObjective Calculate();};
 }
@@ -129,7 +129,7 @@ struct Multiplier{PlayerbotAI* ai;Player* bot;AiObjectContext* context;
 '''
     constants='\n'.join(l for l in tactics.splitlines() if l.startswith('Position const WS_') or l.startswith('std::vector<Position> const WS_'))
     methods='\n'.join(block(values,m) for m in ('BattleGroundTypeId ai::ActualBattlegroundType','bool ai::IsBattlegroundFlagCarrier',
-        'bool ai::IsWarsongLocalThreat','Unit* ai::SelectWarsongCombatTarget','WarsongObjective WarsongObjectiveValue::Calculate','bool ai::ShouldAdvanceWarsongObjective'))
+        'bool ai::SupportsBattlegroundObjectiveRecovery','bool ai::IsWarsongLocalThreat','Unit* ai::SelectWarsongCombatTarget','WarsongObjective WarsongObjectiveValue::Calculate','bool ai::ShouldAdvanceWarsongObjective'))
     methods+='\n'+block(source('actions/ChooseTargetActions.cpp'),'bool AttackEnemyFlagCarrierAction::isUseful')
     methods+='\n'+'\n'.join(block(tactics,'bool BGTactics::'+m) for m in ('moveToObjective()','refreshWarsongObjective()','isUseful()','flagTaken()','teamFlagTaken()','wsgPaths()','wsgRoofJump()'))
     methods+='\n'+block(source('generic/BattlegroundStrategy.cpp'),'    class WarsongObjectiveMultiplier')+';\n'
@@ -160,7 +160,8 @@ int main(){
   assert(action.moveToObjective());assert(action.requests==1);
   assert(action.last.x==(team==ALLIANCE?WS_FLAG_POS_HORDE.x:WS_FLAG_POS_ALLIANCE.x));
   action.moved=false;assert(!action.moveToObjective());action.moved=true;
-  bg.type=BATTLEGROUND_AB;assert(!action.moveToObjective());bg.type=BATTLEGROUND_WS;
+  bg.type=BATTLEGROUND_AB;assert(action.moveToObjective());bg.type=BATTLEGROUND_AV;assert(action.moveToObjective());
+  bg.type=BATTLEGROUND_EY;assert(!action.moveToObjective());bg.type=BATTLEGROUND_WS;
   auto pos=context->GetValue<PositionMap&>("position")->Get()["bg objective"];
   assert(pos.x==(team==ALLIANCE?WS_FLAG_POS_HORDE.x:WS_FLAG_POS_ALLIANCE.x));
   bg.states[own]=1;bg.carriers[own]=enemyFC.guid;enemyFC.x=1200;
