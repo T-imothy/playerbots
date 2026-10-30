@@ -14,6 +14,12 @@ namespace ai
         virtual void InitNonCombatTriggers(std::list<TriggerNode*>& triggers) override;
         virtual void InitCombatTriggers(std::list<TriggerNode*>& triggers) override { InitNonCombatTriggers(triggers); }
         virtual void InitDeadTriggers(std::list<TriggerNode*>& triggers) override { InitNonCombatTriggers(triggers); };
+#ifdef MANTECH_RAID_LAB
+        void InitNonCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override { InitNonCombatMultipliers(multipliers); }
+        void InitDeadMultipliers(std::list<Multiplier*>& multipliers) override { InitNonCombatMultipliers(multipliers); }
+        void InitReactionMultipliers(std::list<Multiplier*>& multipliers) override { InitNonCombatMultipliers(multipliers); }
+#endif
 
 
         virtual void OnStrategyRemoved(BotState state);

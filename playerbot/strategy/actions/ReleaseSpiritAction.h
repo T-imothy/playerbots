@@ -57,6 +57,11 @@ namespace ai
 
         virtual bool Execute(Event& event) override
         {
+#ifdef MANTECH_RAID_LAB
+            // Simulate a human staying at the corpse to observe the pull.
+            // Leaving the instance removes the lab's active-grid observer.
+            if (RaidLab::Controlled(bot)) return false;
+#endif
             sLog.outDetail("Bot #%d %s:%d <%s> auto released", bot->GetGUIDLow(), bot->GetTeam() == ALLIANCE ? "A" : "H", bot->GetLevel(), bot->GetName());
 
             WorldPacket packet(CMSG_REPOP_REQUEST);
@@ -77,6 +82,9 @@ namespace ai
 
         virtual bool isUseful() override
         {
+#ifdef MANTECH_RAID_LAB
+            if (RaidLab::Controlled(bot)) return false;
+#endif
             if (!sServerFacade.UnitIsDead(bot))
                 return false;
 

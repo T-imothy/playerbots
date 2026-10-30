@@ -30,6 +30,10 @@
 #include <cctype>
 #include "MonitorMovement.h"
 #include "BossFocusManager.h"
+#include "CommandRaidLab.h"
+#ifdef MANTECH_RAID_LAB
+#include "World/RaidLab.h"
+#endif
 
 using namespace ai;
 
@@ -45,6 +49,9 @@ TestAction::TestAction(PlayerbotAI* ai, std::string name)
 
 void TestAction::RegisterCommands()
 {
+#ifdef MANTECH_RAID_LAB
+    commands.push_back(std::make_unique<CommandRaidLab>());
+#endif
     commands.push_back(std::make_unique<RequireBotIs>());
     commands.push_back(std::make_unique<CommandSetupTeleportGroup>());
     commands.push_back(std::make_unique<CommandSetupTeleport>());
@@ -89,6 +96,9 @@ void TestAction::RegisterCommands()
 
 void TestAction::RegisterMonitors()
 {
+#ifdef MANTECH_RAID_LAB
+    monitors.push_back(std::make_unique<MonitorRaidLabDeath>());
+#endif
     monitors.push_back(std::make_unique<MonitorStateDead>());
     monitors.push_back(std::make_unique<MonitorStateTime>());
     monitors.push_back(std::make_unique<MonitorCombatHp>());
@@ -386,6 +396,11 @@ void TestAction::ReportResult()
 {
     if (ctx.result == TestResult::PENDING)
         return;
+
+#ifdef MANTECH_RAID_LAB
+    RaidLab::EndLeader(bot->GetObjectGuid().GetRawValue(),
+        "result=" + std::to_string(int(ctx.result)) + ": " + ctx.resultMessage);
+#endif
 
     std::string resultStr;
     switch (ctx.result)

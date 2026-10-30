@@ -2,6 +2,9 @@
 #include "CombatDiagnostics.h"
 #include "PlayerbotAIConfig.h"
 #include "PlayerbotAI.h"
+#ifdef MANTECH_RAID_LAB
+#include "World/RaidLab.h"
+#endif
 #include "Config/Config.h"
 #include <algorithm>
 #include <chrono>
@@ -47,6 +50,9 @@ namespace
 CombatActionContext::CombatActionContext(const std::string& name)
     : previous(currentAction), enabled(sPlayerbotAIConfig.combatDiagnosticsEnabled)
 {
+#ifdef MANTECH_RAID_LAB
+    enabled = enabled || RaidLab::Enabled();
+#endif
     if (enabled) currentAction = &name;
 }
 CombatActionContext::~CombatActionContext()
@@ -60,6 +66,11 @@ std::string CombatActionContext::Current()
 
 bool CombatDiagnostics::Select(PlayerbotAI* ai)
 {
+#ifdef MANTECH_RAID_LAB
+    if (RaidLab::Enabled() && ai && ai->GetBot() && ai->GetBot()->IsInWorld() &&
+        RaidLab::AllowedMap(ai->GetBot()->GetMapId()) &&
+        (RaidLab::Controlled(ai->GetBot()) || ai->HasRealPlayerMaster())) return true;
+#endif
     if (!sPlayerbotAIConfig.combatDiagnosticsEnabled || !sPlayerbotAIConfig.diagnosticsEnabled || !ai)
         return false;
     Player* bot = ai->GetBot();
@@ -78,6 +89,13 @@ void CombatDiagnostics::Record(PlayerbotAI* ai, const std::string& action, const
 {
     // Select must run before collecting context; disabled mode never resolves targets.
     Player* bot = ai->GetBot();
+#ifdef MANTECH_RAID_LAB
+    if (RaidLab::Enabled()) {
+        const std::string label = std::string("bot:") + stage + ":" + Clean(action) + ":" + Clean(source);
+        RaidLab::Count(bot, label.c_str(), spell, uint32(result), target ? target->GetObjectGuid().GetRawValue() : 0);
+        return;
+    }
+#endif
     const char* role = PlayerbotAI::IsTank(bot) ? "tank" : (PlayerbotAI::IsHeal(bot) ? "healer" : (ai->IsRanged(bot) ? "ranged" : "melee"));
     std::ostringstream key;
     key << "class=" << uint32(bot->getClass()) << " level=" << uint32(bot->GetLevel())

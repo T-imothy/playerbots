@@ -7,6 +7,9 @@
 #include "BotCommandAccess.h"
 #include "NaxxramasPreparationActions.h"
 #include "RazuviousPullActions.h"
+#ifdef MANTECH_RAID_LAB
+#include "World/RaidLab.h"
+#endif
 #include "playerbot/strategy/values/PositionValue.h"
 
 using namespace ai;
@@ -69,6 +72,9 @@ bool PullRequestAction::Execute(Event& event)
 {
     Player* requester = event.getOwner() ? event.getOwner() : GetMaster();
     auto fail = [&](PullFailure reason) {
+#ifdef MANTECH_RAID_LAB
+        RaidLab::Event(bot, "pull_refused", uint64(reason), requester ? requester->GetObjectGuid().GetRawValue() : 0);
+#endif
         if ((event.getSource() == "pull" || event.getSource() == "pull rti") && CanManageBotCommands(ai, requester))
             ai->TellPlayerNoFacing(requester, std::string("Pull failed: ") + PullFailureReason(reason) + ".",
                 PlayerbotSecurityLevel::PLAYERBOT_SECURITY_ALLOW_ALL, true, true, true, true);
@@ -124,6 +130,9 @@ bool PullRequestAction::Execute(Event& event)
     posMap["pull"] = pullPosition;
 
     strategy->RequestPull(target);
+#ifdef MANTECH_RAID_LAB
+    RaidLab::Event(bot, "pull_accepted", target->GetObjectGuid().GetRawValue());
+#endif
     strategy->SetRequester(requester ? requester->GetObjectGuid() : ObjectGuid());
     strategy->SetEncounterPreparationAllowed((event.getSource() == "pull" || event.getSource() == "pull rti") &&
         CanManageBotCommands(ai, requester));

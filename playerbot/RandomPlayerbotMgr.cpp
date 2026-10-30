@@ -716,6 +716,15 @@ void RandomPlayerbotMgr::LogPlayerLocation()
 
 void RandomPlayerbotMgr::UpdateAIInternal(uint32 elapsed, bool minimal)
 {
+#ifdef MANTECH_RAID_LAB
+    // Explicit lab trials run without enabling autonomous world/BG population.
+    if (!sPlayerbotAIConfig.randomBotAutologin && sPlayerbotAIConfig.enabled)
+    {
+        PlayerbotHolder::UpdateAIInternal(elapsed, minimal);
+        LoginFreeBots();
+        return;
+    }
+#endif
     BotIncidentHistory::Flush();
 #ifdef MEMORY_MONITOR
     sMemoryMonitor.LogCount(sConfig.GetStringDefault("LogsDir") + "/" + "memory.csv");
@@ -1213,6 +1222,10 @@ void RandomPlayerbotMgr::LoginFreeBots()
 
         for (auto [accountId, botGuid] : sPlayerbotAIConfig.freeAltBots)
         {
+#ifdef MANTECH_RAID_LAB
+            if (!GetValue(botGuid, "temporary"))
+                continue;
+#endif
             ObjectGuid guid(ObjectGuid(HIGHGUID_PLAYER, botGuid));
             Player* bot = sObjectMgr.GetPlayer(guid, false);
 

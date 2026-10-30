@@ -1,3 +1,6 @@
+#ifdef MANTECH_RAID_LAB
+#include "World/RaidLab.h"
+#endif
 #pragma once
 
 #include <atomic>
@@ -659,9 +662,17 @@ public:
     bool IsRealPlayer(Unit* unit) { return unit->IsPlayer() && ((Player*)unit)->GetSession()->GetRemoteAddress() != "disconnected/bot"; }
     bool IsSelfMaster() { return master ? (master == bot) : false; }
     //Bot has a master that is a player.
-    bool HasRealPlayerMaster() { return master && (!master->GetPlayerbotAI() || master->GetPlayerbotAI()->IsRealPlayer()); } 
+    bool HasRealPlayerMaster() {
+#ifdef MANTECH_RAID_LAB
+        if (RaidLab::Controlled(master)) return true;
+#endif
+        return master && (!master->GetPlayerbotAI() || master->GetPlayerbotAI()->IsRealPlayer()); }
     //Bot has a master that is actively playing.
-    bool HasActivePlayerMaster() const { return master && !master->GetPlayerbotAI(); }
+    bool HasActivePlayerMaster() const {
+#ifdef MANTECH_RAID_LAB
+        if (RaidLab::Controlled(master)) return true;
+#endif
+        return master && !master->GetPlayerbotAI(); }
     //Checks if the bot is summoned as alt of a player
     bool IsAlt() { return HasRealPlayerMaster() && !sRandomPlayerbotMgr.IsRandomBot(bot); }
     //Get the group leader or the master of the bot.

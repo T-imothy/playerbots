@@ -2202,6 +2202,11 @@ std::list<std::string> PlayerbotHolder::HandleGroup(Player* master, const std::s
         std::ostringstream paramStr;
         paramStr << "level=" << masterLevel << " class=" << ChatHelper::formatClass(cls) << " group=" << master->GetName() << " " << passThroughParam; //Passthrough will override.
 
+#ifdef MANTECH_RAID_LAB
+        // Keep the requested fixture composition; the legacy test helper chose
+        // a role above but did not pass it to the character factory.
+        paramStr << " role=" << (role == BOT_ROLE_TANK ? "tank" : role == BOT_ROLE_HEALER ? "healer" : "dps");
+#endif
         auto result = HandleCreate(master, paramStr.str(), security);
         bool created = !result.empty() && result.front().find("Bot created:") == 0;
         messages.splice(messages.end(), result);
