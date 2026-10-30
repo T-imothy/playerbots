@@ -1186,8 +1186,12 @@ void TravelPath::ClipPath(PlayerbotAI* ai, Unit* mover, bool ignoreEnemyTargets)
             endP = p;
         else if (!p->isWalkable())
             endP = p;
-        else if (p->point.sqDistance(prevP->point) > 125)
-        {           
+        // Native path optimization legitimately retains points up to 28 yards
+        // apart. Compare squared distances with a squared 125-yard limit: the
+        // old comparison clipped at sqrt(125), repeatedly sending bots back to
+        // the same short endpoint instead of advancing toward their objective.
+        else if (p->point.sqDistance(prevP->point) > 125.0f * 125.0f)
+        {
             endP = prevP;
         }
 
