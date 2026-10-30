@@ -398,6 +398,18 @@ bool ai::ShouldAdvanceWarsongObjective(PlayerbotAI* ai)
     if (objective.goal == WarsongGoal::None || !pos.isSet() || pos.mapId != bot->GetMapId()) return false;
     const float distance = std::sqrt(bot->GetDistance(pos.x, pos.y, pos.z, DIST_CALC_NONE));
     if (objective.carrying) return distance > 3.0f;
+    // Nearby opponents are a reason to engage, even when neither side has a
+    // victim yet. Requiring an existing attack deadlocked bot-only encounters:
+    // movement outranked acquisition and the multiplier suppressed acquisition.
+    // Keep this local so distant midfield combat cannot pin an objective runner.
+    const std::list<ObjectGuid> enemies = AI_VALUE(std::list<ObjectGuid>, "enemy player targets");
+    for (const ObjectGuid& guid : enemies)
+    {
+        Unit* enemy = ai->GetUnit(guid);
+        if (enemy && enemy->IsInWorld() && enemy->IsAlive() && bot->IsWithinDistInMap(enemy, 30.0f) &&
+            bot->IsWithinLOSInMap(enemy) && !sServerFacade.IsFriendlyTo(bot, enemy))
+            return false;
+    }
     // Engage at the objective and defend against immediate pressure, but do not
     // let a lingering combat flag strand runners in unrelated midfield fights.
     return !ai->HasRealPlayerMaster() && !objective.pressured && distance > 15.0f &&

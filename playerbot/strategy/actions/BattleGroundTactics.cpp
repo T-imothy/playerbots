@@ -2854,8 +2854,11 @@ bool BGTactics::Execute(Event& event)
         if (bgType == BATTLEGROUND_WS)
         {
             if (!isUseful()) return false;
-            if (moveToObjective() || selectObjectiveWp(*vPaths)) return true;
-            // No random roaming after failure; bound repeated path work.
+            // Keep the actual flag/carrier destination. The coordinate-based
+            // shortcut planner can reverse at ramp bends and graveyard exits
+            // before the native path reaches its destination.
+            if (moveToObjective()) return true;
+            // A navigation failure must not launch a different, backward leg.
             warsongRetryUntil = WorldTimer::getMSTime() + 1000;
             return false;
         }
@@ -3974,7 +3977,8 @@ bool BGTactics::moveToObjective()
         }
 #endif
 
-        if (sServerFacade.IsDistanceGreaterThan(sServerFacade.GetDistance2d(bot, pos.x, pos.y), 100.0f))
+        if (bgType != BATTLEGROUND_WS &&
+            sServerFacade.IsDistanceGreaterThan(sServerFacade.GetDistance2d(bot, pos.x, pos.y), 100.0f))
         {
             //ostringstream out; out << "It is too far away! " << pos.x << ", " << pos.y << ", Distance: " << sServerFacade.GetDistance2d(bot, pos.x, pos.y);
             //bot->Say(out.str(), LANG_UNIVERSAL);
@@ -4932,6 +4936,11 @@ bool BGTactics::isUseful()
     if (!objective.carrying)
     {
         if (bot->IsInCombat() && !ShouldAdvanceWarsongObjective(ai)) return false;
+        // Normal PvP acquisition must be able to start before either bot has
+        // attacked. Otherwise both teams prioritise walking and ignore each
+        // other until a human creates combat for them.
+        if (!bot->IsInCombat() && !ShouldAdvanceWarsongObjective(ai) && SelectWarsongCombatTarget(ai))
+            return false;
         if (!bot->IsInCombat() && (bot->GetHealthPercent() < sPlayerbotAIConfig.lowHealth ||
             (bot->GetMaxPower(POWER_MANA) && AI_VALUE2(uint8, "mana", "self target") < 10)))
             return false;

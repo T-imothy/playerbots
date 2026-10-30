@@ -19,7 +19,6 @@ struct Player:Unit{Group* group=nullptr;Group* GetGroup(){return group;}''')
  bool HasAura(std::string name,Unit* u,bool,bool){return u&&u->ownAuras[name];}
  bool HasMyAura(std::string name,Unit* u){return u&&u->ownAuras[name];}''')
     common=common.replace('struct Facade{', '''struct Facade{
- float GetDistance2d(Unit* a,float x,float y){return std::sqrt((a->x-x)*(a->x-x)+(a->y-y)*(a->y-y));}
  bool IsDistanceLessOrEqualThan(float a,float b){return a<=b;}bool IsAlive(Unit* u){return u->alive;}''')
     common=common.replace('struct Config{float lowHealth=40;}', 'struct Config{float lowHealth=40,mediumHealth=50,sightDistance=75,aoeRadius=10;}')
     declarations=r'''

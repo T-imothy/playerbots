@@ -32,7 +32,7 @@ COMMON=r'''
 #include "playerbot/strategy/values/WarsongPolicy.h"
 using uint8=uint8_t;using uint32=uint32_t;using int32=int32_t;
 enum Team{ALLIANCE,HORDE};
-enum BattleGroundTypeId{BATTLEGROUND_TYPE_NONE,BATTLEGROUND_WS,BATTLEGROUND_EY,BATTLEGROUND_AB,BATTLEGROUND_RB};
+enum BattleGroundTypeId{BATTLEGROUND_TYPE_NONE,BATTLEGROUND_WS,BATTLEGROUND_EY,BATTLEGROUND_AB,BATTLEGROUND_RB,BATTLEGROUND_IC};
 enum{STATUS_WAIT_JOIN,STATUS_IN_PROGRESS,STATUS_WAIT_LEAVE,TEAM_INDEX_ALLIANCE=0,TEAM_INDEX_HORDE=1,
  DIST_CALC_NONE=0,POWER_MANA=0,BG_WS_FLAG_STATE_ON_BASE=0,BG_WS_FLAG_STATE_ON_PLAYER=1,BG_WS_FLAG_STATE_ON_GROUND=-1};
 int GetTeamIndexByTeamId(Team t){return int(t);}
@@ -91,6 +91,8 @@ uint32 GetSpellCastTime(const SpellEntry* s,Player*){return s->time;}
 bool IsChanneledSpell(const SpellEntry* s){return s->channel;}
 struct Facade{const SpellEntry* LookupSpellInfo(uint32){return &testSpell;}
  float GetDistance2d(Unit* a,Unit* b){return std::sqrt(a->GetDistance(b->x,b->y,a->z,0));}
+ float GetDistance2d(Unit* a,float x,float y){return std::sqrt(a->GetDistance(x,y,a->z,0));}
+ bool IsDistanceGreaterThan(float a,float b){return a>b;}
  bool friendly=false;bool IsFriendlyTo(Unit*,Unit*){return friendly;}bool isSpawned(GameObject* g){return g->spawned;}}sServerFacade;
 struct Config{float lowHealth=40;}sPlayerbotAIConfig;
 namespace WorldTimer{uint32 now=10000;uint32 getMSTime(){return now;}}
@@ -114,7 +116,8 @@ struct AttackEnemyFlagCarrierAction{Player* bot;AiObjectContext* context;Playerb
 struct BGTactics{PlayerbotAI* ai;Player* bot;AiObjectContext* context;uint32 warsongRetryUntil=0;
  std::string name="move to objective";bool moved=true;int requests=0;Position last{};
  std::string getName(){return name;}bool MoveTo(uint32,float x,float y,float z,bool=false,bool=false,bool=false){++requests;last={x,y,z,0};return moved;}
- bool refreshWarsongObjective();bool isUseful();bool flagTaken();bool teamFlagTaken();bool wsgPaths();bool wsgRoofJump();};
+ bool MoveNear(uint32 m,float x,float y,float z,float){return MoveTo(m,x,y,z);}bool IsLockedInsideKeep(){return false;}bool resetObjective(){return false;}bool selectObjective(){return refreshWarsongObjective();}
+ bool moveToObjective();bool refreshWarsongObjective();bool isUseful();bool flagTaken();bool teamFlagTaken();bool wsgPaths();bool wsgRoofJump();};
 enum{ACTION_INTERRUPT=40};
 struct Action{std::string name;float relevance=20;Unit* target=nullptr;virtual ~Action(){}
  std::string getName(){return name;}float getRelevance(){return relevance;}Unit* GetTarget(){return target;}};
@@ -128,7 +131,7 @@ struct Multiplier{PlayerbotAI* ai;Player* bot;AiObjectContext* context;
     methods='\n'.join(block(values,m) for m in ('BattleGroundTypeId ai::ActualBattlegroundType','bool ai::IsBattlegroundFlagCarrier',
         'bool ai::IsWarsongLocalThreat','Unit* ai::SelectWarsongCombatTarget','WarsongObjective WarsongObjectiveValue::Calculate','bool ai::ShouldAdvanceWarsongObjective'))
     methods+='\n'+block(source('actions/ChooseTargetActions.cpp'),'bool AttackEnemyFlagCarrierAction::isUseful')
-    methods+='\n'+'\n'.join(block(tactics,'bool BGTactics::'+m) for m in ('refreshWarsongObjective()','isUseful()','flagTaken()','teamFlagTaken()','wsgPaths()','wsgRoofJump()'))
+    methods+='\n'+'\n'.join(block(tactics,'bool BGTactics::'+m) for m in ('moveToObjective()','refreshWarsongObjective()','isUseful()','flagTaken()','teamFlagTaken()','wsgPaths()','wsgRoofJump()'))
     methods+='\n'+block(source('generic/BattlegroundStrategy.cpp'),'    class WarsongObjectiveMultiplier')+';\n'
     cases=r'''
 int main(){
@@ -153,6 +156,11 @@ int main(){
   BGTactics action{&a,&bot,context};
   auto sample=[&](){auto o=v.Calculate();context->GetValue<WarsongObjective>("warsong objective")->Set(o);action.refreshWarsongObjective();return o;};
   assert(sample().goal==G::Fetch);
+  // Both teams start moving toward the remote enemy flag without a human.
+  assert(action.moveToObjective());assert(action.requests==1);
+  assert(action.last.x==(team==ALLIANCE?WS_FLAG_POS_HORDE.x:WS_FLAG_POS_ALLIANCE.x));
+  action.moved=false;assert(!action.moveToObjective());action.moved=true;
+  bg.type=BATTLEGROUND_AB;assert(!action.moveToObjective());bg.type=BATTLEGROUND_WS;
   auto pos=context->GetValue<PositionMap&>("position")->Get()["bg objective"];
   assert(pos.x==(team==ALLIANCE?WS_FLAG_POS_HORDE.x:WS_FLAG_POS_ALLIANCE.x));
   bg.states[own]=1;bg.carriers[own]=enemyFC.guid;enemyFC.x=1200;
@@ -191,6 +199,15 @@ int main(){
   enemyFC.x=1000;assert(!attack.isUseful());enemyFC.x=100;
   // Tactical movement yields to pressure, low health and player control.
   bg.states[own]=bg.states[enemy]=0;bg.carriers[own]=0;sample();assert(ShouldAdvanceWarsongObjective(&a));
+  // Neither bot is fighting: native enemy acquisition must still win locally.
+  enemyFC.x=bot.x+20;enemyFC.combat=false;bot.combat=false;sample();
+  assert(!ShouldAdvanceWarsongObjective(&a));assert(!action.isUseful());
+  WarsongObjectiveMultiplier engagement(&a);Action acquire;acquire.name="attack enemy player";acquire.target=&enemyFC;
+  assert(engagement.GetValue(&acquire)==1);
+  enemyFC.los=false;assert(ShouldAdvanceWarsongObjective(&a));enemyFC.los=true;
+  enemyFC.alive=false;assert(ShouldAdvanceWarsongObjective(&a));enemyFC.alive=true;
+  enemyFC.map=1;assert(ShouldAdvanceWarsongObjective(&a));enemyFC.map=489;
+  enemyFC.x=100;assert(ShouldAdvanceWarsongObjective(&a));
   WarsongObjectiveMultiplier multiplier(&a);Action combat;combat.name="attack enemy player";combat.target=&enemyFC;
   assert(multiplier.GetValue(&combat)==0);combat.name="flash heal";assert(multiplier.GetValue(&combat)==1);
   combat.name="sprint";combat.relevance=20;assert(multiplier.GetValue(&combat)==2);
@@ -202,6 +219,8 @@ int main(){
   assert(sample().pressured);assert(!ShouldAdvanceWarsongObjective(&a));
   combat.name="attack enemy player";assert(multiplier.GetValue(&combat)==1); // self-defense restored
   bot.combat=true;assert(!action.isUseful());bot.combat=false;enemyFC.combat=false;sample();
+  assert(!action.isUseful()); // opponent still nearby after dropping combat
+  enemyFC.x=bot.x+100;sample(); // resume the objective when local combat clears
   context->GetValue<uint8>("mana::self target")->Set(100);assert(action.isUseful());
   a.canMove=false;assert(!action.isUseful());a.canMove=true;
   action.warsongRetryUntil=WorldTimer::now+1000;assert(!action.isUseful());action.warsongRetryUntil=0;
