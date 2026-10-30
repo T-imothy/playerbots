@@ -472,18 +472,16 @@ void TestRegistry::GenerateBossEncounterTest()
             if (RaidLab::Enabled() && RaidLab::AllowedMap(mapEntry->MapID))
             {
                 std::string approach = ComputeBossApproachCoords(mapEntry, *point, bossInfo->MinLevel, 60);
-                // Direct Magmadar trial: the generic entrance-side point is
-                // inside a native five-hound pack. Start on the clear far side;
-                // leave all trash intact. This does not test raid progression.
-                if (mapEntry->MapID == 409 && bossInfo->Entry == 11982)
-                    approach = "409;1189.63;-1020.48;-185.663;3.14159";
+                const std::string staging = mapEntry->MapID == 409 && bossInfo->Entry == 11982
+                    ? "raidlab staging 11982" : "wait 1";
                 for (std::string mode : {"bot", "leader"})
                     RegisterTest("raidlab_" + std::to_string(mapEntry->MapID) + "_" + std::to_string(bossInfo->Entry) + "_" + mode, {
                         "require bot is level=60",
                         "mgroup size=" + maxPlayers + " gear=best",
                         "wait group " + maxPlayers + " 180",
                         "gm on", "teleport " + mapName, "wait 5",
-                        "teleport " + approach, "teleport group expect=" + maxPlayers, "wait 5", "gm off",
+                        "teleport " + approach, "wait 5", staging, "wait 5",
+                        "teleport group expect=" + maxPlayers, "wait 5", "gm off",
                         "raidlab " + std::to_string(bossInfo->Entry) + " " + mode,
                         "monitor raidlab boss dead => pass \"Observed native boss death; mechanic coverage separate\"",
                         "monitor time > 900 => fail \"Encounter timeout\"",

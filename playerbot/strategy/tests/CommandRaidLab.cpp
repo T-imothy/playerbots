@@ -3,9 +3,79 @@
 #include "CommandRaidLab.h"
 #include "World/RaidLab.h"
 #include "Groups/Group.h"
+#include "playerbot/WorldPosition.h"
+#include <cmath>
 #include <sstream>
 
 using namespace ai;
+TestResult CommandRaidLabStaging::Execute(const std::string& params, Player* bot, PlayerbotAI*,
+                                         TestContext&, std::string& message)
+{
+ // This direct encounter fixture is deliberately limited to Magmadar. It does
+ // not alter native trash, combat logic, or any production placement policy.
+ if (!RaidLab::Enabled() || !bot->IsInWorld() || bot->IsBeingTeleported() ||
+     !bot->IsGameMaster() || bot->GetMapId()!=409 || params!="11982") {
+  message="BLOCKED: Magmadar staging requires settled local setup observer";
+  return TestResult::IMPOSSIBLE;
+ }
+ auto& store=bot->GetMap()->GetObjectsStore();
+ Creature* boss=nullptr;
+ for(auto i=store.begin<Creature>();i!=store.end<Creature>();++i) {
+  auto c=i->second;
+  if(c && c->GetEntry()==11982 && c->IsAlive() && c->IsInWorld() &&
+     bot->GetDistance(c)<100.0f) {boss=c;break;}
+ }
+ if(!boss || boss->IsInCombat()) {
+  message="BLOCKED: native Magmadar unavailable for staging";return TestResult::IMPOSSIBLE;
+ }
+ unsigned floorRejected=0, losRejected=0, pathRejected=0, trashRejected=0;
+ for(float radius : {30.0f,35.0f,40.0f,45.0f,50.0f}) for(unsigned sector=0;sector<24;++sector) {
+  if(radius<boss->GetAttackDistance(bot)+2.0f) continue;
+  float angle=float(sector)*float(2*M_PI)/24.0f;
+  float x=boss->GetPositionX()+radius*std::cos(angle);
+  float y=boss->GetPositionY()+radius*std::sin(angle), z=boss->GetPositionZ();
+  bot->UpdateAllowedPositionZ(x,y,z);
+  if(!std::isfinite(z) || std::abs(z-boss->GetPositionZ())>8.0f) {++floorRejected;continue;}
+  if(!boss->IsWithinLOS(x,y,z+bot->GetCollisionHeight(),true)) {++losRejected;continue;}
+  WorldPosition destination(bot->GetMapId(),x,y,z);
+  auto path=destination.getPathStepFrom(WorldPosition(boss),bot,true);
+  if(!destination.isPathTo(path,1.0f,2.0f)) {++pathRejected;continue;}
+  bool clear=true;
+  for(auto i=store.begin<Creature>();i!=store.end<Creature>() && clear;++i) {
+   auto c=i->second;
+   if(!c || c==boss || !c->IsInWorld() || !c->IsAlive() || c->IsPet() || c->IsTotem()) continue;
+   // Conservative native-trash clearance along the pull corridor as well as
+   // landing point. Setup GM state makes faction-based aggro tests unsuitable.
+   for(const auto& point : path) {
+    float dx=c->GetPositionX()-point.coord_x, dy=c->GetPositionY()-point.coord_y;
+    float dz=c->GetPositionZ()-point.coord_z;
+    // Native DetectOrAttack compares center distance (DIST_CALC_NONE).
+    // Match its level/aura-adjusted radius, with two yards of fixture margin.
+    float clearance=c->GetAttackDistance(bot)+2.0f;
+    if(dx*dx+dy*dy+dz*dz<clearance*clearance) {
+     if(trashRejected<4) sLog.outString("RAID_LAB_SETUP: rejected radius=%.1f sector=%u trash=%u distance=%.2f limit=%.2f",
+         radius,sector,c->GetEntry(),std::sqrt(dx*dx+dy*dy+dz*dz),clearance);
+     clear=false;break;
+    }
+   }
+  }
+  if(!clear) {++trashRejected;continue;}
+  if(!bot->TeleportTo(bot->GetMapId(),x,y,z,angle+float(M_PI))) {
+   message="BLOCKED: native staging teleport refused";return TestResult::IMPOSSIBLE;
+  }
+  std::ostringstream details;
+  details<<"Validated Magmadar staging "<<x<<","<<y<<","<<z<<" radius="<<radius
+         <<" rejected floor="<<floorRejected<<" los="<<losRejected
+         <<" path="<<pathRejected<<" trash="<<trashRejected;
+  message=details.str();sLog.outString("RAID_LAB_SETUP: %s",message.c_str());
+  return TestResult::PASS;
+ }
+ std::ostringstream details;
+ details<<"BLOCKED: no clear Magmadar staging; floor="<<floorRejected<<" los="<<losRejected
+        <<" path="<<pathRejected<<" trash="<<trashRejected;
+ message=details.str();sLog.outString("RAID_LAB_SETUP: %s",message.c_str());
+ return TestResult::IMPOSSIBLE;
+}
 bool MonitorRaidLabDeath::IsConditionMet(const std::string&, Player* bot, TestContext& ctx) const {
  return bot->IsInWorld() && ctx.focusMobGuid &&
         RaidLab::BossDied(bot->GetMap(),ctx.focusMobGuid.GetRawValue());

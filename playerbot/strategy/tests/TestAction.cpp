@@ -50,6 +50,7 @@ TestAction::TestAction(PlayerbotAI* ai, std::string name)
 void TestAction::RegisterCommands()
 {
 #ifdef MANTECH_RAID_LAB
+    commands.push_back(std::make_unique<CommandRaidLabStaging>());
     commands.push_back(std::make_unique<CommandRaidLab>());
 #endif
     commands.push_back(std::make_unique<RequireBotIs>());
