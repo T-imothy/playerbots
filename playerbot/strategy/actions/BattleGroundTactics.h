@@ -64,7 +64,12 @@ private:
     bool SelectClassicAlteracObjective(WorldLocation& location);
     bool CheckClassicBanner();
     bool MoveToClassicAlteracApproach(PositionEntry objective);
+    bool MoveToClassicWarsongOpening();
 #endif
+    // Unconditional layout: native core callers and the module must agree.
+    uint32 classicWsOpeningInstance = 0;
+    unsigned classicWsOpeningLane = 0;
+    unsigned classicWsOpeningStep = 0;
     uint32 warsongRetryUntil = 0;
     uint32 battlegroundObjectiveCheck = 0;
     uint32 classicAvCrossingInstance = 0;

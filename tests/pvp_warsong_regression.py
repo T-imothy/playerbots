@@ -121,6 +121,7 @@ struct BGTactics{PlayerbotAI* ai;Player* bot;AiObjectContext* context;uint32 war
  std::string getName(){return name;}bool MoveTo(uint32,float x,float y,float z,bool=false,bool=false,bool=false){++requests;last={x,y,z,0};return moved;}
  bool MoveNear(uint32 m,float x,float y,float z,float){return MoveTo(m,x,y,z);}bool IsLockedInsideKeep(){return false;}bool resetObjective(){return false;}bool selectObjective(){return refreshWarsongObjective();}
  bool MoveToClassicAlteracApproach(const PositionEntry&){assert(ActualBattlegroundType(bot)==BATTLEGROUND_AV);return false;}
+ bool MoveToClassicWarsongOpening(){return false;} // covered by the dedicated opening production-body test
  bool moveToObjective();bool refreshWarsongObjective();bool isUseful();bool flagTaken();bool teamFlagTaken();bool wsgPaths();bool wsgRoofJump();};
 enum{ACTION_INTERRUPT=40};
 struct Action{std::string name;float relevance=20;Unit* target=nullptr;virtual ~Action(){}

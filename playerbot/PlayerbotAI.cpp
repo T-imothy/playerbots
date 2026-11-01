@@ -52,6 +52,7 @@
 #include "Spells/SpellMgr.h"
 #include "PlayerbotDbStore.h"
 #include "strategy/values/PositionValue.h"
+#include "strategy/values/PvpValues.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/TravelMgr.h"
 #include "Movement/MoveSplineInitArgs.h"
@@ -826,6 +827,14 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
         if (bot && HasRealPlayerMaster())
             min = false;
 
+#ifdef MANGOSBOT_ZERO
+        // Battleground travel is active work even outside combat. An empty
+        // decision (e.g. a gate, trigger poll or mount retry) must not introduce
+        // the ten-second passive-world sleep between opening decisions.
+        if (ai::SupportsBattlegroundObjectiveRecovery(bot) && bot->GetBattleGround() &&
+            (bot->GetBattleGround()->GetStatus() == STATUS_WAIT_JOIN ||
+             bot->GetBattleGround()->GetStatus() == STATUS_IN_PROGRESS)) min = false;
+#endif
         YieldAIInternalThread(min);
     }
 }

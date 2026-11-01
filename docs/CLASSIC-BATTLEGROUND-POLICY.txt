@@ -11,6 +11,17 @@ Travel and start
   over objective travel, subject to native outdoor, combat, flag-carrier,
   water and known-mount checks. Mounting is skipped near an objective.
   Long movement splines continue, but the BG AI checks again within one second.
+  WAIT_JOIN/IN_PROGRESS WS, AB and AV decisions never select the passive-world
+  scheduling cadence after an empty decision. Existing accepted action/cast
+  duration is preserved. Gate/rez wake remains pending until a cast completes.
+
+Warsong opening
+  During the first 90 seconds, autonomous flag-fetching bots split evenly by
+  stable team slot between tunnel and side-door/ramp approaches. These use
+  existing native path-graph points, with no forced graveyard jump. Reaching
+  the field ends the detour. Carrier, escort, return and interception tasks
+  keep their existing objective; explicit human-master orders are preserved.
+  A rejected native route immediately falls back to ordinary objective travel.
 
 Arathi Basin
   The first 90 seconds after gates open distribute 15 bots as follows:

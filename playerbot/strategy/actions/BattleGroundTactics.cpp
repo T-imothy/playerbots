@@ -4013,6 +4013,7 @@ bool BGTactics::moveToObjective()
         //bot->Say(out.str(), LANG_UNIVERSAL);
 
 #ifdef MANGOSBOT_ZERO
+        if (bgType == BATTLEGROUND_WS && MoveToClassicWarsongOpening()) return true;
         if (bgType == BATTLEGROUND_AV && MoveToClassicAlteracApproach(pos)) return true;
         // A three-yard formation offset can put an AV tower destination
         // through a wall or off the flag's floor. Follow the actual flag.

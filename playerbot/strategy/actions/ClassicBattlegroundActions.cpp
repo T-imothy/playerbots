@@ -17,10 +17,15 @@ void PlayerbotAI::PrepareForBattlegroundStart()
     const uint32 instance = bg ? bg->GetInstanceId() : 0;
     const bool resume = active && alive && (instance != observedBattlegroundInstance ||
         !observedBattlegroundActive || !observedBattlegroundAlive);
+    // Retain the transition while an accepted spell is finishing. Consuming
+    // it now would leave the old wait intact after that cast ends.
+    if (resume && (!aiObjectContext || bot->IsNonMeleeSpellCasted(false, false, true))) return;
     observedBattlegroundInstance = instance;
     observedBattlegroundActive = active;
     observedBattlegroundAlive = alive;
-    if (!resume || !aiObjectContext || bot->IsNonMeleeSpellCasted(false, false, true)) return;
+    if (!resume) return;
+    AllowActivity(ALL_ACTIVITY, true);
+    AllowActivity(REACT_ACTIVITY, true);
     // A gate opening / resurrection invalidates waiting-time action sleeps,
     // not an accepted mount/heal/capture cast or ordinary world activity.
     aiInternalUpdateDelay = 0;
@@ -309,4 +314,31 @@ bool ai::ShouldAdvanceBattlegroundObjective(PlayerbotAI* ai)
         if (ShouldEngageBattlegroundTarget(ai, ai->GetUnit(guid))) return false;
     return true;
 }
+bool BGTactics::MoveToClassicWarsongOpening()
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || bg->GetTypeId() != BATTLEGROUND_WS || bg->GetStatus() != STATUS_IN_PROGRESS ||
+        !bot->IsAlive() || bot->IsBeingTeleported() || ai->HasRealPlayerMaster()) return false;
+    if (classicWsOpeningInstance != bg->GetInstanceId())
+    {
+        classicWsOpeningInstance = bg->GetInstanceId();
+        unsigned count;
+        classicWsOpeningLane = BattlegroundTeamSlot(bot, count) % 2;
+        classicWsOpeningStep = 0;
+    }
+    const WarsongObjective objective = AI_VALUE(WarsongObjective, "warsong objective");
+    if (bg->GetStartTime() > BG_START_DELAY_2M + 90000 || objective.carrying ||
+        objective.goal != WarsongGoal::Fetch)
+    { classicWsOpeningStep = 3; return false; }
+    if (bot->IsInCombat()) return false;
+    policy::ApproachPoint next;
+    if (!policy::WarsongOpening(bot->GetTeam() == ALLIANCE, classicWsOpeningLane,
+        classicWsOpeningStep, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), next)) return false;
+    if (MoveTo(bot->GetMapId(), next.x, next.y, next.z)) return true;
+    // If native navigation rejects the side route, retain the existing flag
+    // objective and fall back immediately; don't retry a blocked detour forever.
+    classicWsOpeningStep = 3;
+    return false;
+}
+
 #endif

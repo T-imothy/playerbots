@@ -87,7 +87,7 @@ code=r'''
 #include <map>
 #include <string>
 using uint32=unsigned;
-const unsigned STATUS_IN_PROGRESS=3;
+const unsigned STATUS_IN_PROGRESS=3,ALL_ACTIVITY=0,REACT_ACTIVITY=1;
 struct BattleGround{unsigned status=2,instance=1;unsigned GetStatus(){return status;}unsigned GetInstanceId(){return instance;}};
 struct Player{BattleGround*bg=nullptr;bool world=true,transfer=false,alive=true,cast=false;
 bool IsInWorld(){return world;}bool IsBeingTeleported(){return transfer;}bool IsAlive(){return alive;}
@@ -99,6 +99,7 @@ struct Context{Value value;template<class T>Value*GetValue(const char*){return &
 struct PlayerbotAI{Player*bot;Context*aiObjectContext;bool real=false,isWaiting=true;
 unsigned aiInternalUpdateDelay=20000,observedBattlegroundInstance=0;
 bool observedBattlegroundActive=false,observedBattlegroundAlive=false;
+unsigned activityRefreshes=0;bool AllowActivity(unsigned,bool now){assert(now);++activityRefreshes;return true;}
 bool IsRealPlayer(){return real;}void PrepareForBattlegroundStart();};
 __WAKE__
 int main(){
@@ -112,7 +113,9 @@ int main(){
  bot.alive=true;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==0);
  ai.aiInternalUpdateDelay=1500;bg.instance=2;bot.cast=true;
  ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==1500); // preserve accepted cast
- bot.cast=false;bot.transfer=true;bg.instance=3;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==1500);
+ bot.cast=false;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==0); // wake deferred until accepted cast completes
+ assert(ai.activityRefreshes==6);
+ ai.aiInternalUpdateDelay=1500;bot.transfer=true;bg.instance=3;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==1500);
  bot.transfer=false;bot.world=false;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==1500);
  bot.world=true;ai.real=true;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==1500);
  ai.real=false;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==0);

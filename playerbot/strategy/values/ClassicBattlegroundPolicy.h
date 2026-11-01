@@ -39,6 +39,28 @@ namespace ai::ClassicBattlegroundPolicy
         return count >= 30 ? 6 : (count >= 12 ? 3 : (count >= 5 ? 1 : 0));
     }
     struct ApproachPoint { float x, y, z; };
+    inline bool WarsongOpening(bool alliance, unsigned lane, unsigned& step,
+        float x, float y, float z, ApproachPoint& next)
+    {
+        // Existing WSG path-graph points: tunnel vs side door/ramp. No forced
+        // graveyard jump, teleport or coordinate shortcut through the walls.
+        static const ApproachPoint routes[2][2][3] = {
+            {{{965.049f,1459.15f,338.076f},{1030.1f,1459.58f,330.204f},{1124.37f,1462.28f,315.853f}},
+             {{1029.14f,1387.49f,340.836f},{1057.67f,1487.55f,342.537f},{1068.15f,1548.1f,321.446f}}},
+            {{{1502.27f,1457.52f,347.589f},{1442.5f,1459.7f,342.024f},{1348.02f,1461.06f,323.167f}},
+             {{1443.55f,1533.4f,343.148f},{1405.34f,1432.33f,345.792f},{1354.17f,1411.56f,324.327f}}}
+        };
+        // Never turn a bot that already reached the field back toward base.
+        if ((alliance ? x < 1350.0f : x > 1120.0f) || z < 328.0f) { step=3; return false; }
+        while (step < 3)
+        {
+            next=routes[alliance ? 1 : 0][lane % 2][step];
+            const float dx=x-next.x,dy=y-next.y,dz=z-next.z;
+            if (dx*dx+dy*dy+dz*dz > 36.0f) return true;
+            ++step;
+        }
+        return false;
+    }
     inline bool AlteracApproach(bool alliance, unsigned instance, unsigned& observedInstance,
         unsigned& step, float x, float y, float z, float goalX, ApproachPoint& next)
     {
