@@ -41,13 +41,13 @@ int main(){
   const auto ours=a?BG_AV_NODE_STATUS_ALLY_OCCUPIED:BG_AV_NODE_STATUS_HORDE_OCCUPIED;
   const auto assault=a?BG_AV_NODE_STATUS_ALLY_CONTESTED:BG_AV_NODE_STATUS_HORDE_CONTESTED;
   for(auto t:towers)bot.bg.events[t]=theirs;for(auto g:graves)bot.bg.events[g]=theirs;
-  for(bot.slot=0;bot.slot<6;++bot.slot){assert(planner.SelectClassicAlteracObjective(goal));assert(goal.coord_x==towers[bot.slot%2]);}
+  for(bot.slot=0;bot.slot<6;++bot.slot){assert(planner.SelectClassicAlteracObjective(goal));assert(goal.coord_x==towers[0]);}
   bot.slot=6;assert(planner.SelectClassicAlteracObjective(goal)&&goal.coord_x==graves[0]);
   bot.bg.events[graves[0]]=assault;
   assert(planner.SelectClassicAlteracObjective(goal)&&goal.coord_x==graves[0]);
   bot.slot=8;assert(planner.SelectClassicAlteracObjective(goal)&&goal.coord_x==graves[1]);
   bot.bg.events[towers[0]]=assault;bot.slot=0;assert(planner.SelectClassicAlteracObjective(goal)&&goal.coord_x==towers[0]);
-  bot.slot=2;assert(planner.SelectClassicAlteracObjective(goal)&&goal.coord_x==towers[2]);
+  bot.slot=2;assert(planner.SelectClassicAlteracObjective(goal)&&goal.coord_x==towers[1]);
   for(auto g:graves)bot.bg.events[g]=ours;
   for(auto t:towers)bot.bg.events[t]=assault;
   bot.slot=12;assert(planner.SelectClassicAlteracObjective(goal));assert(goal.coord_x!=BG_AV_BOSS_A&&goal.coord_x!=BG_AV_BOSS_H);

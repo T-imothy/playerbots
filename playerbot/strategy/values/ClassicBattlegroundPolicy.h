@@ -38,6 +38,30 @@ namespace ai::ClassicBattlegroundPolicy
     {
         return count >= 30 ? 6 : (count >= 12 ? 3 : (count >= 5 ? 1 : 0));
     }
+    struct ApproachPoint { float x, y, z; };
+    inline bool AlteracApproach(bool alliance, unsigned instance, unsigned& observedInstance,
+        unsigned& step, float x, float y, float z, float goalX, ApproachPoint& next)
+    {
+        // Waypoints already present in the AV path graph. Separate the two
+        // offensive approaches instead of routing both armies into one scrum.
+        // Native pathfinding and the normal engagement checks still apply.
+        if (instance != observedInstance || (alliance ? x > 0.0f : x < -600.0f))
+        { observedInstance = instance; step = 0; }
+        if (alliance ? goalX >= -500.0f : goalX <= -170.0f) return false;
+        if (alliance ? x < -450.0f : x > 0.0f) { step = 2; return false; }
+        if (alliance ? x < -200.0f : x > -220.0f) step = step < 1 ? 1 : step;
+        const ApproachPoint routeA[] = {{-147.596f,-253.494f,6.78363f},{-432.235f,-273.793f,20.6022f}};
+        const ApproachPoint routeH[] = {{-244.184f,-433.898f,20.024f},{-104.292f,-455.243f,22.3564f}};
+        const ApproachPoint* route = alliance ? routeA : routeH;
+        while (step < 2)
+        {
+            next = route[step];
+            const float dx=x-next.x,dy=y-next.y,dz=z-next.z;
+            if (dx*dx+dy*dy+dz*dz > 144.0f) return true;
+            ++step;
+        }
+        return false;
+    }
     inline bool GeneralReady(const std::array<Node, 4>& towers, Node finalGrave)
     {
         // An assault is not a destroyed tower: its marshal is still alive.
