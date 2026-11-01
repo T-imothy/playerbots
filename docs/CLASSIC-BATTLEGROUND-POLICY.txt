@@ -64,3 +64,5 @@ Regression coverage
   classic_alterac_objectives: actual AV planner with mirrored faction states,
   banner coordinates, pending capture guards and final-general conditions.
   Existing WSG and shared BG recovery regressions cover all expansion modes.
+
+AV flag destinations reject decorative roof banners and preserve the clickable flag floor. Nearby capture checks test the visible pole as well as the base (GO collision height is zero), retain static wall checks, and approach the actual flag if occluded. No direct capture handler or instant capture is used.
