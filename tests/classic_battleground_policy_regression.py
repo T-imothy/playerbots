@@ -74,10 +74,13 @@ with tempfile.TemporaryDirectory(prefix='classic-bg-policy-') as tmp:
  header=(root/'playerbot/PlayerbotAI.h').read_text()
  declarations=header.split('    void PrepareCompletedMovement();',1)[1].split('    bool ProcessPendingTransition();',1)[0]
  (p/'layout.h').write_text('#include <cstdint>\nusing uint32=uint32_t;\nstruct AI {\n'+declarations+'\nvoid* bot; void* GetBot() { return bot; } };\n')
- (p/'module.cpp').write_text('#define MANGOSBOT_ZERO\n#include "layout.h"\nextern "C" unsigned moduleSize(){return sizeof(AI);}\nextern "C" void initialize(AI* p,void* b){new(p) AI{};p->bot=b;}\n'.replace('#include "layout.h"','#include <new>\n#include "layout.h"'))
+ (p/'module.cpp').write_text('#include "layout.h"\nextern "C" unsigned moduleSize(){return sizeof(AI);}\nextern "C" void initialize(AI* p,void* b){new(p) AI{};p->bot=b;}\n'.replace('#include "layout.h"','#include <new>\n#include "layout.h"'))
  (p/'caller.cpp').write_text('#include "layout.h"\n#include <cassert>\nextern "C" unsigned moduleSize();extern "C" void initialize(AI*,void*);\nint main(){assert(moduleSize()==sizeof(AI));AI p;int b;initialize(&p,&b);assert(p.GetBot()==&b);}\n')
- subprocess.run(['cl','/nologo','/EHsc','/std:c++17','module.cpp','caller.cpp','/Fe:layout.exe'],cwd=p,check=True)
- subprocess.run([str(p/'layout.exe')],cwd=p,check=True)
+ for era in ('ZERO','ONE','TWO'):
+  subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'/c','module.cpp'],cwd=p,check=True)
+  subprocess.run(['cl','/nologo','/EHsc','/std:c++17','caller.cpp','module.obj','/Fe:layout.exe'],cwd=p,check=True)
+  subprocess.run([str(p/'layout.exe')],cwd=p,check=True)
+
 
 # Execute the actual gate/respawn wake hook. Waiting sleeps must be discarded,
 # while accepted casts and activity outside battlegrounds remain untouched.
@@ -88,10 +91,11 @@ code=r'''
 #include <string>
 using uint32=unsigned;
 const unsigned STATUS_IN_PROGRESS=3;
-struct BattleGround{unsigned status=2,instance=1;unsigned GetStatus(){return status;}unsigned GetInstanceId(){return instance;}};
+struct BattleGround{bool supported=true;unsigned status=2,instance=1;unsigned GetStatus(){return status;}unsigned GetInstanceId(){return instance;}};
 struct Player{BattleGround*bg=nullptr;bool world=true,transfer=false,alive=true,cast=false;
 bool IsInWorld(){return world;}bool IsBeingTeleported(){return transfer;}bool IsAlive(){return alive;}
 bool IsNonMeleeSpellCasted(bool,bool,bool){return cast;}BattleGround*GetBattleGround(){return bg;}};
+bool SupportsBattlegroundObjectiveRecovery(Player*p){return p->bg&&p->bg->supported;}
 struct Position{unsigned resets=0;void Reset(){++resets;}};
 using PositionMap=std::map<std::string,Position>;
 struct Value{PositionMap value;PositionMap&Get(){return value;}};
@@ -105,7 +109,8 @@ int main(){
  Player bot;Context ctx;PlayerbotAI ai{&bot,&ctx};BattleGround bg;
  ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==20000); // world/dungeon is not a BG
  bot.bg=&bg;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==20000);
- bg.status=3;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==0&&!ai.isWaiting);
+ bg.status=3;bg.supported=false;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==20000); // EY/arena/IC/SA untouched
+ bg.supported=true;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==0&&!ai.isWaiting);
  assert(ctx.value.value["bg objective"].resets==1);
  ai.aiInternalUpdateDelay=1000;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==1000);
  bot.alive=false;ai.PrepareForBattlegroundStart();assert(ai.aiInternalUpdateDelay==1000);

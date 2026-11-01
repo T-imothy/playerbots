@@ -16,6 +16,7 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/PositionValue.h"
+#include "playerbot/strategy/values/PvpValues.h"
 #include "playerbot/strategy/values/Stances.h"
 #include "MotionGenerators/TargetedMovementGenerator.h"
 #include "playerbot/TravelMgr.h"
@@ -3063,10 +3064,8 @@ bool MovementAction::FollowOnTransport(Unit* target)
 void MovementAction::WaitForReach(float distance)
 {
     float duration = 1000.0f * MoveDelay(distance) + sPlayerbotAIConfig.reactDelay;
-#ifdef MANGOSBOT_ZERO
     // The spline continues independently; recheck gates, banners and mounts.
-    if (bot->InBattleGround()) duration = std::min(duration, 1000.0f);
-#endif
+    if (SupportsBattlegroundObjectiveRecovery(bot)) duration = std::min(duration, 1000.0f);
     if (duration > sPlayerbotAIConfig.maxWaitForMove)
         duration = sPlayerbotAIConfig.maxWaitForMove;
 

@@ -1,13 +1,13 @@
 """Execute the current Classic AV planner against native-style event state."""
 from pathlib import Path
 import re,subprocess,tempfile
+from native_bg_constants import variants
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
 src=(root/'playerbot/strategy/actions/ClassicBattlegroundActions.cpp').read_text()
 body=block(src,'bool BGTactics::SelectClassicAlteracObjective(')
 helper=block(src,'    policy::Node AvState(')
-names=sorted(set(re.findall(r'\bBG_AV_\w+',body+helper)))
-constants='enum {'+','.join(n+'='+str(i+100) for i,n in enumerate(names))+'};'
+adapter=src.split('// Keep expansion enum differences at this native API boundary.',1)[1].split('    policy::Node AvState',1)[0]
 locations=re.findall(r'\{(BG_AV_NODES_\w+), "(AV_\w+)"\}',body)
 code=r'''
 #include "playerbot/strategy/values/ClassicBattlegroundPolicy.h"
@@ -17,6 +17,7 @@ code=r'''
 #include <iostream>
 namespace policy=ai::ClassicBattlegroundPolicy;
 __CONSTANTS__
+__ADAPTER__
 enum {STATUS_IN_PROGRESS=3,ALLIANCE=469,HORDE=67};
 struct Position {float x=0;};
 struct WorldLocation{unsigned mapid=30;float coord_x=0;WorldLocation()=default;WorldLocation(unsigned m,Position p):mapid(m),coord_x(p.x){}};
@@ -61,10 +62,11 @@ int main(){
   assert(planner.SelectClassicAlteracObjective(goal)&&goal.coord_x==(a?BG_AV_BOSS_H:BG_AV_BOSS_A));
   bot.bg.status=0;assert(!planner.SelectClassicAlteracObjective(goal));
  }
- std::cout<<"PASS actual Classic AV mirrored squads, graveyard chain, assault guards, native tower completion, final general objective\n";
+ std::cout<<"PASS shared AV mirrored squads, graveyard chain, assault guards, native tower completion, final general objective\n";
 }
-'''.replace('__CONSTANTS__',constants).replace('__HELPER__',helper).replace('__BODY__',body).replace('__LOCATIONS__','\n'.join(f'sRandomPlayerbotMgr.names["{s}"]={n};' for n,s in locations))
-with tempfile.TemporaryDirectory(prefix='classic-av-planner-') as tmp:
- p=Path(tmp);(p/'test.cpp').write_text(code)
- subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/I'+str(root),'test.cpp','/Fe:test.exe'],cwd=p,check=True)
- subprocess.run([str(p/'test.exe')],cwd=p,check=True)
+'''.replace('__ADAPTER__',adapter).replace('__HELPER__',helper).replace('__BODY__',body).replace('__LOCATIONS__','\n'.join(f'sRandomPlayerbotMgr.names["{s}"]={n};' for n,s in locations))
+for era,constants in variants('AV'):
+ with tempfile.TemporaryDirectory(prefix='shared-av-planner-') as tmp:
+  p=Path(tmp);(p/'test.cpp').write_text(code.replace('__CONSTANTS__',constants))
+  subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'/I'+str(root),'test.cpp','/Fe:test.exe'],cwd=p,check=True)
+  subprocess.run([str(p/'test.exe')],cwd=p,check=True)

@@ -5262,7 +5262,6 @@ bool DebugAction::HandleWhy(Event& event, Player* requester, const std::string& 
          << " | last position change: " << facts.posLastChange << "s ago";
     ai->TellPlayerNoFacing(requester, move.str());
 
-#ifdef MANGOSBOT_ZERO
     // Explicit diagnostic command only: no periodic production logging.
     if (BattleGround* bg = bot->GetBattleGround())
     {
@@ -5291,7 +5290,6 @@ bool DebugAction::HandleWhy(Event& event, Player* requester, const std::string& 
             }
         }
     }
-#endif
 
     // strategies (active engine)
     {

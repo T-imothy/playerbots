@@ -1,0 +1,40 @@
+TBC / Wrath dungeon and Classic-map battleground parity
+
+Base: 1aff76e2fc80c36e6dab4c3f1b51da487edd3144 (already used by both cores).
+Selected Classic commits: 5486639a, b89c6747, 5ca01142, d6562788, 5bb9de13.
+No newer autonomous raid lab or raid-behavior commits are included.
+
+The policy described in CLASSIC-BATTLEGROUND-POLICY.txt now also applies to
+WSG, AB and AV in TBC and Wrath. Classic in the source filenames identifies
+these battleground maps, not a restriction to the Classic core.
+
+Adaptation boundaries:
+- Resolve Wrath random-BG queues to the actual battleground type.
+- Use Wrath's native AV node names; node/event numbers are checked against
+  each selected core's headers by the banner and objective regressions.
+- Use each core's native map GO/creature lookup, lock 1479, capture spell
+  21651 and SpellStart validation. No direct ownership changes, skipped cast
+  time, immunity bypass, or altered capture/reinforcement/reputation rules.
+- Gate/respawn wake, mount priority and shortened movement waits apply only
+  to WSG/AB/AV. Eye, arenas, Strand and Isle retain their existing scheduling.
+- AB/AV objective targeting preserves human-master control and local defense.
+- AI state fields have identical class layout in core and playerbot TUs.
+- The squared-distance path gap correction is shared movement infrastructure;
+  dense and optimized corridors are checked by movement_path_clip_regression.
+
+Already present in both expansion pins, not reapplied:
+Uldaman native altar/ritual assistance and healing wards; Zul'Farrak healing
+wards; boss-owned dungeon add priorities; rescue/phase/manual-target rules;
+encounter movement/hold/dispel/reflect guards; TBC-native Mechanar, Anzu,
+Vorpil, Steamvault and other expansion-aware policies. Native core histories
+also contain the earlier dungeon pool/event/respawn and dungeon-travel fixes.
+The Uldaman adapter already uses the expansion model interaction bounds.
+Classic's custom UBRS player limit is not a bot behavior and is not ported.
+
+Focused tests execute production decision bodies for all three eras and use
+the actual TBC/Wrath native event constants when run from core CTest. Native
+fixtures can be found through MANTECH_NATIVE_CORE_ROOT, avoiding dependence
+on a particular checkout directory name. Native builds are required as well.
+
+This port does not authorize publication, live deployment, configuration/DB
+changes, server restart, or automated raid/BG activity on live realms.

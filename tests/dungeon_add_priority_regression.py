@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 from behavior_regression import block
+from native_core_paths import core_root
 
 root=Path(__file__).resolve().parents[1]
 source=(root/'playerbot/strategy/actions/DungeonAddTargetAction.cpp').read_text()
@@ -557,8 +558,7 @@ int main(){
 '''.replace('__METHODS__',methods)
 for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
     if realm!='classic':
-        native_root=root.parent/realm
-        if not (native_root/'src/game').is_dir():native_root=root.parent/f'mangos-{realm}-behavior'
+        native_root=core_root(realm)
         scripts=native_root/'src/game/AI/ScriptDevAI/scripts'
         expected={
             'boss_illidan.cpp':['23375','41083','m_creature->GetSpawner()', 'RemoveAurasByCasterSpell(SPELL_PARALYZE'],

@@ -1,6 +1,7 @@
-"""Execute the actual Classic banner action with controlled native interfaces."""
+"""Execute the shared banner action with controlled native interfaces."""
 from pathlib import Path
 import subprocess,tempfile
+from native_bg_constants import variants
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
 body=block((root/'playerbot/strategy/actions/ClassicBattlegroundActions.cpp').read_text(),'bool BGTactics::CheckClassicBanner(')
@@ -12,8 +13,7 @@ code=r'''
 #include <iostream>
 using ObjectGuid=unsigned;
 enum { BATTLEGROUND_AB=3,BATTLEGROUND_AV=1,STATUS_IN_PROGRESS=3,ALLIANCE=469,HORDE=67,GO_STATE_READY=1,CURRENT_GENERIC_SPELL=1,SPELL_CAST_OK=0 };
-enum {BG_AB_MAX_NODES=5,BG_AB_NODE_STATUS_NEUTRAL=0,BG_AB_NODE_STATUS_ALLY_CONTESTED=1,BG_AB_NODE_STATUS_HORDE_CONTESTED=2,BG_AB_NODE_STATUS_ALLY_OCCUPIED=3,BG_AB_NODE_STATUS_HORDE_OCCUPIED=4};
-enum {BG_AV_MAX_NODES=15,BG_AV_NODE_STATUS_ALLY_CONTESTED=0,BG_AV_NODE_STATUS_ALLY_OCCUPIED=1,BG_AV_NODE_STATUS_HORDE_CONTESTED=2,BG_AV_NODE_STATUS_HORDE_OCCUPIED=3,BG_AV_NODE_STATUS_NEUTRAL_OCCUPIED=5};
+__CONSTANTS__
 const float INTERACTION_DISTANCE=5;
 const unsigned SPELL_CAPTURE_BANNER=21651;
 struct Player; struct Spell; struct GameObject;
@@ -57,6 +57,8 @@ int main(){
  assert(action.CheckClassicBanner());c=casts;
  other.m_targets.guid=go.guid;assert(!action.CheckClassicBanner()&&casts==c);
  friendBot.current=nullptr;reject=true;auto w=ai.waited;assert(!action.CheckClassicBanner()&&ai.waited==w);reject=false;
+ bg.type=4;assert(!action.CheckClassicBanner()); // Eye/arena/other maps are excluded
+ bg.type=BATTLEGROUND_AB;
  for(unsigned team:{ALLIANCE,HORDE}){
   bot.team=team;bg.type=BATTLEGROUND_AV;
   bg.map.event.event2=team==ALLIANCE?BG_AV_NODE_STATUS_HORDE_CONTESTED:BG_AV_NODE_STATUS_ALLY_CONTESTED;
@@ -64,10 +66,11 @@ int main(){
   bg.map.event.event2=team==ALLIANCE?BG_AV_NODE_STATUS_ALLY_CONTESTED:BG_AV_NODE_STATUS_HORDE_CONTESTED;
   assert(!action.CheckClassicBanner());
  }
- std::cout<<"PASS actual Classic banner approach/cast, faction and active-event checks, native capture rejection and visibility semantics, immunity, transfer, cast preservation, teammate ownership\n";
+ std::cout<<"PASS shared banner approach/cast, faction and active-event checks, native capture rejection and visibility semantics, immunity, transfer, cast preservation, teammate ownership\n";
 }
 '''.replace('__BODY__',body)
-with tempfile.TemporaryDirectory(prefix='classic-bg-banner-') as tmp:
- p=Path(tmp);(p/'test.cpp').write_text(code)
- subprocess.run(['cl','/nologo','/EHsc','/std:c++17','test.cpp','/Fe:test.exe'],cwd=p,check=True)
- subprocess.run([str(p/'test.exe')],cwd=p,check=True)
+for era,constants in variants('AB','AV'):
+ with tempfile.TemporaryDirectory(prefix='shared-bg-banner-') as tmp:
+  p=Path(tmp);(p/'test.cpp').write_text(code.replace('__CONSTANTS__',constants))
+  subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=p,check=True)
+  subprocess.run([str(p/'test.exe')],cwd=p,check=True)

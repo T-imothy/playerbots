@@ -2,6 +2,7 @@
 #include "playerbot/playerbot.h"
 #include "CheckMountStateAction.h"
 #include "playerbot/strategy/values/PositionValue.h"
+#include "playerbot/strategy/values/PvpValues.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/strategy/values/MountValues.h"
 #include "BattleGround/BattleGroundWS.h"
@@ -42,10 +43,8 @@ bool CheckMountStateAction::Execute(Event& event)
     {
         Unit* currentTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
         float distToTarget = currentTarget ? AI_VALUE2(float, "distance", "current target") : 0.0f;
-#ifdef MANGOSBOT_ZERO
         // A visible candidate with no selected target is not a target at zero yards.
-        if (!currentTarget && bot->InBattleGround()) distToTarget = 10000.0f;
-#endif
+        if (!currentTarget && SupportsBattlegroundObjectiveRecovery(bot)) distToTarget = 10000.0f;
         canAttackTarget = sServerFacade.IsDistanceLessThan(distToTarget, GetAttackDistance());
         shouldChaseTarget = sServerFacade.IsDistanceGreaterThan(distToTarget, 45.0f) && AI_VALUE2(bool, "moving", "current target");
         farFromTarget = sServerFacade.IsDistanceGreaterThan(distToTarget, 40.0f);
@@ -57,12 +56,13 @@ bool CheckMountStateAction::Execute(Event& event)
     //Mount up in battle grounds
     if (bot->InBattleGround())
     {
-#ifdef MANGOSBOT_ZERO
-        if (!bot->IsMounted() && (bot->IsInCombat() || bot->IsNonMeleeSpellCasted(false, false, true))) return false;
-        PositionEntry objective = AI_VALUE(PositionMap&, "position")["bg objective"];
-        if (!bot->IsMounted() && objective.isSet() && objective.mapId == bot->GetMapId() &&
-            sqrt(bot->GetDistance(objective.x, objective.y, objective.z, DIST_CALC_NONE)) < 25.0f) return false;
-#endif
+        if (SupportsBattlegroundObjectiveRecovery(bot))
+        {
+            if (!bot->IsMounted() && (bot->IsInCombat() || bot->IsNonMeleeSpellCasted(false, false, true))) return false;
+            PositionEntry objective = AI_VALUE(PositionMap&, "position")["bg objective"];
+            if (!bot->IsMounted() && objective.isSet() && objective.mapId == bot->GetMapId() &&
+                sqrt(bot->GetDistance(objective.x, objective.y, objective.z, DIST_CALC_NONE)) < 25.0f) return false;
+        }
         if (WorldPosition(bot).currentHeight() < -5.0f)
             return UnMount();
 

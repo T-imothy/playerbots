@@ -1,5 +1,4 @@
 #include "playerbot/playerbot.h"
-#ifdef MANGOSBOT_ZERO
 #include "BattleGroundTactics.h"
 #include "BattleGround/BattleGroundAV.h"
 #include "playerbot/strategy/values/PvpValues.h"
@@ -12,7 +11,7 @@ void PlayerbotAI::PrepareForBattlegroundStart()
 {
     if (IsRealPlayer() || !bot->IsInWorld() || bot->IsBeingTeleported()) return;
     BattleGround* bg = bot->GetBattleGround();
-    const bool active = bg && bg->GetStatus() == STATUS_IN_PROGRESS;
+    const bool active = bg && SupportsBattlegroundObjectiveRecovery(bot) && bg->GetStatus() == STATUS_IN_PROGRESS;
     const bool alive = bot->IsAlive();
     const uint32 instance = bg ? bg->GetInstanceId() : 0;
     const bool resume = active && alive && (instance != observedBattlegroundInstance ||
@@ -48,6 +47,24 @@ unsigned ai::BattlegroundTeamSlot(Player* bot, unsigned& count)
 
 namespace
 {
+// Classic battleground maps (WSG/AB/AV), shared across all three eras.
+// Keep expansion enum differences at this native API boundary.
+#ifdef MANGOSBOT_TWO
+constexpr auto BG_AV_NODES_FIRSTAID_STATION = BG_AV_NODE_GY_DUN_BALDAR;
+constexpr auto BG_AV_NODES_STORMPIKE_GRAVE = BG_AV_NODE_GY_STORMPIKE;
+constexpr auto BG_AV_NODES_STONEHEART_GRAVE = BG_AV_NODE_GY_STONEHEARTH;
+constexpr auto BG_AV_NODES_ICEBLOOD_GRAVE = BG_AV_NODE_GY_ICEBLOOD;
+constexpr auto BG_AV_NODES_FROSTWOLF_GRAVE = BG_AV_NODE_GY_FROSTWOLF;
+constexpr auto BG_AV_NODES_FROSTWOLF_HUT = BG_AV_NODE_GY_FROSTWOLF_KEEP;
+constexpr auto BG_AV_NODES_FROSTWOLF_ETOWER = BG_AV_NODE_FROSTWOLF_EAST;
+constexpr auto BG_AV_NODES_FROSTWOLF_WTOWER = BG_AV_NODE_FROSTWOLF_WEST;
+constexpr auto BG_AV_NODES_ICEBLOOD_TOWER = BG_AV_NODE_ICEBLOOD_TOWER;
+constexpr auto BG_AV_NODES_TOWER_POINT = BG_AV_NODE_TOWER_POINT;
+constexpr auto BG_AV_NODES_STONEHEART_BUNKER = BG_AV_NODE_STONEHEART_BUNKER;
+constexpr auto BG_AV_NODES_ICEWING_BUNKER = BG_AV_NODE_ICEWING_BUNKER;
+constexpr auto BG_AV_NODES_DUNBALDAR_SOUTH = BG_AV_NODE_DUNBALDAR_SOUTH;
+constexpr auto BG_AV_NODES_DUNBALDAR_NORTH = BG_AV_NODE_DUNBALDAR_NORTH;
+#endif
     policy::Node AvState(BattleGround* bg, unsigned node, bool alliance, bool enemyTower = false)
     {
         if (bg->IsActiveEvent(node, alliance ? BG_AV_NODE_STATUS_ALLY_OCCUPIED : BG_AV_NODE_STATUS_HORDE_OCCUPIED))
@@ -309,4 +326,3 @@ bool ai::ShouldAdvanceBattlegroundObjective(PlayerbotAI* ai)
         if (ShouldEngageBattlegroundTarget(ai, ai->GetUnit(guid))) return false;
     return true;
 }
-#endif

@@ -787,9 +787,7 @@ private:
     ObjectGuid regroupDeadTarget;
     void PrepareForPartyCombat();
     void PrepareCompletedMovement();
-#ifdef MANGOSBOT_ZERO
     void PrepareForBattlegroundStart();
-#endif
     // Core translation units do not define MANGOSBOT_ZERO. Keep object layout
     // identical to the module that constructs and updates this AI.
     uint32 observedBattlegroundInstance = 0;

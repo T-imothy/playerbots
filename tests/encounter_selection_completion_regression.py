@@ -4,12 +4,13 @@ import subprocess
 import sys
 import tempfile
 from behavior_regression import block
+from native_core_paths import core_root
 
 root = Path(__file__).resolve().parents[1]
 mode = sys.argv[1] if len(sys.argv) > 1 else 'all'
 assert mode in ('all', 'aran', 'prince', 'mount', 'static', 'beatdown')
 for era in ('tbc', 'wotlk'):
-    scripts = root.parent / f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts'
+    scripts = core_root(era) / 'src/game/AI/ScriptDevAI/scripts'
     def read(path):
         return (scripts / path).read_text()
     aran = block(read('eastern_kingdoms/karazhan/boss_shade_of_aran.cpp'), 'case ARAN_ACTION_PRIMARY_SPELL:')

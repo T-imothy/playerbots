@@ -64,18 +64,17 @@ int main(){
   Player bot;bot.bg.type=type;PlayerbotAI ai{&bot};BattlegroundStrategy strategy{&ai};std::list<TriggerNode*>nodes;
   bool common=type<=BATTLEGROUND_AV;assert(SupportsBattlegroundObjectiveRecovery(&bot)==common);
   strategy.InitNonCombatTriggers(nodes);assert(relevance(nodes,"bg move to objective")== (common?ACTION_MOVE+5:1));
-#ifdef MANGOSBOT_ZERO
-  assert(relevance(nodes,"check mount state")>relevance(nodes,"bg move to objective"));
-#else
-  assert(relevance(nodes,"check mount state")==2.0f);
-#endif
+  assert(relevance(nodes,"check mount state")== (common?ACTION_MOVE+6:2));
+  assert(relevance(nodes,"bg check objective")== (common?ACTION_MOVE+8:10));
+  assert(relevance(nodes,"bg check flag")== (common?ACTION_MOVE+7:ACTION_HIGH));
+  unsigned waitingMounts=0;
+  for(auto*n:nodes)if(n->name=="bg waiting")for(auto*a:n->actions)waitingMounts+=a->name=="check mount state";
+  assert(waitingMounts==unsigned(common));
+
   clear(nodes);
   strategy.InitCombatTriggers(nodes);
-#ifdef MANGOSBOT_ZERO
   assert(nodes.size()==(common?4:0));assert((relevance(nodes,"bg check objective")==ACTION_MOVE+8)==common);
-#else
-  assert(nodes.size()==(common?3:0));assert((relevance(nodes,"bg check objective")==10)==common);
-#endif
+
   clear(nodes);
   strategy.InitDeadTriggers(nodes);assert(nodes.size()==(common?2:0));assert((relevance(nodes,"bg reset objective force")==ACTION_HIGH)==common);clear(nodes);
  }

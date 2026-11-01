@@ -2871,7 +2871,7 @@ bool BGTactics::Execute(Event& event)
 #ifdef MANGOSBOT_ZERO
         if (sServerFacade.IsInCombat(bot) && !ShouldAdvanceBattlegroundObjective(ai) && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG)))
 #else
-        if (sServerFacade.IsInCombat(bot) && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) || bot->HasAura(EY_SPELL_NETHERSTORM_FLAG)))
+        if (sServerFacade.IsInCombat(bot) && !ShouldAdvanceBattlegroundObjective(ai) && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) || bot->HasAura(EY_SPELL_NETHERSTORM_FLAG)))
 #endif
         {
             //bot->GetMotionMaster()->MovementExpired();
@@ -2909,9 +2909,7 @@ bool BGTactics::Execute(Event& event)
 
     if (getName() == "check flag")
     {
-#ifdef MANGOSBOT_ZERO
         if (bgType == BATTLEGROUND_AB || bgType == BATTLEGROUND_AV) return CheckClassicBanner();
-#endif
         switch (bgType)
         {
             case BATTLEGROUND_AV: return CheckFlagAv();
@@ -3064,15 +3062,7 @@ bool BGTactics::selectObjective(bool reset)
         bool hasObjective = false;
         WorldLocation objectiveLocation;
 
-#ifdef MANGOSBOT_ZERO
         hasObjective = SelectClassicAlteracObjective(objectiveLocation);
-#else
-        switch (bot->GetTeam())
-        {
-            case ALLIANCE: hasObjective = SelectAvObjectiveAlliance(objectiveLocation); break;
-            case HORDE: hasObjective = SelectAvObjectiveHorde(objectiveLocation); break;
-        }
-#endif
 
         if (hasObjective)
         {
@@ -3090,126 +3080,7 @@ bool BGTactics::selectObjective(bool reset)
     }
     case BATTLEGROUND_AB:
     {
-#ifdef MANGOSBOT_ZERO
         return SelectClassicArathiObjective();
-#else
-        // Common setup for both HORDE and ALLIANCE
-        uint32 role = context->GetValue<uint32>("bg role")->Get();
-        bool defender = role < 5;
-        uint32 botGUID = bot->GetGUIDLow();
-
-        bool isDead = bot->IsDead();
-
-        if (isDead && (botSelectedObjectives[botGUID] != nullptr))
-        {
-            bot->Say("I'm dead, guess I'll reset my objective.", LANG_UNIVERSAL);
-            botSelectedObjectives[botGUID] = nullptr; // Reset objective if we die... maybe more lucky elsewhere -- wait I don't think this is executed on dead bots so it's never triggered? Try something else
-            botObjectiveSelectionTime[botGUID] = 0;
-        }
-
-        std::set<GameObject*> uniqueObjectives;
-
-        for (const auto& objective : AB_AttackObjectives)
-        {
-            bool isActiveNeutral = bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_NEUTRAL);
-
-            bool isOccupied = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_OCCUPIED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_OCCUPIED);
-            bool isContested = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_CONTESTED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_CONTESTED);
-            bool isFriendly = (bot->GetTeam() == HORDE) ? bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_OCCUPIED) || bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_HORDE_CONTESTED) : bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_OCCUPIED) || bg->IsActiveEvent(objective.first, BG_AB_NODE_STATUS_ALLY_CONTESTED);
-
-            // If we're a defender, target friendly, neutral or under attack objectives (maybe remove the under attack ones?). if we're an attacker, target enemy, neutral or under attack objectives. 
-            if ((defender && (isActiveNeutral || isFriendly || isContested)) || (!defender && (isActiveNeutral || isContested || isOccupied)))
-            {
-                if (GameObject* pGO = bot->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(objective.first, BG_AB_NODE_STATUS_NEUTRAL)))
-                {
-                    // Add it to the list if it's valid.
-                    uniqueObjectives.insert(pGO);
-                }
-            }
-        }
-
-        GameObject* BgObjective = nullptr;
-
-
-
-        // Check if the bot has previously selected an objective and if it's still valid
-        if (botSelectedObjectives.find(botGUID) != botSelectedObjectives.end() &&
-            uniqueObjectives.find(botSelectedObjectives[botGUID]) != uniqueObjectives.end())
-        {
-            uint32 elapsedTime = WorldTimer::getMSTime() - botObjectiveSelectionTime[botGUID];
-            float probabilityToKeepSameObjective = 1.0f; // Start at 100% then lower over time
-
-            GameObject* lastObj = botSelectedObjectives[botGUID];
-            float const lastObjDist = bot->GetDistance(lastObj);
-
-            if (lastObjDist < 50.00f) // if we are close, stick to the objective a bit longer
-            {
-                if (elapsedTime > 60000)
-                {
-                    uint32 extraTime = (elapsedTime - 60000) / 1000; // Calculate seconds past the 60 seconds mark
-                    probabilityToKeepSameObjective -= (0.01f * extraTime); // Decrease by 1% for each second past 40 seconds
-                }
-
-                float randomValue = float(rand() % 101) / 100.0f;
-
-                if (randomValue <= probabilityToKeepSameObjective)
-                {
-                    BgObjective = botSelectedObjectives[botGUID];
-                }
-                else uniqueObjectives.erase(lastObj);
-            }
-            else
-            {
-                if (elapsedTime > 40000)
-                {
-                    uint32 extraTime = (elapsedTime - 40000) / 1000; // Calculate seconds past the 40 seconds mark
-                    probabilityToKeepSameObjective -= (0.01f * extraTime); // Decrease by 1% for each second past 40 seconds
-                }
-
-                float randomValue = float(rand() % 101) / 100.0f;
-
-                if (randomValue <= probabilityToKeepSameObjective)
-                {
-                    BgObjective = botSelectedObjectives[botGUID];
-                }
-                else uniqueObjectives.erase(lastObj);
-            }
-        }
-
-        // If BgObjective is still nullptr at this point, select a new one
-        if (!BgObjective && !uniqueObjectives.empty())
-        {
-            std::vector<GameObject*> objectives(uniqueObjectives.begin(), uniqueObjectives.end());
-
-            // Select a random objective from your unique objectives
-            BgObjective = objectives[urand(0, objectives.size() - 1)];
-            botSelectedObjectives[botGUID] = BgObjective; // Remember this objective for the bot
-            botObjectiveSelectionTime[botGUID] = WorldTimer::getMSTime(); // Remember the time of selection
-        }
-
-        if (BgObjective)
-        {
-            pos.Set(BgObjective->GetPositionX(), BgObjective->GetPositionY(), BgObjective->GetPositionZ(), BgObjective->GetMapId());
-            posMap["bg objective"] = pos;
-            std::string ObjVerbose = "";
-
-            if (std::abs(pos.x - 977.016) <= 10.0) ObjVerbose = "Blacksmith";
-            else if (std::abs(pos.x - 806.182) <= 10.0) ObjVerbose = "Farm";
-            else if (std::abs(pos.x - 856.142) <= 10.0) ObjVerbose = "Lumber Mill";
-            else if (std::abs(pos.x - 1166.79) <= 10.0) ObjVerbose = "Stables";
-            else if (std::abs(pos.x - 1146.92) <= 10.0) ObjVerbose = "Gold Mine";
-
-            // DEBUG SAY
-            //ostringstream out;
-            //if(defender) out << "Defending " + ObjVerbose;
-            //else out << "Attacking " + ObjVerbose;
-            //bot->Say(out.str(), LANG_UNIVERSAL);
-
-
-            return true;
-        }
-        break;
-#endif
     }
 #ifndef MANGOSBOT_ZERO
     case BATTLEGROUND_EY: //Role < 4: Defender, else Attacker. In the beginning split for all points. Afterwards pick random strategies
@@ -4012,12 +3883,10 @@ bool BGTactics::moveToObjective()
         //ostringstream out; out << "Moving to objective " << pos.x << ", " << pos.y << ", Distance: " << sServerFacade.GetDistance2d(bot, pos.x, pos.y);
         //bot->Say(out.str(), LANG_UNIVERSAL);
 
-#ifdef MANGOSBOT_ZERO
         if (bgType == BATTLEGROUND_AV && MoveToClassicAlteracApproach(pos)) return true;
         // A three-yard formation offset can put an AV tower destination
         // through a wall or off the flag's floor. Follow the actual flag.
         if (bgType == BATTLEGROUND_AV) return MoveTo(bot->GetMapId(), pos.x, pos.y, pos.z);
-#endif
         // more precise position for wsg
         if (bgType == BATTLEGROUND_WS)
             return MoveTo(bot->GetMapId(), pos.x, pos.y, pos.z);
@@ -4215,9 +4084,7 @@ bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 curr
 
     if ((currentPoint == lastPointInPath) || !bot->IsAlive() ||
         (bot->IsInCombat() && !IsBattlegroundFlagCarrier(bot) && !ShouldAdvanceWarsongObjective(ai)
-#ifdef MANGOSBOT_ZERO
             && !ShouldAdvanceBattlegroundObjective(ai)
-#endif
         ))
     {
         // Path is over.
@@ -4946,7 +4813,6 @@ bool BGTactics::refreshWarsongObjective()
 
 bool BGTactics::isUseful()
 {
-#ifdef MANGOSBOT_ZERO
     if (getName() == "move to objective" &&
         (ActualBattlegroundType(bot) == BATTLEGROUND_AB || ActualBattlegroundType(bot) == BATTLEGROUND_AV))
     {
@@ -4956,7 +4822,6 @@ bool BGTactics::isUseful()
         if (sqrt(bot->GetDistance(pos.x, pos.y, pos.z, DIST_CALC_NONE)) < 5.0f) return false;
         if (!ShouldAdvanceBattlegroundObjective(ai)) return false;
     }
-#endif
     if (getName() != "move to objective" || ActualBattlegroundType(bot) != BATTLEGROUND_WS)
         return true;
     refreshWarsongObjective();
