@@ -66,6 +66,9 @@ Reputation
   NPC and completion rewards. Failed captures can therefore also stop gains.
 
 Diagnostics
+  Exact console debug probes why, engine, history and position execute without
+  scheduling an AI action or replacing its pending wait/last action. Mutating
+  subcommands retain the existing action dispatch and owner checks.
   The existing explicit debug why command reports BG status and timing.
   In AB/AV it includes at most six nearby native capture banners: entry,
   distance, event/node state, spawn/use state, LOS (full and static), and

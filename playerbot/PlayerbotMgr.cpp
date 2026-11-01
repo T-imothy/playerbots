@@ -1419,7 +1419,20 @@ std::string PlayerbotHolder::HandleBotDebug(Player* bot, Player* master, const s
 
     std::string command = param;
 
-    if(!ai->DoSpecificAction("cdebug", Event(".bot", command, master ? master : bot), true))
+    Event event(".bot", command, master ? master : bot);
+    bool executed = false;
+    if (command == "why" || command == "engine" || command == "history" || command == "position")
+    {
+        // A state probe must not become an AI action: ExecuteAction replaces
+        // the action delay and last action, masking stalls and shortening waits.
+        // Keep mutating debug subcommands on the normal action path below.
+        Action* action = ai->GetAiObjectContext()->GetAction("cdebug");
+        executed = action && event.IsOwnerAvailable() && action->Execute(event);
+    }
+    else
+        executed = ai->DoSpecificAction("cdebug", event, true);
+
+    if (!executed)
     {
         return "debug failed";
     }
