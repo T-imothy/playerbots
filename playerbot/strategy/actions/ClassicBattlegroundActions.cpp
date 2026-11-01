@@ -259,15 +259,10 @@ bool BGTactics::CheckClassicBanner()
         if (bot->IsInCombat()) return false;
         return MoveTo(bot->GetMapId(), best->GetPositionX(), best->GetPositionY(), best->GetPositionZ());
     }
-    // GameObjects have zero collision height. A ray to a tower flag's base
-    // can hit the floor even when its pole is visible. Check the pole too;
-    // keep static wall checks and the normal interaction/cast restrictions.
-    if (!bot->IsWithinLOSInMap(best, true) &&
-        !bot->IsWithinLOS(best->GetPositionX(), best->GetPositionY(), best->GetPositionZ() + 2.0f, true))
-    {
-        if (bot->IsInCombat()) return false;
-        return MoveTo(bot->GetMapId(), best->GetPositionX(), best->GetPositionY(), best->GetPositionZ());
-    }
+    // Match the player's native capture cast. Spell::CheckCast/CheckRange
+    // validate this game-object interaction; their unit-target LOS rule does
+    // not apply to banners. An extra bot-only LOS gate strands bots beside
+    // valid tower flags whose placed model intersects the tower geometry.
     if (bot->IsMounted()) ai->Unmount();
     if (bot->IsInDisallowedMountForm()) ai->RemoveShapeshift();
     // Banner opening is a native BG spell, not a learned lockpicking skill.
