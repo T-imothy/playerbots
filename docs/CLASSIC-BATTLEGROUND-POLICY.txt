@@ -51,6 +51,11 @@ Capture and combat
   preserve normal cast time, ownership, immunity, range and native cast
   validation. The banner's own model is not treated as an occluding wall.
   A teammate's cast only suppresses another capture at that same banner.
+  At the banner, living hostile defenders within 15 yards and active attackers
+  within 40 yards with line of sight suppress new capture attempts. Normal
+  combat actions can then run. Dead, friendly, remote and obstructed targets,
+  or a stale combat flag alone, do not prevent a capture. Accepted casts retain
+  the native damage-interruption rules; the bot does not cancel them itself.
   The bot fights immediate blockers and attacks on itself/nearby teammates,
   or enemies at its objective. Unrelated distant PvP targets do not override
   the objective. Explicit human-master behavior retains its existing checks.

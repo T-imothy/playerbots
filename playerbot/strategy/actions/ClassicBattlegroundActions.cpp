@@ -251,6 +251,21 @@ bool BGTactics::CheckClassicBanner()
         if (distance < bestDistance) { best = go; bestDistance = distance; }
     }
     if (!best) return false;
+    // Being within clicking range is not permission to ignore a defender.
+    // Damage interrupts the native capture cast; do not repeatedly restart it
+    // while an attacker is still here. A stale combat flag or a remote fight
+    // must not prevent taking an otherwise clear node.
+    const auto threatensCapture = [&](Unit* enemy, bool engaged)
+    {
+        if (!enemy || !enemy->IsInWorld() || !enemy->IsAlive() || !enemy->IsInMap(bot) ||
+            !sServerFacade.IsHostileTo(bot, enemy) || !bot->IsWithinDistInMap(enemy, 40.0f) ||
+            !bot->IsWithinLOSInMap(enemy)) return false;
+        return engaged || bot->IsWithinDistInMap(enemy, 15.0f) || enemy->IsWithinDistInMap(best, 15.0f);
+    };
+    for (const ObjectGuid& guid : AI_VALUE(std::list<ObjectGuid>, "attackers"))
+        if (threatensCapture(ai->GetUnit(guid), true)) return false;
+    for (const ObjectGuid& guid : AI_VALUE(std::list<ObjectGuid>, "possible attack targets"))
+        if (threatensCapture(ai->GetUnit(guid), false)) return false;
     // Only defer to a teammate casting on THIS flag; a cast at another node
     // must not suppress capture here. Do not move away while guarding a cast.
     for (const auto& member : bg->GetPlayers())
