@@ -121,8 +121,13 @@ bool BGTactics::SelectClassicAlteracObjective(WorldLocation& location)
             if (bg->IsActiveEvent(node.node, state))
                 if (GameObject* go = bot->GetMap()->GetGameObject(bg->GetSingleGameObjectGuid(node.node, state)))
                 {
-                    location = WorldLocation(go->GetMapId(), go->GetPosition());
-                    return true;
+                    // An event can return its decorative roof banner first.
+                    // That is not the clickable flag and may be a floor higher.
+                    if (go->GetGOInfo()->GetLockId() == 1479)
+                    {
+                        location = WorldLocation(go->GetMapId(), go->GetPosition());
+                        return true;
+                    }
                 }
         return sRandomPlayerbotMgr.GetNamedLocation(node.name, location);
     };
@@ -254,9 +259,15 @@ bool BGTactics::CheckClassicBanner()
         if (bot->IsInCombat()) return false;
         return MoveTo(bot->GetMapId(), best->GetPositionX(), best->GetPositionY(), best->GetPositionZ());
     }
-    // Match native spell LOS: a banner's own M2 model must not occlude it.
-    // Static map/WMO walls still block the interaction.
-    if (!bot->IsWithinLOSInMap(best, true)) return false;
+    // GameObjects have zero collision height. A ray to a tower flag's base
+    // can hit the floor even when its pole is visible. Check the pole too;
+    // keep static wall checks and the normal interaction/cast restrictions.
+    if (!bot->IsWithinLOSInMap(best, true) &&
+        !bot->IsWithinLOS(best->GetPositionX(), best->GetPositionY(), best->GetPositionZ() + 2.0f, true))
+    {
+        if (bot->IsInCombat()) return false;
+        return MoveTo(bot->GetMapId(), best->GetPositionX(), best->GetPositionY(), best->GetPositionZ());
+    }
     if (bot->IsMounted()) ai->Unmount();
     if (bot->IsInDisallowedMountForm()) ai->RemoveShapeshift();
     // Banner opening is a native BG spell, not a learned lockpicking skill.

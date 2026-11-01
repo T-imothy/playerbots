@@ -20,7 +20,7 @@ __CONSTANTS__
 enum {STATUS_IN_PROGRESS=3,ALLIANCE=469,HORDE=67};
 struct Position {float x=0;};
 struct WorldLocation{unsigned mapid=30;float coord_x=0;WorldLocation()=default;WorldLocation(unsigned m,Position p):mapid(m),coord_x(p.x){}};
-struct GameObject {unsigned id; unsigned GetMapId(){return 30;}Position GetPosition(){return {float(id)};}};
+struct GameObject {unsigned id;unsigned lock=1479;GameObject*GetGOInfo(){return this;}unsigned GetLockId(){return lock;} unsigned GetMapId(){return 30;}Position GetPosition(){return {float(id)};}};
 struct Creature:GameObject {bool alive=true;bool IsAlive(){return alive;}};
 struct Map {std::map<unsigned,GameObject>objects;Creature boss;GameObject*GetGameObject(unsigned id){auto it=objects.find(id);return it==objects.end()?nullptr:&it->second;}Creature*GetCreature(unsigned id){boss.id=id;return &boss;}};
 struct BattleGround{unsigned status=STATUS_IN_PROGRESS;std::map<unsigned,unsigned>events;unsigned GetStatus(){return status;}bool IsActiveEvent(unsigned node,unsigned state){auto i=events.find(node);return i!=events.end()&&i->second==state;}unsigned GetSingleGameObjectGuid(unsigned n,unsigned){return n;}unsigned GetSingleCreatureGuid(unsigned n,unsigned){return n;}};
@@ -42,6 +42,12 @@ int main(){
   const auto assault=a?BG_AV_NODE_STATUS_ALLY_CONTESTED:BG_AV_NODE_STATUS_HORDE_CONTESTED;
   for(auto t:towers)bot.bg.events[t]=theirs;for(auto g:graves)bot.bg.events[g]=theirs;
   for(bot.slot=0;bot.slot<6;++bot.slot){assert(planner.SelectClassicAlteracObjective(goal));assert(goal.coord_x==towers[0]);}
+  // A decorative event GO on the roof must never replace the named flag.
+  bot.slot=0;bot.map.objects[towers[0]]={999,0};
+  assert(planner.SelectClassicAlteracObjective(goal)&&goal.coord_x==towers[0]);
+  bot.map.objects[towers[0]]={777,1479};
+  assert(planner.SelectClassicAlteracObjective(goal)&&goal.coord_x==777);
+  bot.map.objects.clear();
   bot.slot=6;assert(planner.SelectClassicAlteracObjective(goal)&&goal.coord_x==graves[0]);
   bot.bg.events[graves[0]]=assault;
   assert(planner.SelectClassicAlteracObjective(goal)&&goal.coord_x==graves[0]);
