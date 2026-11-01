@@ -352,7 +352,7 @@ bool CheckMountStateAction::CanFly() const
 bool CheckMountStateAction::CanMountInBg() const
 {
     //Do not mount with or near flag.
-    if (bot->GetBattleGroundTypeId() == BattleGroundTypeId::BATTLEGROUND_WS)
+    if (ActualBattlegroundType(bot) == BattleGroundTypeId::BATTLEGROUND_WS)
     {
         BattleGroundWS* bg = (BattleGroundWS*)ai->GetBot()->GetBattleGround();
 

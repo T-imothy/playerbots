@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import sys
 from behavior_regression import block
+from native_core_paths import core_root
 
 root=Path(__file__).resolve().parents[1]
 policy=(root/'playerbot/strategy/actions/EncounterDispelPolicy.cpp').read_text()
@@ -157,8 +158,7 @@ int main(){
 }
 '''.replace('__ZGHELPER__',zghelper).replace('__POLICY__',policy).replace('__METHODS__',methods)
 for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
-    core=root.parent/realm/'src/game'
-    if not core.is_dir():core=root.parent/f'mangos-{realm}-behavior/src/game'
+    core=core_root(realm)/'src/game'
     native=(core/'Spells/SpellMgr.h').read_text()
     fixture=code.replace('__NATIVE_MASK__',block(native,'inline uint32 GetDispellMask('))
     with tempfile.TemporaryDirectory(prefix='mantech-encounter-dispel-') as folder:

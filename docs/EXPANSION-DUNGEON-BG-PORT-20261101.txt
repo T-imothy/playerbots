@@ -38,3 +38,10 @@ on a particular checkout directory name. Native builds are required as well.
 
 This port does not authorize publication, live deployment, configuration/DB
 changes, server restart, or automated raid/BG activity on live realms.
+
+The flag-carrier mount guard also resolves Wrath random queues to the actual
+WSG map, preserving the direct-queue prohibition on mounting with a flag.
+
+Native encounter experiments archived by the September 8 restoration remain
+excluded, including their historical acceptance tests. Preserve official
+CMaNGOS boss behavior; test the bot responses against the current native code.
