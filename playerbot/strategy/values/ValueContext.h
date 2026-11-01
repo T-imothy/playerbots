@@ -164,6 +164,9 @@ namespace ai
                 creators["nearest dynamic objects"] = [](PlayerbotAI* ai) { return new NearestDynamicObjects(ai); };
                 creators["nearest dynamic objects no los"] = [](PlayerbotAI* ai) { return new NearestDynamicObjects(ai, sPlayerbotAIConfig.sightDistance, LOS_IGNORE); };
                 creators["closest game objects static los"] = [](PlayerbotAI* ai) { return new NearestGameObjects(ai, INTERACTION_DISTANCE, LOS_STATIC); };
+#ifdef MANGOSBOT_ZERO
+                creators["bg banners"] = [](PlayerbotAI* ai) { return new NearestGameObjects(ai, 25.0f, LOS_IGNORE, "bg banners"); };
+#endif
                 creators["nearest npcs"] = [](PlayerbotAI* ai) { return new NearestNpcsValue(ai); };
                 creators["nearest npcs no los"] = [](PlayerbotAI* ai) { return new NearestNpcsValue(ai, sPlayerbotAIConfig.sightDistance, true); };
                 creators["nearest vehicles"] = [](PlayerbotAI* ai) { return new NearestVehiclesValue(ai); };

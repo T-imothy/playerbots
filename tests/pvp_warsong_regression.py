@@ -109,6 +109,9 @@ def wsg_code():
 namespace ai{
 BattleGroundTypeId ActualBattlegroundType(Player*);
 bool IsBattlegroundFlagCarrier(Player*);bool SupportsBattlegroundObjectiveRecovery(Player*);bool ShouldAdvanceWarsongObjective(PlayerbotAI*);
+// This suite creates only WSG fixtures; the separate AB/AV travel helper is
+// excluded by battleground type. Its native adapter has its own coverage.
+bool ShouldAdvanceBattlegroundObjective(PlayerbotAI*) { return false; }
 bool IsWarsongLocalThreat(PlayerbotAI*,Unit*,Unit*);Unit* SelectWarsongCombatTarget(PlayerbotAI*);
 struct WarsongObjectiveValue{PlayerbotAI* ai;Player* bot;WarsongObjective Calculate();};
 }

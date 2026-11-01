@@ -394,6 +394,9 @@ void PlayerbotAI::UpdateAI(uint32 elapsed, bool minimal, bool delayAlreadyAdvanc
     PrepareForPartyCombat(); // Natural human/party pulls also outrank idle/rest duration.
     PrepareForRaidRegroup(); // Do not retain the last fight's action wait while the raid is idle.
     PrepareCompletedMovement();
+#ifdef MANGOSBOT_ZERO
+    PrepareForBattlegroundStart();
+#endif
 
     // Food/drink duration must not hide a nearby party pull from its healer.
     // Standing removes the sitting-only regeneration auras normally.

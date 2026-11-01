@@ -5262,6 +5262,37 @@ bool DebugAction::HandleWhy(Event& event, Player* requester, const std::string& 
          << " | last position change: " << facts.posLastChange << "s ago";
     ai->TellPlayerNoFacing(requester, move.str());
 
+#ifdef MANGOSBOT_ZERO
+    // Explicit diagnostic command only: no periodic production logging.
+    if (BattleGround* bg = bot->GetBattleGround())
+    {
+        std::ostringstream status;
+        status << "battleground: type=" << bg->GetTypeId() << " status=" << bg->GetStatus()
+            << " elapsed_ms=" << bg->GetStartTime() << " gate_ms=" << bg->GetStartDelayTime();
+        ai->TellPlayerNoFacing(requester, status.str());
+        if (bg->GetTypeId() == BATTLEGROUND_AB || bg->GetTypeId() == BATTLEGROUND_AV)
+        {
+            unsigned shown = 0;
+            for (const ObjectGuid& guid : AI_VALUE(std::list<ObjectGuid>, "bg banners"))
+            {
+                GameObject* go = ai->GetGameObject(guid);
+                if (!go || go->GetGOInfo()->GetLockId() != 1479 || ++shown > 6) continue;
+                const auto& event = bot->GetMap()->GetMapDataContainer().GetGameObjectEventIndex(go->GetDbGuid());
+                std::ostringstream flag;
+                flag << "banner: entry=" << go->GetEntry() << " distance=" << bot->GetDistance(go)
+                    << " node=" << unsigned(event.event1) << " state=" << unsigned(event.event2)
+                    << " active=" << bg->IsActiveEvent(event.event1, event.event2)
+                    << " spawned=" << go->IsSpawned() << " inuse=" << go->IsInUse()
+                    << " gostate=" << go->GetGoState() << " los=" << bot->IsWithinLOSInMap(go)
+                    << " static_los=" << bot->IsWithinLOSInMap(go, true)
+                    << " usable=" << bot->CanUseBattleGroundObject()
+                    << " casting=" << bot->IsNonMeleeSpellCasted(false, false, true);
+                ai->TellPlayerNoFacing(requester, flag.str());
+            }
+        }
+    }
+#endif
+
     // strategies (active engine)
     {
         std::ostringstream st;

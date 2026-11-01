@@ -26,6 +26,8 @@ namespace ai
     {
     public:
         BattlegroundStrategy(PlayerbotAI* ai) : Strategy(ai) {};
+        void InitCombatMultipliers(std::list<Multiplier*>& multipliers) override;
+        void InitNonCombatMultipliers(std::list<Multiplier*>& multipliers) override;
         int GetType() override { return STRATEGY_TYPE_NONCOMBAT; }
         std::string getName() override { return "battleground"; }
 #ifdef GenerateBotHelp

@@ -1,4 +1,7 @@
-"""Execute both production AV selectors and their bounded refresh in all cores."""
+"""Execute the retained TBC/Wrath AV selectors and their bounded refresh.
+
+Classic's coordinated selector is covered by classic_alterac_objectives_regression.
+"""
 from pathlib import Path
 import re, subprocess, tempfile, sys
 from behavior_regression import block
@@ -93,7 +96,7 @@ int main(){
  std::cout<<"PASS AV assignment persistence, ownership changes, paired towers, defense, captain readiness and boss transition\n";
 }
 '''.replace('__CONSTANTS__',constants).replace('__AVCASE__',avcase).replace('__HELPERS__',helpers).replace('__ARRAYS__',arrays).replace('__METHODS__',methods).replace('__REFRESH__',refresh)
-for era in ('ZERO','ONE','TWO'):
+for era in ('ONE','TWO'):
  with tempfile.TemporaryDirectory(prefix='av-objective-') as td:
   p=Path(td);(p/'test.cpp').write_text(code)
   r=subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=p,capture_output=True,text=True)

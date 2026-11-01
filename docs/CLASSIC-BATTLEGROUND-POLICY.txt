@@ -1,0 +1,62 @@
+Classic battleground objective and travel policy
+
+Scope
+  These additions are enabled by MANGOSBOT_ZERO. Autonomous matches are a
+  local test configuration, not a production feature enabled by this change.
+  World/dungeon/raid movement and other expansions keep their existing policy.
+
+Travel and start
+  An active battleground transition or resurrection discards an obsolete
+  action wait. Accepted casts/channels are retained. Mounting has priority
+  over objective travel, subject to native outdoor, combat, flag-carrier,
+  water and known-mount checks. Mounting is skipped near an objective.
+  Long movement splines continue, but the BG AI checks again within one second.
+
+Arathi Basin
+  The first 90 seconds after gates open distribute 15 bots as follows:
+  home flag 2, Blacksmith 5, Lumber Mill 4, Gold Mine 4. Both factions use
+  the same distribution; Stables/Farm are substituted as their home flags.
+  Later, a small guard stays at owned/assaulted nodes; mobile squads retake
+  threatened nodes and attack others. Assignments use sorted team bot GUIDs,
+  retaining dead teammates so that every death does not reroll the team.
+
+Alterac Valley
+  Six of 40 bots work on towers, three handle threatened home objectives,
+  and the main force advances through the enemy graveyard chain. Pending
+  graveyard assaults retain a pair of guards while the force advances.
+  Towers are approached at the live banner position, including its floor.
+  Main-force survivors help unfinished towers after the graveyard chain.
+  The general becomes the shared objective once all four enemy towers are
+  destroyed and the final graveyard is fully captured. An assault in progress
+  is not treated as a completed tower or graveyard. Native timers and NPC
+  strength remain unchanged; this does not guarantee a fixed match duration.
+
+Capture and combat
+  AB/AV captures use native spell 21651 on active lock-1479 banners. They
+  preserve normal cast time, ownership, immunity, range and static-map LOS
+  validation. The banner's own model is not treated as an occluding wall.
+  A teammate's cast only suppresses another capture at that same banner.
+  The bot fights immediate blockers and attacks on itself/nearby teammates,
+  or enemies at its objective. Unrelated distant PvP targets do not override
+  the objective. Explicit human-master behavior retains its existing checks.
+
+Reputation
+  The reward rules and multipliers are unchanged. AB reputation comes from
+  resource thresholds, WSG from captures, and AV from its native objective,
+  NPC and completion rewards. Failed captures can therefore also stop gains.
+
+Diagnostics
+  The existing explicit debug why command reports BG status and timing.
+  In AB/AV it includes at most six nearby native capture banners: entry,
+  distance, event/node state, spawn/use state, LOS (full and static), and
+  player usability/cast state. This produces no new per-tick live log stream.
+
+Regression coverage
+  classic_battleground_policy: mirrored opening allocation, objective bounds,
+  defense/attack split, completed-tower general gate, native class layout
+  across module/core compilation, and actual gate/respawn wait handling.
+  classic_banner: actual capture action, native cast rejection, walls versus
+  banner models, immunity/transfer/cast guards, and teammate same-flag checks.
+  classic_alterac_objectives: actual AV planner with mirrored faction states,
+  banner coordinates, pending capture guards and final-general conditions.
+  Existing WSG and shared BG recovery regressions cover all expansion modes.
