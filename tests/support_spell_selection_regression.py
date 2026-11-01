@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 from behavior_regression import block
+from native_core_paths import core_path
 
 root=Path(__file__).resolve().parents[1]
 paladin=(root/'playerbot/strategy/paladin/PaladinActions.cpp').read_text()
@@ -105,7 +106,9 @@ int main(){
 }
 '''.replace('__AURA_METHODS__',aura_methods).replace('__CONJURE__',conjure)
 for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
-    native=(root.parent/f'mangos-{realm}-behavior/src/game/Entities/Player.cpp').read_text()
+    default=root.parent/realm
+    if not default.is_dir():default=root.parent/f'mangos-{realm}-behavior'
+    native=(core_path(realm,default)/'src/game/Entities/Player.cpp').read_text()
     actual=block(native,'bool Player::HasSpell(uint32 spell) const')
     with tempfile.TemporaryDirectory(prefix='mantech-support-spells-') as folder:
         tmp=Path(folder);(tmp/'test.cpp').write_text(code.replace('__HAS_SPELL__',actual))

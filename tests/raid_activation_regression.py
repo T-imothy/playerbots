@@ -19,7 +19,9 @@ code = r'''
 #include <iostream>
 #include "__POLICY__"
 using namespace ai;
-constexpr float ACTION_EMERGENCY=100, ACTION_MOVE=50, ACTION_DISPEL=40, ACTION_HIGH=30;
+constexpr float ACTION_EMERGENCY=100, ACTION_CRITICAL_HEAL=90, ACTION_MOVE=50, ACTION_DISPEL=40, ACTION_HIGH=30;
+using ObjectGuid=unsigned;struct Unit{};
+#define AI_VALUE(type,key) ObjectGuid(0)
 struct NextAction { std::string name; float priority; NextAction(const char* n,float p):name(n),priority(p){}
  static NextAction* array(int,NextAction* a,void*){return a;} };
 struct TriggerNode {std::string name;NextAction* action;TriggerNode(const char*n,NextAction*a):name(n),action(a){} };
@@ -29,7 +31,9 @@ struct Player {unsigned map=533;bool world=true,alive=true,combat=true,transfer=
  unsigned GetMapId(){return map;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}
  bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charmed;}bool GetGroup(){return group;}
  float GetPositionX(){return -36;}float GetPositionY(){return -164;}float GetPositionZ(){return -90;}};
-struct PlayerbotAI {Player bot;bool real=false;Player*GetBot(){return &bot;}bool IsRealPlayer(){return real;}};
+struct PlayerbotAI {Player bot;bool real=false;Unit* incoming=nullptr;Unit* current=nullptr;
+ Player*GetBot(){return &bot;}bool IsRealPlayer(){return real;}Unit* GetUnit(ObjectGuid){return current;}};
+Unit* KelthuzadOpeningTarget(PlayerbotAI* ai){return ai->incoming;}
 struct ClassicRaidPlan {bool emergency=true;struct {int destination=0;}position;};
 struct ClassicRaidPositionAction {ClassicRaidPositionAction(PlayerbotAI*){}bool isUseful(){return true;}static bool GetPlan(PlayerbotAI*,ClassicRaidPlan&){return true;}};
 struct ClassicRaidCloakAction {PlayerbotAI*ai;ClassicRaidCloakAction(PlayerbotAI*a):ai(a){}bool isUseful(){return ai->bot.map==469;}};

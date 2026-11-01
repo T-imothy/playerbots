@@ -21,6 +21,7 @@ using uint32=unsigned;constexpr unsigned ALL_ACTIVITY=1,UNIT_FIELD_FLAGS=0,UNIT_
 enum{BATTLEGROUND_AV=1,BATTLEGROUND_WS=2,STATUS_IN_PROGRESS=1};namespace BotState{enum{BOT_STATE_COMBAT};}
 struct ObjectGuid{unsigned id=0;bool pet=false;ObjectGuid(unsigned n=0):id(n){}operator unsigned()const{return id;}bool IsPet()const{return pet;}bool operator<(const ObjectGuid&o)const{return id<o.id;}};
 struct Player;struct PlayerbotAI;struct Group;struct BattleGround;
+bool RaidLabMovementResult(Player*,const char*,unsigned,bool result){return result;}
 struct Threat{std::map<Player*,float>values;float getThreat(Player*p){return values[p];}};
 struct Unit{virtual ~Unit()=default;ObjectGuid guid;unsigned map=30,instance=100,phase=1;bool world=true,alive=true,combat=true,charm=false,friendly=false,possible=true,cc=false,hardCC=false;
  float x=0;Threat threat;Unit*victim=nullptr;virtual bool IsCreature(){return true;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charm;}

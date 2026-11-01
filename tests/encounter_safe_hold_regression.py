@@ -10,7 +10,7 @@ for name,path in [('MoltenCorePositionAction','MoltenCoreDungeonActions.cpp'),('
     if before:
         source=subprocess.check_output(['git','-c','safe.directory='+root.as_posix(),'-C',str(root),'show',
             '88f43c09:playerbot/strategy/actions/'+path],text=True)
-    for method in ['isUseful','Execute']+([] if before else ['ShouldReactionInterruptCast']):
+    for method in ['isUseful','Execute']+([] if before else ['ShouldReactionInterruptCast'])+(['PositionMayInterruptCast'] if not before and name=='MoltenCorePositionAction' else []):
         methods.append(block(source,'bool '+name+'::'+method+'('))
 code=r'''
 #include <cassert>
@@ -18,29 +18,53 @@ code=r'''
 #include <vector>
 #include <list>
 #include <iostream>
-constexpr int IDLE_MOTION_TYPE=0;
+using uint32=unsigned;
+namespace BotState{enum{BOT_STATE_COMBAT};}
+constexpr int IDLE_MOTION_TYPE=0,UNIT_STAND_STATE_STAND=0,FORCED_MOVEMENT_RUN=0;
 struct Point{float x=0,y=0,z=0;};
 struct Guid{unsigned id=0;Guid(unsigned v=0):id(v){}bool IsEmpty()const{return !id;}operator unsigned()const{return id;}};
-struct EncounterPosition{bool active=true,exclusive=true,groundOnly=false;unsigned map=1,boss=7,spell=0;Guid source;Point destination;};
-struct Motion{int type=1;int GetCurrentMovementGeneratorType(){return type;}};
+struct EncounterPosition{bool active=true,exclusive=true,groundOnly=false;unsigned map=1,spell=0;Guid boss{7},source;Point destination;};
+struct Motion{int type=1;unsigned* moves=nullptr;int GetCurrentMovementGeneratorType(){return type;}
+ void Clear(bool,bool){type=0;}template<class T>void MovePath(T&,int,bool,bool=false){if(moves)++*moves;}};
 struct Spline{bool Finalized(){return true;}Point FinalDestination(){return {};}};
 struct Player;struct Unit{unsigned GetEntry(){return 0;}bool IsInWorld(){return true;}bool IsAlive(){return true;}Player*GetVictim(){return nullptr;}float GetAngle(Player*){return 0;}float GetOrientation(){return 0;}};
 struct Player{float x=0;bool stopped=true,casting=false;Motion motion;Spline* movespline=nullptr;
+ unsigned GetMapId(){return 409;}float GetPositionX(){return x;}float GetPositionY(){return 0;}float GetPositionZ(){return 0;}
+ void* GetTransport(){return nullptr;}void SetStandState(int){}void InterruptNonMeleeSpells(bool){casting=false;}
  float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+b*b+c*c);}
  bool IsNonMeleeSpellCasted(bool,bool=false,bool=false){return casting;}Guid GetObjectGuid(){return 1;}bool IsInMap(Unit*){return true;}
  bool IsStopped(){return stopped;}Motion* GetMotionMaster(){return &motion;}};
-struct PlayerbotAI{Player bot;EncounterPosition plan;bool canMove=true,path=true,fresh=true;unsigned stops=0,moves=0;
+template<class T>struct Value{T data{};T& Get(){return data;}};
+struct Context{template<class T>Value<T>* GetValue(const char*){static Value<T> value;return &value;}};
+struct PlayerbotAI{Player bot;EncounterPosition plan;bool canMove=true,path=true,fresh=true;unsigned stops=0,moves=0;Context context;
+ PlayerbotAI(){bot.motion.moves=&moves;}Context* GetAiObjectContext(){return &context;}
+ bool HasStrategy(const char*,int){return false;}
  bool CanMove(){return canMove;}Player*GetBot(){return &bot;}Unit*GetUnit(unsigned){return nullptr;}bool IsRanged(Player*){return false;}bool IsHeal(Player*){return false;}
  void StopMoving(){++stops;bot.stopped=true;bot.motion.type=0;}};
 struct Event{};
-struct WorldPosition{WorldPosition(Player*){}float distance(const WorldPosition&)const{return 100;}};
+bool RaidLabMovementResult(Player*,const char*,unsigned,bool result){return result;}
+bool MagmadarFacingSafe(Unit*,Player*,Point){return true;}
+struct WorldPosition{WorldPosition(){}WorldPosition(Player*){}WorldPosition(unsigned,float,float,float){}
+ float distance(const WorldPosition&)const{return 100;}
+ std::vector<WorldPosition> getPathStepFrom(WorldPosition from,Player*,bool)const{return {from,*this};}
+ bool isPathTo(const std::vector<WorldPosition>&,float,float)const{return true;}
+ std::vector<Point> toPointsArray(const std::vector<WorldPosition>&)const{return {{},{}};}};
 using HazardPosition=std::pair<WorldPosition,float>;
+// This fixture exercises arrival and cast continuity. Native route/segment
+// admission itself is exercised by mc_position_handoff and onyxia_route_dispatch.
+bool LavaTrashRouteSafe(PlayerbotAI*,const std::vector<WorldPosition>&){return true;}
+bool IsFiniteMovementPoint(const WorldPosition&,unsigned){return true;}
+bool IsHazardSafeGroundProjection(const WorldPosition&,const WorldPosition&,const std::list<HazardPosition>&){return true;}
+bool IsHazardSafeSegment(const WorldPosition&,const WorldPosition&,const std::list<HazardPosition>&){return true;}
+bool IsMoltenCoreGroundEscapeSegment(const WorldPosition&,const WorldPosition&,const std::list<HazardPosition>&,const std::list<HazardPosition>&){return true;}
+template<class...T>bool IsOnyxiaBreathSafeSegment(T...){return true;}
 void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>&){}
 bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&){return false;}
 struct JumpAction{JumpAction(PlayerbotAI*){}void Qualify(const char*){}bool Execute(Event&){return false;}};
 bool ValidateEncounterDestination(PlayerbotAI* ai,EncounterPosition&,bool=true){return ai->path;}
 bool EncounterMovementRequired(Player* bot,Point p,float tolerance=1.5f){return bot->GetDistance(p.x,p.y,p.z)>tolerance||!bot->IsStopped()||bot->motion.type!=IDLE_MOTION_TYPE;}
-namespace encounter{struct Circle{};bool OutsideCircles(Point,const std::vector<Circle>&){return true;}}
+namespace encounter{struct Circle{Point center;float radius=0;};bool OutsideCircles(Point,const std::vector<Circle>&){return true;}}
+bool OnyxiaBreathThreats(unsigned,std::vector<encounter::Circle>&){return true;}
 bool MechanarThreats(PlayerbotAI* ai,EncounterPosition& p,std::vector<encounter::Circle>&){p.boss=7;return ai->fresh;}
 bool BlackwingLairBurstThreats(PlayerbotAI* ai,EncounterPosition&,std::vector<encounter::Circle>&){return ai->fresh;}
 bool NaxxramasBurstThreats(PlayerbotAI* ai,EncounterPosition&,std::vector<encounter::Circle>&){return ai->fresh;}
@@ -50,7 +74,7 @@ struct Base{PlayerbotAI* ai;Player* bot;Base(PlayerbotAI* a):ai(a),bot(&a->bot){
  static bool GetPlan(PlayerbotAI* ai,EncounterPosition& p){p=ai->plan;return p.active;}
  bool MoveTo(unsigned,float,float,float,bool,bool,bool,bool){++ai->moves;return true;}
  void SetDuration(unsigned){}bool IsReaction(){return true;}};
-struct MoltenCorePositionAction:Base{using Base::Base;bool isUseful();bool Execute(Event&);
+struct MoltenCorePositionAction:Base{using Base::Base;bool isUseful();bool Execute(Event&);bool PositionMayInterruptCast()const;
 #ifdef BEFORE
  bool ShouldReactionInterruptCast()const{return true;}
 #else

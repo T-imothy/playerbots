@@ -6,7 +6,8 @@ def code():
     common=COMMON.replace('struct Unit;struct Player;', 'struct Group;struct Unit;struct Player;')
     common=common.replace('Unit* GetUnit(ObjectGuid g){return bot->bg->map.GetPlayer(g);}', '')
     common=common.replace('Unit* victim=nullptr;', 'bool periodic=false,mana=true,immobile=false;std::map<std::string,bool> ownAuras;Unit* victim=nullptr;')
-    common=common.replace('bool IsInWorld(){', '''bool HasAuraType(int){return periodic;}bool HasMana(){return mana;}
+    common=common.replace('bool IsInWorld(){', '''bool HasBreakableByDamageCrowdControlAura(){return false;}
+ bool HasAuraType(int){return periodic;}bool HasMana(){return mana;}
  bool IsImmobilizedState(){return immobile;}uint32 GetMaxHealth(){return 100;}
  int GetMaxNegativeAuraModifier(int){return 0;}bool IsInWorld(){''')
     common=common.replace('struct Player:Unit{', '''struct Group{struct Member{ObjectGuid guid;};using MemberSlotList=std::list<Member>;using member_citerator=MemberSlotList::const_iterator;

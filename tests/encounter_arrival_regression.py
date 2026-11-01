@@ -26,7 +26,8 @@ for file,cls,tolerance in specs:
     declarations.append('struct '+cls+''' {PlayerbotAI* ai;Player* bot;
  static bool GetPlan(PlayerbotAI*a,EncounterPosition&p){p=a->plan;return a->active;}
  static bool GetPlan(PlayerbotAI*a,EncounterPosition&p,encounter::RotatingBeam&){return GetPlan(a,p);}
- bool ShouldReactionInterruptCast(){return ai->urgent;}bool isUseful();};''')
+ bool ShouldReactionInterruptCast(){return ai->urgent;}
+ bool PositionMayInterruptCast(){return ai->urgent;}bool isUseful();};''')
     cases.append('''{
  '''+cls+''' action{&brain,&bot};brain.active=true;brain.plan={};bot.x=bot.y=bot.z=0;bot.casting=false;
  bot.stopped=false;bot.motion.kind=1;bot.spline.done=true;

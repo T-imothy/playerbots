@@ -30,7 +30,7 @@ code = r'''
 using uint32=unsigned;
 enum SpellEffectIndex {EFFECT_INDEX_0,EFFECT_INDEX_1,EFFECT_INDEX_2,MAX_EFFECT_INDEX};
 enum {SPELL_EFFECT_HEAL=10,SPELL_EFFECT_HEAL_MAX_HEALTH=67,SPELL_EFFECT_HEAL_PCT=136,SPELL_EFFECT_HEAL_MECHANICAL=75,
- SPELL_AURA_PERIODIC_HEAL=8,SPELL_AURA_OBS_MOD_HEALTH=20,SPELL_AURA_PERIODIC_HEALTH_FUNNEL=62};
+ SPELL_AURA_PERIODIC_HEAL=8,SPELL_AURA_OBS_MOD_HEALTH=20,SPELL_AURA_PERIODIC_HEALTH_FUNNEL=62,SPELL_AURA_MOD_FEAR=7};
 enum CurrentSpellTypes {CURRENT_MELEE_SPELL,CURRENT_GENERIC_SPELL,CURRENT_AUTOREPEAT_SPELL,CURRENT_CHANNELED_SPELL};
 enum {SPELL_STATE_CASTING,SPELL_STATE_CHANNELING,SPELL_STATE_TRAVELING,SPELL_STATE_FINISHED,
  UNIT_STAT_MELEE_ATTACKING=1,TRIGGERED_NORMAL_COMBAT_CAST=0x100,TRIGGERED_PET_CAST=0x80,
@@ -89,6 +89,7 @@ namespace ai {
  // Naxx. Execute the full scoped Naxx helper in raid_pet_admission_regression.py.
  bool RaidPetOffenseAllowed(Unit* pet,const SpellEntry*,Unit*){assert(!pet||pet->GetMapId()!=533);return true;}
  bool IsProtectedBlackwingTarget(Player*,Unit*){return false;} // Separate BWL phase fixture.
+ bool BlackwingSuppressionMovementActive(BotAI*){return false;} // Native room admission has its own fixture.
  bool HasHakkarPoisonPreparation(Player*) { return false; } // actual coordination is exercised in hakkar_poison_regression.py
  bool reserved=false;bool MajordomoPolymorphReserved(BotAI*,Unit*){return reserved;}bool ClassicRaidDamageSpell(const SpellEntry*s){return s&&!s->positive;}
  bool HasMajordomoDamageShield(Player*,Unit*);bool HasEncounterDamagePause(Player*);bool HasEncounterThreatPause(Player*);bool HasEncounterSpellBomb(Player*);bool HasEncounterWeaponPause(Player*);bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*);

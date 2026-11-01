@@ -83,6 +83,7 @@ struct InvalidTargetValue{PlayerbotAI*ai;Player*bot;std::string qualifier="curre
 bool RaidLabMovementResult(Player*,const char*,unsigned,bool result){return result;}
 bool defenseActive=false;Unit* defenseTarget=nullptr;
 Unit* RazorgoreDefenseTarget(PlayerbotAI*,bool& active){active=defenseActive;return defenseTarget;}
+Unit* KelthuzadOpeningTarget(PlayerbotAI*){return nullptr;} // Dedicated native opening-target fixture.
 #define AI_VALUE(type,key) ai->Value<type>(key)
 #define AI_VALUE2(type,key,qualifier) ai->Value<type>(key)
 __METHODS__

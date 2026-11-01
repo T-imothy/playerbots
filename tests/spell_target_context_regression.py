@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 from behavior_regression import block
+from native_core_paths import core_path
 
 root = Path(__file__).resolve().parents[1]
 source = (root / 'playerbot/PlayerbotAI.cpp').read_text()
@@ -44,7 +45,9 @@ int main(){Unit bot,target;bot.type=TYPEID_PLAYER;SpellEntry spell;SpellCastResu
 }
 '''.replace('__GATE__', gate)
 for era, realm in (('ZERO', 'classic'), ('ONE', 'tbc'), ('TWO', 'wotlk')):
-    native = (root.parent / f'mangos-{realm}-behavior/src/game/Spells/SpellMgr.h').read_text()
+    default=root.parent/realm
+    if not default.is_dir():default=root.parent/f'mangos-{realm}-behavior'
+    native = (core_path(realm,default)/'src/game/Spells/SpellMgr.h').read_text()
     helper = block(native, 'inline bool IsNeutralEffectTargetPositive(')
     with tempfile.TemporaryDirectory(prefix='mantech-spell-target-context-') as folder:
         tmp = Path(folder)
