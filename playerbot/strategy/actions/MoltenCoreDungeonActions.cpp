@@ -1,7 +1,9 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/RaidLabTrace.h"
 #include "playerbot/strategy/MoltenCoreTrashPolicy.h"
 #include "MoltenCoreDungeonActions.h"
+#include "EncounterSpellPolicy.h"
 #include "MoltenCoreGarrActions.h"
 #include "MoltenCoreLavaTrashActions.h"
 #include "playerbot/strategy/values/GeddonControlValue.h"
@@ -10,6 +12,8 @@
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
 #include "playerbot/ServerFacade.h"
 #include "Movement/MoveSpline.h"
+#include "MotionGenerators/MotionMaster.h"
+#include "playerbot/strategy/actions/MovementPathSafety.h"
 #include "playerbot/strategy/mage/MageCombatPolicy.h"
 #include "playerbot/strategy/mage/MageActions.h"
 #include "playerbot/strategy/hunter/HunterCombatPolicy.h"
@@ -17,6 +21,7 @@
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
 #include "AI/ScriptDevAI/include/sc_instance.h"
+#include "Entities/Totem.h"
 
 using namespace ai;
 
@@ -223,6 +228,21 @@ bool ai::MoltenCorePackStackRequired(PlayerbotAI* ai)
     Player* bot=ai->GetBot();
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         bot->GetMapId()!=409 || !bot->GetGroup() || ai->IsRealPlayer()) return false;
+#ifdef MANGOSBOT_ZERO
+    // A Surger's charge formation must not force hunters/casters into the
+    // pulse radius of an accompanying Flame Imp pack. Tanks still gather it.
+    if (!ai->IsTank(bot))
+        for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
+        {
+            Unit* imp=ai->GetUnit(guid);
+            if (!imp || imp->GetEntry()!=11669 || !imp->IsInWorld() || !imp->IsAlive() ||
+                !imp->IsInCombat() || imp->HasCharmer() || !bot->IsInMap(imp)) continue;
+            Unit* victim=imp->GetVictim();
+            if (victim && !victim->IsPlayer()) victim=victim->GetMaster();
+            if (victim && victim->IsPlayer() && victim->IsInWorld() && victim->IsAlive() &&
+                bot->IsInMap(victim) && static_cast<Player*>(victim)->GetGroup()==bot->GetGroup()) return false;
+        }
+#endif
     auto pack=MoltenCorePack(ai);
     if (!pack.empty() && pack.front()->GetEntry()==11671 && !MoltenCorePackTanks(ai,pack).empty()) return true;
     for (ObjectGuid guid : ai->GetAiObjectContext()->GetValue<std::list<ObjectGuid>>("possible targets no los")->Get())
@@ -459,6 +479,48 @@ bool ai::MoltenCoreImpTauntAllowed(PlayerbotAI* ai, const std::string& name)
     return selected==bot && selectedSpell && name==selectedSpell;
 }
 
+bool ai::MoltenCoreMagmadarPanicDue(PlayerbotAI* ai, Unit* boss)
+{
+#ifdef MANGOSBOT_ZERO
+    Player* bot=ai->GetBot();
+    if (!boss || boss->GetEntry()!=11982 || bot->GetMapId()!=409 || !bot->GetGroup() ||
+        !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+        !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() || !bot->IsInMap(boss) || boss->HasCharmer() ||
+        bot->getClass()!=CLASS_WARRIOR || !ai->IsTank(bot) || ai->IsRealPlayer()) return false;
+    int32 observedAge=-1;
+    for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+    {
+        Player* member=ref->getSource();
+        if (!member || !member->IsInWorld() || !member->IsAlive() || !bot->IsInMap(member) ||
+            member->IsBeingTeleported() || member->HasCharmer()) continue;
+        if (auto* fear=member->GetSpellAuraHolder(19408,boss->GetObjectGuid()))
+        {
+            const int32 maximum=fear->GetAuraMaxDuration(),remaining=fear->GetAuraDuration();
+            if (maximum>0 && maximum<=8000 && remaining>0 && remaining<=maximum)
+            {
+                const int32 age=maximum-remaining;
+                if (observedAge<0 || age<observedAge) observedAge=age;
+            }
+        }
+    }
+    auto* value=ai->GetAiObjectContext()->GetValue<MagmadarControl>("magmadar control");
+    auto state=value->Get();
+    const int64_t combatStart=ai->GetCombatStartTime(), observedNow=time(0);
+    const int64_t combatAge=combatStart>0 && observedNow>=combatStart ? observedNow-combatStart : 0;
+    const uint32 observedCombatAge=uint32(combatAge>60 ? 60000 : combatAge*1000);
+    const bool due=state.panic.Update(WorldTimer::getMSTime(),boss->GetObjectGuid().GetRawValue(),
+        bot->GetInstanceId(),combatStart,observedAge,observedCombatAge);
+    value->Set(state);
+    // Timing must survive the GCD caused by entering Berserker Stance.
+    // IsSpellReady includes that GCD; using it here forgot the preparation
+    // mid-transition and let ordinary attacks/Defensive Stance win instead.
+    // Actual spell selection below still enforces native readiness.
+    return due && !bot->HasAura(6346) && !bot->HasAura(18499) && ai->HasSpell("berserker rage");
+#else
+    return false;
+#endif
+}
+
 bool ai::MoltenCoreImpPack(PlayerbotAI* ai)
 {
     Player* bot = ai->GetBot();
@@ -557,6 +619,85 @@ namespace
         plan.active=false;return false;
     }
 
+    bool MagmadarFacingSafe(Unit* boss, Player* bot, const encounter::Point& point)
+    {
+        const float angle=std::atan2(point.y-boss->GetPositionY(),point.x-boss->GetPositionX());
+        if (std::cos(angle-boss->GetOrientation())<-0.05f) return true;
+#ifdef MANGOSBOT_ZERO
+        // Native NPC cones measure from the caster centre and subtract the
+        // target's combat reach. A distant caster is safe even if threat or
+        // fear turns the boss: do not send it across the room on every turn.
+        const float radius=NativeEncounterSpellRadius(19272);
+        const float distance=std::hypot(point.x-boss->GetPositionX(),point.y-boss->GetPositionY());
+        return std::isfinite(radius) && radius>0 && std::isfinite(distance) &&
+            distance>radius+bot->GetCombatReach()+1.5f;
+#else
+        return false;
+#endif
+    }
+
+    bool PlanMagmadarMeleeDetour(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan)
+    {
+#ifdef MANGOSBOT_ZERO
+        Player* bot=ai->GetBot();
+        if (!boss || boss->GetEntry()!=11982 || bot->GetMapId()!=409 ||
+            !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() || !bot->IsInMap(boss) ||
+            !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
+            !bot->GetGroup() || boss->GetVictim()==bot ||
+            (!ai->IsTank(bot) && (ai->IsRanged(bot)||ai->IsHeal(bot)||bot->getClass()==CLASS_HUNTER))) return false;
+        const float remaining=std::hypot(bot->GetPositionX()-boss->GetPositionX(),bot->GetPositionY()-boss->GetPositionY());
+        const float melee=std::max(2.0f,boss->GetCombatReach()+bot->GetCombatReach()-1);
+        if (!std::isfinite(remaining) || remaining<melee+3) return false;
+        std::list<HazardPosition> fire;
+        AppendMoltenCoreGroundHazards(ai,fire);
+        if (fire.empty()) return false;
+        // Only a transit point, never a new holding station. Recompute the
+        // actual melee station after each admitted leg. A rejected leg must
+        // leave the bot's current cast intact.
+        const auto admit=[&](const encounter::Point& point) {
+            if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z) ||
+                std::hypot(point.x-boss->GetPositionX(),point.y-boss->GetPositionY())>=remaining-1 ||
+                !MagmadarFacingSafe(boss,bot,point)) return false;
+            EncounterPosition candidate=plan;
+            candidate.active=true;candidate.spell=19272;candidate.boss=boss->GetObjectGuid();
+            candidate.map=bot->GetMapId();candidate.instance=bot->GetInstanceId();
+            candidate.anchor={boss->GetPositionX(),boss->GetPositionY(),boss->GetPositionZ()};candidate.anchored=true;
+            candidate.destination=point;
+            if (!ValidateEncounterDestination(ai,candidate)) return false;
+            plan=candidate;return true;
+        };
+        if (bot->movespline && !bot->movespline->Finalized()) {
+            const auto end=bot->movespline->FinalDestination();
+            if (admit({end.x,end.y,end.z})) return true;
+        }
+        struct Candidate { encounter::Point point;float cost; };
+        std::vector<Candidate> candidates;
+        unsigned sources=0;
+        for (const auto& hazard:fire) {
+            if (!std::isfinite(hazard.second) || hazard.second<=0 || hazard.second>20 ||
+                std::fabs(hazard.first.getZ()-bot->GetPositionZ())>8 ||
+                std::hypot(hazard.first.getX()-bot->GetPositionX(),hazard.first.getY()-bot->GetPositionY())>30) continue;
+            if (++sources>4) break;
+            for (float margin:{3.0f,6.0f}) for (unsigned sector=0;sector<24;++sector) {
+                const float angle=float(sector)*float(2*M_PI)/24;
+                encounter::Point point{hazard.first.getX()+std::cos(angle)*(hazard.second+margin),
+                    hazard.first.getY()+std::sin(angle)*(hazard.second+margin),bot->GetPositionZ()};
+                const float travel=std::hypot(point.x-bot->GetPositionX(),point.y-bot->GetPositionY());
+                const float left=std::hypot(point.x-boss->GetPositionX(),point.y-boss->GetPositionY());
+                if (travel<2 || travel>24 || left>=remaining-1) continue;
+                candidates.push_back({point,travel+left});
+            }
+        }
+        std::sort(candidates.begin(),candidates.end(),[](const Candidate& a,const Candidate& b){return a.cost<b.cost;});
+        unsigned checks=0;
+        for (const auto& candidate:candidates) {
+            if (++checks>24) break;
+            if (admit(candidate.point)) return true;
+        }
+#endif
+        return false;
+    }
+
     bool PlanMagmadarFormation(PlayerbotAI* ai, Unit* boss, EncounterPosition& plan)
     {
         Player* bot=ai->GetBot();
@@ -611,11 +752,31 @@ namespace
         // Keep a valid maximum-range rear station; do not drift inward after
         // finding it, or move just because another bot arrived in its slot.
         plan.anchor={boss->GetPositionX(),boss->GetPositionY(),boss->GetPositionZ()};plan.anchored=true;
-        if (std::cos(ownAngle-boss->GetOrientation())<-0.05f && radial>=outerRange(ownAngle)-1.5f &&
+        if (MagmadarFacingSafe(boss,bot,here) && radial>=outerRange(ownAngle)-1.5f &&
             radial<=outerRange(ownAngle)+0.5f && bot->GetDistance(rangeTarget,true,DIST_CALC_NONE)<=maximum*maximum && (!ranged||separated(here)>=5))
         {
             plan.destination=here;
             if (ValidateEncounterDestination(ai,plan)) return true;
+        }
+        // Recalculating spacing while everyone is travelling used to replace
+        // a good route every value refresh. Let a safe admitted station finish
+        // before scoring another one. Fear turns, fire and range/LOS changes
+        // still invalidate it immediately through the same native checks.
+        if (bot->movespline && !bot->movespline->Finalized())
+        {
+            const auto end=bot->movespline->FinalDestination();
+            const encounter::Point station{end.x,end.y,end.z};
+            const float angle=std::atan2(end.y-boss->GetPositionY(),end.x-boss->GetPositionX());
+            const float radial=std::hypot(end.x-boss->GetPositionX(),end.y-boss->GetPositionY());
+            const float dx=end.x-rangeTarget->GetPositionX(),dy=end.y-rangeTarget->GetPositionY(),dz=end.z-rangeTarget->GetPositionZ();
+            if (MagmadarFacingSafe(boss,bot,station) &&
+                radial>=outerRange(angle)-(ranged?12.5f:1.5f) && radial<=outerRange(angle)+0.5f &&
+                dx*dx+dy*dy+dz*dz<=maximum*maximum && (!ranged || separated(station)>=5) &&
+                rangeTarget->IsWithinLOS(end.x,end.y,end.z+bot->GetCollisionHeight(),true))
+            {
+                plan.destination=station;
+                if (ValidateEncounterDestination(ai,plan)) return true;
+            }
         }
         struct Candidate{encounter::Point point;float score;unsigned band;};
         std::vector<Candidate> candidates;
@@ -627,11 +788,17 @@ namespace
         for (unsigned band=0;band<(ranged?4u:1u);++band)
         for (unsigned lane=0;lane<33;++lane)
         {
-            const float angle=rear-float(M_PI)*0.49f+float(lane)/32*float(M_PI)*0.98f;
+            float angle=rear-float(M_PI)*0.49f+float(lane)/32*float(M_PI)*0.98f;
+#ifdef MANGOSBOT_ZERO
+            if (ranged) angle=rear-float(M_PI)+float(lane)/32*float(M_PI)*2;
+#endif
             const float distance=outerRange(angle)-float(band)*4;
             if (!std::isfinite(distance) || distance<2) continue;
             encounter::Point point{boss->GetPositionX()+std::cos(angle)*distance,
                 boss->GetPositionY()+std::sin(angle)*distance,boss->GetPositionZ()};
+#ifdef MANGOSBOT_ZERO
+            if (!MagmadarFacingSafe(boss,bot,point)) continue;
+#endif
             if (ranged && !rangeTarget->IsWithinLOS(point.x,point.y,point.z+bot->GetCollisionHeight(),true)) continue;
             if (ranged && bot->getClass()==CLASS_HUNTER)
             {
@@ -647,7 +814,11 @@ namespace
             if (ranged && spacing<5) continue;
             const float preference=std::fabs(angle-preferred);
             // Eight yards is the spacing goal; five is the admission minimum.
-            candidates.push_back({point,(ranged?std::min(8.0f,spacing):8.0f)*10-preference-float(band)*1000,band});
+            float travelCost=0;
+#ifdef MANGOSBOT_ZERO
+            if (ranged) travelCost=std::hypot(here.x-point.x,here.y-point.y);
+#endif
+            candidates.push_back({point,(ranged?std::min(8.0f,spacing):8.0f)*10-preference-float(band)*1000-travelCost,band});
         }
         std::sort(candidates.begin(),candidates.end(),[](const Candidate& a,const Candidate& b){return a.score>b.score;});
         unsigned checked=0;
@@ -670,6 +841,7 @@ namespace
             }
             return true;
         }
+        if (PlanMagmadarMeleeDetour(ai,boss,plan)) return true;
         plan.active=false;return false;
     }
 }
@@ -829,6 +1001,10 @@ bool ai::PlanMoltenCoreTrash(PlayerbotAI* ai, EncounterPosition& plan)
     }
     if (selected->GetEntry() == 12101)
     {
+#ifdef MANGOSBOT_ZERO
+        if (!ai->IsTank(bot) && !MoltenCorePackStackRequired(ai))
+        { plan.active=false;return false; }
+#endif
         // Hold the established tank in place; everyone else joins its position.
         // This cannot prevent charges at human players who remain spread out.
         if (victim == bot) { plan.active = false; return false; }
@@ -1321,10 +1497,21 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
         bot->GetMapId() != 409) return false;
     plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("molten core position")->Get();
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
+#ifdef MANGOSBOT_ZERO
+    if (plan.spell==19196 && !ai->IsTank(bot) && !MoltenCorePackStackRequired(ai)) return false;
+#endif
     if (plan.groundOnly)
     {
         EncounterPosition current;std::vector<encounter::Circle> threats;
         if (!MoltenCoreThreats(ai,current,threats)) return false;
+#ifdef MANGOSBOT_ZERO
+        // The bounded Magmadar fallback uses the native buffered footprint,
+        // without the extra planning yard. Release that escape on actual
+        // clearance; otherwise a successful fallback becomes a stale hold.
+        if (!plan.spell && plan.source.IsEmpty() && current.groundOnly &&
+            !current.spell && current.source.IsEmpty() && ai->HasStrategy("magmadar", BotState::BOT_STATE_COMBAT))
+            for (auto& circle : threats) circle.radius -= 1.0f;
+#endif
         const encounter::Point here{bot->GetPositionX(),bot->GetPositionY(),bot->GetPositionZ()};
         if (current.groundOnly && encounter::OutsideCircles(here,threats))
         {
@@ -1455,8 +1642,13 @@ bool MoltenCorePositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& plan)
             displaced=displaced || distance>range+0.5f ||
                 (ranged && !patient->IsWithinLOS(plan.destination.x,plan.destination.y,plan.destination.z+bot->GetCollisionHeight(),true));
         }
-        if (boss->GetVictim()==bot || displaced || std::cos(std::atan2(plan.destination.y-boss->GetPositionY(),
-            plan.destination.x-boss->GetPositionX())-boss->GetOrientation())>0)
+#ifdef MANGOSBOT_ZERO
+        const bool unsafeFacing=!MagmadarFacingSafe(boss,bot,plan.destination);
+#else
+        const float destinationAngle=std::atan2(plan.destination.y-boss->GetPositionY(),plan.destination.x-boss->GetPositionX());
+        const bool unsafeFacing=std::cos(destinationAngle-boss->GetOrientation())>0;
+#endif
+        if (boss->GetVictim()==bot || displaced || unsafeFacing)
         {
             if (!PlanMagmadarFormation(ai,boss,plan)) return false;
             ai->GetAiObjectContext()->GetValue<EncounterPosition>("molten core position")->Set(plan);
@@ -1482,11 +1674,38 @@ bool MoltenCorePositionAction::isUseful()
     // Formation adjustments wait for a real cast/channel to finish. Otherwise
     // a one-yard formation correction can cancel Frostbolt (or any class's
     // damage/heal) repeatedly without ever completing useful work.
-    if (bot->IsNonMeleeSpellCasted(false,false,true) && !ShouldReactionInterruptCast()) return false;
+    if (bot->IsNonMeleeSpellCasted(false,false,true) && !PositionMayInterruptCast()) return false;
     return EncounterMovementRequired(bot, plan.destination);
 }
 
 bool MoltenCorePositionAction::ShouldReactionInterruptCast() const
+{
+#ifdef MANGOSBOT_ZERO
+    // Selection precedes execution by a reaction tick. Only the dispatcher
+    // that has admitted the complete native route may stop a Magmadar cast.
+    if (bot->GetMapId()==409 && ai->HasStrategy("magmadar",BotState::BOT_STATE_COMBAT)) return false;
+    // Gehennas Rain of Fire has no boss formation strategy. A pure ground
+    // escape can still fail native navigation or its retry gate; selecting
+    // that reaction must not repeatedly cancel heals before movement starts.
+    EncounterPosition plan;
+    if (bot->GetMapId()==409 && GetPlan(ai,plan) && plan.groundOnly &&
+        !plan.spell && plan.source.IsEmpty()) return false;
+#endif
+    return PositionMayInterruptCast();
+}
+
+bool MagmadarMoveAwayAction::isPossible()
+{
+#ifdef MANGOSBOT_ZERO
+    // The native-range formation uses the tank as a healer's range anchor.
+    // A separate 31-yard retreat from the boss can pull that healer out of
+    // healing range and immediately provoke a reach-party movement back in.
+    if (bot->GetMapId() == 409 && ai->HasStrategy("molten core", BotState::BOT_STATE_COMBAT)) return false;
+#endif
+    return MoveAwayFromCreature::isPossible();
+}
+
+bool MoltenCorePositionAction::PositionMayInterruptCast() const
 {
     EncounterPosition plan;
     if (!ai->CanMove() || !GetPlan(ai,plan) ||
@@ -1506,25 +1725,32 @@ bool MoltenCorePositionAction::ShouldReactionInterruptCast() const
     // real emergency; ordinary maximum-range/spacing adjustments are not.
     return boss && boss->GetEntry()==11982 && boss->IsInWorld() && boss->IsAlive() &&
         bot->IsInMap(boss) && boss->GetVictim()!=bot &&
+#ifdef MANGOSBOT_ZERO
+        !MagmadarFacingSafe(boss,bot,{bot->GetPositionX(),bot->GetPositionY(),bot->GetPositionZ()});
+#else
         std::cos(boss->GetAngle(bot)-boss->GetOrientation())>0;
+#endif
 }
 
 bool MoltenCorePositionAction::Execute(Event& event)
 {
     EncounterPosition plan, current;
     std::vector<encounter::Circle> threats;
-    if (!GetPlan(ai, plan) || !ai->CanMove()) return false;
-    if (bot->IsNonMeleeSpellCasted(false,false,true) && !ShouldReactionInterruptCast()) return false;
+    if (!GetPlan(ai, plan) || !ai->CanMove()) return RaidLabMovementResult(bot,"mc_position_execute",__LINE__,(false));
+#ifdef MANTECH_RAID_LAB
+    RaidLab::Count(bot,"mc_plan_dispatch",plan.spell,plan.groundOnly?1:0,plan.boss.GetRawValue());
+#endif
+    if (bot->IsNonMeleeSpellCasted(false,false,true) && !PositionMayInterruptCast()) return RaidLabMovementResult(bot,"mc_position_execute",__LINE__,(false));
     if (plan.spell == 21155)
     {
-        if (!PlanRagnarosFormation(ai, current)) return false;
+        if (!PlanRagnarosFormation(ai, current)) return RaidLabMovementResult(bot,"mc_position_execute",__LINE__,(false));
         plan = current;
-        if (!ValidateEncounterDestination(ai, plan, false)) return false;
+        if (!ValidateEncounterDestination(ai, plan, false)) return RaidLabMovementResult(bot,"mc_position_execute",__LINE__,(false));
         if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 3 &&
             !ai->IsRanged(bot) && !ai->IsHeal(bot))
         {
             JumpAction jump(ai); jump.Qualify("ragnaros");
-            if (jump.Execute(event)) return true;
+            if (jump.Execute(event)) return RaidLabMovementResult(bot,"mc_position_execute",__LINE__,(true));
         }
     }
     else if (plan.spell == 18945 || plan.spell == 19196 || plan.spell == 19272 || plan.spell == 19364 || plan.spell == 19630 ||
@@ -1538,26 +1764,85 @@ bool MoltenCorePositionAction::Execute(Event& event)
             // approach band. Destination and full native route are checked
             // below; bombs and other live mechanics retain their own escape.
             if (!current.groundOnly || current.spell || !current.source.IsEmpty() ||
-                !encounter::OutsideCircles(plan.destination,threats)) return false;
+                !encounter::OutsideCircles(plan.destination,threats)) return RaidLabMovementResult(bot,"mc_position_execute",__LINE__,(false));
         }
     }
-    else if (!MoltenCoreThreats(ai, current, threats)) return false;
+    else if (!MoltenCoreThreats(ai, current, threats)) return RaidLabMovementResult(bot,"mc_position_execute",__LINE__,(false));
+#ifdef MANGOSBOT_ZERO
+    // Match Calculate's native-margin ground-fire fallback. Recollect hazards
+    // first: new fires still reject the endpoint, and bombs/pulses never use
+    // this margin. Full native route validation below remains mandatory.
+    if (plan.groundOnly && !plan.spell && plan.source.IsEmpty() && current.groundOnly &&
+        !current.spell && current.source.IsEmpty() && ai->HasStrategy("magmadar", BotState::BOT_STATE_COMBAT))
+        for (auto& circle : threats) circle.radius -= 1.0f;
+#endif
     if (
-        !ValidateEncounterDestination(ai, plan) || !encounter::OutsideCircles(plan.destination, threats)) return false;
+        !ValidateEncounterDestination(ai, plan) || !encounter::OutsideCircles(plan.destination, threats)) return RaidLabMovementResult(bot,"mc_position_execute",__LINE__,(false));
     if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= 1.5f)
     {
         ai->StopMoving();
         SetDuration(100);
-        return true;
+        return RaidLabMovementResult(bot,"mc_position_execute",__LINE__,(true));
     }
     if (bot->movespline && !bot->movespline->Finalized())
     {
         const auto end=bot->movespline->FinalDestination();
         if (std::hypot(end.x-plan.destination.x,end.y-plan.destination.y)<=1.5f &&
             std::fabs(end.z-plan.destination.z)<=1.5f)
-        { SetDuration(100);return true; } // Let the admitted native route finish.
+        { SetDuration(100);return RaidLabMovementResult(bot,"mc_position_execute",__LINE__,(true)); } // Let the admitted native route finish.
     }
-    return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
+    const bool nativeGroundEscape =
+#ifdef MANGOSBOT_ZERO
+        bot->GetMapId()==409 && plan.groundOnly && !plan.spell && plan.source.IsEmpty();
+#else
+        false;
+#endif
+    const bool nativeRagnarosRoute =
+#ifdef MANGOSBOT_ZERO
+        bot->GetMapId()==409 && !plan.boss.IsEmpty() && ai->GetUnit(plan.boss) &&
+        ai->GetUnit(plan.boss)->GetEntry()==11502;
+#else
+        false;
+#endif
+    if (nativeGroundEscape || nativeRagnarosRoute || (bot->GetMapId()==409 && ai->HasStrategy("magmadar",BotState::BOT_STATE_COMBAT)))
+    {
+        // Execute a fresh native route to the admitted encounter station.
+        // Generic travel clipping/detour generation can replace this route
+        // with a different one and reject an otherwise executable escape.
+        if (bot->GetTransport()) return RaidLabMovementResult(bot,"mc_direct_route",1,false);
+        const WorldPosition destination(plan.map,plan.destination.x,plan.destination.y,plan.destination.z);
+        const auto path=destination.getPathStepFrom(WorldPosition(bot),bot,true);
+        if(path.size()<2 || path.size()>256 || !destination.isPathTo(path,1.0f,2.0f) ||
+           !LavaTrashRouteSafe(ai,path)) return RaidLabMovementResult(bot,"mc_direct_route",2,false);
+        auto hazards=ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Get();
+        std::list<HazardPosition> ground;
+        AppendMoltenCoreGroundHazards(ai,ground);
+        hazards.insert(hazards.end(),ground.begin(),ground.end());
+        WorldPosition previous(bot);
+        bool firstPoint=true;
+        for(const auto& point:path)
+        {
+            if(!IsFiniteMovementPoint(point,plan.map) ||
+               !((firstPoint ? IsHazardSafeGroundProjection(previous,point,hazards) : IsHazardSafeSegment(previous,point,hazards)) ||
+                 (nativeGroundEscape && IsMoltenCoreGroundEscapeSegment(previous,point,hazards,ground))))
+                return RaidLabMovementResult(bot,"mc_direct_route",3,false);
+            previous=point;
+            firstPoint=false;
+        }
+        bot->SetStandState(UNIT_STAND_STATE_STAND);
+        if(bot->IsNonMeleeSpellCasted(false,false,true)) bot->InterruptNonMeleeSpells(false);
+        auto& motion=*bot->GetMotionMaster();
+        motion.Clear(false,true);
+        auto points=WorldPosition().toPointsArray(path);
+#ifndef MANGOSBOT_TWO
+        motion.MovePath(points,FORCED_MOVEMENT_RUN,false,false);
+#else
+        motion.MovePath(points,FORCED_MOVEMENT_RUN,false);
+#endif
+        SetDuration(100);
+        return RaidLabMovementResult(bot,"mc_direct_route",4,true);
+    }
+    return RaidLabMovementResult(bot,"mc_position_execute",__LINE__,(MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true)));
 }
 
 std::vector<Unit*> ai::MoltenCoreGroupTrash(PlayerbotAI* ai)
@@ -1665,6 +1950,32 @@ Unit* ai::MoltenCoreAssignedTankTarget(PlayerbotAI* ai)
     return selected; // No add assignment means ordinary tank behavior can resume.
 }
 
+bool ai::MoltenCoreTremorDuty(PlayerbotAI* ai)
+{
+#ifdef MANGOSBOT_ZERO
+    Player* bot=ai->GetBot();
+    if(bot->GetMapId()!=409 || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() ||
+       bot->IsBeingTeleported() || bot->HasCharmer() || !bot->GetGroup() || ai->IsRealPlayer() ||
+       bot->getClass()!=CLASS_SHAMAN || !ai->HasSpell("tremor totem"))return false;
+    Unit* boss=RaidBoss(ai);
+    return boss && boss->GetEntry()==11982;
+#else
+    return false;
+#endif
+}
+
+bool ai::MoltenCoreMagmadarFearTransition(PlayerbotAI* ai)
+{
+#ifdef MANGOSBOT_ZERO
+    Player* bot=ai->GetBot();
+    return bot->GetMapId()==409 && bot->getClass()==CLASS_WARRIOR && ai->IsTank(bot) &&
+        bot->HasAura(2458) && !bot->HasAura(18499) && !bot->HasAura(6346) &&
+        MoltenCoreMagmadarPanicDue(ai,RaidBoss(ai));
+#else
+    return false;
+#endif
+}
+
 bool MoltenCoreSupportAction::Select(std::string& spell, Unit*& target)
 {
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
@@ -1674,6 +1985,20 @@ bool MoltenCoreSupportAction::Select(std::string& spell, Unit*& target)
         if (!unit || !ai->CanCastSpell(name, unit, 0)) return false;
         spell = name; target = unit; return true;
     };
+    if (MoltenCoreMagmadarFearTransition(ai))
+        return ready("berserker rage",bot); // Reserve this brief native stance/GCD transition.
+#ifdef MANGOSBOT_ZERO
+    if(MoltenCoreTremorDuty(ai))
+    {
+        const float radius=NativeEncounterSpellRadius(8146);
+        Totem* earth=bot->GetTotem(TOTEM_SLOT_EARTH);
+        const bool covered=earth && earth->GetEntry()==5913 && earth->IsInWorld() && earth->IsAlive() &&
+            bot->IsInMap(earth) && earth->GetDistance(bot)<=radius-2;
+        // Panic is instant. Establish the native periodic fear removal before
+        // it happens; retain a living nearby totem instead of refreshing it.
+        if(std::isfinite(radius) && radius>2 && radius<=40 && !covered && ready("tremor totem",bot))return true;
+    }
+#endif
     // Soul Burn silences damage dealers, allowing spawns to multiply. This
     // trash dispel must not depend on a raid boss being in the target list.
     for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
@@ -1805,14 +2130,19 @@ bool MoltenCoreSupportAction::Select(std::string& spell, Unit*& target)
         Spell* panic=boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
         const bool fearCast=panic && panic->m_spellInfo && panic->m_spellInfo->Id==19408 &&
             panic->getState()!=SPELL_STATE_FINISHED;
-        if (bot->HasAura(19408) || (ai->IsTank(bot) && fearCast && !bot->HasAura(6346)))
+        const bool preparePanic=MoltenCoreMagmadarPanicDue(ai,boss);
+        if (bot->HasAura(19408) || (ai->IsTank(bot) && (fearCast || preparePanic) && !bot->HasAura(6346)))
         {
             if (ready("berserker rage",bot)) return true;
-            // Dance only in response to an actual cast and a ready learned
-            // Rage. Native stance/fear restrictions can still reject the cast.
-            if (fearCast && bot->getClass()==CLASS_WARRIOR && ai->IsTank(bot) &&
+            // Panic is instant in Classic. Prepare in the observed timing
+            // window; native stance, GCD and cooldown checks still decide.
+            if ((fearCast || preparePanic) && bot->getClass()==CLASS_WARRIOR && ai->IsTank(bot) &&
                 ai->HasSpell("berserker rage") && bot->IsSpellReady(18499) &&
-                !bot->HasAura(18499) && ready("berserker stance",bot)) return true;
+                !bot->HasAura(18499) &&
+#ifdef MANGOSBOT_ZERO
+                !bot->HasAura(2458) &&
+#endif
+                ready("berserker stance",bot)) return true;
         }
         if (ai->IsTank(bot) && bot->HasAura(18499) && bot->HasAura(2458) && ready("defensive stance",bot)) return true;
         // Panic is magic-dispellable; Conflagration is not. Keep the tank first
@@ -2053,6 +2383,81 @@ bool ai::PlanGolemaggFormation(PlayerbotAI* ai, EncounterPosition& plan)
         if (ValidateEncounterDestination(ai,plan)) return true;
     }
     plan.active=false;return false;
+}
+
+bool ai::MajordomoPolymorphAssignment(PlayerbotAI* ai, Unit*& target)
+{
+#ifdef MANGOSBOT_ZERO
+    Player* bot=ai->GetBot();
+    if (!bot || bot->GetMapId()!=409 || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || bot->HasCharmer() || !bot->IsInCombat() ||
+        !bot->GetGroup() || ai->IsRealPlayer() || bot->getClass()!=CLASS_MAGE) return false;
+    Unit* boss=RaidBoss(ai);
+    if (!boss || boss->GetEntry()!=12018) return false;
+    target=MajordomoAssignedHealer(ai,boss);
+    if (target && (target->HasAura(21087) ||
+        PossibleAttackTargetsValue::HasBreakableCC(target,bot) ||
+        PossibleAttackTargetsValue::HasUnBreakableCC(target,bot) ||
+        (RaidAdds(ai,boss,11664).empty() && target==MajordomoFocus(ai,boss)))) target=nullptr;
+    // An encounter-owned null assignment must not fall through to generic CC.
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool ai::HasMajordomoControlCast(PlayerbotAI* ai)
+{
+#ifdef MANGOSBOT_ZERO
+    Player* bot=ai?ai->GetBot():nullptr;
+    if (!bot || bot->GetMapId()!=409 || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->GetHealthPercent()<=sPlayerbotAIConfig.criticalHealth) return false;
+    Spell* cast=bot->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    if (!cast || cast->getState()==SPELL_STATE_FINISHED || !cast->m_spellInfo ||
+        cast->m_spellInfo->Mechanic!=MECHANIC_POLYMORPH) return false;
+    Unit* assigned=nullptr;
+    return MajordomoPolymorphAssignment(ai,assigned) && assigned &&
+        cast->m_targets.getUnitTarget()==assigned;
+#else
+    return false;
+#endif
+}
+
+bool ai::MajordomoPolymorphReserved(PlayerbotAI* ai, Unit* target)
+{
+#ifdef MANGOSBOT_ZERO
+    Player* bot=ai?ai->GetBot():nullptr;
+    if (!bot || bot->GetMapId()!=409 || !bot->IsInWorld() || !bot->IsAlive() ||
+        bot->IsBeingTeleported() || bot->HasCharmer() || !bot->IsInCombat() ||
+        !bot->GetGroup() || ai->IsRealPlayer() || !target || target->GetEntry()!=11663 ||
+        !RaidEnemy(bot,target) || target->HasAura(21087)) return false;
+    Unit* boss=RaidBoss(ai);
+    if (!boss || boss->GetEntry()!=12018 || RaidAdds(ai,boss,11664).empty()) return false;
+    auto healers=RaidAdds(ai,boss,11663);
+    if (std::find(healers.begin(),healers.end(),target)==healers.end()) return false;
+    if (!MajordomoSheepOwner(target).IsEmpty()) return true;
+    std::set<ObjectGuid> occupied;
+    for (Unit* healer:healers)
+        if (ObjectGuid owner=MajordomoSheepOwner(healer)) occupied.insert(owner);
+    size_t available=0;
+    for (GroupReference* ref=bot->GetGroup()->GetFirstMember();ref;ref=ref->next())
+    {
+        Player* mage=ref->getSource();
+        if (RaidMember(bot,mage) && mage->getClass()==CLASS_MAGE && mage->GetDistance(boss)<=100 &&
+            mage->GetPlayerbotAI() && !mage->GetPlayerbotAI()->IsRealPlayer() &&
+            mage->GetPlayerbotAI()->HasSpell("polymorph") && !occupied.count(mage->GetObjectGuid())) ++available;
+    }
+    // Match the same sorted, unowned-healer allocation used by every mage.
+    // Reserve before the first sheep lands, so multidot/AoE cannot sabotage it.
+    for (Unit* healer:healers)
+    {
+        if (!MajordomoSheepOwner(healer).IsEmpty()) continue;
+        if (!available) return false;
+        if (healer==target) return true;
+        --available;
+    }
+#endif
+    return false;
 }
 
 bool ai::PlanMajordomoFormation(PlayerbotAI* ai, EncounterPosition& plan)

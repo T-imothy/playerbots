@@ -1,5 +1,6 @@
 """Execute actual frost admission, cast rechecks and native-freeze CC policy."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -73,9 +74,9 @@ cc=(root/'playerbot/strategy/values/PossibleAttackTargetsValue.cpp').read_text()
 for signature in ('bool PossibleAttackTargetsValue::HasBreakableCC(', 'bool PossibleAttackTargetsValue::HasUnBreakableCC('):
     assert block(cc,signature).split('{',1)[1].strip().startswith('if (IsViscidusShatterTarget(target, player)) return false;')
 assert 'IsCcTarget(target, player)' in block(cc,'bool PossibleAttackTargetsValue::IsPossibleTarget(')
-for era in ('classic','tbc','wotlk'):
-    repo=root.parent/era
-    if not repo.exists():repo=root.parent/f'mangos-{era}-behavior'
+for era in core_eras(('classic','tbc','wotlk')):
+    repo=core_path(era,root.parent/era)
+    if not repo.exists():repo=core_path(era,root.parent/f'mangos-{era}-behavior')
     native=(repo/'src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_viscidus.cpp').read_text()
     assert 'procData.spell->GetSchoolMask() == SPELL_SCHOOL_MASK_FROST' in native
     assert 'procData.attType == BASE_ATTACK || procData.attType == OFF_ATTACK' in native

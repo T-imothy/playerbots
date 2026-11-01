@@ -1,5 +1,6 @@
 """Actual crystal assignment/planner/action; no fabricated native click outcome."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 from encounter_arrival_fixture import arrival_fixture
 import subprocess,tempfile
 from behavior_regression import block
@@ -122,7 +123,7 @@ for era in ('ZERO','ONE','TWO'):
   tmp=Path(directory);(tmp/'test.cpp').write_text(arrival_fixture(code))
   subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
   subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
-for era in ('classic','tbc','wotlk'):
- core=root.parent/era
+for era in core_eras(('classic','tbc','wotlk')):
+ core=core_path(era,root.parent/era)
  source=(core/'src/game/AI/ScriptDevAI/scripts/kalimdor/ruins_of_ahnqiraj/boss_ossirian.cpp').read_text()
  assert 'GOUse_go_ossirian_crystal' in source and '25176' in source and 'SPELL_SUMMON_CRYSTAL' in source

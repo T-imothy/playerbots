@@ -15,6 +15,8 @@ source=(root/path).read_text()
 if args.baseline_ref:
     source=subprocess.run(['git','show',args.baseline_ref+':'+path],cwd=root,check=True,capture_output=True,text=True).stdout
 helpers='\n'.join(block(source,m) for m in ('    float Range(', '    bool PositionLegal(', '    bool KeepFormationRoute('))
+if '    float MinimumRangedStation(' in source:
+    helpers+='\n'+block(source,'    float MinimumRangedStation(')
 if '    bool SuppressionCombatStation(' in source:
     helpers+='\n'+'\n'.join(block(source,m) for m in ('    bool SuppressionTrash(', '    bool SuppressionStationActive(', '    Player* SuppressionLeader(', '    std::vector<encounter::Circle> SuppressionFlames(', '    bool SuppressionCombatStation('))
 calc=block(source,'ClassicRaidPlan ClassicRaidPlanValue::Calculate(')
@@ -82,10 +84,19 @@ bool ValidateEncounterDestination(PlayerbotAI*a,EncounterPosition&p,bool=true){+
 bool circleRoute=true;
 bool LocalCircleRoute(PlayerbotAI*,const EncounterPosition&,const std::vector<encounter::Circle>&){return circleRoute;}
 bool BroodlordFormationPlan(PlayerbotAI*,Unit*,Unit*,ClassicRaidPlan&){return false;}
+bool EbonrocTankFormation(PlayerbotAI*,Unit*,Unit*,ClassicRaidPlan&){return false;} // Separate native-helper fixture covers the dragon.
+// Other encounters have dedicated actual-method regressions; these BWL
+// fixtures deliberately leave their out-of-scope policies inactive.
+float CthunEyeBeamSpacing(PlayerbotAI*,Unit*){return 0;}
+Player*SapphironPickupTank(PlayerbotAI*,Unit*){return nullptr;}
+bool NefariusWaveTarget(PlayerbotAI*,Unit*){return false;}
+bool NefariusWaveFormation(PlayerbotAI*,Unit*,Unit*,const std::list<Guid>&,float,bool,ClassicRaidPlan&){return false;}
+bool MaexxnaRangedFlank(PlayerbotAI*,Unit*,Unit*,float,const std::vector<encounter::Point>&,EncounterPosition&){return false;}
+bool FaerlinaNearbyHealerStation(PlayerbotAI*,Unit*,Unit*,Unit*,float,bool,const std::vector<encounter::Point>&,EncounterPosition&){return false;}
 __ARRIVAL__
 __HELPERS__
 __CHASE__
-ClassicRaidPlan CombatSlice(PlayerbotAI*ai,Unit*boss,Unit*target){Player*bot=ai->GetBot();ClassicRaidPlan plan;plan.boss=boss->guid;const uint32 entry=boss->entry;
+ClassicRaidPlan CombatSlice(PlayerbotAI*ai,Unit*boss,Unit*target){Player*bot=ai->GetBot();ClassicRaidPlan plan;plan.boss=boss->guid;const uint32 entry=boss->entry;const auto nearby=ai->context.nearby;
 __TAIL__
 void check(bool ok,const char*message){if(!ok){std::cerr<<message<<"\n";std::exit(42);}}
 int main(){

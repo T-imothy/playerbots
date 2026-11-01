@@ -33,12 +33,17 @@ struct WorldPacket{unsigned kind;std::vector<unsigned>data;WorldPacket(unsigned 
 struct Session{Pet*pet=nullptr;unsigned follows=0;void HandlePetAction(WorldPacket&p){assert(p.data[1]==((ACT_COMMAND<<24)|COMMAND_FOLLOW));
  ++follows;if(pet)pet->victim=nullptr;}};
 struct Player:Unit{Pet*pet=nullptr;Session session;Spell*casts[3]={};unsigned stops=0;std::vector<unsigned>interrupts;
+ bool oil=false;unsigned oilCancels=0;bool HasAura(unsigned id){assert(id==11350);return oil;}
+ void RemoveAurasDueToSpell(unsigned id){assert(id==11350&&oil);oil=false;++oilCancels;}
  Pet*GetPet(){session.pet=pet;return pet;}Session*GetSession(){return &session;}
  Spell*GetCurrentSpell(unsigned slot){return casts[slot];}void AttackStop(){++stops;victim=nullptr;}
  void InterruptSpell(unsigned slot){interrupts.push_back(slot);casts[slot]=nullptr;}};
 struct ClassicRaidPlan{bool holdDamage=false;};
 struct PlayerbotAI{Player bot;ClassicRaidPlan plan;bool ready=true,offense=true;Player*GetBot(){return &bot;}};
 bool Ready(PlayerbotAI*a){return a->ready;}
+bool nefarius=false;bool NefariusImmolationUnsafe(PlayerbotAI*){return nefarius;}
+bool loatheb=false;bool LoathebImmolationUnsafe(PlayerbotAI*){return loatheb;}
+std::vector<unsigned> LoathebPersistentDamageAuras(PlayerbotAI*a){return loatheb&&a->bot.oil?std::vector<unsigned>{11350}:std::vector<unsigned>{};}
 bool ClassicRaidOffenseAllowed(PlayerbotAI*a,const SpellEntry*,Unit*){return a->offense;}
 struct Facade{std::map<unsigned,const SpellEntry*>spells;const SpellEntry*LookupSpellInfo(unsigned id){return spells.count(id)?spells[id]:nullptr;}}sServerFacade;
 struct Event{};
@@ -73,6 +78,18 @@ int main(){PlayerbotAI brain;ClassicRaidPauseAction pause{&brain,&brain.bot};Eve
  assert(!pet.victim&&brain.bot.session.follows==reservedFollow+1); // A reserved target is protected without a raid-wide hold.
  assert(!pause.isUseful());
  brain.offense=true;assert(!pause.isUseful());
+ brain.bot.casts[0]=nullptr;brain.bot.oil=true;assert(!pause.isUseful());
+ nefarius=true;
+#ifdef MANGOSBOT_ZERO
+ assert(pause.isUseful()&&pause.Execute(event));assert(!brain.bot.oil&&brain.bot.oilCancels==1);
+ assert(!pause.isUseful()&&!pause.Execute(event)); // No repeated cancellation or action starvation.
+ nefarius=false;loatheb=true;brain.bot.oil=true;assert(pause.isUseful()&&pause.Execute(event));
+ assert(!brain.bot.oil&&brain.bot.oilCancels==2);assert(!pause.isUseful()&&!pause.Execute(event));
+ brain.bot.oil=true;brain.ready=false;assert(!pause.isUseful()&&!pause.Execute(event));
+ assert(brain.bot.oil&&brain.bot.oilCancels==2);
+#else
+ assert(!pause.isUseful()&&brain.bot.oil&&brain.bot.oilCancels==0);
+#endif
  std::cout<<"PASS actual raid pause: damage-only generic/channel/auto cancellation, CC/heal/defense preservation, pet recall, settled/finished/native refusal\n";
 }
 '''.replace('__PARTS__',parts)

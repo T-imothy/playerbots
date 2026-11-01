@@ -1,5 +1,6 @@
 """Actual native C'Thun callbacks preserve successful phase work and flesh slots."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -72,8 +73,8 @@ int main(){
  std::cout<<"PASS: native CThun partial phases, per-slot summon retries, duplicate/old deaths and reset\n";
 }
 '''
-for era in ('classic','tbc','wotlk'):
-    p=root.parent/f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_cthun.cpp'
+for era in core_eras(('classic','tbc','wotlk')):
+    p=core_path(era,root.parent/f'mangos-{era}-behavior')/'src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_cthun.cpp'
     source=p.read_text();actor=block(source,'struct boss_cthunAI')
     names=('void Reset(', 'void SummonedCreatureJustDied(', 'void SummonMissingFleshTentacles(', 'void DoSpawnTentacles(',
            'void StopSpawningTentacles(', 'void HandleEmerge(', 'void HandleWeaken(', 'void HandleEndWeaken(')

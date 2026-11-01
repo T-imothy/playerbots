@@ -324,6 +324,7 @@ namespace ai
                 creators["classic raid emergency"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid emergency"); };
                 creators["classic raid position"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid position"); };
                 creators["classic raid target"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid target"); };
+                creators["kelthuzad opening target"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "kelthuzad opening target"); };
                 creators["classic raid support"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid support"); };
                 creators["classic raid control"] = [](PlayerbotAI* ai) { return new ClassicRaidTrigger(ai, "classic raid control"); };
                 creators["ossirian crystal"] = [](PlayerbotAI* ai) { return new OssirianCrystalTrigger(ai); };
@@ -334,6 +335,7 @@ namespace ai
                 creators["move against cold"] = [](PlayerbotAI* ai) { return new ColdMovementTrigger(ai); };
                 creators["tharonja skeleton"] = [](PlayerbotAI* ai) { return new TharonjaSkeletonTrigger(ai); };
                 creators["viscidus frost"] = [](PlayerbotAI* ai) { return new ViscidusFrostTrigger(ai); };
+                creators["viscidus poison"] = [](PlayerbotAI* ai) { return new ViscidusPoisonTrigger(ai); };
                 creators["moam mana control"] = [](PlayerbotAI* ai) { return new MoamManaControlTrigger(ai); };
                 creators["akilzon storm shelter"] = [](PlayerbotAI* ai) { return new AkilzonStormTrigger(ai); };
                 creators["separate linked burst"] = [](PlayerbotAI* ai) { return new LinkedBurstTrigger(ai); };
@@ -401,6 +403,7 @@ namespace ai
                 creators["use hourglass sand"] = [](PlayerbotAI* ai) { return new HourglassSandTrigger(ai); };
                 creators["naxxramas safe position"] = [](PlayerbotAI* ai) { return new NaxxramasPositionTrigger(ai); };
                 creators["prepare gothik sides"] = [](PlayerbotAI* ai) { return new NaxxramasGothikPrepareTrigger(ai); };
+                creators["prepare thaddius sides"] = [](PlayerbotAI* ai) { return new NaxxramasThaddiusPrepareTrigger(ai); };
                 creators["razuvious preparation"] = [](PlayerbotAI* ai) { return new RazuviousPreparationTrigger(ai); };
 
                 creators["start netherspite fight"] = [](PlayerbotAI* ai) { return new NetherspiteStartFightTrigger(ai); };

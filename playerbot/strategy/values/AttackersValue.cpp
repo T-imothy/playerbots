@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/RaidLabTrace.h"
 #include "BotReliabilityValue.h"
 #include "AttackersValue.h"
 #include "PossibleTargetsValue.h"
@@ -132,7 +133,7 @@ void AttackersValue::AddTargetsOf(Group* group, std::set<Unit*>& targets, std::s
            sServerFacade.IsAlive(member) &&
            member->IsInWorld() &&
            !member->IsBeingTeleported() &&
-           (member->GetMapId() == bot->GetMapId()) && 
+           (member->GetMapId() == bot->GetMapId()) &&
            (sServerFacade.GetDistance2d(bot, member) <= GetRange()))
         {
             AddTargetsOf(member, targets, invalidTargets, getOne);
@@ -180,7 +181,7 @@ void AttackersValue::AddTargetsOf(Player* player, std::set<Unit*>& targets, std:
 
             // Add the previous target
             Unit* oldTarget = ai->GetUnit(PAI_VALUE(ObjectGuid, "old target"));
-            
+
             if (oldTarget)
             {
                 units.insert(oldTarget);
@@ -293,7 +294,7 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
     // Validate possible target
     if (validatePossibleTarget && !PossibleTargetsValue::IsValid(target, playerToCheckAgainst))
     {
-        return false;
+        return RaidLabMovementResult(playerToCheckAgainst, "attacker_reject", __LINE__, false);
     }
 
     // This will be used on both enemy player and npc checks
@@ -306,13 +307,13 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
         // Don't consider enemy players if pvp strategy is not set
         if (playerToCheckAgainst->GetPlayerbotAI() && !playerToCheckAgainst->GetPlayerbotAI()->HasStrategy("pvp", BotState::BOT_STATE_COMBAT))
         {
-            return false;
+            return RaidLabMovementResult(playerToCheckAgainst, "attacker_reject", __LINE__, false);
         }
 
         // If the enemy player is in a PVP Prohibited zone
         if (inPvPProhibitedZone)
         {
-            return false;
+            return RaidLabMovementResult(playerToCheckAgainst, "attacker_reject", __LINE__, false);
         }
 
         // Don't check distance on duel opponents
@@ -321,13 +322,13 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
             // If the enemy player is not within sight distance
             if (!enemyPlayer->IsWithinDist(playerToCheckAgainst, EnemyPlayerValue::GetMaxAttackDistance(playerToCheckAgainst), false))
             {
-                return false;
+                return RaidLabMovementResult(playerToCheckAgainst, "attacker_reject", __LINE__, false);
             }
 
             // If the enemy player can't be reached (e.g. under the map)
             if (!EnemyPlayersValue::IsReachable(enemyPlayer, playerToCheckAgainst))
             {
-                return false;
+                return RaidLabMovementResult(playerToCheckAgainst, "attacker_reject", __LINE__, false);
             }
         }
     }
@@ -346,13 +347,13 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
             }
 
             if(!isRtiTarget && !EngagedAlteracNpc(target,playerToCheckAgainst))
-                return false;
+                return RaidLabMovementResult(playerToCheckAgainst, "attacker_reject", __LINE__, false);
         }
 
         // If the target is a player's pet and in a PvP prohibited zone
         if (target->GetObjectGuid().IsPet() && inPvPProhibitedZone)
         {
-            return false;
+            return RaidLabMovementResult(playerToCheckAgainst, "attacker_reject", __LINE__, false);
         }
 
         // If the target is evading
@@ -361,13 +362,13 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
         {
             if (creature->GetCombatManager().IsInEvadeMode())
             {
-                return false;
+                return RaidLabMovementResult(playerToCheckAgainst, "attacker_reject", __LINE__, false);
             }
-        }        
+        }
     }
 
     if (IgnoreTarget(target, playerToCheckAgainst))
-        return false;
+        return RaidLabMovementResult(playerToCheckAgainst, "attacker_reject", __LINE__, false);
 
     return true;
 }
@@ -375,25 +376,25 @@ bool AttackersValue::IsValid(Unit* target, Player* player, Player* owner, bool c
 bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
 {
     if (!playerToCheckAgainst->GetPlayerbotAI())
-        return false; 
+        return RaidLabMovementResult(playerToCheckAgainst, "attacker_reject", __LINE__, false);
 
     PlayerbotAI* ai = playerToCheckAgainst->GetPlayerbotAI();
     AiObjectContext* context = ai->GetAiObjectContext();
 
-    if (IsUnreachableTarget(ai, target)) return true;
+    if (IsUnreachableTarget(ai, target)) return RaidLabMovementResult(playerToCheckAgainst, "attacker_ignore", __LINE__, true);
 
     //Ignore Hard hostiles while not already fighting.
     if (target->GetLevel() > (playerToCheckAgainst->GetLevel() + 5) && ai->GetState() == BotState::BOT_STATE_NON_COMBAT)
     {
         //When traveling a long distance.
         if (AI_VALUE(bool, "travel target traveling") && AI_VALUE2(float, "distance", "travel target") > sPlayerbotAIConfig.reactDistance)
-            return true;
+            return RaidLabMovementResult(playerToCheckAgainst, "attacker_ignore", __LINE__, true);
 
         //When moving to master far away.
         if ((ai->HasStrategy("follow", BotState::BOT_STATE_NON_COMBAT) ||
             ai->HasStrategy("wander", BotState::BOT_STATE_NON_COMBAT)) &&
             AI_VALUE2(bool, "trigger active", "out of react range"))
-            return true;
+            return RaidLabMovementResult(playerToCheckAgainst, "attacker_ignore", __LINE__, true);
 
         if (ai->GetMaster() && !ai->HasActivePlayerMaster())
         {
@@ -401,7 +402,7 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
 
             //When master is traveling a long distance.
             if (PAI_VALUE(bool, "travel target traveling") && PAI_VALUE2(float, "distance", "travel target") > sPlayerbotAIConfig.reactDistance)
-                return true;
+                return RaidLabMovementResult(playerToCheckAgainst, "attacker_ignore", __LINE__, true);
         }
     }
 
@@ -425,7 +426,7 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
 #define TRAINING_DUMMY_NPC_ENTRY3 190015
 #define THERAMORE_COMBAT_DUMMY 4952
 #define NAXXRAMAS_COMBAT_DUMMY 16211
-#ifdef MANGOSBOT_TWO  
+#ifdef MANGOSBOT_TWO
 #define INITATES_TRAINING_DUMMY 32541
 #endif
 
@@ -436,17 +437,17 @@ bool AttackersValue::IgnoreTarget(Unit* target, Player* playerToCheckAgainst)
         case TRAINING_DUMMY_NPC_ENTRY3:
         case THERAMORE_COMBAT_DUMMY:
         case NAXXRAMAS_COMBAT_DUMMY:
-#ifdef MANGOSBOT_TWO     
+#ifdef MANGOSBOT_TWO
         case INITATES_TRAINING_DUMMY:
 #endif
             isDummy = true;
         }
 
         if (isDummy && ai->GetFixedBotNumber(BotTypeNumber::DUMMY_ATTACK_NUMBER, 10, 0.2f)) //90% of bots, cycle every 5 min.
-            return true;
+            return RaidLabMovementResult(playerToCheckAgainst, "attacker_ignore", __LINE__, true);
     }
 
-    return false;
+    return RaidLabMovementResult(playerToCheckAgainst, "attacker_reject", __LINE__, false);
 }
 
 std::string AttackersValue::Format()
@@ -463,7 +464,7 @@ std::string AttackersValue::Format()
         if (wo)
             out << wo->GetName();
         else
-            out << target;      
+            out << target;
     }
 
     return out.str();

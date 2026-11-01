@@ -63,7 +63,7 @@ struct GroupReference {Player* player;GroupReference* following=nullptr;
  Player* getSource(){return player;}GroupReference* next(){return following;}};
 struct Group {GroupReference* first=nullptr;GroupReference* GetFirstMember(){return first;}};
 namespace ai {
-struct EncounterPosition {bool active=false;unsigned map=0,instance=0;ObjectGuid boss,source;encounter::Point destination;};
+struct EncounterPosition {bool active=false,exclusive=true;unsigned map=0,instance=0;ObjectGuid boss,source;encounter::Point destination;};
 }
 using namespace ai;
 struct Cached {EncounterPosition plan;std::function<EncounterPosition()> refresh;
@@ -78,6 +78,7 @@ struct PlayerbotAI {Player* bot;bool real=false,validPath=true,canMove=true;unsi
  Aura* GetAura(unsigned id,Player* p){auto i=p->buffs.find(id);return i==p->buffs.end()?nullptr:&i->second;}
 };
 bool MoltenCorePackStackRequired(PlayerbotAI*){return false;}bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}
+bool MoltenCoreTremorDuty(PlayerbotAI*){return false;}
 std::list<Unit*> grid;
 namespace MaNGOS {
 struct AllCreaturesOfEntryInRangeCheck {unsigned entry;AllCreaturesOfEntryInRangeCheck(Player*,unsigned e,float):entry(e){}};

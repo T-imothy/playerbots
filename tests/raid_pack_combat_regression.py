@@ -12,6 +12,7 @@ safety=(r/'playerbot/strategy/actions/MovementPathSafety.h').read_text()
 methods='\n'.join(('namespace ai {\n'+block(pet,'inline bool RaidPetThreatSpell(')+'\n'+block(pet,'inline bool RaidPetThreatBlocked(')+'\n'+block(policy,'inline bool MoltenCoreImpAoeOpening(')+'\n}',
  block(aoe,'bool ai::ControlledRaidAoe('),block(update,'void PlayerbotAI::UpdateRaidPetThreat('),
  block(safety,'inline bool IsFiniteMovementPoint('),block(safety,'inline bool IsHazardSafeSegment('),
+ block(safety,'inline bool IsMoltenCoreGroundEscapeSegment('),block(safety,'inline bool IsHazardSafeGroundProjection('),
  block(fire,'bool ai::StopMoltenCoreUnsafeTravel(')))
 code=r'''
 #include <cassert>
@@ -25,6 +26,7 @@ code=r'''
 #include <ctime>
 #include <iostream>
 using uint32=unsigned;using ObjectGuid=unsigned;
+namespace BotState{constexpr unsigned BOT_STATE_COMBAT=1;}
 enum{CLASS_WARRIOR=1,CLASS_MAGE=8,MAX_EFFECT_INDEX=3,SPELL_EFFECT_ATTACK_ME=1,SPELL_EFFECT_APPLY_AURA,SPELL_AURA_MOD_TAUNT,SPELL_EFFECT_THREAT};
 struct SpellEntry{unsigned Effect[3]={},EffectApplyAuraName[3]={};int EffectBasePoints[3]={};};
 struct Map{bool raid=true;bool IsRaid(){return raid;}};
@@ -55,6 +57,7 @@ struct Context{Cached<WorldLocation>center;Cached<std::list<ObjectGuid>>possible
  template<class T>Cached<T>*GetValue(const char*){if constexpr(std::is_same_v<T,WorldLocation>)return &center;
  else if constexpr(std::is_same_v<T,std::list<ObjectGuid>>)return &possible;else if constexpr(std::is_same_v<T,std::list<HazardPosition>>)return &hazards;else return &position;}};
 struct PlayerbotAI{Player*bot;Context context;bool movable=true;bool CanMove(){return movable;}bool real=false;unsigned stops=0,wakes=0;time_t start=time(0)-5;ObjectGuid raidPetGuid=0;unsigned raidPetNumber=0;std::set<unsigned>raidPetSuppressedSpells;
+ bool HasStrategy(const char*,unsigned){return false;}
  std::map<ObjectGuid,Unit*>units;Player*GetBot(){return bot;}bool IsRealPlayer(){return real;}bool IsHeal(Player*p){return p->healer;}bool IsTank(Player*p){return p->tank;}
  time_t GetCombatStartTime(){return start;}float GetRange(const char*){return 40;}Context*GetAiObjectContext(){return &context;}
  Unit*GetUnit(ObjectGuid id){return units.count(id)?units[id]:nullptr;}void StopMoving(){++stops;}void PrepareForUrgentHazard(){++wakes;}void UpdateRaidPetThreat();};
@@ -68,6 +71,7 @@ namespace ai{ Unit* MoltenCoreNukeTarget(PlayerbotAI*){return nullptr;} bool Mol
  void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>&out){out=liveFire;}
 }
 using namespace ai;
+bool RaidLabMovementResult(Player*,const char*,unsigned,bool result){return result;}
 namespace ai {bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}bool MoltenCoreRecoverableImp(PlayerbotAI*,Unit*){return false;}}
 __METHODS__
 int main(){

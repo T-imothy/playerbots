@@ -39,6 +39,12 @@ namespace ai
         ViscidusFrostTrigger(PlayerbotAI* ai) : Trigger(ai, "viscidus frost", 1) {}
         bool IsActive() override;
     };
+    class ViscidusPoisonTrigger : public Trigger
+    {
+    public:
+        ViscidusPoisonTrigger(PlayerbotAI* ai) : Trigger(ai, "viscidus poison", 1) {}
+        bool IsActive() override;
+    };
     class HeiganDanceTrigger : public Trigger
     {
     public:

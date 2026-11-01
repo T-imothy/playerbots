@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
+#include "playerbot/strategy/actions/BlackwingMovementSafety.h"
 
 using namespace ai;
 
@@ -17,6 +18,8 @@ bool ai::BlackwingLairBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
     Player* bot = ai->GetBot();
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() ||
         bot->HasCharmer() || bot->GetMapId() != 469 || !bot->GetGroup()) return false;
+
+    if (BlackwingPatrolThreats(ai,plan,threats)) return true;
 
     // Ranged damage and healers can remain outside Broodlord's native Blast
     // Wave radius. The active tank and melee retain their normal positions.

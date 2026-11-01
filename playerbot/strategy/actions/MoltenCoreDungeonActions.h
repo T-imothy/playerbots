@@ -8,6 +8,9 @@
 namespace ai
 {
     bool MoltenCoreImpTauntAllowed(PlayerbotAI* ai, const std::string& name);
+    bool MoltenCoreTremorDuty(PlayerbotAI* ai);
+    bool MoltenCoreMagmadarPanicDue(PlayerbotAI* ai, Unit* boss);
+    bool MoltenCoreMagmadarFearTransition(PlayerbotAI* ai);
     // Native spell checks remain authoritative for learned ranks, range, mana,
     // cooldowns, immunities and crowd control. No leader command is required.
     class MoltenCoreSupportAction : public Action
@@ -48,6 +51,7 @@ namespace ai
         bool Execute(Event& event) override;
         bool isUseful() override;
         bool ShouldReactionInterruptCast() const override;
+        bool PositionMayInterruptCast() const;
         // Execute owns replacement of the native route. Pre-emptively stopping
         // it here makes repeated formation reactions stutter before execution.
         bool ShouldReactionInterruptMovement() const override { return false; }
@@ -88,6 +92,7 @@ namespace ai
     {
     public:
         MagmadarMoveAwayAction(PlayerbotAI* ai) : MoveAwayFromCreature(ai, "move away from magmadar", 11982, 31.0f) {}
+        bool isPossible() override;
     };
 
     bool MoltenCoreDouseItemAvailable(PlayerbotAI* ai, uint32 itemId = 0);

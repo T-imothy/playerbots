@@ -108,8 +108,9 @@ for era in ('ZERO','ONE','TWO'):
   tmp=Path(directory);(tmp/'test.cpp').write_text(arrival_fixture(code))
   subprocess.run(['cl','/nologo','/EHsc','/std:c++17','/DMANGOSBOT_'+era,'test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
   subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
-for era in ('classic','tbc','wotlk'):
- core=root.parent/era
+from native_core_paths import core_path,core_eras
+for era in core_eras():
+ core=core_path(era,root.parent/era)
  native=(core/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/zulgurub/boss_hakkar.cpp').read_text()
  assert 'HasAura(24321) ? 24323 : 24322' in native
  effects=(core/'src/game/Spells/SpellEffects.cpp').read_text()

@@ -79,6 +79,51 @@ namespace ai { namespace encounter {
         return candidates;
     }
 
+    // Magmadar's overlapping fires can leave a narrow exit between the coarse
+    // 8/16-yard escape rings. Propose the first clear point on outward rays;
+    // these are geometry candidates, never permission to skip native routes.
+    inline std::vector<Point> MagmadarFireEscapeCandidates(Point here, const std::vector<Circle>& circles)
+    {
+        std::vector<Point> candidates;
+        if (!std::isfinite(here.x) || !std::isfinite(here.y) || !std::isfinite(here.z) ||
+            circles.empty() || OutsideCircles(here, circles)) return candidates;
+        for (const auto& circle : circles)
+            if (!std::isfinite(circle.center.x) || !std::isfinite(circle.center.y) ||
+                !std::isfinite(circle.radius) || circle.radius <= 0) return candidates;
+        for (unsigned step = 0; step < 64; ++step)
+        {
+            const double angle = step * 6.28318530717958647692 / 64;
+            const double ux = std::cos(angle), uy = std::sin(angle);
+            double distance = 0.5;
+            bool safe = true;
+            for (const auto& circle : circles)
+            {
+                const double x = double(here.x) - circle.center.x, y = double(here.y) - circle.center.y;
+                const double radius2 = double(circle.radius) * circle.radius;
+                if (x*x + y*y >= radius2) continue;
+                const double dot = x*ux + y*uy;
+                if (dot < 0) { safe = false; break; }
+                distance = std::max(distance, -dot + std::sqrt(std::max(0.0, dot*dot + radius2 - x*x - y*y)) + 0.5);
+            }
+            if (!safe || distance > 40) continue;
+            for (const auto& circle : circles)
+            {
+                const double x = double(here.x) - circle.center.x, y = double(here.y) - circle.center.y;
+                const double radius2 = double(circle.radius) * circle.radius;
+                if (x*x + y*y < radius2) continue;
+                const double t = std::clamp(-(x*ux + y*uy), 0.0, distance);
+                if ((x+t*ux)*(x+t*ux) + (y+t*uy)*(y+t*uy) < radius2)
+                { safe = false; break; }
+            }
+            const Point point{here.x + float(ux*distance), here.y + float(uy*distance), here.z};
+            if (safe && OutsideCircles(point, circles)) candidates.push_back(point);
+        }
+        std::stable_sort(candidates.begin(), candidates.end(), [here](Point a, Point b) {
+            return Distance2d(here, a) < Distance2d(here, b);
+        });
+        return candidates;
+    }
+
     // Residual overlap, not a promise that a crowded room has a fully safe
     // point. Used for distance-scaled bursts: fewer/less-deep overlaps are
     // preferable to remaining stacked when complete separation is impossible.

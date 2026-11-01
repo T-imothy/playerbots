@@ -41,7 +41,7 @@ using HazardPosition=std::pair<WorldPosition,float>;
 struct EncounterPosition{bool active=false,exclusive=true;unsigned map=0,instance=0,spell=0,boss=0,source=0;encounter::Point destination{};};
 struct ClassicRaidPlan{EncounterPosition position;bool emergency=false,holdDamage=false;};
 }
-struct PlayerbotAI{Player*bot;bool real=false,ranged=true,heal=false,valid=true,path=true,lowPath=false,throughBoss=false;float range=40,min=0,adjust=0;unsigned checked=0;
+struct PlayerbotAI{Player*bot;bool tankRole=false;bool IsTank(Player*){return tankRole;}bool real=false,ranged=true,heal=false,valid=true,path=true,lowPath=false,throughBoss=false;float range=40,min=0,adjust=0;unsigned checked=0;
  Player*GetBot(){return bot;}bool IsRealPlayer(){return real;}bool IsRanged(Player*){return ranged;}bool IsHeal(Player*){return heal;}
  float GetRange(const char*){return range;}bool GetSpellRange(const char*,float*max,float*minimum){*max=range;*minimum=min;return true;}};
 namespace ai{
@@ -90,6 +90,20 @@ int main(){
  bot.instance=99;assert(!run());bot.instance=2;bot.map=409;assert(!run());bot.map=469;
  ai.real=true;assert(!run());ai.real=false;boss.entry=12468;assert(!run());boss.entry=12017;
  bot.z=448;assert(run()&&!plan.position.active);
+#ifdef MANGOSBOT_ZERO
+ // Native retest: a tank who lost threat kept orbiting behind each new victim
+ // instead of attacking. In melee it must hold and build threat, even in front.
+ bot.z=449.25f;boss.o=0;bot.x=boss.x+2;bot.y=boss.y;
+ ai.tankRole=true;ai.ranged=false;assert(run()&&holdingHere());
+ boss.o=1.5f;assert(run()&&holdingHere());
+ // A knocked-back tank approaches the near melee edge, not the wall station
+ // or the far flank, and the native path/floor checks still apply.
+ bot.x=boss.x+15;boss.o=0;assert(run()&&plan.position.active);
+ assert(plan.position.destination.x>boss.x&&std::hypot(plan.position.destination.x-boss.x,plan.position.destination.y-boss.y)<=3);
+ ai.lowPath=true;assert(run()&&holdingHere());ai.lowPath=false;
+ boss.victim=&bot;assert(run()&&plan.position.active);
+ assert(ai::encounter::Distance2d(plan.position.destination,{-7576.969727f,-1027.872070f,449.541107f})<0.01f);
+#endif
  std::cout<<"PASS: actual Broodlord fixed tank station, stable safe ranged stack, native range, rear melee, floor/path/leash and lifecycle admission\n";
 }
 '''.replace('__SOURCE__',source).replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix())

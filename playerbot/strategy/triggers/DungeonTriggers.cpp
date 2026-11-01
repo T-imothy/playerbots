@@ -89,6 +89,11 @@ bool MoamManaControlTrigger::IsActive()
     return action.isUseful();
 }
 
+bool ViscidusPoisonTrigger::IsActive()
+{
+    return ViscidusPoisonAction(ai).isUseful();
+}
+
 bool HakkarPoisonTrigger::IsActive()
 {
     HakkarPoisonAction action(ai);

@@ -1,5 +1,6 @@
 """Execute native AQ whirlwind ticks after the parent aura/effect disappears."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -33,8 +34,8 @@ int main(){Creature caster;Unit target;Aura aura;SpellEntry damage{26084},parent
  std::cout<<"PASS: AQ whirlwind missing aura/effect, final tick, empty target and guard randomization\n";
 }
 '''
-for era in ('classic','tbc','wotlk'):
-    source=(root.parent/f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_sartura.cpp').read_text()
+for era in core_eras(('classic','tbc','wotlk')):
+    source=(core_path(era,root.parent/f'mangos-{era}-behavior')/'src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_sartura.cpp').read_text()
     code=fixture.replace('__SCRIPT__',block(source,'struct AQWhirlwind'))
     with tempfile.TemporaryDirectory(prefix='mantech-aq-whirlwind-') as folder:
         tmp=Path(folder);(tmp/'test.cpp').write_text(code)

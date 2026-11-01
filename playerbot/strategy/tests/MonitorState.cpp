@@ -92,6 +92,15 @@ bool MonitorStateGroupSize::IsConditionMet(const std::string& monitorStr, Player
         }
         sLog.outError("[TESTGEN] group size monitor fired: size=%u threshold %s %s; members:%s", size,
             op.c_str(), valueStr.c_str(), members.c_str());
+#ifdef MANTECH_RAID_LAB
+        if (ctx.testName.find("raidlab_") == 0)
+        {
+            std::string slots;
+            for (auto const& slot : group->GetMemberSlots())
+                slots += " " + slot.name + ":" + slot.guid.GetString();
+            sLog.outError("[RAID_LAB] group slot roster at failed monitor: %s", slots.c_str());
+        }
+#endif
     }
 
     return met;

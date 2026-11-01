@@ -1,6 +1,7 @@
 
 #include "playerbot/playerbot.h"
 #include "playerbot/PartyCombatSupport.h"
+#include "playerbot/strategy/actions/EncounterSpellPolicy.h"
 #include "TargetValue.h"
 #include "PossibleTargetsValue.h"
 
@@ -31,6 +32,7 @@ Unit* TargetValue::FindTarget(FindTargetStrategy* strategy)
 
 bool FindNonCcTargetStrategy::IsCcTarget(Unit* attacker)
 {
+    if (MajordomoPolymorphReserved(ai, attacker)) return true;
     Group* group = ai->GetBot()->GetGroup();
     if (group)
     {

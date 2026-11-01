@@ -28,8 +28,11 @@ namespace
             if (!Member(bot, puller) || puller->IsInCombat()) continue;
             PlayerbotAI* brain = puller->GetPlayerbotAI();
             PullStrategy* strategy = PullStrategy::Get(brain);
-            if (!brain || brain->IsRealPlayer() || !strategy || !strategy->IsEncounterPreparationAllowed() || !strategy->IsPullPendingToStart() ||
-                !strategy->HasPullStarted() || strategy->HasPullActionIssued() ||
+            if (!brain || brain->IsRealPlayer() || !strategy || !strategy->IsEncounterPreparationAllowed() ||
+#ifndef MANGOSBOT_ZERO
+                !strategy->IsPullPendingToStart() || strategy->HasPullActionIssued() ||
+#endif
+                !strategy->HasPullStarted() ||
                 time(nullptr) - strategy->GetPullStartTime() >= strategy->GetMaxPullTime()) continue;
             Unit* target = strategy->GetTarget();
             Unit* requester = brain->GetUnit(strategy->GetRequester());
@@ -50,6 +53,12 @@ bool ai::NaxxramasGothikPreparationPlan(PlayerbotAI* ai, EncounterPosition& plan
     const Request request = Pending(ai);
     if (!request.puller) return false;
     Player* bot = ai->GetBot();
+#ifdef MANGOSBOT_ZERO
+    // Followers must hold their prepared side through the tank's approach,
+    // cast and projectile travel. The puller itself must remain free to shoot.
+    // Cancellation, original deadline and actual boss engagement end this hold.
+    if (bot == request.puller && !request.strategy->IsPullPendingToStart()) return false;
+#endif
     auto* instance = dynamic_cast<ScriptedInstance*>(bot->GetMap()->GetInstanceData());
     GameObject* gate = instance ? instance->GetSingleGameObjectFromStorage(181170) : nullptr;
     if (!gate || !gate->IsInWorld() || !bot->IsInMap(gate) || gate->GetGoState() == GO_STATE_READY ||
@@ -75,7 +84,13 @@ bool ai::NaxxramasGothikPreparationPlan(PlayerbotAI* ai, EncounterPosition& plan
         PlayerbotAI* brain = member->GetPlayerbotAI();
         if (!brain || brain->IsRealPlayer()) continue;
         const unsigned category = role(member);
-        const unsigned side = member == request.puller ? 0u : (roles[category][0] <= roles[category][1] ? 0u : 1u);
+        unsigned side = member == request.puller ? 0u : (roles[category][0] <= roles[category][1] ? 0u : 1u);
+#ifdef MANGOSBOT_ZERO
+        // Native Classic spectral adds are immune to all magic schools.
+        // Keep physical DPS (including hunters) on that side, casters living;
+        // tanks and healers remain balanced around humans' chosen positions.
+        if (category == 2) side = member->getClass() == CLASS_HUNTER || !ai->IsRanged(member) ? 1u : 0u;
+#endif
         const unsigned slot = roles[category][side]++;
         const encounter::Point destination{gate->GetPositionX() + 4.0f + float(slot % 3) * 2.0f,
             gate->GetPositionY() + (side ? 12.0f : -12.0f) + float(category) * (side ? 2.0f : -2.0f), gate->GetPositionZ()};
@@ -89,6 +104,9 @@ bool ai::NaxxramasGothikPreparationPlan(PlayerbotAI* ai, EncounterPosition& plan
         }
     }
     groupReady = allReady && roles[0][0] && roles[0][1] && roles[1][0] && roles[1][1];
+#ifdef MANGOSBOT_ZERO
+    groupReady = groupReady && roles[2][0] && roles[2][1];
+#endif
     return assigned;
 }
 
@@ -105,13 +123,45 @@ bool ai::NaxxramasGothikPullReady(PlayerbotAI* ai)
 bool NaxxramasGothikPrepareAction::isUseful()
 {
     EncounterPosition plan; bool ready;
-    return NaxxramasGothikPreparationPlan(ai, plan, ready) && EncounterMovementRequired(bot, plan.destination);
+    return NaxxramasGothikPreparationPlan(ai, plan, ready) &&
+#ifdef MANGOSBOT_ZERO
+        bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 4.0f;
+#else
+        EncounterMovementRequired(bot, plan.destination);
+#endif
 }
 bool NaxxramasGothikPrepareAction::Execute(Event&)
 {
     EncounterPosition plan; bool ready;
     if (!NaxxramasGothikPreparationPlan(ai, plan, ready) || !ai->CanMove() || bot->IsNonMeleeSpellCasted(false) ||
-        !EncounterMovementRequired(bot, plan.destination) || !ValidateEncounterDestination(ai, plan)) return false;
+        !EncounterMovementRequired(bot, plan.destination)) return false;
+    const auto station = plan.destination;
+    if (!ValidateEncounterDestination(ai, plan))
+    {
+#ifdef MANGOSBOT_ZERO
+        // Preparation already admits a four-yard station. A single exact
+        // coordinate can be outside the native navigation mesh even when a
+        // nearby point on the same assigned side is walkable. Try a bounded
+        // set inside that existing station; never accept a truncated path.
+        bool found = false;
+        for (const auto offset : {encounter::Point{0,-2,0}, encounter::Point{0,2,0},
+            encounter::Point{-2,0,0}, encounter::Point{2,0,0}, encounter::Point{-2,-2,0},
+            encounter::Point{2,-2,0}, encounter::Point{-2,2,0}, encounter::Point{2,2,0}})
+        {
+            EncounterPosition candidate = plan;
+            candidate.destination = {station.x+offset.x, station.y+offset.y, station.z};
+            if (ValidateEncounterDestination(ai, candidate))
+            {
+                const auto& p = candidate.destination;
+                const float dx=p.x-station.x, dy=p.y-station.y, dz=p.z-station.z;
+                if (dx*dx+dy*dy+dz*dz <= 16.0f) { plan=candidate; found=true; break; }
+            }
+        }
+        if (!found) return false;
+#else
+        return false;
+#endif
+    }
     const auto& p = plan.destination;
     return MoveTo(plan.map, p.x, p.y, p.z, false, IsReaction(), false, true);
 }
@@ -123,5 +173,5 @@ float PreserveNaxxramasPreparation::GetValue(Action* action)
     if (name != "follow" && name != "reach melee" && name != "reach spell" && name != "set behind" &&
         name != "return to pull position") return 1.0f;
     EncounterPosition plan; bool ready;
-    return NaxxramasGothikPreparationPlan(ai, plan, ready) ? 0.0f : 1.0f;
+    return NaxxramasGothikPreparationPlan(ai, plan, ready) || NaxxramasThaddiusPreparationPlan(ai, plan, ready) ? 0.0f : 1.0f;
 }

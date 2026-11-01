@@ -1,5 +1,6 @@
 """Run native Viscidus wave creation, duplicate callbacks and summon bounds."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import re,subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -7,6 +8,7 @@ fixture=r'''
 #include <algorithm>
 #include <array>
 #include <cassert>
+#define RAID_LAB_PHASE(unit,field,value) ((field)=(value))
 #include <cmath>
 #include <cstdint>
 #include <list>
@@ -65,8 +67,8 @@ int main(){
  std::cout<<"PASS: native Viscidus bounded summons, one wave, callback idempotence and reset\n";
 }
 '''
-for era in ('classic','tbc','wotlk'):
-    source=(root.parent/f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_viscidus.cpp').read_text()
+for era in core_eras(('classic','tbc','wotlk')):
+    source=(core_path(era,root.parent/f'mangos-{era}-behavior')/'src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_viscidus.cpp').read_text()
     ai_source=block(source,'struct boss_viscidusAI')
     methods='\n'.join(block(ai_source,start).replace(' override','') for start in (
         'void Reset()', 'void JustSummoned(', 'void SummonedCreatureJustDied(', 'void SummonedMovementInform(', 'void HandleExplode()'))

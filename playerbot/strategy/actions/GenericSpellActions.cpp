@@ -562,7 +562,17 @@ bool CastShootAction::isUseful()
     // weapon here so Classic's Shoot Bow/Gun/Crossbow and Throw reach the
     // learned-spell check instead of being rejected as generic Shoot.
     UpdateWeaponInfo();
-    return rangedWeapon && !needsAmmo && CastSpellAction::isUseful();
+#ifdef MANTECH_RAID_LAB
+    if (CombatDiagnostics::Select(ai))
+        CombatDiagnostics::Record(ai,GetSpellName(),"shoot readiness","shoot_weapon",
+            rangedWeapon ? int32(rangedWeapon->GetProto()->SubClass) : -1,GetDecisionSpellId(),GetTarget());
+#endif
+    const bool useful = rangedWeapon && !needsAmmo && CastSpellAction::isUseful();
+#ifdef MANTECH_RAID_LAB
+    if (CombatDiagnostics::Select(ai))
+        CombatDiagnostics::Record(ai,GetSpellName(),"shoot usefulness","shoot_gate",useful?1:0,GetDecisionSpellId(),GetTarget());
+#endif
+    return useful;
 }
 
 bool CastShootAction::isPossible()
@@ -575,7 +585,12 @@ bool CastShootAction::isPossible()
         Unit* target = GetTarget();
         if (target && sServerFacade.IsWithinLOSInMap(bot, target))
         {
-            return CastSpellAction::isPossible();
+            const bool possible = CastSpellAction::isPossible();
+#ifdef MANTECH_RAID_LAB
+            if (CombatDiagnostics::Select(ai))
+                CombatDiagnostics::Record(ai,GetSpellName(),"shoot possibility","shoot_gate",possible?1:0,GetDecisionSpellId(),target);
+#endif
+            return possible;
         }
     }
 

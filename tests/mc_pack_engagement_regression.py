@@ -7,15 +7,16 @@ source=(r/'playerbot/PlayerbotAI.cpp').read_text()
 actions=(r/'playerbot/strategy/actions/MoltenCoreDungeonActions.cpp').read_text()
 wake=block(source,'void PlayerbotAI::PrepareForUrgentCombat(')
 publish=block(source,'if (((packet.GetOpcode()==SMSG_ATTACKSTART')
-getplan=block(actions,'bool MoltenCorePositionAction::GetPlan(')
+getplan=block(actions,'bool MagmadarFacingSafe(')+'\n'+block(actions,'bool MoltenCorePositionAction::GetPlan(')
 execute=block(actions,'bool MoltenCorePositionAction::Execute(')
 assert 'plan.spell == 19364' in execute and 'plan.spell == 20602' in execute
-assert execute.index('GetPlan(ai, plan)')<execute.index('return MoveTo(')
+assert execute.index('GetPlan(ai, plan)')<execute.index('MoveTo(plan.map')
 assert 'PlanMoltenCoreTrash(ai, current)' not in execute
 assert block(source,'void PlayerbotAI::UpdateAI(').index('PrepareForUrgentCombat()')<block(source,'void PlayerbotAI::UpdateAI(').index('if (!delayAlreadyAdvanced)')
 urgent=block((r/'playerbot/PlayerbotAI.h').read_text(),'bool HasUrgentCommand()').replace(' override','')
 code=r'''
 #include <cassert>
+#include <cmath>
 #include <any>
 #include <list>
 #include <atomic>
@@ -25,11 +26,12 @@ code=r'''
 #include <string>
 #include <iostream>
 using uint32=unsigned;
+namespace BotState{enum{BOT_STATE_COMBAT};}
 struct ObjectGuid{unsigned id=0;ObjectGuid(unsigned i=0):id(i){}bool IsEmpty(){return !id;}void Clear(){id=0;}operator unsigned()const{return id;}};
 constexpr unsigned SMSG_ATTACKSTART=1,SMSG_ATTACKSTOP=2,UNIT_STAND_STATE_STAND=0;
 struct Group{};struct Unit{virtual ~Unit()=default;unsigned entry=11669,map=409,instance=1;float x=0,y=0,z=0,o=0;float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return z;}float GetCombatReach(){return 1.5f;}bool IsWithinLOS(float,float,float,bool){return true;}float GetOrientation(){return o;}bool world=true,alive=true,combat=true,charm=false;Unit*victim=nullptr;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsInCombat(){return combat;}bool HasCharmer(){return charm;}unsigned GetEntry(){return entry;}
- ObjectGuid GetObjectGuid(){return 3;}
+ float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c));}ObjectGuid GetObjectGuid(){return 3;}
  std::set<unsigned>auras;bool HasAura(unsigned id){return auras.count(id);}Unit*GetVictim(){return victim;}virtual bool IsPlayer(){return false;}};
 struct Player:Unit{bool transfer=false,tank=false,sit=true;unsigned guid=2,interrupts=0,stands=0;Group*group=nullptr;std::vector<Unit*>attackers;
  bool IsPlayer()override{return true;}bool IsBeingTeleported(){return transfer;}unsigned GetMapId(){return map;}unsigned GetInstanceId(){return instance;}unsigned getClass(){return 1;}float GetCollisionHeight(){return 2;}bool IsWithinLOSInMap(Unit*){return true;}
@@ -38,7 +40,7 @@ struct Player:Unit{bool transfer=false,tank=false,sit=true;unsigned guid=2,inter
  void SetStandState(unsigned){sit=false;++stands;}void InterruptNonMeleeSpells(bool f){assert(!f);++interrupts;}
  auto const&getAttackers(){return attackers;}};
 constexpr unsigned CLASS_HUNTER=3;
-namespace encounter{struct Circle{};struct Point{float x=-20,y=0,z=0;};bool OutsideCircles(Point,const std::vector<Circle>&){return true;}}
+namespace encounter{struct Circle{float radius=0;};struct Point{float x=-20,y=0,z=0;};bool OutsideCircles(Point,const std::vector<Circle>&){return true;}}
 struct EncounterPosition{bool active=true,groundOnly=false,anchored=false;unsigned map=409,instance=1,spell=20602;ObjectGuid boss=3,source;encounter::Point destination,anchor;};
 template<class T>struct Cached{T value;unsigned resets=0;T Get(){return value;}void Reset(){++resets;}void Set(T v){value=v;}};
 struct Context{Cached<EncounterPosition>plan;std::map<std::string,std::any>cells;template<class T,class Q=int>Cached<T>*GetValue(const char*n,Q={}){if constexpr(std::is_same_v<T,EncounterPosition>)return &plan;else{auto[it,b]=cells.emplace(n,Cached<T>{});return std::any_cast<Cached<T>>(&it->second);}}};
@@ -48,6 +50,7 @@ struct ReactionEngine{unsigned notifications=0;void NotifyPartyCombat(){++notifi
 struct PlayerbotAI{Player*bot;bool real=false,isWaiting=true;unsigned aiInternalUpdateDelay=8000;Context context;Context*aiObjectContext=&context;
  ReactionEngine reactions;ReactionEngine*reactionEngine=&reactions;Unit*loose=nullptr;std::map<unsigned,Unit*>units;std::atomic<bool>urgentAttackPending{false},urgentCombatPending{false};
  Player*GetBot(){return bot;}bool IsRealPlayer(){return real;}static bool IsTank(Player*p){return p->tank;}
+ bool HasStrategy(const char*,int){return false;} // Magmadar ground escape is tested in its dedicated fixture.
  bool IsRanged(Player*){return false;}bool IsHeal(Player*){return false;}bool GetSpellRange(const char*,float*p){*p=40;return true;}
  Context*GetAiObjectContext(){return &context;}Unit*GetUnit(ObjectGuid g){return units.count(g)?units[g]:nullptr;}
  bool HasRealPlayerMaster(){return true;}void ResetAIInternalUpdateDelay(){aiInternalUpdateDelay=0;}ObjectGuid urgentRecoveryTarget;
@@ -56,9 +59,10 @@ struct PlayerbotAI{Player*bot;bool real=false,isWaiting=true;unsigned aiInternal
 };
 struct Facade{bool IsFriendlyTo(Player*,Unit*){return false;}}sServerFacade;
 struct PossibleAttackTargetsValue{static bool HasBreakableCC(Unit*,Player*){return false;}static bool HasUnBreakableCC(Unit*,Player*){return false;}};
-bool MoltenCorePackStackRequired(PlayerbotAI*){return false;}
+bool stackRequired=false;bool MoltenCorePackStackRequired(PlayerbotAI*){return stackRequired;}
 std::pair<float,float> FirelordRangedBounds(PlayerbotAI*,Unit*){return {8.0f,43.0f};}
 bool PlanFirelordRanged(PlayerbotAI*,EncounterPosition&){return false;}
+float NativeEncounterSpellRadius(unsigned id){assert(id==19272);return 35.0f;}
 const char* MoltenCoreRangeSpell(PlayerbotAI*,Player*){return "frostbolt";}
 bool MoltenCoreRecoveryTrash(unsigned e){return e!=11502;}
 Unit*MoltenCoreTrashAggroTarget(PlayerbotAI*a){for(auto*u:a->bot->attackers)if(u->world&&u->alive&&!u->charm&&a->bot->IsInMap(u)&&u->victim==a->bot&&!u->HasAura(19951)&&MoltenCoreRecoveryTrash(u->entry))return u;return nullptr;}
@@ -69,7 +73,8 @@ bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Ci
 Unit*MoltenCorePackTankTarget(PlayerbotAI*a){return a->loose;}Unit*MoltenCoreAssignedTankTarget(PlayerbotAI*a){return a->loose;}
 unsigned replans=0;bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&p){++replans;p.destination.x=-20;return true;}
 bool PlanMagmadarFormation(PlayerbotAI*,Unit*,EncounterPosition&p){++replans;p.destination.x=-41;return true;}
-Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&){return false;}
+bool carrierRoute=true;float carrierDestination=-20;
+Unit*LavaTrashBanishTarget(PlayerbotAI*){return nullptr;}bool PlanLavaTrashCarrier(PlayerbotAI*,EncounterPosition&p){p.destination.x=carrierDestination;return carrierRoute;}
 struct MoltenCorePositionAction{static bool GetPlan(PlayerbotAI*,EncounterPosition&);};
 __WAKE__
 bool PlanMoltenCoreMageCleave(PlayerbotAI*,EncounterPosition&){return false;}
@@ -79,6 +84,14 @@ int main(){Group group;Player bot,tank;bot.group=tank.group=&group;Unit imp;imp.
  assert(bot.interrupts==1&&!bot.sit&&bot.stands==1&&!ai.isWaiting&&ai.aiInternalUpdateDelay==0&&ai.context.plan.resets==1&&!ai.HasUrgentCommand());
  EncounterPosition plan;assert(MoltenCorePositionAction::GetPlan(&ai,plan));
  imp.victim=&tank;assert(!MoltenCorePositionAction::GetPlan(&ai,plan));imp.victim=&bot;
+ ai.context.plan.value.spell=19196;imp.entry=12101;imp.victim=&tank;
+#ifdef MANGOSBOT_ZERO
+ assert(!MoltenCorePositionAction::GetPlan(&ai,plan));
+ stackRequired=true;assert(MoltenCorePositionAction::GetPlan(&ai,plan));stackRequired=false;
+#else
+ assert(MoltenCorePositionAction::GetPlan(&ai,plan));
+#endif
+ ai.context.plan.value.spell=20602;imp.entry=11669;imp.victim=&bot;
  // Native five-pack carrier wakes immediately, but collapse and patrol do not.
  imp.entry=11671;ai.context.plan.value.spell=19771;ai.context.plan.value.source=bot.GetObjectGuid();
  ai.urgentCombatPending=true;ai.aiInternalUpdateDelay=9000;ai.PrepareForUrgentCombat();
@@ -106,6 +119,15 @@ int main(){Group group;Player bot,tank;bot.group=tank.group=&group;Unit imp;imp.
  assert(!ai.HasUrgentCommand()&&ai.aiInternalUpdateDelay==0&&bot.interrupts==outsideInterrupts);
  packet.opcode=SMSG_ATTACKSTOP;packet.bytes=6;ai.Publish(packet);assert(ai.HasUrgentCommand());
  ai.PrepareForUrgentCombat();assert(!ai.HasUrgentCommand()&&bot.interrupts==outsideInterrupts);
+#ifdef MANGOSBOT_ZERO
+ bot.world=bot.alive=true;bot.transfer=bot.charm=bot.tank=false;bot.map=409;ai.real=false;imp.entry=11669;imp.victim=&bot;
+ carrierDestination=bot.x;ai.urgentRecoveryTarget.Clear();unsigned saved=bot.interrupts;
+ for(unsigned i=0;i<5;++i){ai.urgentCombatPending=true;ai.PrepareForUrgentCombat();assert(bot.interrupts==saved);}
+ carrierDestination=-20;carrierRoute=false;ai.urgentCombatPending=true;ai.PrepareForUrgentCombat();assert(bot.interrupts==saved);
+ carrierRoute=true;ai.urgentCombatPending=true;ai.PrepareForUrgentCombat();assert(bot.interrupts==saved+1);
+ bot.tank=true;imp.victim=&tank;ai.loose=&imp;ai.urgentRecoveryTarget.Clear();ai.urgentCombatPending=true;ai.PrepareForUrgentCombat();assert(bot.interrupts==saved+2);
+ ai.urgentCombatPending=true;ai.PrepareForUrgentCombat();assert(bot.interrupts==saved+2); // retained pickup does not cancel each notification
+#endif
  std::cout<<"PASS native imp wake/cast interruption, owner-map guards, Core Hound plan admission and stale aggro rejection\n";
 }
 '''.replace('__PUBLISH__',publish).replace('__URGENT__',urgent).replace('__WAKE__',wake).replace('__GETPLAN__',getplan)

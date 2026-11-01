@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
+#include "AI/ScriptDevAI/include/sc_instance.h"
 
 using namespace ai;
 
@@ -21,6 +22,30 @@ bool ai::NaxxramasEncounterEngaged(Player* bot, Unit* enemy)
             enemy->getThreatManager().getThreat(member) > 0.0f) return true;
     }
     return false;
+}
+
+bool ai::GothikGroupEngagedAdd(Player* bot, Unit* enemy)
+{
+#ifdef MANGOSBOT_ZERO
+    if (!bot || bot->GetMapId()!=533 || !enemy) return false;
+    switch (enemy->GetEntry())
+    {
+        case 16124: case 16125: case 16126: case 16127:
+        case 16148: case 16149: case 16150: break;
+        default: return false;
+    }
+    if (!NaxxramasEncounterEngaged(bot,enemy)) return false;
+    auto* instance=dynamic_cast<ScriptedInstance*>(bot->GetMap()->GetInstanceData());
+    if (!instance || instance->GetData(7)!=IN_PROGRESS) return false;
+    Unit* boss=instance->GetSingleCreatureFromStorage(16060,true);
+    if (!boss || boss->GetEntry()!=16060 || !NaxxramasEncounterEngaged(bot,boss)) return false;
+    GameObject* gate=instance->GetSingleGameObjectFromStorage(181170);
+    return gate && gate->IsInWorld() && bot->IsInMap(gate) &&
+        (gate->GetGoState()!=GO_STATE_READY ||
+         ((bot->GetPositionY()<=gate->GetPositionY())==(enemy->GetPositionY()<=gate->GetPositionY())));
+#else
+    return false;
+#endif
 }
 
 uint32 ai::NaxxramasBurstAura(Unit* unit)

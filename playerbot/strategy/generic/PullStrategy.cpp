@@ -38,10 +38,43 @@ PullStrategy::PullStrategy(PlayerbotAI* ai, std::string pullAction, std::string 
         return;
 }
 
+uint8 PullStrategy::GetMaxPullTime() const
+{
+#ifdef MANGOSBOT_ZERO
+    // Crossing Gothik's gate and splitting a raid by role is preparation,
+    // not the ordinary fifteen-second approach. Keep one bounded deadline
+    // measured from the original authorized request, including its shot.
+    // Never shorten it when preparation finishes or reset it on each tick.
+    Player* bot = ai->GetBot();
+    Unit* target = GetTarget();
+    if (encounterPreparationAllowed && bot && bot->IsInWorld() && bot->GetMapId() == 533 &&
+        target && target->IsInWorld() && bot->IsInMap(target) &&
+        (target->GetEntry() == 16060 || target->GetEntry() == 15929 || target->GetEntry() == 15930))
+        return 60;
+#endif
+    return 15;
+}
+
 std::string PullStrategy::GetPullActionName() const
 {
     if (bodyPull) return "melee";
     std::string modPullActionName = pullActionName;
+
+#ifdef MANGOSBOT_ZERO
+    // Vek'lor's physical immunity rejects the default Shoot admission. Once
+    // an ordinary pull has selected this actual boss, use learned magical
+    // threat instead; all normal spell range/LOS/state checks still apply.
+    if (ai->GetBot()->GetMapId() == 531 && ai->GetBot()->getClass() == CLASS_WARLOCK && modPullActionName == "shoot")
+    {
+        Unit* target = GetTarget();
+        if (target && target->GetEntry() == 15276 && target->IsInWorld() && target->IsAlive() &&
+            ai->GetBot()->IsInMap(target) && !target->HasCharmer())
+        {
+            if (ai->HasSpell("searing pain")) return "searing pain";
+            if (ai->HasSpell("shadow bolt")) return "shadow bolt";
+        }
+    }
+#endif
 
     // Select the faerie fire based on druid strategy
     if (ai->GetBot()->getClass() == CLASS_DRUID)
@@ -263,9 +296,13 @@ float PullMultiplier::GetValue(Action* action)
     const PullStrategy* strategy = PullStrategy::Get(ai);
     if (strategy && strategy->HasTarget())
     {
+        bool thaddiusPreparation=false;
+#ifdef MANGOSBOT_ZERO
+        thaddiusPreparation=strategy->GetTarget()->GetEntry()==15929 || strategy->GetTarget()->GetEntry()==15930;
+#endif
         if (strategy->IsPullPendingToStart() && strategy->IsEncounterPreparationAllowed() &&
             ai->GetBot()->GetMapId() == 533 &&
-            (strategy->GetTarget()->GetEntry() == 16060 || IsRazuviousCrystalPull(ai, strategy->GetTarget())) &&
+            (strategy->GetTarget()->GetEntry() == 16060 || thaddiusPreparation || IsRazuviousCrystalPull(ai, strategy->GetTarget())) &&
             (action->getName() == "reach pull" || action->getName() == "return to pull position" ||
                 action->getName() == "pull action")) return 0.0f;
         if ((action->getName() == "pull my target") ||
@@ -275,6 +312,7 @@ float PullMultiplier::GetValue(Action* action)
             (action->getName() == "reach pull") ||
             (action->getName() == "pull start") ||
             (action->getName() == "prepare gothik sides") ||
+            (action->getName() == "prepare thaddius sides") ||
             (action->getName() == "razuvious preparation") ||
             (action->getName() == "pull action") ||
             (action->getName() == "return to pull position") ||

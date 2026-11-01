@@ -28,6 +28,8 @@ std::list<ObjectGuid> targets;std::map<ObjectGuid,Unit*> units;
 struct PlayerbotAI{Player* bot;bool real=false;bool IsRealPlayer(){return real;}bool IsTank(Player* p){return p&&p->tank;}
  Unit* GetUnit(ObjectGuid id){return units[id];}};
 #define AI_VALUE(type,name) targets
+bool NefariusWaveEncounter(PlayerbotAI*){return false;}
+Unit* NefariusStableWaveTank(PlayerbotAI*,const std::vector<Unit*>&,const std::vector<Player*>&){assert(false);return nullptr;}
 __METHODS__
 Unit* choose(PlayerbotAI* ai){Player* bot=ai->bot;
  auto valid=[bot](Unit* u){return u&&u->world&&u->alive&&u->combat&&!u->cc&&bot->IsInMap(u);};

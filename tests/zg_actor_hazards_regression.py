@@ -1,5 +1,6 @@
 """Native ZG death spirits/infernals: real helper, aura/source ownership and lifecycle."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import ast
 import subprocess
 import tempfile
@@ -73,5 +74,5 @@ collector=(root/'playerbot/strategy/values/NativeEncounterActorHazards.cpp').rea
 assert 'AppendZulGurubActorHazards(ai, hazards);' in collector
 trigger=(root/'playerbot/strategy/triggers/HostileGroundDamageTrigger.cpp').read_text()
 assert 'bot->GetMapId() == 309' in block(trigger,'bool HostileGroundDamageTrigger::IsActive(')
-for era in ('classic','tbc','wotlk'):
-    assert 'Group* GetGroupLootRecipient() const' in (root.parent/era/'src/game/Entities/Creature.h').read_text()
+for era in core_eras(('classic','tbc','wotlk')):
+    assert 'Group* GetGroupLootRecipient() const' in (core_path(era,root.parent/era)/'src/game/Entities/Creature.h').read_text()

@@ -17,6 +17,8 @@ struct PlayerbotAI{bool active=true,exclusive=true,stack=false,ranged=false,heal
  Unit*GetBot(){return &bot;}bool IsRanged(Unit*){return ranged;}bool IsHeal(Unit*){return healer;}};
 Unit* FindOnyxiaBoss(PlayerbotAI*a){return a->boss;}bool OnyxiaMeleeAirAdd(PlayerbotAI*a,Unit*){return a->add;}
 bool MoltenCorePackStackRequired(PlayerbotAI*a){return a->stack;}bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}
+// Native Tremor selection and Earth-slot arbitration are covered by molten_core_support.
+bool MoltenCoreTremorDuty(PlayerbotAI*){return false;}
 struct Action{virtual ~Action()=default;virtual std::string getName(){return "action";}};
 struct MovementAction:Action{};struct NamedMove:MovementAction{std::string name;NamedMove(const char*n):name(n){}std::string getName()override{return name;}};struct AttackAction:MovementAction{};struct MoveAwayFromHazard:MovementAction{};struct SetBehindTargetAction:MovementAction{};
 struct CastSpellAction:Action{bool moves=false;bool HasMovementEffect(){return moves;}};

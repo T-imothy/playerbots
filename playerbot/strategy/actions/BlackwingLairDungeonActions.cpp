@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/RaidLabTrace.h"
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
@@ -360,6 +361,13 @@ bool BlackwingLairPositionAction::GetPlan(PlayerbotAI* ai, EncounterPosition& pl
         bot->GetMapId() != 469 || !bot->GetGroup()) return false;
     plan = ai->GetAiObjectContext()->GetValue<EncounterPosition>("blackwing lair position")->Get();
     if (!plan.active || plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId()) return false;
+    if (plan.spell==0 && !plan.source.IsEmpty())
+    {
+        EncounterPosition current;
+        std::vector<encounter::Circle> threats;
+        return BlackwingPatrolThreats(ai,current,threats) && current.boss==plan.boss &&
+            encounter::OutsideCircles(plan.destination,threats);
+    }
     if (plan.spell == 23331)
     {
         Unit* boss = ai->GetUnit(plan.boss);
@@ -386,23 +394,47 @@ bool BlackwingLairPositionAction::isUseful()
 
 bool BlackwingLairPositionAction::ShouldReactionInterruptCast() const
 {
+#ifdef MANGOSBOT_ZERO
+    // MoveBlackwingPath admits the native route before interrupting. Selecting
+    // a reaction alone must not cancel healing when no safe escape is possible.
+    if (bot->GetMapId() == 469) return false;
+#endif
     EncounterPosition plan;
     return GetPlan(ai, plan) && bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
+}
+
+bool BlackwingLairPositionAction::ShouldReactionInterruptMovement() const
+{
+#ifdef MANGOSBOT_ZERO
+    // Leave the current spline available to the native dispatcher so repeated
+    // emergency reactions retain a matching safe route instead of restarting it.
+    if (bot->GetMapId() == 469) return false;
+#endif
+    return MovementAction::ShouldReactionInterruptMovement();
 }
 
 bool BlackwingLairPositionAction::Execute(Event& event)
 {
     EncounterPosition plan, current;
     std::vector<encounter::Circle> threats;
-    if (!GetPlan(ai, plan) || !ai->CanMove() || !BlackwingLairBurstThreats(ai, current, threats) ||
-        !ValidateEncounterDestination(ai, plan) || !encounter::OutsideCircles(plan.destination, threats)) return false;
+    auto result = [&](uint32 stage, bool accepted) {
+#ifdef MANTECH_RAID_LAB
+        RaidLab::Count(bot, "bwl_escape_dispatch", stage, accepted ? 1 : 0, plan.source.GetRawValue());
+#endif
+        return accepted;
+    };
+    if (!GetPlan(ai, plan)) return result(1, false);
+    if (!ai->CanMove()) return result(2, false);
+    if (!BlackwingLairBurstThreats(ai, current, threats)) return result(3, false);
+    if (!ValidateEncounterDestination(ai, plan)) return result(4, false);
+    if (!encounter::OutsideCircles(plan.destination, threats)) return result(5, false);
     if (bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) <= 1.5f)
     {
         ai->StopMoving();
         SetDuration(100);
-        return true;
+        return result(6, true);
     }
-    return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
+    return result(7, MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true));
 }
 
 namespace
@@ -439,6 +471,52 @@ namespace
         for (const auto* threat:enemy->getThreatManager().getThreatList())
             if (threat && member(ai->GetUnit(threat->getUnitGuid()))) return true;
         return false;
+    }
+
+    bool NefariusWaveEncounter(PlayerbotAI* ai)
+    {
+#ifdef MANGOSBOT_ZERO
+        if (!BwlReady(ai)) return false;
+        Player* bot = ai->GetBot();
+        auto* instance = dynamic_cast<ScriptedInstance*>(bot->GetMap()->GetInstanceData());
+        Unit* boss = instance ? instance->GetSingleCreatureFromStorage(10162, true) : nullptr;
+        return instance && instance->GetData(7) == IN_PROGRESS && boss &&
+            boss->HasAura(22663) && BwlGroupEngaged(ai, boss);
+#else
+        return false;
+#endif
+    }
+
+    Unit* NefariusStableWaveTank(PlayerbotAI* ai, const std::vector<Unit*>& enemies,
+        const std::vector<Player*>& tanks)
+    {
+        Player* bot = ai->GetBot();
+        const auto self = std::find(tanks.begin(), tanks.end(), bot);
+        if (self == tanks.end()) return nullptr;
+        const size_t slot = size_t(self - tanks.begin());
+        Unit* current = bot->GetVictim();
+        Unit* rescue = nullptr;
+        Unit* held = nullptr;
+        for (Unit* enemy : enemies)
+        {
+            const uint32 entry = enemy->GetEntry();
+            if ((entry < 14261 || entry > 14265) && entry != 14302) continue;
+            Player* holder = dynamic_cast<Player*>(enemy->GetVictim());
+            if (BwlMember(bot, holder) && ai->IsTank(holder))
+            {
+                if (holder == bot && (!held || enemy == current)) held = enemy;
+                continue; // Never steal another bot or human tank's held add.
+            }
+            // Spawn identity is stable when earlier adds die or a peer taunts.
+            // Rebalancing by current threat load every tick made approaching
+            // tanks swap still-loose targets before reaching any of them.
+            if (enemy->GetObjectGuid().GetRawValue() % tanks.size() != slot) continue;
+            if (enemy == current) return enemy;
+            if (!rescue || enemy->GetDistance(bot) < rescue->GetDistance(bot) ||
+                (enemy->GetDistance(bot) == rescue->GetDistance(bot) &&
+                 enemy->GetObjectGuid() < rescue->GetObjectGuid())) rescue = enemy;
+        }
+        return rescue ? rescue : held;
     }
 
     unsigned BwlAfflictions(Unit* member)
@@ -651,6 +729,9 @@ Unit* BlackwingLairPriorityTargetAction::GetTarget()
             tanks.push_back(tank);
         }
         std::sort(tanks.begin(), tanks.end(), [](Player* a, Player* b) { return a->GetObjectGuid() < b->GetObjectGuid(); });
+#ifdef MANGOSBOT_ZERO
+        if (NefariusWaveEncounter(ai)) return NefariusStableWaveTank(ai, enemies, tanks);
+#endif
         std::map<Player*, unsigned> load;
         Unit* held = nullptr;
         for (Unit* enemy : enemies)
@@ -1079,3 +1160,4 @@ bool RazorgoreOrbAction::UpdateControl()
     }
     return true; // Keep possession intact while native cooldowns/paths recover.
 }
+#include "BlackwingMovementSafety.h"

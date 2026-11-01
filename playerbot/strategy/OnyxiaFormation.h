@@ -29,7 +29,8 @@ namespace ai { namespace onyxia {
     }
 
     inline std::vector<encounter::Point> Candidates(encounter::Point here, unsigned slot,
-        const std::vector<encounter::Circle>& neighbors, const std::vector<encounter::Circle>& danger)
+        const std::vector<encounter::Circle>& neighbors, const std::vector<encounter::Circle>& danger,
+        bool incomingFireball = false)
     {
         const auto preferred = Station(slot, here.z);
         std::vector<encounter::Point> candidates{here, preferred};
@@ -51,6 +52,25 @@ namespace ai { namespace onyxia {
                 encounter::Distance2d(point, preferred) * 0.3f + encounter::Distance2d(point, here) * 0.1f;
         };
         std::stable_sort(candidates.begin(), candidates.end(), [&](encounter::Point a, encounter::Point b) {
+            // Deep Breath has a short native warning. Reach the nearest safe
+            // sector first; crowding may break equal-distance ties but must
+            // never send a player across the whole breath to improve spacing.
+            if (!danger.empty())
+            {
+                const float da=encounter::Distance2d(a,here), db=encounter::Distance2d(b,here);
+                if(da!=db)return da<db;
+            }
+            else if (incomingFireball)
+            {
+                const bool clearA = encounter::SpreadOverlap(a,neighbors) <= 1.0f;
+                const bool clearB = encounter::SpreadOverlap(b,neighbors) <= 1.0f;
+                if (clearA != clearB) return clearA;
+                if (clearA)
+                {
+                    const float da=encounter::Distance2d(a,here), db=encounter::Distance2d(b,here);
+                    if (da!=db) return da<db;
+                }
+            }
             return score(a) < score(b);
         });
         return candidates;

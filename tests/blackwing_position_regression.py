@@ -14,6 +14,8 @@ methods = '\n'.join((block(value, 'uint32 ai::BurningAdrenalineAura('),
                      block(value, 'EncounterPosition BlackwingLairPositionValue::Calculate('),
                      block(action, 'bool BlackwingLairPositionAction::GetPlan('),
                      block(action, 'bool BlackwingLairPositionAction::isUseful('),
+                     block(action, 'bool BlackwingLairPositionAction::ShouldReactionInterruptCast('),
+                     block(action, 'bool BlackwingLairPositionAction::ShouldReactionInterruptMovement('),
                      block(action, 'bool BlackwingLairPositionAction::Execute('),
                      block(multiplier, 'float PreserveBlackwingLairPositionMultiplier::GetValue(')))
 code = r'''
@@ -60,9 +62,15 @@ struct PlayerbotAI{Player* bot;Context context;std::list<ObjectGuid> attackers;s
  Unit* GetUnit(ObjectGuid guid){auto i=units.find(guid);return i==units.end()?nullptr:i->second;}};
 struct Event{};
 struct Action{virtual ~Action()=default;std::string getName(){return "fixture";}};
-struct MovementAction:Action{};struct AttackAction:MovementAction{};struct MoveAwayFromHazard:MovementAction{};
+struct MovementAction:Action{bool ShouldReactionInterruptMovement()const{return true;}};struct AttackAction:MovementAction{};struct MoveAwayFromHazard:MovementAction{};
 struct CastSpellAction:Action{bool movement=false;bool HasMovementEffect(){return movement;}};
 namespace ai{
+ bool patrolDanger=false;
+ bool BlackwingPatrolThreats(PlayerbotAI*,EncounterPosition& plan,std::vector<encounter::Circle>& threats){
+#ifdef MANGOSBOT_ZERO
+ if(patrolDanger){plan.map=469;plan.instance=1;plan.boss=42;plan.source=43;plan.spell=0;threats.push_back({{1,0,0},23});return true;}
+#endif
+ return false;}
  unsigned radiusQueries=0,lastRadius=0;float radius=10;
  float NativeEncounterSpellRadius(unsigned id){++radiusQueries;lastRadius=id;return radius;}
  bool ValidateEncounterDestination(PlayerbotAI* ai,EncounterPosition&){++ai->checked;return ai->validPath;}
@@ -71,7 +79,7 @@ namespace ai{
  struct BlackwingLairPositionValue{Player* bot;PlayerbotAI* ai;EncounterPosition Calculate();};
  struct BlackwingLairPositionAction:MovementAction{PlayerbotAI* ai;Player* bot;
   BlackwingLairPositionAction(PlayerbotAI* a):ai(a),bot(a->bot){}
-  static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool isUseful();bool Execute(Event&);void SetDuration(unsigned){}
+  static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool isUseful();bool Execute(Event&);bool ShouldReactionInterruptCast()const;bool ShouldReactionInterruptMovement()const;void SetDuration(unsigned){}
   bool IsReaction(){return true;}
   bool MoveTo(unsigned,float,float,float,bool idle,bool react,bool noPath,bool ignoreEnemies){
    assert(!idle&&react&&!noPath&&ignoreEnemies);++ai->moves;return true;}};
@@ -89,6 +97,15 @@ int main(){
  auto get=[&](){ai.context.cached.value=value.Calculate();return BlackwingLairPositionAction::GetPlan(&ai,plan);};
  assert(!get());bot.auras={23620};assert(get()&&plan.source==bot.guid&&plan.spell==23620&&lastRadius==23478);
  assert(encounter::Distance2d(plan.destination,{ally.x,0,0})>=12&&action.isUseful());
+#ifdef MANGOSBOT_ZERO
+ // Selection is not movement admission: rejected paths must retain casts.
+ assert(!action.ShouldReactionInterruptCast());
+ assert(!action.ShouldReactionInterruptMovement());
+ bot.mapId=0;assert(action.ShouldReactionInterruptMovement());bot.mapId=469;
+#else
+ assert(action.ShouldReactionInterruptCast());
+ assert(action.ShouldReactionInterruptMovement());
+#endif
  assert(action.Execute(event)&&ai.moves==1);
  ally.x=plan.destination.x;ally.y=plan.destination.y;
  assert(!action.Execute(event)&&ai.moves==1);ally.x=1;ally.y=0; // Fresh position invalidates old destination.
@@ -124,6 +141,14 @@ int main(){
  boss.victim=&bot;assert(!get());boss.victim=nullptr;
  ai.ranged=false;assert(!get());ai.healer=true;assert(get());
  ai.healer=false;
+#ifdef MANGOSBOT_ZERO
+ patrolDanger=true;assert(get()&&plan.spell==0&&plan.source==43&&plan.boss==42);
+ assert(action.Execute(event));
+ ai.validPath=false;assert(!get());ai.validPath=true;
+ patrolDanger=false;assert(!BlackwingLairPositionAction::GetPlan(&ai,plan));
+#else
+ patrolDanger=true;assert(!get());patrolDanger=false;
+#endif
  std::cout<<"PASS: actual BWL aura/radius/paths, tank preservation, post-kill lifetime, phase/group and movement arbitration\n";
 }
 '''.replace('__GEOMETRY__', (root / 'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__METHODS__', methods)

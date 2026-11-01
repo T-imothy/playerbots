@@ -42,6 +42,21 @@ void TestContext::Reset()
     groupOnMapExpected = 0;
     lootStackSeen = false;
     actionSpamArmed = false;
+#ifdef MANTECH_RAID_LAB
+    raidLabEventStarted = 0;
+    raidLabEventFailureStarted = 0;
+    raidLabEventStage = 0;
+    raidLabStageStarted = 0;
+    raidLabPostKillStarted = 0;
+    raidLabProvisionStarted = 0;
+    raidLabPatrolWaitStarted = 0;
+    raidLabPullGuid.Clear();
+    raidLabPullStarted = 0;
+    raidLabPackId = 0;
+    raidLabGridWarmups.clear();
+    raidLabPackMembers.clear();
+    raidLabPackDead.clear();
+#endif
 }
 
 void TestContext::RecordDeliveredGroupMember(ObjectGuid guid)

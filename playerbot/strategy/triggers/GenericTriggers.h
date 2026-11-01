@@ -1007,6 +1007,7 @@ namespace ai
     {
     public:
         BloodFuryTrigger(PlayerbotAI* ai) : BoostTrigger(ai, "blood fury") {}
+        bool IsActive() override;
     };
 
     class CannibalizeTrigger : public Trigger

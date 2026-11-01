@@ -26,6 +26,10 @@ void DungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
         NextAction::array(0, new NextAction("tharonja skeleton", 85.0f), NULL)));
     triggers.push_back(new TriggerNode("viscidus frost",
         NextAction::array(0, new NextAction("viscidus frost", 55.0f), NULL)));
+    // Native poison removal saves repeated raid damage; do not let ordinary
+    // healing permanently starve it. Emergency survival still ranks higher.
+    triggers.push_back(new TriggerNode("viscidus poison",
+        NextAction::array(0, new NextAction("viscidus poison", ACTION_CRITICAL_HEAL + 1), NULL)));
     triggers.push_back(new TriggerNode("heigan dance",
         NextAction::array(0, new NextAction("heigan dance", 108.0f), NULL)));
     triggers.push_back(new TriggerNode("najentus spine rescue",
@@ -192,6 +196,8 @@ void DungeonStrategy::InitReactionTriggers(std::list<TriggerNode*>& triggers)
 
 void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveGothikGate(ai));
+    multipliers.push_back(new PreserveKelthuzadOpening(ai));
     multipliers.push_back(new PreserveClassicRaidPlan(ai));
     multipliers.push_back(new PreserveRotatingBeamMultiplier(ai));
     multipliers.push_back(new PreserveVashjCoreMultiplier(ai));
@@ -211,6 +217,8 @@ void DungeonStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
 
 void DungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveGothikGate(ai));
+    multipliers.push_back(new PreserveKelthuzadOpening(ai));
     multipliers.push_back(new PreserveClassicRaidPlan(ai));
     multipliers.push_back(new PreserveRotatingBeamMultiplier(ai));
     multipliers.push_back(new PreserveVashjCoreMultiplier(ai));
@@ -228,5 +236,7 @@ void DungeonStrategy::InitReactionMultipliers(std::list<Multiplier*>& multiplier
 
 void DungeonStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
 {
+    multipliers.push_back(new PreserveGothikGate(ai));
+    multipliers.push_back(new PreserveKelthuzadOpening(ai));
     multipliers.push_back(new PreserveSolarianPositionMultiplier(ai));
 }

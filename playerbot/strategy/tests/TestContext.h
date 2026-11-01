@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <set>
+#include <map>
 #include <cstdint>
 #include <mutex>
 #include "Globals/ObjectMgr.h"
@@ -93,6 +94,21 @@ namespace ai
 
         bool lootStackSeen = false;
         bool actionSpamArmed = false;
+#ifdef MANTECH_RAID_LAB
+        uint32 raidLabEventStarted = 0;
+        uint32 raidLabEventFailureStarted = 0;
+        uint32 raidLabEventStage = 0;
+        uint32 raidLabStageStarted = 0;
+        uint32 raidLabPostKillStarted = 0;
+        uint32 raidLabProvisionStarted = 0;
+        uint32 raidLabPatrolWaitStarted = 0;
+        ObjectGuid raidLabPullGuid;
+        uint32 raidLabPullStarted = 0;
+        uint32 raidLabPackId = 0;
+        std::map<std::string, uint32> raidLabGridWarmups;
+        std::set<ObjectGuid> raidLabPackMembers;
+        std::set<ObjectGuid> raidLabPackDead;
+#endif
 
         // BL-44: snapshot of the expected group-member count, taken at the monitor's first tick. The
         // live group can shrink mid-window (a member leaves), which would silently lower the bar; the

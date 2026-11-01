@@ -1,10 +1,13 @@
 """Exercise the production escape action with different bot/hazard path origins."""
 from pathlib import Path
-import subprocess, tempfile
+import subprocess, tempfile, sys
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
 source=(root/'playerbot/strategy/actions/DungeonActions.cpp').read_text()
-methods='\n'.join(block(source, signature) for signature in ('bool MoveAwayFromHazard::Execute(', 'bool MoveAwayFromHazard::IsHazardNearby('))
+if '--before-retain' in sys.argv:
+ source=source.replace('        if (ContinueAdmittedRaidEscape()) return true;\n','')
+methods='\n'.join(block(source, signature) for signature in ('bool MoveAwayFromHazard::Execute(', 'bool MoveAwayFromHazard::IsHazardNearby(', 'bool MoveAwayFromHazard::ShouldReactionInterruptCast(', 'bool MoveAwayFromHazard::ShouldReactionInterruptMovement('))
+scope=block((root/'playerbot/strategy/actions/MovementPathSafety.h').read_text(),'inline bool UsesClassicRaidEscapeAdmission(')
 code=r'''
 #include <cassert>
 #include <cmath>
@@ -12,13 +15,14 @@ code=r'''
 #include <list>
 #include <vector>
 #include <iostream>
-using uint8=uint8_t;using int8=int8_t;using ObjectGuid=unsigned;
+using uint8=uint8_t;using int8=int8_t;using ObjectGuid=unsigned;using uint32=unsigned;
+__SCOPE__
 constexpr float M_PI=3.14159265358979323846f,M_PI_F=M_PI;constexpr int TEMPSPAWN_TIMED_DESPAWN=0;
 float frand(float a,float b){return (a+b)/2;}unsigned urand(unsigned a,unsigned){return a;}
 struct Unit{float x=0,y=0,z=0;};
-struct Player:Unit{bool world=true,alive=true,charmed=false,teleport=false;
+struct Player:Unit{bool world=true,alive=true,charmed=false,teleport=false;unsigned map=1;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}
- unsigned GetMapId(){return 1;}float GetCollisionHeight(){return 1;}
+ unsigned GetMapId(){return map;}float GetCollisionHeight(){return 1;}
  float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c));}
  bool IsWithinLOS(float,float,float){return true;}void SummonCreature(unsigned,float,float,float,float,unsigned,float){}
 };
@@ -41,8 +45,11 @@ struct PlayerbotAI{Player*bot;std::list<HazardPosition>hazards;bool canMove=true
  template<class T>T Value(const char*){if constexpr(std::is_same_v<T,ObjectGuid>)return 0;else return hazards;}
 };
 struct Event{};struct MoveAwayFromHazard{PlayerbotAI*ai;Player*bot;unsigned moves=0;float waited=0;
+ bool retained=false;bool ContinueAdmittedRaidEscape(){return retained;}
+ bool ShouldReactionInterruptCast()const;bool ShouldReactionInterruptMovement()const;
  bool Execute(Event&);bool IsHazardNearby(const WorldPosition&,const std::list<HazardPosition>&)const;
  bool MoveTo(unsigned,float,float,float,bool,bool,bool,bool){++moves;return true;}
+ bool MoveAdmittedRaidEscape(const WorldPosition&){++moves;return true;}
  bool IsReaction(){return true;}void WaitForReach(float distance){waited=distance;}
 };
 #define AI_VALUE(type,name) ai->Value<type>(name)
@@ -59,9 +66,22 @@ int main(){
  bot.world=false;assert(!action.Execute(event));bot.world=true;bot.alive=false;assert(!action.Execute(event));bot.alive=true;
  ai.hazards={{{2,0,0,0},8}};assert(!action.Execute(event));
  ai.hazards.clear();assert(!action.Execute(event));
+ // A previously admitted safe exit must be used before generating another
+ // random destination. The real remaining-spline validator is tested separately.
+ bot.map=531;ai.hazards={{{531,0,0,0},8}};action.retained=true;
+ auto before=action.moves;assert(action.Execute(event)&&action.moves==before);
+ action.retained=false;assert(action.Execute(event)&&action.moves==before+1);
+ for(unsigned map:{0,1,229,230,489,529,30}){bot.map=map;assert(action.ShouldReactionInterruptCast()&&action.ShouldReactionInterruptMovement());}
+ for(unsigned map:{409,249,469,533,309,509,531}){bot.map=map;
+#ifdef MANGOSBOT_ZERO
+ assert(!action.ShouldReactionInterruptCast()&&!action.ShouldReactionInterruptMovement());
+#else
+ assert(action.ShouldReactionInterruptCast()&&action.ShouldReactionInterruptMovement());
+#endif
+ }
  std::cout<<"PASS: hazard escape uses bot origin, bounded paths and lifecycle/map guards\n";
 }
-'''.replace('__METHODS__',methods)
+'''.replace('__METHODS__',methods).replace('__SCOPE__',scope)
 with tempfile.TemporaryDirectory(prefix='mantech-hazard-origin-') as folder:
  tmp=Path(folder);(tmp/'test.cpp').write_text(code)
  for era in ('ZERO','ONE','TWO'):

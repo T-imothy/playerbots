@@ -39,8 +39,10 @@ namespace ai
     typedef std::pair<WorldPosition, float> HazardPosition;
     void AppendMoltenCoreGroundHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
     void AppendBlackwingGroundHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
+    void AppendKurinnaxxTrapHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
     void AppendVashjStriderHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
     void AppendNativeEncounterActorHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
+    void AppendGrobbulusCloudHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
     void AppendZulGurubActorHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards);
 
     // DO NOT USE. Value to store hazards which the bot must avoid when moving around

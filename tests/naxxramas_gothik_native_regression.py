@@ -1,5 +1,6 @@
 """Actual Classic/TBC side selection scans past dead/opposite-side players."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile
 
 root=Path(__file__).resolve().parents[2]
@@ -30,13 +31,14 @@ int main(){Map map;instance_naxxramas instance{&map};Creature caster;caster.inst
  std::cout<<"PASS actual native Gothik side scan, dead/wrong-side order and open gate\n";
 }
 '''
-for era in ('classic','tbc'):
-    source=(root/era/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/naxxramas/boss_gothik.cpp').read_text()
+for era in core_eras(('classic','tbc')):
+    source=(core_path(era,root/era)/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/naxxramas/boss_gothik.cpp').read_text()
     method=source[source.index('struct CheckGothikSide'):source.index('// 28781')]
     with tempfile.TemporaryDirectory(prefix='gothik-native-') as folder:
         p=Path(folder);(p/'test.cpp').write_text(fixture.replace('__METHOD__',method))
         subprocess.run(['cl','/nologo','/std:c++17','/EHsc','test.cpp','/Fe:test.exe'],cwd=p,check=True)
         subprocess.run([str(p/'test.exe')],cwd=p,check=True)
 # Wrath's native implementation uses HandleOpenGates/assault events, not this script.
-wrath=(root/'wotlk/src/game/AI/ScriptDevAI/scripts/northrend/naxxramas/boss_gothik.cpp').read_text()
-assert 'struct CheckGothikSide' not in wrath and 'void HandleOpenGates()' in wrath
+if 'wotlk' in core_eras():
+ wrath=(core_path('wotlk',root/'wotlk')/'src/game/AI/ScriptDevAI/scripts/northrend/naxxramas/boss_gothik.cpp').read_text()
+ assert 'struct CheckGothikSide' not in wrath and 'void HandleOpenGates()' in wrath

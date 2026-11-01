@@ -14,13 +14,42 @@ fixture=fixture.replace('void Add(Player*p){', 'bool IsMember(ObjectGuid g){for(
 fixture=fixture.replace('__METHODS__','')
 fixture=fixture.replace('bool IsEmpty()const{return !id;}', 'bool IsEmpty()const{return !id;}bool IsPlayer()const{return id>0&&id<10;}')
 fixture=fixture.replace('float GetCollisionHeight(){return 2;}', 'float GetCollisionHeight(){return 2;}float speed=2,body=1;float GetSpeed(unsigned){return speed;}float GetObjectBoundingRadius(){return body;}')
+fixture=fixture.replace('Unit*GetVictim(){return victim;}', 'int duration=60000;int GetAuraDuration(){return duration;}Unit*GetVictim(){return victim;}')
 fixture='enum{MOVE_RUN=1};\n'+fixture
 fixture=fixture.replace('WorldPosition(Unit*u):', 'WorldPosition(unsigned,float a,float b,float c):x(a),y(b),z(c){}WorldPosition(Unit*u):')
 fixture+='\nenum{UNIT_CREATED_BY_SPELL=777};\nnamespace ai{bool NaxxramasEncounterEngaged(Player* bot,Unit* u){return u&&u->world&&u->alive&&u->combat&&!u->charm&&bot->IsInMap(u);}void AppendNativeEncounterActorHazards(PlayerbotAI*,std::list<HazardPosition>&);}\n'
 fixture+='\nnamespace ai{void AppendZulGurubActorHazards(PlayerbotAI*,std::list<HazardPosition>&){}}\n'
+fixture+='\nnamespace ai{void AppendGrobbulusCloudHazards(PlayerbotAI*,std::list<HazardPosition>&);}\n'
+fixture+=block((root/'playerbot/strategy/values/NativeEncounterActorHazards.cpp').read_text(),'void ai::AppendGrobbulusCloudHazards(')
 fixture+=block((root/'playerbot/strategy/values/NativeEncounterActorHazards.cpp').read_text(),'void ai::AppendNativeEncounterActorHazards(')
 fixture+=r'''
 int main(){
+ {Player bot;bot.map=533;PlayerbotAI ai(&bot);Group group;group.Add(&bot);
+  Creature boss,cloud;boss.guid=10;boss.entry=15931;boss.map=533;
+  cloud.guid=11;cloud.entry=16363;cloud.map=533;cloud.spawner=boss.guid;cloud.created=28240;cloud.auras.insert(28158);
+  units={&bot,&boss,&cloud};std::list<HazardPosition>h;auto collect=[&](){h.clear();AppendGrobbulusCloudHazards(&ai,h);};
+#ifdef MANGOSBOT_ZERO
+  collect();assert(h.size()==1&&std::fabs(h.front().second-1.3f)<.001f);
+  cloud.duration=30000;collect();assert(std::fabs(h.front().second-10.3f)<.001f); // native growing radius, not static DBC size
+  cloud.duration=1000;collect();assert(std::fabs(h.front().second-19.0f)<.001f);
+  cloud.duration=0;collect();assert(h.empty());cloud.duration=60001;collect();assert(h.empty());cloud.duration=60000;
+  cloud.spawner=bot.guid;collect();assert(h.size()==1); // actual injection cloud belongs to affected raid player
+  cloud.spawner=99;collect();assert(h.empty());cloud.spawner=boss.guid;
+  boss.entry=1;collect();assert(h.empty());boss.entry=15931;
+  cloud.created=1;collect();assert(h.empty());cloud.created=28240;
+  cloud.auras.clear();collect();assert(h.empty());cloud.auras.insert(28158);
+  cloud.alive=false;collect();assert(h.empty());cloud.alive=true;
+  cloud.world=false;collect();assert(h.empty());cloud.world=true;
+  cloud.instance=2;collect();assert(h.empty());cloud.instance=1;
+  cloud.charm=true;collect();assert(h.empty());cloud.charm=false;
+  cloud.z=20;collect();assert(h.empty());cloud.z=0;
+  bot.teleport=true;collect();assert(h.empty());bot.teleport=false;
+  bot.map=409;collect();assert(h.empty());bot.map=533;
+  ai.dungeon=false;collect();assert(h.empty());ai.dungeon=true;
+#else
+  collect();assert(h.empty()); // this native Classic radius/ownership change is Classic only
+#endif
+  units.clear();}
  {Player bot,owner;bot.map=owner.map=533;bot.combat=false;owner.guid=2;owner.entry=16082;PlayerbotAI ai(&bot);
   Creature poison;poison.guid=80;poison.map=533;poison.entry=16027;poison.spawner=owner.guid;poison.combat=false;
   units={&owner,&poison};radii[28433]=5;std::list<HazardPosition>h;

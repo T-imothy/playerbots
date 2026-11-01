@@ -3,6 +3,7 @@ import argparse
 import ast
 import re
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser()
@@ -54,8 +55,8 @@ contracts={
  'boss_nefarian.cpp':(11583,22687,14605),
  'boss_victor_nefarius.cpp':(10162,22663),
 }
-for era in ('classic','tbc','wotlk'):
-    core=args.cores_dir/era/'src/game'
+for era in core_eras(('classic','tbc','wotlk')):
+    core=core_path(era,args.cores_dir/era)/'src/game'
     native=core/'AI/ScriptDevAI/scripts/eastern_kingdoms/blackwing_lair'
     header=(native/'blackwing_lair.h').read_text()
     instance=(native/'blackwing_lair.cpp').read_text()

@@ -8,6 +8,8 @@ from pathlib import Path
 import argparse
 import ast
 import re
+from native_core_paths import core_path, core_eras
+from behavior_regression import block
 
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
@@ -27,13 +29,16 @@ assert actions.index('if (slot == 0)') < actions.index('const size_t offTanks')
 assert '!PossibleAttackTargetsValue::HasBreakableCC(unit, bot)' in actions
 assert '!PossibleAttackTargetsValue::HasUnBreakableCC(unit, bot)' in actions
 assert 'healer->HasAura(21087)' in actions
-assert '(markedHealer ? 0 : 1)' in actions
+sheep = block(actions, '    Unit* MajordomoAssignedHealer(')
+assert 'if (owner == bot->GetObjectGuid()) return healer;' in sheep
+assert 'occupied.count(mage->GetObjectGuid()) != 0' in sheep
+assert '!MajordomoSheepOwner(healer).IsEmpty()' in sheep
 assert 'cast->m_spellInfo->Id != 19775' in actions
 assert '#ifdef MANGOSBOT_TWO\n                "wind shear", "mind freeze"\n#else\n                "earth shock"' in actions
 assert '!ai->IsTank(bot) && !ai->IsRanged(bot)' in position
 assert 'boss->GetVictim() != bot' in position
-assert 'member->GetObjectGuid() < bot->GetObjectGuid()' in position
-assert 'if (++checked > 8) break' in position
+assert 'plan.source.IsEmpty() || member->GetObjectGuid() < plan.source' in position
+assert 'if (++checked > 32) break' in position and 'if (++checked > 16) break' in position
 assert 'ValidateEncounterDestination(ai, plan)' in position
 for name in ('encounter_adds_regression.py', 'molten_core_position_regression.py', 'netherspite_runtime_regression.py'):
     ast.parse(read('tests/' + name), filename=name)
@@ -51,8 +56,8 @@ if args.cores_dir:
         'boss_majordomo_executus.cpp': (20619, 21075, 21087),
         'boss_ragnaros.cpp': (20566, 21154),
     }
-    for era in ('classic', 'tbc', 'wotlk'):
-        native = args.cores_dir / era / 'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/molten_core'
+    for era in core_eras(('classic', 'tbc', 'wotlk')):
+        native = core_path(era, args.cores_dir / era) / 'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/molten_core'
         for name, ids in required.items():
             text = (native / name).read_text()
             for spell in ids:
@@ -61,7 +66,9 @@ if args.cores_dir:
 print('PASS MC source wiring, safety contracts and Python regression syntax (no compile/live test)')
 
 # Trash decisions must preserve boss hazards and use real role/class actions.
-assert 'MoltenCoreThreats(ai, current, threats) || !PlanMoltenCoreTrash(ai, current)' in actions
+assert 'if (MoltenCoreThreats(ai, current, threats))' in actions
+assert '!current.groundOnly || current.spell || !current.source.IsEmpty() ||' in actions
+assert '!encounter::OutsideCircles(plan.destination,threats)' in actions
 assert 'selected->GetEntry() == 12101' in actions and 'unit->GetEntry() != 11673' in actions
 assert 'enemy->GetEntry() == 11669' in actions and 'return imps >= 3' in actions
 assert 'ai->IsTank(static_cast<Player*>(victim))' in actions
@@ -76,7 +83,10 @@ assert 'fire->GetSpellId() == 19717' in position
 assert 'fire->GetDuration() > 0' in position and 'fire->GetRadius()' in position
 assert 'bomb->GetEntry() == 177704' in position and 'trap.diameter) * 0.5f' in position
 assert 'AppendMoltenCoreGroundHazards(ai, hazards)' in read('playerbot/strategy/values/HazardsValue.cpp')
-assert 'if (plan.map == 409) AppendMoltenCoreGroundHazards' in read('playerbot/strategy/values/EncounterPositionValue.cpp')
+destination = block(read('playerbot/strategy/values/EncounterPositionValue.cpp'), 'bool ai::ValidateEncounterDestination(')
+mc_ground = block(destination, '    if (plan.map == 409)')
+assert 'AppendMoltenCoreGroundHazards(ai, nativeGround)' in mc_ground
+assert 'hazards.insert(hazards.end(), nativeGround.begin(), nativeGround.end())' in mc_ground
 assert position.count('!boss->HasAura(21107) && !boss->HasAura(21859)') == 2
 assert '20294u, 19776u' in actions
 assert 'selected->GetEntry() == 11982' in actions

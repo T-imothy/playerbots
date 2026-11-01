@@ -1,5 +1,6 @@
 #include "playerbot/strategy/Action.h"
 #include "ChooseTargetActions.h"
+#include "EncounterSpellPolicy.h"
 #include "Spells/Spell.h"
 #include "MotionGenerators/MovementGenerator.h"
 #include "AI/BaseAI/CreatureAI.h"
@@ -113,6 +114,9 @@ bool AttackEnemyFlagCarrierAction::isUseful()
 
 bool SelectNewTargetAction::Execute(Event& event)
 {
+    // A reserved Understudy/Worshipper is deliberately excluded from DPS
+    // selection. That invalidation must not cancel its native control cast.
+    if (HasNaxxramasControlCast(ai)) return false;
     const ObjectGuid previousSelection = bot->GetSelectionGuid();
     Unit* victim = bot->GetVictim();
     Pet* activePet = bot->GetPet();

@@ -1,5 +1,6 @@
 """Compile actual native Thaddius lifecycle handlers, without a running world."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess
 import tempfile
 from behavior_regression import block
@@ -92,8 +93,8 @@ int main(){
 }
 '''
 
-for realm in ('classic', 'tbc', 'wotlk'):
-    repo=root.parent/realm
+for realm in core_eras(('classic', 'tbc', 'wotlk')):
+    repo=core_path(realm,root.parent/realm)
     area='northrend' if realm=='wotlk' else 'eastern_kingdoms'
     relative=f'src/game/AI/ScriptDevAI/scripts/{area}/naxxramas/boss_thaddius.cpp'
     source=(repo/relative).read_text()

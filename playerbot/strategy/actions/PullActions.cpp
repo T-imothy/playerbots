@@ -173,7 +173,7 @@ bool PullStartAction::Execute(Event& event)
     // the shot while a closed-side raid or controlled tank is not ready.
     if (strategy && strategy->IsEncounterPreparationAllowed())
     {
-        if (!NaxxramasGothikPullReady(ai) || !RazuviousCrystalPullReady(ai)) return false;
+        if (!NaxxramasGothikPullReady(ai) || !NaxxramasThaddiusPullReady(ai) || !RazuviousCrystalPullReady(ai)) return false;
         if (IsRazuviousCrystalPull(ai, strategy->GetTarget()))
         { strategy->OnPullStarted(); return true; }
     }
@@ -183,14 +183,28 @@ bool PullStartAction::Execute(Event& event)
         Unit* target = strategy->GetTarget();
         if (target)
         {
-            if (strategy->GetPreActionName().empty())
+            const std::string preparation = strategy->GetPreActionName();
+            const bool needsBearForm = bot->getClass() == CLASS_DRUID && preparation == "dire bear form";
+            const bool hasBearForm = needsBearForm &&
+                (bot->GetShapeshiftForm() == FORM_BEAR || bot->GetShapeshiftForm() == FORM_DIREBEAR);
+            if (preparation.empty() || hasBearForm)
                 result = true;
             else
             {
-                result = ai->DoSpecificAction(strategy->GetPreActionName(), event, true);
+                // Direct action execution does not run action-node alternatives.
+                // Low-level feral tanks must explicitly use their learned bear form.
+                const std::string action = needsBearForm && !ai->HasSpell("dire bear form") ? "bear form" : preparation;
+                result = ai->DoSpecificAction(action, event, true);
                 if(result)
                     SetDuration(3000);
             }
+
+            // A GCD/resource failure must leave required form preparation pending.
+            // Advancing here strands the tank retrying feral Faerie Fire in caster
+            // form. Keep the original request deadline and optional preparation
+            // behavior (e.g. hunter Misdirection) unchanged.
+            if (needsBearForm && !result)
+                return false;
 
             // Set the pet on passive mode during the pull
             Pet* pet = bot->GetPet();
@@ -244,7 +258,22 @@ bool PullAction::Execute(Event& event)
                 return ai->DoSpecificAction("reach pull", approach, true);
             }
             // Check if we are on pull range
-            const float distanceToTarget = target->GetDistance(bot);
+            float distanceToTarget = target->GetDistance(bot);
+#ifdef MANGOSBOT_ZERO
+            // These raid bosses can have combat reach substantially larger
+            // than their bounding radius. Match ReachPullAction's distance:
+            // otherwise the approach says "close enough" while this gate
+            // refuses to shoot forever. The selected spell still performs its
+            // native range, LOS and state checks below.
+            switch (bot->GetMapId())
+            {
+                case 249: case 309: case 409: case 469:
+                case 509: case 531: case 533:
+                    distanceToTarget = target->GetDistance(bot, true, DIST_CALC_COMBAT_REACH);
+                    break;
+                default: break;
+            }
+#endif
             // Being in range does not mean the approach is complete. In
             // particular, do not cancel a chase around a pillar or up stairs
             // before the same LOS check used by Shoot accepts the position.

@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/PartyCombatSupport.h"
 #include "GenericActions.h"
+#include "EncounterSpellPolicy.h"
 #include "playerbot/ServerFacade.h"
 #include "playerbot/RandomItemMgr.h"
 
@@ -490,6 +491,10 @@ namespace ai
 
         virtual bool isUseful() override
         {
+            // Native Majordomo retry: a healthy mage's bandage reaction
+            // cancelled its assigned re-sheep and left the healer active.
+            // Let that real control cast finish; emergency reactions remain.
+            if (HasMajordomoControlCast(ai)) return false;
             if (!UseTargetedItemIdAction::isUseful())
                 return false;
 

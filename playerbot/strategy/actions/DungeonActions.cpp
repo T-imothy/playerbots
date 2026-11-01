@@ -1,4 +1,5 @@
 #include "DungeonActions.h"
+#include "MovementPathSafety.h"
 #include "Spells/SpellAuras.h"
 #include "playerbot/strategy/values/PositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
@@ -124,6 +125,16 @@ bool BossCastPositionAction::Execute(Event& event)
     return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
 }
 
+bool MoveAwayFromHazard::ShouldReactionInterruptCast() const
+{
+    return !UsesClassicRaidEscapeAdmission(bot->GetMapId());
+}
+
+bool MoveAwayFromHazard::ShouldReactionInterruptMovement() const
+{
+    return !UsesClassicRaidEscapeAdmission(bot->GetMapId());
+}
+
 bool MoveAwayFromHazard::Execute(Event& event)
 {
     if (!bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() || !ai->CanMove())
@@ -149,6 +160,7 @@ bool MoveAwayFromHazard::Execute(Event& event)
 
     if (closestHazard)
     {
+        if (ContinueAdmittedRaidEscape()) return true;
         // Check if the bot is inside the closest hazard
         const float hazardRadius = closestHazard->second;
         if (closestHazardDistance <= hazardRadius)
@@ -187,7 +199,10 @@ bool MoveAwayFromHazard::Execute(Event& event)
                             bot->SummonCreature(15631, point.getX(), point.getY(), point.getZ(), 0.0f, TEMPSPAWN_TIMED_DESPAWN, 5000.0f);
                         }
 
-                        if (MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(), false, IsReaction(), false, true))
+                        const bool moved = UsesClassicRaidEscapeAdmission(bot->GetMapId()) ?
+                            MoveAdmittedRaidEscape(point) :
+                            MoveTo(bot->GetMapId(), point.getX(), point.getY(), point.getZ(), false, IsReaction(), false, true);
+                        if (moved)
                         {
                             if (!IsReaction())
                             {

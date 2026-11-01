@@ -8,6 +8,7 @@ using namespace ai;
 
 void NaxxramasDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("prepare thaddius sides", NextAction::array(0, new NextAction("prepare thaddius sides", ACTION_MOVE + 10), NULL)));
     triggers.push_back(new TriggerNode("prepare gothik sides", NextAction::array(0, new NextAction("prepare gothik sides", ACTION_MOVE + 10), NULL)));
     triggers.push_back(new TriggerNode("razuvious preparation", NextAction::array(0, new NextAction("razuvious preparation", ACTION_MOVE + 10), NULL)));
     triggers.push_back(new TriggerNode("naxxramas safe position",
@@ -19,6 +20,8 @@ void NaxxramasDungeonStrategy::InitCombatTriggers(std::list<TriggerNode*>& trigg
 
 void NaxxramasDungeonStrategy::InitNonCombatTriggers(std::list<TriggerNode*>& triggers)
 {
+    triggers.push_back(new TriggerNode("prepare thaddius sides", NextAction::array(0, new NextAction("prepare thaddius sides", ACTION_MOVE + 10), NULL)));
+    triggers.push_back(new TriggerNode("kelthuzad opening target", NextAction::array(0, new NextAction("classic raid target", 90.0f), NULL)));
     triggers.push_back(new TriggerNode("hostile ground damage", NextAction::array(0, new NextAction("move away from hazard", ACTION_EMERGENCY + 2), NULL)));
     triggers.push_back(new TriggerNode("prepare gothik sides", NextAction::array(0, new NextAction("prepare gothik sides", ACTION_MOVE + 10), NULL)));
     triggers.push_back(new TriggerNode("razuvious preparation", NextAction::array(0, new NextAction("razuvious preparation", ACTION_MOVE + 10), NULL)));

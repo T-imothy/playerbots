@@ -57,5 +57,5 @@ for era in ('ZERO','ONE','TWO'):
         subprocess.run(['cl','/nologo','/std:c++17','/EHsc',f'/DMANGOSBOT_{era}','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 dispatcher=(root/'playerbot/strategy/actions/DungeonAddTargetAction.cpp').read_text()
-for gate in ('ai->IsHeal(bot)','ai->IsTank(bot)','commanded(ai->GetUnit'):
+for gate in ('ai->IsHeal(bot)','ai->IsTank(bot)','overridesObjective(ai->GetUnit'):
     assert dispatcher.index(gate)<dispatcher.index('GetTwinEmperorTarget()')

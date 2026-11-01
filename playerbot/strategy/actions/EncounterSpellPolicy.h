@@ -15,6 +15,12 @@ namespace ai
     bool NeedsFullHealingToRemoveAura(Unit* target);
     bool NeedsRaidObjectiveHealing(Unit* target);
     bool NeedsMoltenCoreBurstHealing(PlayerbotAI* ai, Unit* target);
+    bool NeedsNaxxramasTankHealing(PlayerbotAI* ai, Unit* target);
+    bool NeedsSapphironSelfHealing(PlayerbotAI* ai);
+    bool MajordomoPolymorphAssignment(PlayerbotAI* ai, Unit*& target);
+    bool MajordomoPolymorphReserved(PlayerbotAI* ai, Unit* target);
+    bool HasMajordomoControlCast(PlayerbotAI* ai);
+    bool HasNaxxramasControlCast(PlayerbotAI* ai);
     Unit* FindRaidHealingObjective(PlayerbotAI* ai);
     uint32 RemainingHealingAbsorb(Unit* target);
     uint32 UpcomingEncounterHealingWindow(Player* bot, Unit* target);

@@ -13,6 +13,10 @@ party_source=(R/'playerbot/PartyCombatSupport.cpp').read_text();follow_source=(R
 if '--before-anchor' in sys.argv:party_source=subprocess.run(['git','-C',str(R),'show','HEAD:playerbot/PartyCombatSupport.cpp'],capture_output=True,text=True,check=True).stdout
 if '--before-regroup' in sys.argv:follow_source=subprocess.run(['git','-C',str(R),'show','HEAD:playerbot/strategy/actions/FollowActions.cpp'],capture_output=True,text=True,check=True).stdout
 methods+='\n'+block(party_source,'Player* ai::GetPartyCombatAnchor(')
+if 'bool ai::HasClassicRaidPartyCombat(' in party_source:
+ methods+='\n'+block(party_source,'bool ai::HasClassicRaidPartyCombat(')
+state_actions=(R/'playerbot/strategy/actions/BotStateActions.cpp').read_text()
+methods+='\n'+block(state_actions,'bool SetNonCombatStateAction::Execute(')
 methods+='\n'+block(follow_source,'bool ai::RaidRegroupNeeded(')
 pending='bool PlayerbotAI::HasPendingCombatEngagement(){return false;}'
 if 'bool PlayerbotAI::HasPendingCombatEngagement(' in s:pending=block(s,'bool PlayerbotAI::HasPendingCombatEngagement(')
@@ -41,15 +45,15 @@ enum{FOLLOW_MOTION_TYPE=1};
 struct Slot{unsigned guid;};struct Group{bool raid=true;std::vector<Slot>slots;const std::vector<Slot>&GetMemberSlots(){return slots;}bool IsRaidGroup(){return raid;}};
 struct Map{bool raid=true;bool IsRaid(){return raid;}};
 struct PlayerbotAI;
-struct Unit{virtual ~Unit()=default;unsigned guid=2,map=409,entry=1;Unit*victim=nullptr;std::vector<Unit*>attackers;const std::vector<Unit*>&getAttackers(){return attackers;}Unit*GetVictim(){return victim;}bool alive=true,world=true,combat=false,friendly=false,moving=false;
+struct Unit{virtual ~Unit()=default;unsigned guid=2,map=409,instance=1,entry=1;Unit*victim=nullptr;std::vector<Unit*>attackers;const std::vector<Unit*>&getAttackers(){return attackers;}Unit*GetVictim(){return victim;}bool alive=true,world=true,combat=false,friendly=false,moving=false;
  bool IsAlive(){return alive;}bool IsInWorld(){return world;}bool IsInCombat(){return combat;}bool IsMoving(){return moving;}virtual bool IsPlayer(){return false;}
  unsigned GetObjectGuid(){return guid;}unsigned GetEntry(){return entry;}};
 struct Motion{unsigned type=0;unsigned GetCurrentMovementGeneratorType(){return type;}};
 struct Spline{bool Finalized(){return true;}};
-struct Player:Unit{PlayerbotAI*ai=nullptr;PlayerbotAI*GetPlayerbotAI(){return ai;}bool transfer=false,charm=false,casting=false,roleTank=false,roleHeal=false,grouped=true,duel=false,sit=false;Group group;Group*party=&group;Map nativeMap;Motion motion;Spline spline;Spline*movespline=&spline;
+struct Player:Unit{PlayerbotAI*ai=nullptr;PlayerbotAI*GetPlayerbotAI(){return ai;}bool near=true,transfer=false,charm=false,casting=false,roleTank=false,roleHeal=false,grouped=true,duel=false,sit=false;Group group;Group*party=&group;Map nativeMap;Motion motion;Spline spline;Spline*movespline=&spline;
  bool IsPlayer()override{return true;}Group*GetGroup(){return grouped?party:nullptr;}Map*GetMap(){nativeMap.raid=group.raid;return &nativeMap;}
  float GetPositionX(){return 0;}float GetPositionY(){return 0;}float GetPositionZ(){return 0;}
- bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}bool IsInMap(Unit*u){return u&&u->map==map;}bool IsWithinDistInMap(Unit*,float){return true;}unsigned GetPhaseMask(){return 1;}bool IsTaxiFlying(){return false;}bool IsSitState(){return sit;}void SetStandState(unsigned){sit=false;}float GetDistance(float,float,float){return 20;}
+ bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}bool IsInMap(Unit*u){return u&&u->map==map&&u->instance==instance;}bool IsWithinDistInMap(Unit*,float){return near;}unsigned GetPhaseMask(){return 1;}bool IsTaxiFlying(){return false;}bool IsSitState(){return sit;}void SetStandState(unsigned){sit=false;}float GetDistance(float,float,float){return 20;}
  bool IsNonMeleeSpellCasted(bool,bool=false,bool=false){return casting;}unsigned GetMapId(){return map;}Motion*GetMotionMaster(){return &motion;}};
 struct PositionEntry{PositionEntry()=default;PositionEntry(float,float,float,unsigned){}};
 struct WorldLocation{unsigned mapid=409;float coord_x=5,coord_y=0,coord_z=0;};struct Formation{WorldLocation station;WorldLocation GetLocation(){return station;}static bool IsNullLocation(const WorldLocation&){return false;}};
@@ -70,7 +74,7 @@ struct PlayerbotAI{Player*bot;Player owner;Unit enemy;Formation formation;Contex
  BotState state=BotState::BOT_STATE_NON_COMBAT;
  PlayerbotAI(Player*b):bot(b){bot->ai=this;owner.guid=1;owner.friendly=bot->friendly=true;owner.party=bot->party;owner.map=enemy.map=bot->map;bot->group.slots={{1}};formation.station.mapid=bot->map;context.GetValue<Formation*>("formation")->value=&formation;context.GetValue<ObjectGuid>("follow target")->value=1;context.GetValue<uint8>("wait for attack time")->value=10;context.GetValue<ObjectGuid>("current target")->value=2;}
  bool HasRealPlayerMaster(){return owned;}bool IsRealPlayer(){return human;}Player*GetBot(){return bot;}Player*GetMaster(){return owned?&owner:nullptr;}
- bool IsStateActive(BotState s){return state==s;}void ChangeEngine(BotState s){state=s;}void ResetAIInternalUpdateDelay(){aiInternalUpdateDelay=0;}void StopMoving(){++stops;}
+ bool IsStateActive(BotState s){return state==s;}void ChangeEngine(BotState s){if(state!=s)bot->casting=false;state=s;}void OnResurrected(){state=BotState::BOT_STATE_NON_COMBAT;}void ResetAIInternalUpdateDelay(){aiInternalUpdateDelay=0;}void StopMoving(){++stops;}
  Context*GetAiObjectContext(){return &context;}Unit*GetUnit(unsigned g){return g==2?&enemy:g==1?&owner:nullptr;}bool IsSafe(Unit*u){return u&&u->world&&bot->IsInMap(u);}
  bool IsTank(Player*p){return p->roleTank;}bool IsHeal(Player*p){return p->roleHeal;}bool CanMove(){return mobile;}bool IsJumping(){return false;}
  bool HasStrategy(const char*n,BotState){return std::string(n)=="wait for attack"?true:std::string(n)=="follow"?follow:std::string(n)=="stay"?stay:std::string(n)=="guard"?guard:false;}
@@ -79,12 +83,13 @@ struct PlayerbotAI{Player*bot;Player owner;Unit enemy;Formation formation;Contex
  bool HasPendingCombatEngagement();void OnCombatStarted();void OnCombatEnded();void PrepareForRaidRegroup();void PrepareForPartyCombat();};
 PullStrategy*PullStrategy::Get(PlayerbotAI*a){return &a->pull;}
 namespace ai{using ::PullStrategy;using ::WaitForAttackStrategy;
- Player*GetPartyCombatAnchor(PlayerbotAI*);bool RaidRegroupNeeded(PlayerbotAI*);bool RaidRestInProgress(PlayerbotAI*){return false;}}
+ Player*GetPartyCombatAnchor(PlayerbotAI*);bool HasClassicRaidPartyCombat(PlayerbotAI*);bool RaidRegroupNeeded(PlayerbotAI*);bool RaidRestInProgress(PlayerbotAI*){return false;}}
 struct ObjectMgr{Player*member=nullptr;Player*GetPlayer(unsigned guid){return guid==1?member:nullptr;}}sObjectMgr;
-struct{float sightDistance=100;}sPlayerbotAIConfig;constexpr unsigned UNIT_STAND_STATE_STAND=0;
+struct{float sightDistance=100;unsigned reactDelay=100;}sPlayerbotAIConfig;constexpr unsigned UNIT_STAND_STATE_STAND=0;
 bool CanManageBotCommands(PlayerbotAI*a,Player*p){return a->owned&&p==&a->owner;}
 struct Facade{bool IsFriendlyTo(Unit*,Unit*t){return t->friendly;}}sServerFacade;
 struct CombatEndTrigger{PlayerbotAI*ai;Context*context;bool IsActive();};
+struct Event{};struct SetNonCombatStateAction{PlayerbotAI*ai;void SetDuration(unsigned){}bool Execute(Event&);};
 #define AI_VALUE(T,N) context->GetValue<T>(N)->Get()
 bool MoltenCorePackStackRequired(PlayerbotAI*){return false;}bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}
 __METHODS__
@@ -118,12 +123,41 @@ int main(){for(unsigned map:{409u,0u,530u,571u})for(bool raid:{true,false})for(u
  // Transfer and a real player's own AI never receive companion lifecycle changes.
  bot.transfer=true;a.PrepareForRaidRegroup();assert(a.state==BotState::BOT_STATE_COMBAT);bot.transfer=false;
  }
+ // Recorded Broodlord failure: healers/pet casters have no personal target or
+ // cached attackers, while a nearby teammate is fighting a real live enemy.
+ // Repeated native engine transitions cancel their cast every update.
+ for(unsigned map:{409u,249u,309u,469u,509u,531u,533u,0u,33u,489u,529u,30u}){
+  Player b;b.map=map;PlayerbotAI a(&b);sObjectMgr.member=&a.owner;
+  a.context.GetValue<ObjectGuid>("current target")->value=0;
+  a.owner.combat=true;a.owner.victim=&a.enemy;a.enemy.combat=true;
+  a.OnCombatStarted();b.casting=true;CombatEndTrigger end{&a,&a.context};
+  SetNonCombatStateAction idle{&a};Event event;
+#ifdef MANGOSBOT_ZERO
+  const bool scoped=map==409||ai::classicraid::Map(map);
+#else
+  const bool scoped=false;
+#endif
+  for(unsigned tick=0;tick<20;++tick){
+   if(scoped){assert(!end.IsActive());assert(!idle.Execute(event));a.PrepareForPartyCombat();assert(b.casting);assert(a.state==BotState::BOT_STATE_COMBAT);}
+   else {assert(end.IsActive());break;}
+  }
+  // Once native engagement ends, lingering combat flags are insufficient.
+  for(unsigned cause=0;cause<9;++cause){
+   a.enemy.alive=a.enemy.world=a.enemy.combat=true;a.owner.alive=a.owner.world=true;
+   a.owner.transfer=false;a.owner.map=map;a.owner.instance=1;a.owner.duel=false;b.near=true;a.state=BotState::BOT_STATE_COMBAT;
+   if(cause==0)a.enemy.alive=false;if(cause==1)a.enemy.combat=false;
+   if(cause==2)a.owner.alive=false;if(cause==3)a.owner.transfer=true;
+   if(cause==4)a.owner.map=999;if(cause==5)a.enemy.world=false;
+   if(cause==6)a.owner.instance=2;if(cause==7)b.near=false;if(cause==8)a.owner.duel=true;
+   assert(end.IsActive());assert(idle.Execute(event));assert(a.state==BotState::BOT_STATE_NON_COMBAT);
+  }
+ }
  // Abandoned/unengaged pulls expire on the original native deadline.
  Player bot;PlayerbotAI a(&bot);sObjectMgr.member=&a.owner;now=200;a.pull.target=&a.enemy;a.pull.started=now;a.OnCombatStarted();now=216;a.PrepareForRaidRegroup();assert(a.state==BotState::BOT_STATE_NON_COMBAT&&!a.pull.HasTarget());
- std::cout<<"PASS actual shared pull preparation -> explicit Attack -> native engagement -> final kill -> immediate formation; parties/raids, three roles, four maps, no old-order reuse, phases and timeout\n";
+ std::cout<<"PASS pull/kill lifecycle and Classic seven-raid cast-state retention, stale end reaction, death/reset/transfer/distance/instance/duel guards; dungeon/BG/other-era behavior unchanged\n";
 }
 '''
-code=prefix.replace('__METHODS__',methods)
+code='#include "'+str(R/'playerbot/strategy/ClassicRaidPolicy.h').replace('\\','/')+'"\n'+prefix.replace('__METHODS__',methods)
 for era in ('ZERO','ONE','TWO'):
  with tempfile.TemporaryDirectory(prefix='shared-engagement-') as td:
   p=Path(td);(p/'test.cpp').write_text(code)

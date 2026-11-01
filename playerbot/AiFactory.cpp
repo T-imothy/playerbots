@@ -19,6 +19,31 @@
 #include "BattleGround/BattleGroundMgr.h"
 #include "strategy/values/PvpValues.h"
 
+namespace {
+bool UsePlayerRaidCombatDefaults(Player* player, PlayerbotAI* facade)
+{
+    if (!player || !facade || !player->GetGroup() || player->InBattleGround() ||
+        !facade->HasActivePlayerMaster())
+        return false;
+    switch (player->GetMapId())
+    {
+        case 409: case 249: case 469: case 533: case 309: case 509: case 531:
+            return true;
+        default:
+            return false;
+    }
+}
+bool UseAutonomousNonCombatDefaults(Player* player, PlayerbotAI* facade)
+{
+#ifdef MANGOSBOT_ZERO
+    // Public/free bots following a player inside these raids must not acquire
+    // grind/travel targets on their own while the player prepares the pull.
+    if (UsePlayerRaidCombatDefaults(player, facade)) return false;
+#endif
+    return (facade->IsRealPlayer() || sRandomPlayerbotMgr.IsFreeBot(player)) && !player->InBattleGround();
+}
+}
+
 AiObjectContext* AiFactory::createAiObjectContext(Player* player, PlayerbotAI* ai)
 {
     switch (player->getClass())
@@ -593,7 +618,12 @@ void AiFactory::AddDefaultCombatStrategies(Player* player, PlayerbotAI* const fa
         // remove threat for now
         //engine->removeStrategy("threat");
 
-        combatEngine->ChangeStrategy(sPlayerbotAIConfig.randomBotCombatStrategies);
+        // A recruited free bot keeps its assigned talent-based class strategy
+        // in a player-led raid. The roaming default "+dps" is a class alias:
+        // for priests it replaces Holy/Discipline with Shadow. Explicit saved
+        // player choices are still loaded after defaults by ResetStrategies.
+        combatEngine->ChangeStrategy(UsePlayerRaidCombatDefaults(player, facade)
+            ? sPlayerbotAIConfig.combatStrategies : sPlayerbotAIConfig.randomBotCombatStrategies);
     }
     else
     {
@@ -937,7 +967,7 @@ void AiFactory::AddDefaultNonCombatStrategies(Player* player, PlayerbotAI* const
     if (!player->InBattleGround() && sPlayerbotAIConfig.jumpFollow)
         nonCombatEngine->addStrategy("follow jump");
 
-    if ((facade->IsRealPlayer() || sRandomPlayerbotMgr.IsFreeBot(player)) && !player->InBattleGround())
+    if (UseAutonomousNonCombatDefaults(player, facade))
     {   
         Player* master = facade->GetMaster();
 

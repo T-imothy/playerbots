@@ -1,15 +1,16 @@
 """Execute Arlokk's actual spell handler and AI event with its native effect layout."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[2]
 variants=[]
-for era in ['classic','tbc','wotlk']:
- core=root/era
+for era in core_eras(['classic','tbc','wotlk']):
+ core=core_path(era,root/era)
  s=(core/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/zulgurub/boss_arlokk.cpp').read_text()
  variants.append((block(s,'struct ArlokkVanish'),block(s,'    void ReceiveAIEvent(')))
  sql=(core/'sql/scriptdev2/spell.sql').read_text();assert "(24223,'spell_arlokk_vanish')" in sql and "(24228,'spell_arlokk_vanish')" not in sql
-assert variants[0]==variants[1]==variants[2], 'Review expansion-specific handlers before sharing a fixture'
+assert all(v==variants[0] for v in variants), 'Review expansion-specific handlers before sharing a fixture'
 handler,event=variants[0]
 code=r"""
 #include <cassert>

@@ -1,6 +1,7 @@
 """Check bot integration against all three native cores; no compilation or DB writes."""
 import argparse
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 from behavior_regression import block
 
 p = argparse.ArgumentParser()
@@ -25,8 +26,8 @@ assert '>= 30000' in control and '< 15000' in control
 assert 'if (movingToEgg != egg->GetObjectGuid()) eggMoveStarted = now;' in control
 assert 'uint8(0) << uint32(19873) << uint8(0)' in control
 assert 'targets.setGOTarget(egg)' in control
-for era in ('classic', 'tbc', 'wotlk'):
-    game = cores/era/'src/game'
+for era in core_eras(('classic', 'tbc', 'wotlk')):
+    game = core_path(era,cores/era)/'src/game'
     handler = block((game/'Entities/PetHandler.cpp').read_text(),
                     'void WorldSession::HandlePetCastSpellOpcode(')
     assert '_player->HasCharm(guid)' in handler

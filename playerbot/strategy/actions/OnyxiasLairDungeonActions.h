@@ -13,6 +13,7 @@ namespace ai
         bool Execute(Event& event) override;
         bool isUseful() override;
         bool ShouldReactionInterruptCast() const override;
+        bool ShouldReactionInterruptMovement() const override;
         static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
     };
 

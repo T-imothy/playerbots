@@ -25,14 +25,16 @@ time_t now = 100;
 time_t time(std::nullptr_t) { return now; }
 struct Unit {
  bool alive=true,world=true,combat=false,los=false,moving=true,casting=false;
- float distance=25;
+ float distance=25,combatDistance=25; unsigned map=531;
+ unsigned GetMapId(){return map;}
  Unit* GetObjectGuid(){return this;}
  bool IsAlive(){return alive;} bool IsInWorld(){return world;}
- bool IsInCombat(){return combat;} float GetDistance(Unit*){return distance;}
+ bool IsInCombat(){return combat;} float GetDistance(Unit*,bool=true,int mode=0){return mode?combatDistance:distance;}
  bool IsInMap(Unit*){return true;} bool IsNonMeleeSpellCasted(bool){return casting;}
  bool CanReachWithMeleeAttack(Unit* u){return u->distance<=5;}
 };
 using Player=Unit;
+constexpr int DIST_CALC_COMBAT_REACH=1;
 struct Event { Event(const char* = "") {} };
 struct PlayerbotAI {
  Player* bot; Unit* selected=nullptr; bool castSucceeds=true; int stopped=0,attempts=0;
@@ -103,6 +105,21 @@ int main(){
  assert(action.Execute(event));assert(ai.lastAction=="reach pull"&&!pull.issued);
  // Even a caster uses native melee contact, then returns through normal pull logic.
  mob.distance=3;assert(action.Execute(event));assert(ai.lastAction=="melee"&&pull.issued);
+
+ // Native Viscidus stall: reach considers the tank close enough using combat
+ // reach, while the old dispatch gate uses the much smaller bounding radius.
+ pull.body=false;pull.issued=false;ai.melee=true;mob.distance=31;mob.combatDistance=23;
+ tank.moving=false;tank.los=true;tank.map=531;ai.attempts=0;
+#ifdef MANGOSBOT_ZERO
+ assert(action.Execute(event));assert(ai.lastAction=="shoot"&&pull.issued);
+#else
+ assert(!action.Execute(event));assert(ai.attempts==0&&!pull.issued);
+#endif
+ // This raid-local correction does not alter ordinary world/dungeon pulls.
+ tank.map=0;pull.issued=false;ai.attempts=0;
+ assert(!action.Execute(event));assert(ai.attempts==0&&!pull.issued);
+ tank.map=531;mob.combatDistance=35;
+ assert(!action.Execute(event));assert(ai.attempts==0&&!pull.issued);
 
 }
 '''

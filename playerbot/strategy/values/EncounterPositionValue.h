@@ -3,6 +3,7 @@
 #include "playerbot/strategy/Value.h"
 #include "playerbot/strategy/EncounterGeometry.h"
 #include "playerbot/strategy/RotatingBeamGeometry.h"
+#include "playerbot/strategy/ChromaggusBreathClock.h"
 
 class DynamicObject;
 
@@ -50,6 +51,7 @@ namespace ai
     uint32 HeiganNextWave(Unit* controller);
     uint32 HeiganUpcomingWave(Unit* boss, Unit* controller);
     bool HeiganCloudSafe(Player* bot, Unit* boss, const encounter::Point& point);
+    bool HeiganManaBurnSafe(PlayerbotAI* ai, Unit* boss, const encounter::Point& point);
     bool HeiganFloorThreats(PlayerbotAI* ai, const EncounterPosition& plan,
         std::vector<encounter::Circle>& threats, std::vector<encounter::Point>& safeFloor);
     class HeiganPositionValue : public CalculatedValue<EncounterPosition>
@@ -110,6 +112,7 @@ namespace ai
         std::vector<encounter::Circle>& threats);
     uint32 NaxxramasBurstAura(Unit* unit);
     bool NaxxramasEncounterEngaged(Player* bot, Unit* enemy);
+    bool GothikGroupEngagedAdd(Player* bot, Unit* enemy);
     float NaxxramasBurstRadius(uint32 aura);
     bool NaxxramasBurstThreats(PlayerbotAI* ai, EncounterPosition& plan,
         std::vector<encounter::Circle>& threats);
@@ -177,9 +180,13 @@ namespace ai
     public:
         BossCoverPositionValue(PlayerbotAI* ai) : CalculatedValue(ai, "boss cover position", 2) {}
         EncounterPosition Calculate() override;
-        void Reset() override { CalculatedValue::Reset(); shelterBoss.Clear(); }
+        void Reset() override { CalculatedValue::Reset(); shelterBoss.Clear(); breathOwner.Clear(); breathClock.Reset(); }
+        bool ChromaggusWarning(Unit* boss);
     private:
         ObjectGuid shelterBoss;
+        ObjectGuid breathOwner;
+        uint32 breathInstance = 0;
+        ChromaggusBreathClock breathClock;
     };
 
     class AranFlameWreathValue : public BoolCalculatedValue

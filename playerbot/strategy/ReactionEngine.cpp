@@ -4,7 +4,9 @@
 #include "ReactionEngine.h"
 #include "actions/MovementActions.h"
 #include "actions/AttackAction.h"
+#include "actions/DungeonActions.h"
 #include "Movement/MoveSpline.h"
+#include "playerbot/RaidLabTrace.h"
 #include <iomanip>
 
 using namespace ai;
@@ -121,6 +123,9 @@ bool ReactionEngine::FindReaction(bool isStunned)
                                 // Reaction found
                                 incomingReaction.SetAction(reaction);
                                 incomingReaction.SetEvent(reactionEvent);
+#ifdef MANTECH_RAID_LAB
+                                RaidLab::Count(ai->GetBot(),("reaction_selected:"+reaction->getName()).c_str(),0,1);
+#endif
                                 delete reactionNode;
                                 break;
                             }
@@ -217,6 +222,17 @@ bool ReactionEngine::Update(uint32 elapsed, bool minimal, bool isStunned, bool& 
     reactionFound = false;
     bool reactionFinished = false;
 
+#ifdef MANGOSBOT_ZERO
+    // Heigan's floor changes while an eight-second bandage reaction is still
+    // running. Reconsider reactions when the native wave requires an escape;
+    // otherwise FindReaction cannot even see the dance until healing finishes.
+    // Preserve movement reactions and ordinary casts outside this encounter.
+    if (ai->GetBot()->GetMapId() == 533 && ongoingReaction.GetAction() &&
+        !dynamic_cast<MovementAction*>(ongoingReaction.GetAction()) &&
+        HeiganDanceAction(ai).ShouldReactionInterruptCast())
+        StopReaction();
+#endif
+
     // A completed native move must not occupy its estimated travel time.
     // Do not release casting reactions, airborne movement, or virtual travel.
     if (ai->HasRealPlayerMaster() && !ai->IsJumping() && !ai->GetBot()->IsTaxiFlying())
@@ -311,6 +327,9 @@ bool ReactionEngine::ListenAndExecute(Action* action, Event& event)
 
     actionExecuted = actionExecutionListeners.OverrideResult(action, actionExecuted, event);
     actionExecutionListeners.After(action, actionExecuted, event);
+#ifdef MANTECH_RAID_LAB
+    RaidLab::Count(ai->GetBot(),("reaction_execute:"+action->getName()).c_str(),0,actionExecuted?1:0);
+#endif
     return actionExecuted;
 }
 

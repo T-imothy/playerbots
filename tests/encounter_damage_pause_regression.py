@@ -56,7 +56,7 @@ struct Spell {
  int getState()const{return state;}
  SpellCastResult SpellStart(SpellCastTargets*){++starts;delete this;return SPELL_CAST_OK;}
 };unsigned Spell::starts=0,Spell::lastFlags=0;
-struct BotAI {bool real=false;std::vector<unsigned> interrupted;bool IsRealPlayer(){return real;}void SpellInterrupted(unsigned id){interrupted.push_back(id);}};
+struct BotAI {bool real=false,tank=false;bool IsTank(Player*){return tank;}std::vector<unsigned> interrupted;bool IsRealPlayer(){return real;}void SpellInterrupted(unsigned id){interrupted.push_back(id);}};
 struct Unit {
  bool world=true,alive=true,combat=true,charmed=false,melee=false,player=false,controlled=true,disabled=false;
  unsigned map=575,instance=1,phase=1,entry=0,stops=0,attacks=0,react=2;float z=0,dist=5;
@@ -90,6 +90,7 @@ namespace ai {
  bool RaidPetOffenseAllowed(Unit* pet,const SpellEntry*,Unit*){assert(!pet||pet->GetMapId()!=533);return true;}
  bool IsProtectedBlackwingTarget(Player*,Unit*){return false;} // Separate BWL phase fixture.
  bool HasHakkarPoisonPreparation(Player*) { return false; } // actual coordination is exercised in hakkar_poison_regression.py
+ bool reserved=false;bool MajordomoPolymorphReserved(BotAI*,Unit*){return reserved;}bool ClassicRaidDamageSpell(const SpellEntry*s){return s&&!s->positive;}
  bool HasMajordomoDamageShield(Player*,Unit*);bool HasEncounterDamagePause(Player*);bool HasEncounterThreatPause(Player*);bool HasEncounterSpellBomb(Player*);bool HasEncounterWeaponPause(Player*);bool ShouldAvoidEncounterOffense(Player*,Unit*,const SpellEntry*,Unit*);
  bool HasUnsafeEncounterOffense(Player*);bool StopUnsafeEncounterOffense(Player*,Unit*);
 }

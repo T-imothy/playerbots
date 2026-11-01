@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/RaidLabTrace.h"
 #include "playerbot/strategy/actions/MoltenCoreDungeonActions.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/ServerFacade.h"
@@ -101,7 +102,11 @@ bool ai::StopMoltenCoreUnsafeTravel(PlayerbotAI* ai)
             {
                 const auto next=bot->movespline->CurrentDestination();
                 const WorldPosition destination(bot->GetMapId(),next.x,next.y,next.z);
-                if (!IsHazardSafeSegment(here,destination,fire)) ai->StopMoving();
+                const bool safe = (ai->HasStrategy("magmadar", BotState::BOT_STATE_COMBAT) &&
+                    IsHazardSafeGroundProjection(here,destination,fire)) ||
+                    IsMoltenCoreGroundEscapeSegment(here,destination,fire,fire);
+                if (!safe)
+                { RaidLabMovementResult(bot,"mc_unsafe_stop_inside",1,true); ai->StopMoving(); }
             }
             ai->PrepareForUrgentHazard();
             ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Reset();
@@ -114,6 +119,7 @@ bool ai::StopMoltenCoreUnsafeTravel(PlayerbotAI* ai)
     const auto next = bot->movespline->CurrentDestination();
     const WorldPosition destination(bot->GetMapId(), next.x, next.y, next.z);
     if (IsHazardSafeSegment(WorldPosition(bot), destination, fire)) return false;
+    RaidLabMovementResult(bot,"mc_unsafe_stop_outside",1,true);
     ai->StopMoving();
     ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Reset();
     ai->GetAiObjectContext()->GetValue<EncounterPosition>("molten core position")->Reset();
@@ -267,6 +273,21 @@ EncounterPosition MoltenCorePositionValue::Calculate()
         plan.active = true; plan.destination = {690.709167f,-766.988770f,-209.290512f};
         if (ValidateEncounterDestination(ai,plan) && encounter::OutsideCircles(plan.destination,threats)) return plan;
     }
+#ifdef MANGOSBOT_ZERO
+    if (plan.groundOnly && !plan.spell && plan.source.IsEmpty() &&
+        ai->HasStrategy("magmadar", BotState::BOT_STATE_COMBAT))
+    {
+        unsigned checked = 0;
+        for (const auto& point : encounter::MagmadarFireEscapeCandidates(here, threats))
+        {
+            if (++checked > 16) break;
+            plan.active = true; plan.destination = point;
+            // Retain the full native floor, complete path, live-hazard and
+            // instance checks. A geometric exit may still be a wall/ledge.
+            if (ValidateEncounterDestination(ai, plan) && encounter::OutsideCircles(plan.destination, threats)) return plan;
+        }
+    }
+#endif
     const auto candidates = encounter::EscapeCircles(here, threats);
     unsigned checked = 0;
     for (const auto& point : candidates)
@@ -275,6 +296,26 @@ EncounterPosition MoltenCorePositionValue::Calculate()
         plan.active = true; plan.destination = point;
         if (ValidateEncounterDestination(ai, plan) && encounter::OutsideCircles(plan.destination, threats)) return plan;
     }
+#ifdef MANGOSBOT_ZERO
+    if (plan.groundOnly && !plan.spell && plan.source.IsEmpty() &&
+        ai->HasStrategy("magmadar", BotState::BOT_STATE_COMBAT))
+    {
+        // MoltenCoreThreats adds one extra planning yard to ground hazards.
+        // In overlapping fires that can close an otherwise walkable exit.
+        // Fall back to the SAME buffered footprint used by native movement:
+        // spell radius + body radius + 3 yards remain intact. Never relax the
+        // native route, floor, fresh-mob, instance or other hazard validators.
+        auto nativeThreats = threats;
+        for (auto& circle : nativeThreats) circle.radius -= 1.0f;
+        checked = 0;
+        for (const auto& point : encounter::MagmadarFireEscapeCandidates(here, nativeThreats))
+        {
+            if (++checked > 16) break;
+            plan.active = true; plan.destination = point;
+            if (ValidateEncounterDestination(ai, plan) && encounter::OutsideCircles(plan.destination, nativeThreats)) return plan;
+        }
+    }
+#endif
     plan.active = false;
     return plan;
 }

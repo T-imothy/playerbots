@@ -84,7 +84,9 @@ int main(){Player tank,mage;Group g;tank.guid=1;tank.tank=true;mage.guid=2;mage.
 movementSource=actions
 if '--before-cast' in sys.argv:
  movementSource=subprocess.run(['git','-C',str(R),'show','HEAD:playerbot/strategy/actions/MoltenCoreDungeonActions.cpp'],capture_output=True,text=True,check=True).stdout
-moveMethods='\n'.join(block(movementSource,m) for m in ('bool MoltenCorePositionAction::isUseful(', 'bool MoltenCorePositionAction::ShouldReactionInterruptCast(', 'bool MoltenCorePositionAction::Execute('))
+moveMethods='\n'.join(block(movementSource,m) for m in ('bool MoltenCorePositionAction::isUseful(', 'bool MoltenCorePositionAction::ShouldReactionInterruptCast(', 'bool MoltenCorePositionAction::PositionMayInterruptCast(', 'bool MoltenCorePositionAction::Execute('))
+if 'bool MagmadarFacingSafe(' in movementSource:
+ moveMethods=block(movementSource,'bool MagmadarFacingSafe(')+'\n'+moveMethods
 fearSource=(R/'playerbot/PlayerbotAI.cpp').read_text()
 if '--before-fear' in sys.argv: fearSource=subprocess.check_output(['git','-C',str(R),'show','HEAD:playerbot/PlayerbotAI.cpp'],text=True)
 fear=block(fearSource,'void PlayerbotAI::PrepareForMoltenCoreFearRecovery(')
@@ -96,35 +98,49 @@ movePrefix=r'''
 #include <vector>
 #include <string>
 #include <iostream>
-using ObjectGuid=unsigned;constexpr unsigned SPELL_AURA_MOD_FEAR=1;
+#include <algorithm>
+using uint32=unsigned;using ObjectGuid=unsigned;constexpr unsigned SPELL_AURA_MOD_FEAR=1;
+enum class BotState{BOT_STATE_COMBAT};constexpr int UNIT_STAND_STATE_STAND=0,FORCED_MOVEMENT_RUN=1;
+struct Motion{unsigned moves=0,clears=0;void Clear(bool,bool){++clears;}template<class T>void MovePath(T,int,bool,bool=false){++moves;}};
 struct Player;struct Unit{unsigned entry=11982;bool world=true,alive=true;Player*victim=nullptr;float o=0;
+ float GetPositionX(){return 0;}float GetPositionY(){return 0;}
  unsigned GetEntry(){return entry;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}Player*GetVictim(){return victim;}float GetOrientation(){return o;}float GetAngle(Player*);};
 struct Spline{bool done=true;struct Point{float x=10,y=0,z=0;}end;bool Finalized(){return done;}Point FinalDestination(){return end;}};
 struct Player{bool control=true;bool CanReactInCombat(){return control;}bool casting=false,fear=false,world=true,alive=true,transfer=false,charm=false;unsigned map=409;float x=-30,y=0;Spline spline;Spline*movespline=&spline;
+ Motion motion;unsigned interrupts=0;bool GetTransport(){return false;}Motion*GetMotionMaster(){return &motion;}void SetStandState(int){}void InterruptNonMeleeSpells(bool){++interrupts;casting=false;}
  bool IsNonMeleeSpellCasted(bool,bool,bool skip){assert(skip);return casting;}bool HasAuraType(unsigned){return fear;}bool IsInWorld(){return world;}bool IsAlive(){return alive;}
  bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}unsigned GetMapId(){return map;}void*GetGroup(){return this;}unsigned GetObjectGuid(){return 2;}bool IsInMap(Unit*){return true;}
+ float GetCombatReach(){return 1.5f;}
  float GetDistance(float a,float b,float){return std::hypot(x-a,y-b);}float GetPositionX(){return x;}float GetPositionY(){return y;}float GetPositionZ(){return 0;}};
+float NativeEncounterSpellRadius(unsigned id){assert(id==19272);return 35.0f;}
 float Unit::GetAngle(Player*p){return std::atan2(p->y,p->x);}
 struct Guid{unsigned n=0;bool IsEmpty(){return n==0;}operator unsigned()const{return n;}};
-namespace encounter{struct Point{float x=-40,y=0,z=0;};struct Circle{};bool OutsideCircles(Point,const std::vector<Circle>&){return true;}}
+namespace encounter{struct Point{float x=-40,y=0,z=0;};struct Circle{float radius=0;};bool OutsideCircles(Point,const std::vector<Circle>&){return true;}}
 struct EncounterPosition{bool groundOnly=false;bool active=true;unsigned spell=19272,map=409;Guid source,boss;encounter::Point destination;};
-template<class T>struct Cached{unsigned resets=0;void Reset(){++resets;}};
-struct Context{Cached<EncounterPosition>position;Cached<ObjectGuid>target;template<class T>Cached<T>*GetValue(const char*){if constexpr(std::is_same_v<T,EncounterPosition>)return &position;else return &target;}};
+template<class T>struct Cached{T value{};T Get(){return value;}unsigned resets=0;void Reset(){++resets;}};
+struct Context{Cached<EncounterPosition>position;Cached<ObjectGuid>target;template<class T>Cached<T>*GetValue(const char*){if constexpr(std::is_same_v<T,EncounterPosition>)return &position;else if constexpr(std::is_same_v<T,ObjectGuid>)return &target;else{static Cached<T> v;return &v;}}};
 struct ReactionEngine{unsigned wakes=0;void NotifyPartyCombat(){++wakes;}};
 struct PlayerbotAI{Player*bot;Unit boss;Context context;Context*aiObjectContext=&context;ReactionEngine reactions;ReactionEngine*reactionEngine=&reactions;
+ bool magmadar=false;bool HasStrategy(const char*,BotState){return magmadar;}Context*GetAiObjectContext(){return &context;}
  bool movable=true,real=false,owned=true,isWaiting=true,moltenCoreFeared=false;unsigned stops=0,delay=9000;
  Player*GetBot(){return bot;}bool CanMove(){return movable&&!bot->fear;}bool IsRealPlayer(){return real;}bool HasRealPlayerMaster(){return owned;}
  Unit*GetUnit(Guid){return &boss;}bool IsRanged(Player*){return true;}bool IsHeal(Player*){return false;}void StopMoving(){++stops;}void ResetAIInternalUpdateDelay(){delay=0;}
  void PrepareForMoltenCoreFearRecovery();};
-struct WorldPosition{float x=0,y=0;WorldPosition(Player*p):x(p->x),y(p->y){}WorldPosition(float a,float b):x(a),y(b){}float distance(const WorldPosition&p)const{return std::hypot(x-p.x,y-p.y);}};
+struct WorldPosition{unsigned map=409;float x=0,y=0,z=0;WorldPosition()=default;WorldPosition(Player*p):map(p->map),x(p->x),y(p->y){}WorldPosition(float a,float b):x(a),y(b){}WorldPosition(unsigned m,float a,float b,float c):map(m),x(a),y(b),z(c){}
+ unsigned getMapId()const{return map;}float getX()const{return x;}float getY()const{return y;}float getZ()const{return z;}
+ float distance(const WorldPosition&p)const{return std::hypot(x-p.x,y-p.y);}
+ std::vector<WorldPosition>getPathStepFrom(WorldPosition from,Player*,bool)const{return {from,*this};}
+ bool isPathTo(const std::vector<WorldPosition>&,float,float)const{return true;}
+ auto toPointsArray(const std::vector<WorldPosition>& p){return p;}};
 using HazardPosition=std::pair<WorldPosition,float>;bool fire=false;void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>&h){if(fire)h.push_back({WorldPosition(-30,0),10.0f});}
 struct Event{};EncounterPosition admitted;
 bool GetPlan(PlayerbotAI*,EncounterPosition&plan){plan=admitted;return true;}
-bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&){return false;}
-bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&,bool=true){return true;}bool PlanMajordomoFormation(PlayerbotAI*,EncounterPosition&){return false;}bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&p){p=admitted;return true;}
+bool groundThreat=false;bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&){return groundThreat;}
+bool validRoute=true;bool ValidateEncounterDestination(PlayerbotAI*,EncounterPosition&,bool=true){return validRoute;}bool PlanMajordomoFormation(PlayerbotAI*,EncounterPosition&){return false;}bool PlanRagnarosFormation(PlayerbotAI*,EncounterPosition&p){p=admitted;return true;}
+bool RaidLabMovementResult(Player*,const char*,unsigned,bool result){return result;}bool LavaTrashRouteSafe(PlayerbotAI*,const std::vector<WorldPosition>&){return true;}
 bool PlanMoltenCoreTrash(PlayerbotAI*,EncounterPosition&p){p=admitted;return true;}
 struct JumpAction{JumpAction(PlayerbotAI*){}void Qualify(const char*){}bool Execute(Event&){return false;}};
-struct MoltenCorePositionAction{PlayerbotAI*ai;Player*bot;unsigned moves=0,duration=0;bool isUseful();bool ShouldReactionInterruptCast()const;bool Execute(Event&);
+struct MoltenCorePositionAction{PlayerbotAI*ai;Player*bot;unsigned moves=0,duration=0;bool isUseful();bool ShouldReactionInterruptCast()const;bool PositionMayInterruptCast()const;bool Execute(Event&);
  void SetDuration(unsigned n){duration=n;}bool IsReaction(){return true;}bool MoveTo(unsigned,float,float,float,bool,bool,bool,bool){++moves;return true;}};
 namespace ai {bool engaged=true;Player*GetPartyCombatAnchor(PlayerbotAI*a){return engaged?a->bot:nullptr;}}
 '''
@@ -139,15 +155,53 @@ int main(){Player bot;PlayerbotAI ai{&bot};MoltenCorePositionAction move{&ai,&bo
  bot.x=-40;bot.spline.done=true;assert(!move.isUseful());bot.x=-30;
  admitted.source.n=2;bot.casting=true;assert(move.ShouldReactionInterruptCast()&&move.isUseful());admitted.source.n=0;
  ai.boss.entry=11982;bot.x=20;assert(move.ShouldReactionInterruptCast()&&move.isUseful());bot.x=-30;assert(!move.ShouldReactionInterruptCast());fire=true;assert(move.ShouldReactionInterruptCast());fire=false;
+#ifdef MANGOSBOT_ZERO
+ bot.x=40;bot.casting=true;assert(!move.PositionMayInterruptCast()&&!move.ShouldReactionInterruptCast());
+ bot.x=36;assert(move.PositionMayInterruptCast());bot.x=-30;
+#endif
  // One native fear-end transition wakes movement/action bookkeeping exactly
  // once, preserving casts and native GCD. No enemy means no post-kill wake.
  bot.fear=true;ai.PrepareForMoltenCoreFearRecovery();assert(ai.moltenCoreFeared&&ai.delay==9000);
  bot.fear=false;bot.control=false;ai.PrepareForMoltenCoreFearRecovery();assert(ai.moltenCoreFeared&&ai.delay==9000&&ai.reactions.wakes==0);bot.control=true;ai.PrepareForMoltenCoreFearRecovery();assert(!ai.moltenCoreFeared&&ai.delay==0&&!ai.isWaiting&&ai.reactions.wakes==1&&ai.context.position.resets==1&&bot.casting);
  ai.PrepareForMoltenCoreFearRecovery();assert(ai.reactions.wakes==1);
  bot.fear=true;ai.PrepareForMoltenCoreFearRecovery();ai::engaged=false;bot.fear=false;ai.delay=9000;ai.PrepareForMoltenCoreFearRecovery();assert(ai.delay==9000&&ai.reactions.wakes==1);
+ // Observed 100ms cancellation: emergency selection must not interrupt before
+ // a route is admitted. Refusal leaves the heal untouched; accepted escape
+ // performs the interruption itself, once.
+ ai.magmadar=true;ai::engaged=true;bot.casting=true;bot.x=20;bot.fear=false;admitted.destination={-40,0,0};
+#ifdef MANGOSBOT_ZERO
+ assert(move.PositionMayInterruptCast()&&!move.ShouldReactionInterruptCast());
+#else
+ assert(move.ShouldReactionInterruptCast());
+#endif
+ validRoute=false;assert(!move.Execute(event)&&bot.casting&&bot.interrupts==0&&bot.motion.moves==0);
+ validRoute=true;assert(move.Execute(event)&&!bot.casting&&bot.interrupts==1&&bot.motion.moves==1);
+ // Native Gehennas11941522: 11 regrowth starts cancelled at 81-104ms while
+ // an escape destination's generic path retry remained blocked. Selecting
+ // pure ground-fire movement must preserve a cast until dispatch succeeds.
+ ai.magmadar=false;ai.boss.entry=12259;admitted.spell=0;admitted.groundOnly=true;
+ admitted.source.n=0;admitted.boss.n=0;groundThreat=true;bot.x=-30;
+ validRoute=false;bot.casting=true;auto interruptions=bot.interrupts;
+ for(unsigned n=0;n<11;++n){
+#ifdef MANGOSBOT_ZERO
+  assert(!move.ShouldReactionInterruptCast());
+#else
+  assert(move.ShouldReactionInterruptCast());
+#endif
+  assert(!move.Execute(event)&&bot.casting&&bot.interrupts==interruptions);
+ }
+#ifdef MANGOSBOT_ZERO
+ validRoute=true;auto dispatched=bot.motion.moves;
+ assert(move.Execute(event)&&!bot.casting&&bot.interrupts==interruptions+1&&bot.motion.moves==dispatched+1);
+#endif
+ // Living Bomb and other pulse/formation movement retain their old policy.
+ admitted.spell=20475;admitted.source.n=2;assert(move.ShouldReactionInterruptCast());
+ admitted.source.n=0;admitted.spell=0;bot.map=469;assert(move.ShouldReactionInterruptCast());
  std::cout<<"PASS all-class cast/channel protection, active route reuse and one-shot native fear recovery\n";
 }
 '''
+safety=(R/'playerbot/strategy/actions/MovementPathSafety.h').read_text()
+movePrefix+='\n'+'\n'.join(block(safety,n) for n in ('inline bool IsFiniteMovementPoint(', 'inline bool IsHazardSafeSegment(', 'inline bool IsMoltenCoreGroundEscapeSegment(', 'inline bool IsHazardSafeGroundProjection('))+'\n'
 for era in ('ZERO','ONE','TWO'):
  for name,code in (('rotation',prefix+mageMethods+mageCase),('recovery',movePrefix+moveMethods+'\n'+fear+moveCase)):
   with tempfile.TemporaryDirectory(prefix='mc-'+name+'-') as tmp:

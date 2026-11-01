@@ -20,6 +20,7 @@ namespace ai
         static bool UseTransport(PlayerbotAI* ai, uint32 entry, WorldPosition dockPosition, WorldPosition exitPosition, bool doTeleport);
     protected:
         bool IsGenericRaidFleeBlocked();
+        bool ContinueAdmittedRaidEscape();
         static bool MoveOnTransport(PlayerbotAI* ai, GenericTransport* transport, bool doTeleport);
         static bool MoveOffTransport(PlayerbotAI* ai, WorldPosition exitPos, bool doTeleport);
 
@@ -53,6 +54,7 @@ namespace ai
 
         bool DispatchMovement(TravelPath movePath, bool generatePath, bool masterWalking);
         bool MoveBlackwingPath(const WorldPosition& destination);
+        bool MoveAdmittedRaidEscape(const WorldPosition& destination);
 
         Unit* GetMover(Player* bot);
 

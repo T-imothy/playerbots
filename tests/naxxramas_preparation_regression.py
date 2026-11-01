@@ -7,11 +7,18 @@ tree=ast.parse((root/'tests/naxxramas_roles_regression.py').read_text())
 fixture=next(ast.literal_eval(n.value) for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='fixture' for t in n.targets))
 fixture=fixture.split('__SOURCE__')[0]
 fixture=fixture.replace('#include <algorithm>','#include <algorithm>\n#include <ctime>\n#include <memory>')
-fixture=fixture.replace('float GetDistance(Unit*u){','float GetDistance(float a,float b,float c){return std::sqrt((x-a)*(x-a)+(y-b)*(y-b)+(z-c)*(z-c));}float GetDistance(Unit*u){')
 fixture=fixture.replace('bool IsBeingTeleported(){','bool IsNonMeleeSpellCasted(bool){return cast!=nullptr;}bool IsBeingTeleported(){')
-fixture=fixture.replace('unsigned validations=0;','unsigned validations=0,moves=0;bool move=true,authorize=true;bool CanMove(){return move;}')
-fixture=fixture.replace('struct Action{virtual ~Action()=default;};','struct Action{virtual ~Action()=default;std::string name;const std::string&getName(){return name;}};')
+fixture=fixture.replace('unsigned validations=0;','unsigned validations=0,moves=0;bool move=true,authorize=true;')
+fixture=fixture.replace('bool CanMove(){return !bot->stunned;}','bool CanMove(){return move&&!bot->stunned;}')
+fixture=fixture.replace('bool IsRanged(Player*p){return p->cls==CLASS_MAGE||p->healer;}','bool IsRanged(Player*p){return p->cls==3||p->cls==5||p->cls==8||p->cls==9;}')
+assert 'struct Action{virtual ~Action()=default;' in fixture
+fixture=fixture.replace('struct Action{virtual ~Action()=default;','struct Action{virtual ~Action()=default;std::string name;const std::string&getName(){return name;}')
+fixture=fixture.replace('bool ValidateEncounterDestination(PlayerbotAI*a,EncounterPosition&p){++a->validations;',
+ 'bool rejectStation=false;float stationX=0,stationY=0;\n'
+ 'bool ValidateEncounterDestination(PlayerbotAI*a,EncounterPosition&p){++a->validations;'
+ 'if(rejectStation && p.destination.x==stationX && p.destination.y==stationY)return false;')
 fixture+=r'''
+constexpr unsigned CLASS_HUNTER=3;
 bool CanManageBotCommands(PlayerbotAI*a,Player*){return a->authorize;}
 struct PullStrategy{static std::map<PlayerbotAI*,PullStrategy*>registry;Unit*target=nullptr;bool allowed=true,pending=true,issued=false;time_t start=time(nullptr);ObjectGuid requester;
  static PullStrategy*Get(PlayerbotAI*a){return registry[a];}Unit*GetTarget(){return target;}bool IsEncounterPreparationAllowed(){return allowed;}
@@ -20,6 +27,7 @@ struct PullStrategy{static std::map<PlayerbotAI*,PullStrategy*>registry;Unit*tar
 std::map<PlayerbotAI*,PullStrategy*>PullStrategy::registry;
 namespace ai{
 bool NaxxramasGothikPullReady(PlayerbotAI*);bool NaxxramasGothikPreparationPlan(PlayerbotAI*,EncounterPosition&,bool&);
+bool NaxxramasThaddiusPreparationPlan(PlayerbotAI*,EncounterPosition&,bool&){return false;}
 bool EncounterMovementRequired(Player*p,const encounter::Point&q){return p->GetDistance(q.x,q.y,q.z)>1.5f;}
 float RazuviousPreparationMultiplier(PlayerbotAI*,Action*){return 1;}
 struct NaxxramasGothikPrepareAction{PlayerbotAI*ai;Player*bot;NaxxramasGothikPrepareAction(PlayerbotAI*a):ai(a),bot(a->GetBot()){}
@@ -34,7 +42,7 @@ int main(){
  Player t1,t2,h1,h2,d1,d2,human;Player*players[]={&t1,&t2,&h1,&h2,&d1,&d2,&human};unsigned id=1;
  std::vector<std::unique_ptr<PlayerbotAI>>brains;
  for(auto*p:players){p->guid=id++;p->map=&map;p->group=&group;p->combat=false;group.Add(p);if(p!=&human)brains.emplace_back(new PlayerbotAI(p));}
- t1.tank=t2.tank=true;h1.healer=h2.healer=true;
+ t1.tank=t2.tank=true;h1.healer=h2.healer=true;d1.cls=8;d2.cls=3;
  for(auto&brain:brains){brain->units[boss.guid.id]=&boss;brain->units[human.guid.id]=&human;}
  PullStrategy pull;pull.target=&boss;pull.requester=human.guid;PullStrategy::registry[t1.ai]=&pull;
  EncounterPosition plan;bool ready=false;assert(NaxxramasGothikPreparationPlan(d1.ai,plan,ready)&&!ready&&plan.active);
@@ -45,9 +53,32 @@ int main(){
  for(auto&brain:brains){NaxxramasGothikPrepareAction move(brain.get());assert(move.Execute(event));}
  assert(NaxxramasGothikPreparationPlan(t1.ai,plan,ready)&&ready&&NaxxramasGothikPullReady(t1.ai));
  assert(t1.y<0&&t2.y>0&&h1.y<0&&h2.y>0);assert(!action.isUseful());
+ // Native priest stopped 7.36yd from its station because the exact point's
+ // path truncated. A nearby complete route within the admitted station works.
+ assert(NaxxramasGothikPreparationPlan(h2.ai,plan,ready));
+ stationX=plan.destination.x;stationY=plan.destination.y;
+ h2.y-=7;rejectStation=true;NaxxramasGothikPrepareAction alternate(h2.ai);
+#ifdef MANGOSBOT_ZERO
+ assert(alternate.Execute(event));assert(!alternate.isUseful());
+ assert(h2.GetDistance(stationX,stationY,plan.destination.z)<=4);
+ assert(NaxxramasGothikPullReady(t1.ai));
+#else
+ assert(!alternate.Execute(event));
+#endif
+ rejectStation=false;h2.x=stationX;h2.y=stationY;
  h2.alive=false;assert(NaxxramasGothikPreparationPlan(t1.ai,plan,ready)&&!ready);h2.alive=true;
  pull.allowed=false;assert(!NaxxramasGothikPreparationPlan(d1.ai,plan,ready)&&keep.GetValue(&follow)==1);pull.allowed=true;
- pull.pending=false;assert(!NaxxramasGothikPreparationPlan(d1.ai,plan,ready));pull.pending=true;
+ pull.pending=false;
+#ifdef MANGOSBOT_ZERO
+ assert(NaxxramasGothikPreparationPlan(d1.ai,plan,ready)&&keep.GetValue(&follow)==0);
+ assert(!NaxxramasGothikPreparationPlan(t1.ai,plan,ready));
+ pull.issued=true;assert(NaxxramasGothikPreparationPlan(d2.ai,plan,ready));pull.issued=false;
+ pull.start=0;assert(!NaxxramasGothikPreparationPlan(d1.ai,plan,ready)&&keep.GetValue(&follow)==1);pull.start=time(nullptr);
+ assert(d1.y<0&&d2.y>0); // caster versus ranged hunter: both ranged, different damage schools.
+#else
+ assert(!NaxxramasGothikPreparationPlan(d1.ai,plan,ready));
+#endif
+ pull.pending=true;
  pull.target=nullptr;assert(!NaxxramasGothikPreparationPlan(d1.ai,plan,ready));pull.target=&boss;
  boss.entry=15990;assert(!NaxxramasGothikPreparationPlan(d1.ai,plan,ready)&&NaxxramasGothikPullReady(t1.ai));boss.entry=16060;
  pull.start=time(nullptr)-15;assert(!NaxxramasGothikPreparationPlan(d1.ai,plan,ready)&&!NaxxramasGothikPullReady(t1.ai));pull.start=time(nullptr);

@@ -424,6 +424,7 @@ namespace ai
                 creators["move against cold"] = [](PlayerbotAI* ai) { return new ColdMovementAction(ai); };
                 creators["tharonja skeleton"] = [](PlayerbotAI* ai) { return new TharonjaSkeletonAction(ai); };
                 creators["viscidus frost"] = [](PlayerbotAI* ai) { return new ViscidusFrostAction(ai); };
+                creators["viscidus poison"] = [](PlayerbotAI* ai) { return new ViscidusPoisonAction(ai); };
                 creators["moam mana control"] = [](PlayerbotAI* ai) { return new MoamManaControlAction(ai); };
                 creators["akilzon storm shelter"] = [](PlayerbotAI* ai) { return new AkilzonStormAction(ai); };
                 creators["separate linked burst"] = [](PlayerbotAI* ai) { return new LinkedBurstAction(ai); };
@@ -458,6 +459,7 @@ namespace ai
                 creators["use hourglass sand"] = [](PlayerbotAI* ai) { return new HourglassSandAction(ai); };
                 creators["naxxramas safe position"] = [](PlayerbotAI* ai) { return new NaxxramasPositionAction(ai); };
                 creators["prepare gothik sides"] = [](PlayerbotAI* ai) { return new NaxxramasGothikPrepareAction(ai); };
+                creators["prepare thaddius sides"] = [](PlayerbotAI* ai) { return new NaxxramasThaddiusPrepareAction(ai); };
                 creators["razuvious preparation"] = [](PlayerbotAI* ai) { return new RazuviousPreparationAction(ai); };
 
                 creators["enable netherspite fight strategy"] = [](PlayerbotAI* ai) { return new NetherspiteEnableFightStrategyAction(ai); };

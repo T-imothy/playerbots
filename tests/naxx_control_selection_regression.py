@@ -47,6 +47,7 @@ struct Unit{ObjectGuid guid{},owner{};unsigned entry=0;bool world=true,alive=tru
  bool HasCharmer(ObjectGuid g){return owner==g;}bool IsInCombat(){return combat;}
  bool IsNonMeleeSpellCasted(bool){return casting;}bool HasAura(unsigned id){return auras.count(id);}
  unsigned GetEntry(){return entry;}ObjectGuid GetObjectGuid(){return guid;}float GetDistance(Unit*){return distance;}
+ float GetDistance(float,float,float){return distance;}
  bool IsWithinLOSInMap(Unit*u){return u->los;}bool IsWithinDistInMap(Unit*u,float limit){return u->distance<=limit;}};
 struct WorldPacket{unsigned kind;ObjectGuid guid;WorldPacket(unsigned k):kind(k){}
  WorldPacket&operator<<(ObjectGuid g){guid=g;return *this;}};
@@ -92,8 +93,13 @@ std::vector<Player*>Members(PlayerbotAI*a){std::vector<Player*>r;
 struct Event{};
 bool controlAllowed=true;
 bool NaxxramasControlAllowed(PlayerbotAI*){return controlAllowed;}
+struct EncounterPosition{unsigned map=533;struct{float x=0,y=0,z=0;}destination;};
+struct WorldPosition{WorldPosition(unsigned,float,float,float){}};
+bool coverAvailable=false;unsigned coverWalks=0;
+bool RazuviousControlCover(PlayerbotAI*,Unit*,Unit*,EncounterPosition&){return coverAvailable;}
 struct ClassicRaidControlAction{PlayerbotAI*ai;Player*bot;unsigned nextControl=0,moves=0,duration=0;
  Unit*moveTarget=nullptr;Unit*SelectUnderstudy();bool Execute(Event&);
+ bool MoveBlackwingPath(const WorldPosition&){++coverWalks;return true;}
  bool MoveNear(Unit*u,float){++moves;moveTarget=u;return true;}void SetDuration(unsigned d){duration=d;}};
 #define AI_VALUE2(T,N,Q) (ai->GetAiObjectContext()->GetValue<T>(N,Q)->Get())
 __PARTS__
@@ -124,6 +130,12 @@ int main(){
  a.bot.spells={10912};
 #endif
  assert(action.SelectUnderstudy()==&s1);
+#ifdef MANGOSBOT_ZERO
+ coverAvailable=true;const auto beforeCover=a.casts;
+ assert(action.Execute(event)&&coverWalks==1&&a.casts==beforeCover);
+ a.bot.casting=true;assert(!action.Execute(event)&&coverWalks==1&&a.casts==beforeCover);
+ a.bot.casting=false;coverAvailable=false;
+#endif
  a.bot.spells.clear();assert(!action.SelectUnderstudy());a.bot.spells={naxxnative::MindControl()};
  a.bot.ready=false;assert(!action.SelectUnderstudy());a.bot.ready=true;
  a.bot.mana=99;assert(!action.SelectUnderstudy());a.bot.mana=100;

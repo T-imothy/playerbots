@@ -1,6 +1,7 @@
 #pragma once
 #include "playerbot/strategy/Value.h"
 #include "EncounterPositionValue.h"
+#include "playerbot/strategy/actions/MagmadarPanicPolicy.h"
 namespace ai
 {
     struct GeddonControl
@@ -14,6 +15,7 @@ namespace ai
         encounter::Point tankPosition;
         float facing = 0;
         time_t combatStart = 0;
+        MagmadarPanicClock panic;
     };
     class MagmadarControlValue : public ManualSetValue<MagmadarControl>
     {

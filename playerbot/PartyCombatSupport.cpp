@@ -1,6 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "PartyCombatSupport.h"
 #include "playerbot/ServerFacade.h"
+#include "playerbot/strategy/ClassicRaidPolicy.h"
 
 Player* ai::GetPartyCombatAnchor(PlayerbotAI* ai)
 {
@@ -45,6 +46,21 @@ Player* ai::GetPartyCombatAnchor(PlayerbotAI* ai)
         }
     }
     return best;
+}
+
+bool ai::HasClassicRaidPartyCombat(PlayerbotAI* ai)
+{
+#ifdef MANGOSBOT_ZERO
+    Player* bot = ai->GetBot();
+    if (!bot || ai->IsRealPlayer() || !ai->HasRealPlayerMaster() ||
+        !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer()) return false;
+    if (bot->GetMapId() != 409 && !classicraid::Map(bot->GetMapId())) return false;
+    // Use the same live enemy, distance and instance checks as the wake path.
+    // A lingering combat flag after death/evade must not keep the raid fighting.
+    return GetPartyCombatAnchor(ai) != nullptr;
+#else
+    return false;
+#endif
 }
 
 bool ai::NeedsPartyCombatSupport(PlayerbotAI* ai)

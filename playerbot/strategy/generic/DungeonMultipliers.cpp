@@ -256,6 +256,14 @@ float PreserveMoltenCorePositionMultiplier::GetValue(Action* action)
 {
     if (!action) return 1.0f;
     const std::string& name=action->getName();
+    // Once a Classic Magmadar tank enters Berserker Stance for the observed
+    // fear window, do not spend its next GCD on an ordinary attack or switch
+    // back before Rage. Autoattacks, movement and emergency defenses remain.
+    if (dynamic_cast<CastSpellAction*>(action) && name!="berserker rage" &&
+        name!="molten core support" && name!="shield block" && name!="shield wall" &&
+        name!="last stand" && name!="taunt" && MoltenCoreMagmadarFearTransition(ai)) return 0.0f;
+    if((name=="strength of earth totem" || name=="stoneskin totem" || name=="stoneclaw totem" ||
+        name=="earthbind totem") && MoltenCoreTremorDuty(ai))return 0.0f;
     // Five-pack hounds are held at the tanks. Generic low-health/ranged flee
     // and opening-threat stand-off must not drag them into the next pull,
     // even when a stack destination temporarily fails path validation.

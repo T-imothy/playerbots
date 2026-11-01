@@ -6,6 +6,7 @@ namespace ai
     bool MoltenCoreImpTauntAllowed(PlayerbotAI* ai, const std::string& name);
     bool MoltenCoreImpUnderPressure(PlayerbotAI* ai);
     bool MoltenCoreRecoverableImp(PlayerbotAI* ai, Unit* enemy);
+    bool MoltenCoreTrashChargeSafe(PlayerbotAI* ai);
     inline bool MoltenCoreImpAoeOpening(PlayerbotAI* ai)
     {
         Player* bot=ai->GetBot();
@@ -73,6 +74,8 @@ namespace ai
 
     inline bool MoltenCoreTrashSpellAllowed(PlayerbotAI* ai, const std::string& name)
     {
+        if ((name=="charge" || name=="intercept" || name=="feral charge" ||
+            name=="feral charge - bear" || name=="feral charge - cat") && !MoltenCoreTrashChargeSafe(ai)) return false;
         if ((name=="challenging shout" || name=="challenging roar") &&
             !MoltenCoreImpTauntAllowed(ai,name)) return false;
         // Majordomo requires single-target damage, including tank attacks:

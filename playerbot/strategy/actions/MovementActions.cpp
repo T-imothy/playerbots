@@ -1,5 +1,6 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/RaidLabTrace.h"
 #include "FollowActions.h"
 #include "EncounterSpellPolicy.h"
 #include "MovementActions.h"
@@ -1053,39 +1054,119 @@ bool MovementAction::BuildSafeHazardPath(std::vector<WorldPosition>& path, Unit*
     // Detours become precomputed splines. Resolve each leg through the native
     // navmesh before dispatch; joining edited waypoints directly can cross walls.
     if (!mover || path.empty() || path.size() > 64 || mover->GetTransport())
-        return false;
+        return RaidLabMovementResult(bot,"mc_hazard_path",__LINE__,(false));
 
     const auto hazards = AI_VALUE(std::list<HazardPosition>, "hazards");
+    std::list<HazardPosition> nativeGround;
+#ifdef MANGOSBOT_ZERO
+    if (mover == bot && bot->GetMapId() == 409) AppendMoltenCoreGroundHazards(ai, nativeGround);
+#endif
     WorldPosition previous(mover);
     if (!IsFiniteMovementPoint(previous, mover->GetMapId()))
-        return false;
+        return RaidLabMovementResult(bot,"mc_hazard_path",__LINE__,(false));
     std::vector<WorldPosition> resolved{previous};
     PathFinder finder(mover);
     for (const WorldPosition& waypoint : path)
     {
         if (!IsFiniteMovementPoint(waypoint, mover->GetMapId()))
-            return false;
+            return RaidLabMovementResult(bot,"mc_hazard_path",__LINE__,(false));
         if (previous.distance(waypoint) < 0.05f)
             continue;
         if (!finder.calculate(previous.getVector3(), waypoint.getVector3(), false) ||
             finder.getPathType() != PATHFIND_NORMAL || finder.getPath().size() < 2)
-            return false;
+            return RaidLabMovementResult(bot,"mc_hazard_path",__LINE__,(false));
+        bool firstPoint = true;
         for (const auto& point : finder.getPath())
         {
             WorldPosition next(mover->GetMapId(), point.x, point.y, point.z);
-            if (!IsHazardSafeSegment(resolved.back(), next, hazards))
-                return false;
+            const bool projection = firstPoint && resolved.size() == 1 &&
+                UsesClassicRaidEscapeAdmission(mover->GetMapId());
+            firstPoint = false;
+            if (!((projection && IsHazardSafeGroundProjection(resolved.back(), next, hazards)) ||
+                IsMoltenCoreGroundEscapeSegment(resolved.back(), next, hazards, nativeGround)))
+                return RaidLabMovementResult(bot,"mc_hazard_path",__LINE__,(false));
             if (resolved.back().distance(next) >= 0.05f)
                 resolved.push_back(next);
         }
         if (!waypoint.isPathTo(resolved))
-            return false;
+            return RaidLabMovementResult(bot,"mc_hazard_path",__LINE__,(false));
         previous = resolved.back();
     }
     if (resolved.size() < 2)
-        return false;
-    if (mover == bot && !LavaTrashRouteSafe(ai, resolved)) return false;
+        return RaidLabMovementResult(bot,"mc_hazard_path",__LINE__,(false));
+    if (mover == bot && !LavaTrashRouteSafe(ai, resolved)) return RaidLabMovementResult(bot,"mc_hazard_path",__LINE__,(false));
     path.swap(resolved);
+    return RaidLabMovementResult(bot,"mc_hazard_path",__LINE__,(true));
+}
+
+bool MovementAction::ContinueAdmittedRaidEscape()
+{
+    // Native AQ40 evidence: a slowed player selected a different random exit
+    // every reaction and died before reaching any of them. Retain the actual
+    // remaining spline only while every segment still leaves hazards safely.
+    if (!UsesClassicRaidEscapeAdmission(bot->GetMapId()) || bot->GetMapId()!=531 ||
+        !bot->IsInWorld() || !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
+        !ai->CanMove() || bot->GetTransport() || ai->IsJumping() ||
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType()==EFFECT_MOTION_TYPE ||
+        !bot->movespline || bot->movespline->Finalized()) return false;
+    const auto hazards=AI_VALUE(std::list<HazardPosition>, "hazards");
+    const WorldPosition here(bot);
+    const auto end=bot->movespline->FinalDestination();
+    const WorldPosition destination(bot->GetMapId(),end.x,end.y,end.z);
+    if (!IsFiniteMovementPoint(destination,bot->GetMapId()) ||
+        here.distance(destination)<0.5f || here.distance(destination)>40.0f) return false;
+    for (const auto& hazard:hazards)
+        if (hazard.first.getMapId()==bot->GetMapId() && hazard.second>0 &&
+            destination.distance(hazard.first)<=hazard.second) return false;
+    const auto& spline=bot->movespline->_Spline();
+    std::vector<WorldPosition> remaining;
+    WorldPosition previous=here;
+    for (int32 i=bot->movespline->_currentSplineIdx()+1;i<=spline.last();++i)
+    {
+        if (remaining.size()>=256) return false;
+        const auto& p=spline.getPoint(i);
+        WorldPosition point(bot->GetMapId(),p.x,p.y,p.z);
+        if (!IsHazardSafeSegment(previous,point,hazards)) return false;
+        remaining.push_back(point);previous=point;
+    }
+    if (remaining.empty() || previous.distance(destination)>0.5f) return false;
+    SetDuration(250);
+    return true;
+}
+
+bool MovementAction::MoveAdmittedRaidEscape(const WorldPosition& destination)
+{
+    // Reaction selection must not cancel a cast before this native route is
+    // admitted. In particular, a failed hazard escape must leave healing intact.
+    if (!UsesClassicRaidEscapeAdmission(bot->GetMapId()) || !bot->IsInWorld() ||
+        !bot->IsAlive() || bot->HasCharmer() || bot->IsBeingTeleported() ||
+        !ai->CanMove() || bot->GetTransport() || ai->IsJumping() ||
+        bot->GetMotionMaster()->GetCurrentMovementGeneratorType() == EFFECT_MOTION_TYPE ||
+        !IsFiniteMovementPoint(destination, bot->GetMapId())) return false;
+    const WorldPosition here(bot);
+    if (here.distance(destination) < 0.5f || here.distance(destination) > 40.0f) return false;
+    std::vector<WorldPosition> path{destination};
+    if (!BuildSafeHazardPath(path, bot)) return false;
+    if (RaidUnpulledPackMovementActive(ai) && !BlackwingMovementRouteSafe(ai, path)) return false;
+    const auto hazards = AI_VALUE(std::list<HazardPosition>, "hazards");
+    for (const auto& hazard : hazards)
+        if (hazard.first.getMapId() == bot->GetMapId() && hazard.second > 0 &&
+            path.back().distance(hazard.first) <= hazard.second) return false;
+
+    UpdateMovementState();
+    bot->HandleEmoteState(0);
+    if (!bot->IsStandState()) bot->SetStandState(UNIT_STAND_STATE_STAND);
+    if (bot->IsNonMeleeSpellCasted(true, false, true)) ai->InterruptSpell(false);
+    MotionMaster& mm = *bot->GetMotionMaster();
+    mm.Clear(false, true);
+    auto points = WorldPosition().toPointsArray(path);
+#ifndef MANGOSBOT_TWO
+    mm.MovePath(points, FORCED_MOVEMENT_RUN, false, false);
+#else
+    mm.MovePath(points, FORCED_MOVEMENT_RUN, false);
+#endif
+    SetDuration(250);
+    ClearIdleState();
     return true;
 }
 
@@ -1140,18 +1221,18 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 {
     Unit* mover = GetMover(bot);
     if (!mover)
-        return false;
+        return RaidLabMovementResult(bot,"mc_dispatch",__LINE__,(false));
     std::vector<WorldPosition> path = movePath.getPointPath();
     if (path.empty() || !std::all_of(path.begin(), path.end(), [&](const WorldPosition& point) {
-        return IsFiniteMovementPoint(point, mover->GetMapId());
+        return RaidLabMovementResult(bot,"mc_dispatch",__LINE__,(IsFiniteMovementPoint(point, mover->GetMapId())));
     }))
-        return false;
+        return RaidLabMovementResult(bot,"mc_dispatch",__LINE__,(false));
 
     // Clipping may leave just the mover's current position even when the
     // original destination was distant. Let the caller stop/retry instead of
     // sending a zero-length native point spline.
     if (WorldPosition(mover).distance(path.back()) < 0.05f)
-        return false;
+        return RaidLabMovementResult(bot,"mc_dispatch",__LINE__,(false));
 
     ForcedMovement moveMode = masterWalking ? FORCED_MOVEMENT_WALK : FORCED_MOVEMENT_RUN;
 #ifndef MANGOSBOT_ZERO
@@ -1166,16 +1247,16 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
     {
         GeneratePathAvoidingHazards(path);
         if (!BuildSafeHazardPath(path, mover))
-            return false;
+            return RaidLabMovementResult(bot,"mc_dispatch",__LINE__,(false));
     }
-    if (mover == bot && !LavaTrashRouteSafe(ai, path)) return false;
-    if (mover == bot && BlackwingSuppressionMovementActive(ai))
+    if (mover == bot && !LavaTrashRouteSafe(ai, path)) return RaidLabMovementResult(bot,"mc_dispatch",__LINE__,(false));
+    if (mover == bot && RaidUnpulledPackMovementActive(ai))
     {
         std::vector<WorldPosition> checked;
         if (!BuildBlackwingMovementPath(ai, path.back(), checked))
         {
             ai->StopMoving();
-            return false;
+            return RaidLabMovementResult(bot,"mc_dispatch",__LINE__,(false));
         }
         path.swap(checked);
         useHazardPath = true;
@@ -1204,7 +1285,7 @@ bool MovementAction::DispatchMovement(TravelPath movePath, bool generatePath, bo
 #endif
     }
     WaitForReach(WorldPosition().getPathLength(path));
-    return true;
+    return RaidLabMovementResult(bot,"mc_dispatch",__LINE__,(true));
 }
 
 
@@ -1231,20 +1312,20 @@ Unit* MovementAction::GetMover(Player* bot)
 bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)
 {
     if (!endPos.isValid() || !std::isfinite(endPos.getX()) || !std::isfinite(endPos.getY()) || !std::isfinite(endPos.getZ()))
-        return false;
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(false));
 
     UpdateMovementState();
 
     if (!ai->CanMove())
-        return false;
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(false));
 
     Unit* mover = GetMover(bot);
 
     if (!mover)
-        return false;
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(false));
 
-    if (mover == bot && BlackwingSuppressionMovementActive(ai))
-        return MoveBlackwingPath(endPos);
+    if (mover == bot && RaidUnpulledPackMovementActive(ai))
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(MoveBlackwingPath(endPos)));
 
     LastMovement& lastMove = AI_VALUE(LastMovement&, "last movement");
 
@@ -1262,7 +1343,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         lastMove.failedPathCellZ == destinationCellZ &&
         lastMove.failedPathGeneration == transitionGeneration;
     if (sameFailedRequest && static_cast<int32>(lastMove.failedPathRetryUntil - nowMs) > 0)
-        return false;
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(false));
     if (!sameFailedRequest)
         lastMove.clearPathFailure();
 
@@ -1279,7 +1360,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         {
             lastMove.clear();
             ai->StopMoving();
-            return false;
+            return RaidLabMovementResult(bot,"mc_move2",__LINE__,(false));
         }
     }
 
@@ -1290,14 +1371,14 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         if (lastMove.nextTeleport > now)
         {
             SetDuration((lastMove.nextTeleport - now) * 1000);
-            return true;
+            return RaidLabMovementResult(bot,"mc_move2",__LINE__,(true));
         }
     }
     else
         lastMove.nextTeleport = 0;
 
     if (WaitForTransport())
-        return true;
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(true));
 
     WorldPosition startPos(mover);
     float totalDistance = startPos.distance(endPos);
@@ -1313,12 +1394,12 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         else
             mover->InterruptMoving(true);
 
-        return false;
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(false));
     }
 
     WorldPosition flyMovePosition;
     if (FlyDirect(startPos, endPos, flyMovePosition, lastMove.lastPath))
-        return true;
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(true));
 
     
     bool isWalking = false;
@@ -1337,7 +1418,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         lastMove.failedPathGeneration = transitionGeneration;
         lastMove.failedPathRetryUntil = WorldTimer::getMSTime() + sPlayerbotAIConfig.pathFailureRetryMs;
         ai->StopMoving();
-        return false;
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(false));
     }
 
     lastMove.clearPathFailure();
@@ -1349,7 +1430,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     if (movePath.empty())
     {
         lastMove.setPath(movePath);
-        return true; // Path collapsed — will rebuild next tick.
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(true)); // Path collapsed — will rebuild next tick.
     }
 
 
@@ -1359,10 +1440,10 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
     bool specialMovement = movePath.UpcommingSpecialMovement(startPos, sPlayerbotAIConfig.reactDistance,bot->GetTransport());
 
     if (specialMovement)
-        return HandleSpecialMovement(movePath);
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(HandleSpecialMovement(movePath)));
     
     if (bot->GetTransport()) //Transports needed to be handled before now.
-        return false;
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(false));
 
     if (!movePath.empty())
     {
@@ -1385,7 +1466,7 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
 
     if (movePath.empty())
     {
-        return false;
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(false));
     }
 
     // Only touch points on the map the bot is actually on, so a cross-map destination can never
@@ -1424,11 +1505,11 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         {
             time_t now = time(0);
             lastMove.nextTeleport = now + (time_t)MoveDelay(startPos.distance(teleportPosition));
-            return bot->TeleportTo(teleportPosition.getMapId(),
+            return RaidLabMovementResult(bot,"mc_move2",__LINE__,(bot->TeleportTo(teleportPosition.getMapId(),
                 teleportPosition.getX(),
                 teleportPosition.getY(),
                 teleportPosition.getZ(),
-                startPos.getAngleTo(teleportPosition));
+                startPos.getAngleTo(teleportPosition))));
         }
     }
 
@@ -1538,13 +1619,13 @@ bool MovementAction::MoveTo2(const WorldPosition& endPos, bool idle, bool react,
         lastMove.failedPathGeneration = transitionGeneration;
         lastMove.failedPathRetryUntil = WorldTimer::getMSTime() + sPlayerbotAIConfig.pathFailureRetryMs;
         ai->StopMoving();
-        return false;
+        return RaidLabMovementResult(bot,"mc_move2",__LINE__,(false));
     }
 
     if (!idle)
         ClearIdleState();
 
-    return true;
+    return RaidLabMovementResult(bot,"mc_move2",__LINE__,(true));
 }
 
 bool MovementAction::MoveTo(uint32 mapId, float x, float y, float z, bool idle, bool react, bool noPath, bool ignoreEnemyTargets)
@@ -2565,7 +2646,7 @@ bool MovementAction::Follow(Unit* target, float distance, float angle)
 
     distance = distance <= target->GetObjectBoundingRadius() ? 0 : distance - target->GetObjectBoundingRadius();
 
-    if (BlackwingSuppressionMovementActive(ai))
+    if (RaidUnpulledPackMovementActive(ai))
     {
         if (!bot->IsInMap(target)) return false;
         float x, y, z;
@@ -2836,10 +2917,11 @@ bool MovementAction::ChaseTo(WorldObject* obj, float distance, float angle)
     if (!ai->IsSafe(obj))
         return false;
 
-    if (BlackwingSuppressionMovementActive(ai))
+    if (RaidUnpulledPackMovementActive(ai))
     {
         Unit* target = dynamic_cast<Unit*>(obj);
-        if (!target || !bot->IsInMap(target) || !BlackwingSuppressionChaseAllowed(ai, target))
+        if (!target || !bot->IsInMap(target) ||
+            (BlackwingSuppressionMovementActive(ai) && !BlackwingSuppressionChaseAllowed(ai, target)))
         {
             ai->StopMoving();
             return false;

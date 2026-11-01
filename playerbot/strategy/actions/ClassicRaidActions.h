@@ -9,6 +9,9 @@ namespace ai
     bool ClassicRaidDamageSpell(const SpellEntry* spell);
     bool ClassicRaidOffenseAllowed(PlayerbotAI* ai, const SpellEntry* spell, Unit* target);
     bool BlackwingSuppressionChaseAllowed(PlayerbotAI* ai, Unit* target);
+    Unit* KelthuzadOpeningTarget(PlayerbotAI* ai);
+    bool KelthuzadDormantAdd(Player* bot, Unit* target);
+    bool KelthuzadOpeningApproachAllowed(PlayerbotAI* ai, Unit* target, bool pet = false);
     struct ClassicRaidPlan
     {
         ObjectGuid boss, target;
@@ -21,9 +24,13 @@ namespace ai
     public:
         ClassicRaidPlanValue(PlayerbotAI* ai) : CalculatedValue(ai, "classic raid plan", 2) {}
         ClassicRaidPlan Calculate() override;
-        void Reset() override { CalculatedValue::Reset(); previousHorseman.Clear(); }
+        void Reset() override { CalculatedValue::Reset(); previousHorseman.Clear(); sapphironFormationBoss.Clear(); }
+        void RecordSapphironFormation(Unit* boss);
+        bool OwnedSapphironTankStop(ClassicRaidPlan& plan);
     private:
         ObjectGuid previousHorseman;
+        ObjectGuid sapphironFormationBoss;
+        uint32 sapphironFormationInstance = 0, sapphironFormationSpline = 0;
     };
     class ClassicRaidPositionAction : public MovementAction
     {
@@ -33,6 +40,7 @@ namespace ai
         bool isUseful() override;
         bool Execute(Event& event) override;
         bool ShouldReactionInterruptCast() const override;
+        bool ShouldReactionInterruptMovement() const override;
     };
     class ClassicRaidTargetAction : public AttackAction
     {
@@ -49,6 +57,7 @@ namespace ai
         bool Execute(Event& event) override;
     private:
         bool Select(std::string& spell, Unit*& target);
+        uint32 lastCthunExit = 0;
     };
     class ClassicRaidControlAction : public MovementAction
     {
@@ -81,6 +90,18 @@ namespace ai
     public:
         ClassicRaidTrigger(PlayerbotAI* ai, const std::string& name) : Trigger(ai, name, 1) {}
         bool IsActive() override;
+    };
+    class PreserveGothikGate : public Multiplier
+    {
+    public:
+        PreserveGothikGate(PlayerbotAI* ai) : Multiplier(ai, "preserve gothik gate") {}
+        float GetValue(Action* action) override;
+    };
+    class PreserveKelthuzadOpening : public Multiplier
+    {
+    public:
+        PreserveKelthuzadOpening(PlayerbotAI* ai) : Multiplier(ai, "preserve kelthuzad opening") {}
+        float GetValue(Action* action) override;
     };
     class PreserveClassicRaidPlan : public Multiplier
     {

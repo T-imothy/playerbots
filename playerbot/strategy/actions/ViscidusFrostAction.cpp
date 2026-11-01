@@ -58,3 +58,66 @@ bool ViscidusFrostAction::Execute(Event& event)
     SetDuration(duration);
     return true;
 }
+
+uint32 ViscidusPoisonAction::SelectPoisonRemoval(Unit*& target)
+{
+    target = nullptr;
+#ifdef MANGOSBOT_ZERO
+    if (bot->GetMapId() != 531 || !bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() ||
+        !bot->GetGroup() || bot->HasCharmer() || bot->IsBeingTeleported() || ai->IsRealPlayer()) return 0;
+    Unit* boss = nullptr;
+    for (ObjectGuid guid : AI_VALUE2(std::list<ObjectGuid>, "possible targets", "100:1"))
+    {
+        Unit* unit = ai->GetUnit(guid);
+        if (!unit || unit->GetEntry() != 15299 || !unit->IsInWorld() || !unit->IsAlive() ||
+            !unit->IsInCombat() || unit->HasCharmer() || !bot->IsInMap(unit) ||
+            !unit->GetSpellAuraHolder(25926, unit->GetObjectGuid())) continue;
+        boss = unit;
+        break;
+    }
+    if (!boss) return 0;
+    std::vector<Player*> patients;
+    for (GroupReference* ref = bot->GetGroup()->GetFirstMember(); ref; ref = ref->next())
+    {
+        Player* member = ref->getSource();
+        if (!member || !member->IsInWorld() || !member->IsAlive() || !bot->IsInMap(member) ||
+            member->GetGroup() != bot->GetGroup() || member->IsBeingTeleported() || member->HasCharmer() ||
+            !member->GetSpellAuraHolder(25991, boss->GetObjectGuid())) continue;
+        // An active Abolish Poison already has native periodic removal. Do not
+        // refresh it every decision while another patient remains untreated.
+        if (member->HasAura(2893)) continue;
+        patients.push_back(member);
+    }
+    std::sort(patients.begin(), patients.end(), [](Player* a, Player* b) {
+        return a->GetHealthPercent() != b->GetHealthPercent() ? a->GetHealthPercent() < b->GetHealthPercent() :
+            a->GetObjectGuid() < b->GetObjectGuid();
+    });
+    for (Player* patient : patients)
+        for (uint32 id : {2893u, 4987u, 8946u, 526u, 1152u})
+            if (bot->HasSpell(id) && ai->CanCastSpell(id, patient, 0, true))
+            {
+                target = patient;
+                return id;
+            }
+#endif
+    return 0;
+}
+
+bool ViscidusPoisonAction::isUseful()
+{
+    Unit* target = nullptr;
+    return SelectPoisonRemoval(target) != 0;
+}
+
+bool ViscidusPoisonAction::Execute(Event& event)
+{
+    // Selection never cancels an existing heal. Recheck the actual poison,
+    // learned spell, native range/LOS, resource and cooldown at dispatch.
+    if (bot->IsNonMeleeSpellCasted(false)) return false;
+    Unit* target = nullptr;
+    const uint32 spell = SelectPoisonRemoval(target);
+    uint32 duration = 0;
+    if (!spell || !ai->CastSpell(spell, target, nullptr, false, &duration)) return false;
+    SetDuration(duration);
+    return true;
+}

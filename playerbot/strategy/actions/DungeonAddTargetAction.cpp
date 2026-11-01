@@ -92,6 +92,13 @@ Unit* DungeonAddTargetAction::GetTarget()
         // A boss mark keeps the encounter selected while its rescue/phase add
         // is handled. Preserve explicit other targets and conflicting commands.
         if (bot->GetMapId() == 533 && (entry == 15952 || entry == 15932)) encounter = entry;
+#ifdef MANGOSBOT_ZERO
+        // Selecting the encounter must not suppress its time-critical rescue.
+        // Other explicit targets still override; native larva ownership and
+        // the boss-owned Paralyze on a living group member are checked below.
+        if (bot->GetMapId() == 509 && (entry == 15369 || entry == 15340)) encounter = entry;
+        if (bot->GetMapId() == 531 && (entry == 15299 || entry == 15510)) encounter = entry;
+#endif
         if (bot->GetMapId() == 309)
             switch (entry)
             {
@@ -110,6 +117,16 @@ Unit* DungeonAddTargetAction::GetTarget()
         if (Unit* chow = GetGluthTarget()) return chow;
     if (!objectiveBossCommand)
         if (Unit* objective = GetSummonObjectiveTarget()) return objective;
+#ifdef MANGOSBOT_ZERO
+    // These AQ objectives are directly summoned by the selected boss. Keep
+    // that exact source identity: a boss mark is not permission to switch to
+    // another encounter's nearby add.
+    if ((bot->GetMapId()==509 && objectiveBossCommand==15340) ||
+        (bot->GetMapId()==531 && (objectiveBossCommand==15299 || objectiveBossCommand==15510)))
+        if(Unit* objective=GetSummonObjectiveTarget())
+            if(Unit* source=ai->GetUnit(objective->GetSpawnerGuid()))
+                if(source->GetEntry()==objectiveBossCommand)return objective;
+#endif
     if (bot->GetMapId() == 230) return GetBlackrockDepthsTarget();
     if (Unit* totem = GetRaidTotemTarget(objectiveBossCommand)) return totem;
     if (Unit* zulGurub = GetZulGurubTarget(objectiveBossCommand)) return zulGurub;

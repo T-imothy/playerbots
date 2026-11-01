@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/RaidLabTrace.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #ifdef MANGOSBOT_TWO
@@ -8,6 +9,38 @@
 #endif
 
 using namespace ai;
+
+bool BossCoverPositionValue::ChromaggusWarning(Unit* boss)
+{
+#ifdef MANGOSBOT_ZERO
+    if (!bot->IsInWorld() || bot->GetMapId() != 469 || !bot->IsAlive() || !bot->IsInCombat() ||
+        bot->HasCharmer() || bot->IsBeingTeleported() || ai->IsRealPlayer() || !boss ||
+        boss->GetEntry() != 14020 || !boss->IsInWorld() || !boss->IsAlive() || !boss->IsInCombat() ||
+        boss->HasCharmer() || !bot->IsInMap(boss) || bot->GetDistance(boss) > 100)
+    {
+        breathOwner.Clear(); breathClock.Reset(); return false;
+    }
+    if (breathOwner != boss->GetObjectGuid() || breathInstance != bot->GetInstanceId())
+    {
+        breathOwner = boss->GetObjectGuid(); breathInstance = bot->GetInstanceId(); breathClock.Reset();
+    }
+    const Spell* cast = boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
+    const unsigned spell = cast && cast->m_spellInfo && cast->getState() == SPELL_STATE_CASTING ? cast->m_spellInfo->Id : 0;
+    return breathClock.Observe(time(nullptr), spell);
+#else
+    return false;
+#endif
+}
+
+static bool ChromaggusCoverWarning(PlayerbotAI* ai, Unit* boss)
+{
+#ifdef MANGOSBOT_ZERO
+    // Do not call Get(): the cover planner itself calls this policy.
+    return static_cast<BossCoverPositionValue*>(ai->GetAiObjectContext()->GetValue<EncounterPosition>("boss cover position"))->ChromaggusWarning(boss);
+#else
+    return false;
+#endif
+}
 
 bool ai::IsBossCoverMap(uint32 map)
 {
@@ -24,6 +57,7 @@ bool ai::IsBossCoverMap(uint32 map)
 uint32 ai::BossCoverMechanic(PlayerbotAI* ai, Unit* boss, bool keepCover)
 {
     Player* bot = ai->GetBot();
+    const bool chromaggusWarning = boss && boss->GetEntry() == 14020 && ChromaggusCoverWarning(ai, boss);
     if (!bot->IsInWorld() || !bot->IsAlive() || !bot->IsInCombat() || bot->HasCharmer() || bot->IsBeingTeleported() ||
         ai->IsRealPlayer() || !boss || !boss->IsInWorld() || !boss->IsAlive() ||
         boss->HasCharmer() || !bot->IsInMap(boss) || bot->GetDistance(boss) > 100 ||
@@ -45,14 +79,15 @@ uint32 ai::BossCoverMechanic(PlayerbotAI* ai, Unit* boss, bool keepCover)
         }
         if (boss->GetEntry() != 14020) return 0;
         const Spell* cast = boss->GetCurrentSpell(CURRENT_GENERIC_SPELL);
-        if (!cast || !cast->m_spellInfo || cast->getState() != SPELL_STATE_CASTING) return 0;
+        // 14020 is an encounter warning marker, never a fabricated spell cast.
+        if (!cast || !cast->m_spellInfo || cast->getState() != SPELL_STATE_CASTING) return chromaggusWarning ? 14020 : 0;
         switch (cast->m_spellInfo->Id)
         {
             // Both native left/right variants of each chosen breath.
             case 23187: case 23189: case 23308: case 23309: case 23310:
             case 23312: case 23313: case 23314: case 23315: case 23316:
                 return cast->m_spellInfo->Id;
-            default: return 0;
+            default: return chromaggusWarning ? 14020 : 0;
         }
     }
 #ifndef MANGOSBOT_ZERO
@@ -86,6 +121,15 @@ uint32 ai::BossCoverMechanic(PlayerbotAI* ai, Unit* boss, bool keepCover)
 bool ai::IsBossCoverPosition(PlayerbotAI* ai, Unit* boss, const encounter::Point& point)
 {
     Player* bot = ai->GetBot();
+    auto answer=[&](uint32 reason,bool covered) {
+#ifdef MANTECH_RAID_LAB
+        // Count aggregation is bounded by reason/actor, not one log line for
+        // every candidate on every decision tick. No live-server logging.
+        if (bot->GetMapId()==469 && boss && boss->GetEntry()==14020)
+            RaidLab::Count(bot,"chromaggus_cover_geometry",reason,covered?1:0,boss->GetObjectGuid().GetRawValue());
+#endif
+        return covered;
+    };
     // Match Spell::CheckTarget's spell LOS rather than movement visibility:
     // decorative static M2 objects cannot be treated as spell-blocking cover.
     bool ignoreM2 = true;
@@ -95,29 +139,39 @@ bool ai::IsBossCoverPosition(PlayerbotAI* ai, Unit* boss, const encounter::Point
         ignoreM2 = false; // Match the encounter's explicit Ice Block model check.
         EncounterPosition separation;
         std::vector<encounter::Circle> threats;
-        if (GruulShatterThreats(ai, separation, threats) && !encounter::OutsideCircles(point, threats)) return false;
+        if (GruulShatterThreats(ai, separation, threats) && !encounter::OutsideCircles(point, threats)) return answer(0,false);
     }
 #endif
-    if (!boss || boss->IsWithinLOS(point.x, point.y, point.z + bot->GetCollisionHeight(), ignoreM2)) return false;
-    if (bot->GetMapId() == 469 && boss->GetEntry() == 11983 && ai->IsHeal(bot))
+    if (!boss || boss->IsWithinLOS(point.x, point.y, point.z + bot->GetCollisionHeight(), ignoreM2)) return answer(1,false);
+    if (bot->GetMapId() == 469 && (boss->GetEntry() == 11983
+#ifdef MANGOSBOT_ZERO
+        || boss->GetEntry() == 14020
+#endif
+        ) && ai->IsHeal(bot))
     {
-        // A healer must retain a line to the current tank while dropping
-        // Firemaw stacks, rather than hiding where it cannot support the tank.
         Unit* tank = boss->GetVictim();
-        return tank && tank->IsInWorld() && tank->IsAlive() && bot->IsInMap(tank) &&
-            tank->GetDistance(point.x, point.y, point.z) <= std::min(40.0f, ai->GetRange("spell")) &&
-            tank->IsWithinLOS(point.x, point.y, point.z + bot->GetCollisionHeight(), true);
+        if (!tank || !tank->IsInWorld() || !tank->IsAlive() || !bot->IsInMap(tank)) return answer(2,false);
+        if (tank->GetDistance(point.x, point.y, point.z) > std::min(40.0f, ai->GetRange("spell"))) return answer(3,false);
+        if (!tank->IsWithinLOS(point.x, point.y, point.z + bot->GetCollisionHeight(), true)) return answer(4,false);
     }
-    return true;
+    return answer(5,true);
 }
 
 EncounterPosition BossCoverPositionValue::Calculate()
 {
     EncounterPosition plan;
+    auto result = [&](uint32 reason) {
+#ifdef MANTECH_RAID_LAB
+        if (bot->IsInWorld() && (bot->GetMapId()==469 || bot->GetMapId()==533))
+            RaidLab::Count(bot,"boss_cover_plan",reason,plan.active?1:0,plan.spell);
+#endif
+        return plan;
+    };
     if (!bot->IsInWorld() || !IsBossCoverMap(bot->GetMapId()) || !ai->CanMove())
     {
         shelterBoss.Clear();
-        return plan;
+        breathOwner.Clear(); breathClock.Reset();
+        return result(1);
     }
     Unit* source = nullptr;
     std::list<ObjectGuid> sources = (bot->GetMapId() == 469 || bot->GetMapId() == 533) ?
@@ -143,7 +197,7 @@ EncounterPosition BossCoverPositionValue::Calculate()
         source = boss;
         plan.spell = mechanic;
     }
-    if (!source) { shelterBoss.Clear(); return plan; }
+    if (!source) { shelterBoss.Clear(); return result(2); }
     plan.active = true; plan.map = bot->GetMapId(); plan.instance = bot->GetInstanceId(); plan.boss = source->GetObjectGuid();
     const encounter::Point here{bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ()};
     auto covered = [&](const encounter::Point& point)
@@ -151,7 +205,7 @@ EncounterPosition BossCoverPositionValue::Calculate()
         return IsBossCoverPosition(ai, source, point);
     };
     plan.destination = here;
-    if (covered(here) && ValidateEncounterDestination(ai, plan)) { shelterBoss = plan.boss; return plan; }
+    if (covered(here) && ValidateEncounterDestination(ai, plan)) { shelterBoss = plan.boss; return result(3); }
     unsigned paths = 0;
     uint32 coverEntry = 0;
     if (bot->GetMapId() == 533 && source->GetEntry() == 15989) coverEntry = 181247;
@@ -188,8 +242,8 @@ EncounterPosition BossCoverPositionValue::Calculate()
                     object->GetPositionY() + behind * dy / length, here.z};
                 bot->UpdateAllowedPositionZ(plan.destination.x, plan.destination.y, plan.destination.z);
                 if (!std::isfinite(plan.destination.z) || std::fabs(plan.destination.z - here.z) > 8 || !covered(plan.destination)) continue;
-                if (++paths > 8) { shelterBoss.Clear(); plan.active = false; return plan; }
-                if (ValidateEncounterDestination(ai, plan) && covered(plan.destination)) { shelterBoss = plan.boss; return plan; }
+                if (++paths > 8) { shelterBoss.Clear(); plan.active = false; return result(4); }
+                if (ValidateEncounterDestination(ai, plan) && covered(plan.destination)) { shelterBoss = plan.boss; return result(5); }
             }
         }
     }
@@ -200,9 +254,9 @@ EncounterPosition BossCoverPositionValue::Calculate()
             plan.destination = {here.x + distance * std::cos(angle), here.y + distance * std::sin(angle), here.z};
             bot->UpdateAllowedPositionZ(plan.destination.x, plan.destination.y, plan.destination.z);
             if (!std::isfinite(plan.destination.z) || std::fabs(plan.destination.z - here.z) > 8 || !covered(plan.destination)) continue;
-            if (++paths > 8) { plan.active = false; shelterBoss.Clear(); return plan; }
-            if (ValidateEncounterDestination(ai, plan) && covered(plan.destination)) { shelterBoss = plan.boss; return plan; }
+            if (++paths > 8) { plan.active = false; shelterBoss.Clear(); return result(6); }
+            if (ValidateEncounterDestination(ai, plan) && covered(plan.destination)) { shelterBoss = plan.boss; return result(7); }
         }
     shelterBoss.Clear(); plan.active = false;
-    return plan;
+    return result(paths ? 8 : 9);
 }

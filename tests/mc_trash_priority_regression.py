@@ -22,9 +22,11 @@ struct PlayerbotAI{Player*bot;Context context;std::map<unsigned,Unit*>units;time
 struct{float sightDistance=60;}sPlayerbotAIConfig;
 namespace ai{bool MoltenCoreImpTauntAllowed(PlayerbotAI*,const std::string&){return true;}struct PossibleAttackTargetsValue{static bool IsValid(Unit*u,Player*,float,bool,bool){return u->valid;}static bool HasBreakableCC(Unit*u,Player*){return u->cc;}static bool HasUnBreakableCC(Unit*u,Player*){return u->hardCC;}};
 bool MoltenCoreImpUnderPressure(PlayerbotAI*){return false;}
+bool chargeSafe=true;bool MoltenCoreTrashChargeSafe(PlayerbotAI*){return chargeSafe;}
 __METHODS__
 }
 int main(){using namespace ai;Player bot;PlayerbotAI a{&bot};Unit walker,guard,elemental;
+chargeSafe=false;for(const char* name:{"charge","intercept","feral charge","feral charge - bear","feral charge - cat"})assert(!MoltenCoreTrashSpellAllowed(&a,name));assert(MoltenCoreTrashSpellAllowed(&a,"flash heal"));chargeSafe=true;assert(MoltenCoreTrashSpellAllowed(&a,"intercept")&&MoltenCoreTrashSpellAllowed(&a,"feral charge"));
 walker.guid=10;walker.entry=11666;guard.guid=20;guard.entry=11667;elemental.guid=1;elemental.entry=11659;elemental.health=1;
 a.units={{10,&walker},{20,&guard},{1,&elemental}};a.context.possible.value={1,20,10};
 assert(MoltenCoreNukeTarget(&a)==&walker);guard.health=50;assert(MoltenCoreNukeTarget(&a)==&walker);

@@ -1,10 +1,11 @@
 """Compile each core's actual device AI: pulse, rearm, boss completion, no repeated mutation."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile
 from behavior_regression import block
 cores=Path(__file__).resolve().parents[2]
-for era in ('classic','tbc','wotlk'):
-    source=(cores/era/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/blackwing_lair/blackwing_lair.cpp').read_text()
+for era in core_eras(('classic','tbc','wotlk')):
+    source=(core_path(era,cores/era)/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/blackwing_lair/blackwing_lair.cpp').read_text()
     body=block(source,'struct go_ai_suppression')+';'
     code=r'''
 #include <cassert>

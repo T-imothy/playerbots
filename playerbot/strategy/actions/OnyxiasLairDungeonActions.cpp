@@ -1,7 +1,10 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/RaidLabTrace.h"
 #include "OnyxiasLairDungeonActions.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "playerbot/strategy/values/PossibleAttackTargetsValue.h"
+#include "Movement/MoveSpline.h"
+#include "playerbot/strategy/actions/MovementPathSafety.h"
 
 using namespace ai;
 
@@ -79,6 +82,10 @@ bool OnyxiaPositionAction::isUseful()
 
 bool OnyxiaPositionAction::ShouldReactionInterruptCast() const
 {
+#ifdef MANGOSBOT_ZERO
+    // The native route dispatcher interrupts only after admitting the route.
+    if (bot->GetMapId() == 249) return false;
+#endif
     EncounterPosition plan;
     if (!GetPlan(ai, plan)) return false;
 #ifdef MANGOSBOT_ZERO
@@ -87,10 +94,22 @@ bool OnyxiaPositionAction::ShouldReactionInterruptCast() const
     return bot->GetDistance(plan.destination.x, plan.destination.y, plan.destination.z) > 1.5f;
 }
 
+bool OnyxiaPositionAction::ShouldReactionInterruptMovement() const
+{
+#ifdef MANGOSBOT_ZERO
+    // Repeated breath reactions must reach Execute with the existing spline
+    // intact so it can retain it, rather than stop/restart it every AI tick.
+    if (bot->GetMapId() == 249) return false;
+#endif
+    return MovementAction::ShouldReactionInterruptMovement();
+}
+
 bool OnyxiaPositionAction::Execute(Event& event)
 {
     EncounterPosition plan;
-    if (!GetPlan(ai, plan) || !ai->CanMove() || !ValidateEncounterDestination(ai, plan)) return false;
+    if (!GetPlan(ai, plan)) return RaidLabMovementResult(bot,"ony_position_execute",1,false);
+    if (!ai->CanMove()) return RaidLabMovementResult(bot,"ony_position_execute",2,false);
+    if (!ValidateEncounterDestination(ai, plan)) return RaidLabMovementResult(bot,"ony_position_execute",3,false);
 #ifdef MANGOSBOT_ZERO
     if (plan.spell == 18392 && plan.source != bot->GetObjectGuid() && bot->IsNonMeleeSpellCasted(false)) return false;
 #endif
@@ -104,7 +123,51 @@ bool OnyxiaPositionAction::Execute(Event& event)
         SetDuration(100);
         return true;
     }
-    return MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true);
+#ifdef MANGOSBOT_ZERO
+    // Keep the encounter route intact. Generic travel detours were rejecting
+    // destinations already admitted by the native encounter path validator.
+    // This dispatch is restricted to Classic Onyxia; other movement keeps its
+    // existing policy. Recheck the actual path against the current breath.
+    if (bot->GetTransport()) return RaidLabMovementResult(bot,"ony_direct_route",1,false);
+    const WorldPosition destination(plan.map,plan.destination.x,plan.destination.y,plan.destination.z);
+    const auto path=destination.getPathStepFrom(WorldPosition(bot),bot,true);
+    if(path.size()<2 || path.size()>256 || !destination.isPathTo(path,1.0f,2.0f))
+        return RaidLabMovementResult(bot,"ony_direct_route",2,false);
+    auto hazards=ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Get();
+    std::vector<encounter::Circle> breath;
+    std::list<HazardPosition> breathHazards;
+    if(plan.spell && plan.spell!=18392 && OnyxiaBreathThreats(plan.spell,breath))
+        for(const auto& circle:breath)
+            breathHazards.emplace_back(WorldPosition(plan.map,circle.center.x,circle.center.y,circle.center.z),circle.radius-1);
+    WorldPosition previous(bot);
+    bool firstPoint = true;
+    for(const auto& point:path) {
+        if(!(firstPoint && !breath.empty() ? IsHazardSafeGroundProjection(previous,point,hazards) :
+             IsHazardSafeSegment(previous,point,hazards)))
+            return RaidLabMovementResult(bot,"ony_direct_route",3,false);
+        if (!breathHazards.empty() && !IsOnyxiaBreathSafeSegment(previous,point,breathHazards,firstPoint))
+            return RaidLabMovementResult(bot,"ony_direct_route",6,false);
+        previous=point;
+        firstPoint=false;
+    }
+    if(bot->movespline && !bot->movespline->Finalized()) {
+        const auto end=bot->movespline->FinalDestination();
+        if(std::hypot(end.x-plan.destination.x,end.y-plan.destination.y)<=1.5f &&
+           std::fabs(end.z-plan.destination.z)<=1.5f) {
+            SetDuration(100);return RaidLabMovementResult(bot,"ony_direct_route",4,true);
+        }
+    }
+    bot->SetStandState(UNIT_STAND_STATE_STAND);
+    if(bot->IsNonMeleeSpellCasted(false,false,true)) bot->InterruptNonMeleeSpells(false);
+    auto& motion=*bot->GetMotionMaster();
+    motion.Clear(false,true);
+    auto points=WorldPosition().toPointsArray(path);
+    motion.MovePath(points,FORCED_MOVEMENT_RUN,false,false);
+    SetDuration(100);
+    return RaidLabMovementResult(bot,"ony_direct_route",5,true);
+#else
+    return RaidLabMovementResult(bot,"ony_position_execute",4,MoveTo(plan.map, plan.destination.x, plan.destination.y, plan.destination.z, false, IsReaction(), false, true));
+#endif
 }
 
 Unit* OnyxiaAddsAction::GetTarget()

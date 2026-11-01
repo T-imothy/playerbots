@@ -7,6 +7,7 @@ src=(root/'playerbot/strategy/actions/ClassicRaidActions.cpp').read_text()
 parts='\n'.join(block(src,marker) for marker in ('    bool Ready(','    bool NaxxRegular(','    bool SubmitControlledSpell(','    Unit* ControlledRelief(','bool ClassicRaidControlAction::UpdateControl('))
 code=r'''
 #include <cassert>
+#include <algorithm>
 #include <iostream>
 #include <set>
 #include <vector>
@@ -16,6 +17,7 @@ code=r'''
 using namespace ai;
 using uint32=unsigned;using int32=int;using uint8=unsigned char;
 constexpr unsigned CLASS_PRIEST=5,CMSG_PET_CAST_SPELL=1,CMSG_PET_ACTION=2,CMSG_PET_SPELL_AUTOCAST=3,ACT_COMMAND=7,COMMAND_ATTACK=2;
+constexpr unsigned UNIT_STAT_CAN_NOT_MOVE=1;
 struct Guid{unsigned id=0;void Clear(){id=0;}bool operator==(Guid b)const{return id==b.id;}bool operator!=(Guid b)const{return id!=b.id;}bool operator<(Guid b)const{return id<b.id;}};
 struct Unit;
 struct PlayerbotAI;
@@ -28,7 +30,7 @@ struct WorldPacket{unsigned kind;std::vector<unsigned>data;Unit*target=nullptr;W
  WorldPacket&operator<<(Guid g){data.push_back(g.id);return *this;}WorldPacket&operator<<(unsigned v){data.push_back(v);return *this;}
  WorldPacket&operator<<(uint8 v){data.push_back(v);return *this;}WorldPacket&operator<<(SpellCastTargets t){target=t.target;return *this;}};
 struct Unit{unsigned entry=16803;Guid guid{2},owner{1};bool world=true,alive=true,sameMap=true,casting=false,ready=true,tauntReady=true;
- bool melee=true,los=true;Unit*victim=nullptr;std::set<unsigned>spells{29061,29060,28732,54097},auras;
+ bool melee=true,los=true,rooted=false;bool hasUnitState(unsigned){return rooted;}float GetCombatReach(){return 1.5f;}Unit*victim=nullptr;std::set<unsigned>spells{29061,29060,28732,54097},auras;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool HasCharmer(Guid g){return owner==g;}
  unsigned GetEntry(){return entry;}Guid GetObjectGuid(){return guid;}bool HasSpell(unsigned id){return spells.count(id);}
  bool IsSpellReady(const SpellEntry&s){return s.Id==29060?tauntReady:ready;}bool IsNonMeleeSpellCasted(bool){return casting;}
@@ -54,7 +56,7 @@ struct PlayerbotAI{Player bot;Unit boss;std::vector<Player*>roster;bool real=fal
 struct WorldTimer{static unsigned now;static unsigned getMSTime(){return now;}};unsigned WorldTimer::now=1000;
 Unit*FindBoss(PlayerbotAI*a,unsigned entry){return a->engaged&&a->boss.entry==entry?&a->boss:nullptr;}
 std::vector<Player*>Members(PlayerbotAI*a){return a->roster;}
-bool ControlledInRadius(PlayerbotAI*,Unit*,Unit*,float){return true;}
+unsigned approachCalls=0;bool ControlledInRadius(PlayerbotAI*,Unit*,Unit*,float,bool melee=false){if(melee)++approachCalls;return !melee;}
 float NativeEncounterSpellRadius(unsigned){return 15;}
 struct ClassicRaidControlAction{PlayerbotAI*ai;Player*bot;unsigned nextControl=0;Guid configuredCharm{};bool UpdateControl();};
 __PARTS__
@@ -83,6 +85,12 @@ int main(){PlayerbotAI brain;Unit student;brain.bot.charm=&student;ClassicRaidCo
  assert(cb.UpdateControl()&&second.bot.session.casts==1); // actual ready relief elected after shield expiry
  b.auras.clear();b.melee=false;WorldTimer::now+=300;const auto previous=second.bot.session.casts;
  assert(cb.UpdateControl()&&second.bot.session.casts==previous); // approach before spending wall/taunt out of range
+#ifdef MANGOSBOT_ZERO
+ assert(approachCalls==1);b.rooted=true;WorldTimer::now+=300;
+ assert(cb.UpdateControl()&&approachCalls==1&&second.bot.session.casts==previous);b.rooted=false;
+#else
+ assert(approachCalls==0);
+#endif
  a.ready=true;a.melee=false;b.melee=true;WorldTimer::now+=300;
  assert(ControlledRelief(&first,&first.boss)==&b); // an unreachable earlier GUID cannot monopolize relief
  const auto disabled=first.bot.session.disabled;first.bot.charm=nullptr;assert(!ca.UpdateControl());

@@ -2,6 +2,7 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import os
 from behavior_regression import block
 
 root=Path(__file__).resolve().parents[1]
@@ -79,12 +80,30 @@ struct PreserveDungeonAddTargetMultiplier{PlayerbotAI*ai;float GetValue(Action*)
 struct BotState{enum{BOT_STATE_COMBAT};};
 struct MeleeCcCheck{MeleeCcCheck(PlayerbotAI*){}bool Protected(Unit*u){return u->assignedCC;}};
 struct InvalidTargetValue{PlayerbotAI*ai;Player*bot;std::string qualifier="current target";bool Calculate();};
+bool RaidLabMovementResult(Player*,const char*,unsigned,bool result){return result;}
 bool defenseActive=false;Unit* defenseTarget=nullptr;
 Unit* RazorgoreDefenseTarget(PlayerbotAI*,bool& active){active=defenseActive;return defenseTarget;}
 #define AI_VALUE(type,key) ai->Value<type>(key)
 #define AI_VALUE2(type,key,qualifier) ai->Value<type>(key)
 __METHODS__
 int main(){
+ // Marking an AQ encounter preserves only its own native summon objective.
+ for(auto row:{std::vector<unsigned>{509,15340,15527},std::vector<unsigned>{531,15299,15667},std::vector<unsigned>{531,15510,15630}}){
+  Group group;Player bot;bot.group=&group;bot.map=row[0];
+  Unit boss,add,other;boss.guid=1;boss.entry=row[1];boss.map=row[0];
+  add.guid=2;add.entry=row[2];add.map=row[0];add.spawner=1;
+  other=boss;other.guid=3;other.entry=999;
+  PlayerbotAI ai{&bot};ai.units={{1,&boss},{2,&add},{3,&other}};ai.possible={1,2};ai.objective=&add;
+  DungeonAddTargetAction action(&ai);ai.command=1;
+#ifdef MANGOSBOT_ZERO
+  assert(action.GetTarget()==&add);ai.command=0;ai.marked=&boss;assert(action.GetTarget()==&add);
+  add.spawner=3;assert(!action.GetTarget());add.spawner=1;
+#else
+  assert(!action.GetTarget());ai.command=0;ai.marked=&boss;assert(!action.GetTarget());
+#endif
+  ai.command=3;assert(!action.GetTarget());ai.command=0;ai.marked=nullptr;
+  ai.healer=true;assert(!action.GetTarget());ai.healer=false;ai.tank=true;assert(!action.GetTarget());
+ }
  {
   Player bot;bot.map=469;Unit add;add.map=469;add.guid=99;add.x=100;
   PlayerbotAI ai{&bot};ai.current=&add;ai.units[99]=&add;bot.selection=99;
@@ -481,7 +500,20 @@ int main(){
   member.world=false;none();member.world=true;member.phase=2;none();member.phase=1;
   member.teleport=true;none();member.teleport=false;member.charmed=true;none();member.charmed=false;
   add.spawner=99;none();add.spawner=1;boss.combat=false;none();boss.combat=true;
-  ai.command=1;none();ai.command=0;ai.healer=true;none();ai.healer=false;
+  ai.command=1;
+#ifdef MANGOSBOT_ZERO
+  if(!rescue)assert(action.GetTarget()==&add);else none();
+#else
+  none();
+#endif
+  ai.command=0;ai.marked=&boss;
+#ifdef MANGOSBOT_ZERO
+  if(!rescue)assert(action.GetTarget()==&add);else none();
+#else
+  none();
+#endif
+  ai.marked=nullptr;ai.command=2;none();ai.marked=&boss;none();ai.command=0;ai.marked=nullptr;
+  ai.healer=true;none();ai.healer=false;ai.tank=true;none();ai.tank=false;
   if(!rescue){add.victim=nullptr;none();add.victim=&member;}
   assert(action.GetTarget()==&add);
  }
@@ -556,7 +588,7 @@ int main(){
 }
 '''.replace('__METHODS__',methods)
 for era,realm in (('ZERO','classic'),('ONE','tbc'),('TWO','wotlk')):
-    if realm!='classic':
+    if realm!='classic' and realm in os.environ.get('PLAYERBOT_TEST_NATIVE_ERAS','classic,tbc,wotlk').split(','):
         native_root=root.parent/realm
         if not (native_root/'src/game').is_dir():native_root=root.parent/f'mangos-{realm}-behavior'
         scripts=native_root/'src/game/AI/ScriptDevAI/scripts'

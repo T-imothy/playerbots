@@ -131,7 +131,8 @@ namespace
             patient = ai->GetUnit(ai->GetAiObjectContext()->GetValue<ObjectGuid>("current target")->Get());
             if (!patient || !patient->IsInWorld() || !bot->IsInMap(patient) || !patient->IsAlive() || !patient->IsInCombat()) patient = boss;
         }
-        if (patient && (!ai->GetSpellRange(OnyxiaRangeSpell(ai), &range) || !std::isfinite(range) || range <= 5)) return false;
+        if (patient && danger.empty() && !targeted &&
+            (!ai->GetSpellRange(OnyxiaRangeSpell(ai), &range) || !std::isfinite(range) || range <= 5)) return false;
         const auto usableRange = [&](encounter::Point point) {
             if (!patient || !danger.empty() || targeted) return true; // Escape takes precedence over DPS/healing reach.
             const float legal = range + bot->GetCombatReach() + patient->GetCombatReach() - 2;
@@ -156,7 +157,7 @@ namespace
         { station = here; until = 0; return true; }
         if (encounter::SpreadOverlap(here, neighbors) <= 1.0f && admit(here)) { station = here; until = 0; return true; }
         unsigned checked = 0;
-        for (const auto& point : onyxia::Candidates(here, slot, neighbors, danger))
+        for (const auto& point : onyxia::Candidates(here, slot, neighbors, danger, targeted))
         {
             if (!usableRange(point)) continue;
             if (++checked > 16) break;
@@ -240,6 +241,18 @@ EncounterPosition OnyxiaPositionValue::Calculate()
 #endif
     if (airborne && fireball && cast->m_targets.getUnitTarget() == bot) fireballUntil = time(nullptr) + 2;
 #ifdef MANGOSBOT_ZERO
+    if (airborne && fireball)
+    {
+        // Native Fireball snapshots the selected unit's position and damages
+        // everyone there. The warning is urgent for nearby players as well as
+        // its target; ordinary GUID-priority spacing can otherwise leave them
+        // casting in the blast while the selected player escapes.
+        Unit* target = cast->m_targets.getUnitTarget();
+        const float radius = NativeEncounterSpellRadius(18392);
+        if (target && target->IsInWorld() && target->IsAlive() && bot->IsInMap(target) &&
+            std::isfinite(radius) && radius > 0 && radius <= 20 && bot->GetDistance(target) <= radius + 2)
+            fireballUntil = time(nullptr) + 2;
+    }
     if (airborne)
     {
         PlanOnyxiaFlight(ai, boss, result, threats, time(nullptr) < fireballUntil, flightStation, flightUntil);
@@ -292,9 +305,35 @@ EncounterPosition OnyxiaPositionValue::Calculate()
         return choose(here, here); // Already at a safe flank: don't chase an arbitrary spot.
     const float radius = ai->IsRanged(bot) || ai->IsHeal(bot) ? 25.0f :
         std::max(3.0f, boss->GetCombatReach() + bot->GetCombatReach() - 1.0f);
+    // These destinations surround the grounded boss, not the bot's entrance
+    // ramp. Seeding them with the ramp elevation can exceed the validator's
+    // eight-yard floor correction even when the native walking route is valid.
+    // The airborne guard above and all native floor/path checks remain intact.
+    const float groundZ = boss->GetPositionZ();
     const encounter::Point left{boss->GetPositionX() - radius * std::sin(facing),
-        boss->GetPositionY() + radius * std::cos(facing), here.z};
+        boss->GetPositionY() + radius * std::cos(facing), groundZ};
     const encounter::Point right{boss->GetPositionX() + radius * std::sin(facing),
-        boss->GetPositionY() - radius * std::cos(facing), here.z};
-    return choose(left, right);
+        boss->GetPositionY() - radius * std::cos(facing), groundZ};
+    result = choose(left, right);
+#ifdef MANGOSBOT_ZERO
+    if (!result.active)
+    {
+        // Fear or a threat turn can put either exact flank against the lair
+        // wall. A failed endpoint is not a reason to remain in her breath.
+        // Keep both native cones excluded and admit every alternate through
+        // the same complete path, floor and hazard checks.
+        for (float scale : {1.0f, 0.8f, 0.6f})
+            for (float offset : {1.04719755f, 2.09439510f})
+            {
+                const float distance = std::max(3.0f, radius * scale);
+                const encounter::Point first{boss->GetPositionX() + distance * std::cos(facing + offset),
+                    boss->GetPositionY() + distance * std::sin(facing + offset), groundZ};
+                const encounter::Point second{boss->GetPositionX() + distance * std::cos(facing - offset),
+                    boss->GetPositionY() + distance * std::sin(facing - offset), groundZ};
+                result = choose(first, second);
+                if (result.active) return result;
+            }
+    }
+#endif
+    return result;
 }

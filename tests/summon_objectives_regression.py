@@ -31,7 +31,7 @@ struct Player:Unit{Player(){player=true;}unsigned map=553;bool teleport=false;Gr
 struct PlayerbotAI{Player* bot;Unit* current=nullptr;std::map<unsigned,Unit*> units;std::list<ObjectGuid> near;bool ranged=true;
  bool IsRanged(Player*){return ranged;}
  Unit* GetUnit(ObjectGuid id){return units.count(id)?units[id]:nullptr;}
- template<class T>T value(std::string name){assert(name=="current target");return current;}
+ template<class T>T value(std::string name){assert(name=="current target");return ObjectGuid(current?current->guid:0);}
  template<class T>T qualified(std::string name,std::string qualifier){assert(name=="possible targets"&&qualifier=="100:1");return near;}};
 struct Config{float sightDistance=60;}sPlayerbotAIConfig;
 struct PossibleTargetsValue{static bool IsValid(Unit*u,Player*,bool){return u->valid;}};
@@ -158,6 +158,6 @@ for era in ('ZERO','ONE','TWO'):
         subprocess.run(['cl','/nologo','/std:c++17','/EHsc',f'/DMANGOSBOT_{era}','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
 dispatcher=(root/'playerbot/strategy/actions/DungeonAddTargetAction.cpp').read_text()
-for gate in ('ai->IsHeal(bot)','ai->IsTank(bot)','commanded(ai->GetUnit'):
+for gate in ('ai->IsHeal(bot)','ai->IsTank(bot)','overridesObjective(ai->GetUnit'):
     assert dispatcher.index(gate)<dispatcher.index('GetSummonObjectiveTarget()')
 print('PASS: healer/tank/manual-target dispatcher controls')

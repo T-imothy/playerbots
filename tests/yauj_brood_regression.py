@@ -1,5 +1,6 @@
 """Run native Yauj summon dispatch without granting threat to the dying boss."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -26,8 +27,8 @@ int main(){Creature boss,brood;Unit player;boss.target=&player;Yauj ai;ai.m_crea
  std::cout<<"PASS: native Yauj brood owns threat/attack, no boss reactivation, empty target and unrelated spawn\n";
 }
 '''
-for era in ('classic','tbc','wotlk'):
-    source=(root.parent/f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_bug_trio.cpp').read_text()
+for era in core_eras(('classic','tbc','wotlk')):
+    source=(core_path(era,root.parent/f'mangos-{era}-behavior')/'src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_bug_trio.cpp').read_text()
     actor=block(source,'struct boss_yaujAI')
     code=fixture.replace('__METHOD__',block(actor,'void JustSummoned('))
     with tempfile.TemporaryDirectory(prefix='mantech-yauj-brood-') as folder:

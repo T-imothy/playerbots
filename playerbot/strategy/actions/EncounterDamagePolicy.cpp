@@ -1,5 +1,7 @@
 #include "playerbot/playerbot.h"
 #include "EncounterSpellPolicy.h"
+#include "ClassicRaidActions.h"
+#include "BlackwingMovementSafety.h"
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
@@ -9,6 +11,11 @@ bool ai::HasMajordomoDamageShield(Player* bot, Unit* target)
     return bot && bot->IsInWorld() && bot->IsAlive() && bot->IsInCombat() &&
         !bot->IsBeingTeleported() && !bot->HasCharmer() && bot->GetMapId()==409 &&
         bot->GetPlayerbotAI() && !bot->GetPlayerbotAI()->IsRealPlayer() &&
+#ifdef MANGOSBOT_ZERO
+        // The native shield deals 100 damage per strike. A tank abandoning
+        // threat exposes cloth wearers to the adds' much larger melee hits.
+        !bot->GetPlayerbotAI()->IsTank(bot) &&
+#endif
         target && target->IsInWorld() && target->IsAlive() && bot->IsInMap(target) &&
         (target->GetEntry()==11663 || target->GetEntry()==11664) && target->HasAura(21075);
 }
@@ -78,7 +85,17 @@ bool ai::HasEncounterWeaponPause(Player* bot)
 bool ai::ShouldAvoidEncounterOffense(Player* bot, Unit* caster, const SpellEntry* spell, Unit* target)
 {
     if (!caster || !spell) return false;
+    // Scattering suppression-room packs defeats the leader-anchored tank
+    // pullback and can body-pull untouched packs. Keep this admission rule
+    // local to that room; ordinary PvP and dungeon fear behavior is unchanged.
+    if (bot && bot->GetMapId() == 469 && bot->GetPlayerbotAI())
+        for (uint32 index = 0; index < MAX_EFFECT_INDEX; ++index)
+            if (IsAuraApplyEffect(spell, SpellEffectIndex(index)) &&
+                spell->EffectApplyAuraName[index] == SPELL_AURA_MOD_FEAR &&
+                BlackwingSuppressionMovementActive(bot->GetPlayerbotAI())) return true;
     const bool positive = IsPositiveSpell(spell, caster, target);
+    if (!positive && bot && bot->GetMapId()==409 && ClassicRaidDamageSpell(spell) &&
+        MajordomoPolymorphReserved(bot->GetPlayerbotAI(),target)) return true;
     if (!positive && HasMajordomoDamageShield(bot,target) && spell->DmgClass==SPELL_DAMAGE_CLASS_MELEE) return true;
     if (!positive && target && target->IsInWorld() && bot && bot->IsInMap(target) &&
         bot->GetMapId()==409 && bot->GetPlayerbotAI() && !bot->GetPlayerbotAI()->IsRealPlayer() &&
@@ -132,6 +149,7 @@ bool ai::HasEncounterSpellBomb(Player* bot)
 bool ai::HasUnsafeEncounterOffense(Player* bot)
 {
     const bool stopAttacks = IsProtectedBlackwingTarget(bot, bot ? bot->GetVictim() : nullptr) ||
+        (bot && MajordomoPolymorphReserved(bot->GetPlayerbotAI(),bot->GetVictim())) ||
         HasMajordomoDamageShield(bot, bot ? bot->GetVictim() : nullptr) ||
         HasEncounterDamagePause(bot) || HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot);
     if (!stopAttacks && !HasEncounterSpellBomb(bot) && (!bot || bot->GetMapId() != 469 && bot->GetMapId() != 409)) return false;
@@ -148,7 +166,9 @@ bool ai::HasUnsafeEncounterOffense(Player* bot)
 bool ai::StopUnsafeEncounterOffense(Player* bot, Unit* caster)
 {
     if (!caster || !caster->IsInWorld() || !bot || !bot->IsInMap(caster)) return false;
-    const bool stopAttacks = IsProtectedBlackwingTarget(bot, caster->GetVictim()) || HasMajordomoDamageShield(bot,caster->GetVictim()) || HasEncounterDamagePause(bot) ||
+    const bool stopAttacks = IsProtectedBlackwingTarget(bot, caster->GetVictim()) ||
+        MajordomoPolymorphReserved(bot->GetPlayerbotAI(),caster->GetVictim()) ||
+        HasMajordomoDamageShield(bot,caster->GetVictim()) || HasEncounterDamagePause(bot) ||
         (caster == bot && (HasEncounterThreatPause(bot) || HasEncounterWeaponPause(bot)));
     if (!stopAttacks && !(caster == bot && HasEncounterSpellBomb(bot)) && bot->GetMapId() != 469 && bot->GetMapId() != 409) return false;
     bool stopped = false;

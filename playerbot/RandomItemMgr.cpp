@@ -3178,7 +3178,13 @@ uint32 RandomItemMgr::GetBestRandomEnchantStatWeight(uint32 itemId, uint32 specI
         uint32 bestEnch = CalculateBestRandomEnchantId(plrClass, specId, itemId);
         if (bestEnch)
         {
+#if defined(MANTECH_RAID_LAB) && defined(MANGOSBOT_ZERO)
+            // bestEnch identifies ItemRandomProperties, not SpellItemEnchantment.
+            // Keep this preparation correction local pending separate gear review.
+            statWeight = CalculateRandomPropertyWeight(plrClass, specId, bestEnch);
+#else
             statWeight = CalculateEnchantWeight(plrClass, specId, bestEnch);
+#endif
         }
     }
 

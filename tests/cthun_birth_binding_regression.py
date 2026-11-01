@@ -1,15 +1,16 @@
 """Execute native C'Thun summon -> Birth -> portal/rupture chains with era bindings."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile,re
 from behavior_regression import block
 root=Path(__file__).resolve().parents[2]
 classes=['BirthTentacles','SummonHookTentacle','SummonGiantHookTentacles','SummonEyeTentacle','SummonGiantEyeTentacles'];bodies=[]
-for era in ['classic','tbc','wotlk']:
- base=root/f'mangos-{era}-behavior';s=(base/'src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_cthun.cpp').read_text()
+for era in core_eras(['classic','tbc','wotlk']):
+ base=core_path(era,root/f'mangos-{era}-behavior');s=(base/'src/game/AI/ScriptDevAI/scripts/kalimdor/temple_of_ahnqiraj/boss_cthun.cpp').read_text()
  bodies.append('\n'.join(block(s,'struct '+name).replace(' override','')+';' for name in classes))
  sql=(base/'sql/scriptdev2/spell.sql').read_text()
  for id,name in [(26586,'birth_tentacles'),(26140,'summon_hook_tentacle'),(26216,'summon_giant_hook_tentacles'),(26150,'summon_eye_tentacle'),(26768,'summon_giant_eye_tentacles')]:assert f"({id},'spell_{name}')" in sql
-assert bodies[0]==bodies[1]==bodies[2]
+assert all(v==bodies[0] for v in bodies)
 code=r"""
 #include <cassert>
 #include <vector>

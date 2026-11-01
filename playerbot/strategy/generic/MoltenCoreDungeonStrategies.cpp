@@ -108,7 +108,11 @@ void MoltenCoreDungeonStrategy::InitNonCombatMultipliers(std::list<Multiplier*>&
 void MagmadarFightStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     Player* bot = ai->GetBot();
-    if (ai->IsRanged(bot) || ai->IsHeal(bot))
+    if ((ai->IsRanged(bot) || ai->IsHeal(bot))
+#ifdef MANGOSBOT_ZERO
+        && !(bot->GetMapId() == 409 && ai->HasStrategy("molten core", BotState::BOT_STATE_COMBAT))
+#endif
+        )
     {
         triggers.push_back(new TriggerNode(
             "magmadar too close",

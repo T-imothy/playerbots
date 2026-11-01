@@ -18,7 +18,7 @@ methods += '\n#ifdef MANGOSBOT_ZERO\n' + '\n'.join(block(value, key).replace('ai
     'bool ai::OnyxiaMeleeAirAdd(', 'const char* OnyxiaRangeSpell(', 'bool PlanOnyxiaFlight(')) + '\n#endif\n'
 methods += '\n' + block(value, 'EncounterPosition OnyxiaPositionValue::Calculate(')
 methods += '\n' + block(actions, 'bool OnyxiaPositionAction::GetPlan(')
-for method in ('isUseful', 'ShouldReactionInterruptCast', 'Execute'):
+for method in ('isUseful', 'ShouldReactionInterruptCast'):
     methods += '\n' + block(actions, 'bool OnyxiaPositionAction::' + method + '(')
 methods += '\n' + block(actions, 'bool IsOnyxiaAddEntry(')
 methods += '\n' + block(actions, 'Unit* OnyxiaAddsAction::GetTarget(')
@@ -78,7 +78,7 @@ struct Player:Unit{unsigned mapId=249,instance=1;bool teleport=false,tank=false;
 struct PlayerbotAI;
 template<class T>struct Value{PlayerbotAI* ai;std::string name;T Get();};
 struct PlayerbotAI{Player* bot=nullptr;std::map<ObjectGuid,Unit*> units;std::list<ObjectGuid> raw,attackers,possible;
- ObjectGuid current,marked,ordered;EncounterPosition plan;bool ranged=false,healer=false,path=true,canMove=true,moving=false;float spellRange=40;unsigned pathChecks=0,moves=0,stops=0;
+ ObjectGuid current,marked,ordered;EncounterPosition plan;bool ranged=false,healer=false,path=true,canMove=true,moving=false,fixedFloor=false,rejectOrthogonal=false;float spellRange=40;unsigned pathChecks=0,moves=0,stops=0;
  bool GetSpellRange(const char*,float*out){*out=spellRange;return spellRange>0;}
  bool CanMove(){return canMove;}void StopMoving(){++stops;moving=false;}
  Player* GetBot(){return bot;}PlayerbotAI* GetAiObjectContext(){return this;}bool IsTank(Player* p){return p->tank;}bool IsRanged(Player*){return ranged;}bool IsHeal(Player*){return healer;}
@@ -89,7 +89,8 @@ template<class T>T Value<T>::Get(){if constexpr(std::is_same_v<T,std::list<Objec
  else if constexpr(std::is_same_v<T,ObjectGuid>)return name=="current target"?ai->current:name=="rti target"?ai->marked:ai->ordered;else return ai->plan;}
 #define AI_VALUE(type,key) ai->GetValue<type>(key)->Get()
 #define AI_VALUE2(type,key,q) ai->GetValue<type>(key,q)->Get()
-bool ValidateEncounterDestination(PlayerbotAI*a,EncounterPosition&p){++a->pathChecks;return a->path&&p.map==a->bot->mapId&&p.instance==a->bot->instance;}
+bool ValidateEncounterDestination(PlayerbotAI*a,EncounterPosition&p){++a->pathChecks;return a->path&&(!a->rejectOrthogonal||std::fabs(p.destination.x)>.01f)&&(!a->fixedFloor||std::fabs(p.destination.z+86.7104f)<=8)&&p.map==a->bot->mapId&&p.instance==a->bot->instance;}
+bool RaidLabMovementResult(Player*,const char*,int,bool result){return result;}
 bool EncounterMovementRequired(Player* b,const encounter::Point& p,float tolerance){return b->GetDistance(p.x,p.y,p.z)>tolerance;}
 float NativeEncounterSpellRadius(unsigned id){return id==18392?8:id==68958?15:0;}
 const char* MagePrimaryDamageSpell(PlayerbotAI*){return "frostbolt";}
@@ -99,7 +100,7 @@ struct PossibleAttackTargetsValue{static bool IsValid(Unit*u,Player*,float,bool,
 struct OnyxiaPositionValue{PlayerbotAI*ai;Player*bot;unsigned breath=0;time_t breathUntil=0,fireballUntil=0;ObjectGuid owner;unsigned instance=0;encounter::Point flightStation;time_t flightUntil=0;EncounterPosition Calculate();};
 struct Event{};
 struct OnyxiaPositionAction{PlayerbotAI*ai;Player*bot;static bool GetPlan(PlayerbotAI*,EncounterPosition&);
- bool isUseful();bool ShouldReactionInterruptCast()const;bool Execute(Event&);bool IsReaction(){return true;}void SetDuration(unsigned){}
+ bool isUseful();bool ShouldReactionInterruptCast()const;
  bool MoveTo(unsigned,float,float,float,bool,bool,bool,bool){++ai->moves;return true;}};
 struct OnyxiaAddsAction{PlayerbotAI*ai;Player*bot;Unit*GetTarget();};
 __METHODS__
@@ -146,6 +147,17 @@ int main(){
  // Fireball isolation remains through a short projectile window, then releases.
  SpellEntry ballInfo;ballInfo.Id=18392;Spell ball{&ballInfo};ball.m_targets.unit=&bot;boss.cast=&ball;
  bot.x=healer.x=-25;bot.y=healer.y=-215;
+#ifdef MANGOSBOT_ZERO
+ // A nearby party member's incoming Fireball is an emergency for this bot too.
+ // Native run172929083 had39 collateral impacts despite primary targets moving.
+ ball.m_targets.unit=&healer;planner.fireballUntil=0;planner.flightUntil=0;
+ p=planner.Calculate();assert(p.active&&p.source==bot.guid&&planner.fireballUntil>time(nullptr));
+ healer.x=15;planner.fireballUntil=0;planner.flightUntil=0;
+ p=planner.Calculate();assert(planner.fireballUntil==0&&p.source!=bot.guid); // far players keep routine casting policy
+ healer.x=-25;healer.map=&other;planner.flightUntil=0;
+ planner.Calculate();assert(planner.fireballUntil==0);healer.map=&map;
+ ball.m_targets.unit=&bot;planner.fireballUntil=0;planner.flightUntil=0;
+#endif
  p=planner.Calculate();assert(p.active&&p.exclusive&&encounter::Distance2d(p.destination,{-25,-215,-86})>=10);
  boss.cast=nullptr;assert(planner.Calculate().active);planner.fireballUntil=time(nullptr)-1;
 #ifdef MANGOSBOT_ZERO
@@ -155,11 +167,30 @@ int main(){
 #endif
  boss.combat=false;assert(!planner.Calculate().active&&planner.breath==0&&planner.fireballUntil==0);boss.combat=true;
  boss.levitate=false;boss.x=boss.y=0;boss.z=-86;bot.x=4;bot.y=0;boss.o=0;a.current=3;
+ // Recorded entry-ramp elevation must not seed a flank on the lair floor.
+ a.fixedFloor=true;bot.z=-72.8678f;boss.z=-86.7104f;
+ p=planner.Calculate();assert(p.active&&std::fabs(p.destination.z-boss.z)<0.01f);
+ a.path=false;assert(!planner.Calculate().active);a.path=true;
+ a.fixedFloor=false;bot.z=boss.z=-86;
+#ifdef MANGOSBOT_ZERO
+ // Both exact flank endpoints can lack a native path. Search other safe
+ // flank angles, without accepting an incomplete route or frontal position.
+ a.rejectOrthogonal=true;p=planner.Calculate();assert(p.active);
+ assert(std::fabs(std::cos(std::atan2(p.destination.y,p.destination.x)-boss.o))<.70710678f);
+ a.path=false;assert(!planner.Calculate().active);a.path=true;a.rejectOrthogonal=false;
+#endif
  p=planner.Calculate();assert(p.active&&!p.exclusive);a.plan=p;EncounterPosition dispatched;assert(OnyxiaPositionAction::GetPlan(&a,dispatched));
- OnyxiaPositionAction action{&a,&bot};Event event;assert(action.isUseful()&&action.ShouldReactionInterruptCast());
- a.canMove=false;assert(!action.Execute(event)&&a.moves==0);a.canMove=true;assert(action.Execute(event)&&a.moves==1);
+ OnyxiaPositionAction action{&a,&bot};assert(action.isUseful());
+#ifdef MANGOSBOT_ZERO
+ // Execute owns interruption after validating the complete native route.
+ assert(!action.ShouldReactionInterruptCast());
+#else
+ assert(action.ShouldReactionInterruptCast());
+#endif
+ // Actual route dispatch and mutation ordering have their own native-method
+ // harness in onyxia_route_dispatch_regression.py.
  // Safe nonexclusive flank stations must not consume actions or cancel casts.
- bot.x=p.destination.x;bot.y=p.destination.y;assert(!action.isUseful()&&!action.ShouldReactionInterruptCast()&&!action.Execute(event));
+ bot.x=p.destination.x;bot.y=p.destination.y;assert(!action.isUseful()&&!action.ShouldReactionInterruptCast());
  bot.x=4;bot.y=0;
  boss.victim=&bot;assert(!OnyxiaPositionAction::GetPlan(&a,dispatched));boss.victim=nullptr;
  boss.o=1.5707963268f;assert(!OnyxiaPositionAction::GetPlan(&a,dispatched));boss.o=0;
@@ -191,13 +222,13 @@ int main(){
  p=planner.Calculate();a.plan=p;boss.levitate=false;boss.z=-86;
  assert(!OnyxiaPositionAction::GetPlan(&a,dispatched));boss.levitate=true;boss.z=-60;
  // Routine movement cannot restart casts; a targeted escape may interrupt.
- bot.cast=&ball;a.plan=p;assert(!action.isUseful()&&!action.Execute(event));bot.cast=nullptr;
+ bot.cast=&ball;a.plan=p;assert(!action.isUseful());bot.cast=nullptr;
  a.plan.source=bot.guid;bot.cast=&ball;assert(action.isUseful());bot.cast=nullptr;
  // A settled hold consumes no action; all ranged stations retain 3D range/LOS.
  a.ranged=true;a.current=3;planner.flightUntil=0;healer.x=20;healer.y=-180;
  p=planner.Calculate();assert(p.active);assert(boss.GetDistance(p.destination.x,p.destination.y,p.destination.z)<=41.01f);
  bot.x=p.destination.x;bot.y=p.destination.y;a.plan=p;
- assert(!action.isUseful()&&!action.ShouldReactionInterruptCast()&&!action.Execute(event));
+ assert(!action.isUseful()&&!action.ShouldReactionInterruptCast());
  boss.los=false;planner.flightUntil=0;assert(!planner.Calculate().active);boss.los=true;
  a.path=false;assert(!planner.Calculate().active);a.path=true;a.ranged=false;
  // All eight native warning directions have a safe in-room candidate, even
@@ -207,6 +238,27 @@ int main(){
   auto safe=onyxia::Candidates({-25,-215,-86},0,{},danger);assert(!safe.empty());
   for(auto q:safe)assert(onyxia::InRoom(q)&&encounter::OutsideCircles(q,danger));
  }
+ // Synchronous 40-member updates from an exact stack exercise symmetry and
+ // In the observed west-to-east breath, spacing must not send a player across
+ // the entire damage corridor when a nearer safe edge is already crowded.
+ {
+  std::vector<encounter::Circle> danger;assert(OnyxiaBreathThreats(18609,danger));
+  encounter::Point here{-43.5187f,-207.356f,-86.427f};
+  std::vector<encounter::Circle> crowd(20,{{-70,-215,-86.427f},10});
+  auto escape=onyxia::Candidates(here,3,crowd,danger);assert(!escape.empty());
+  for(auto point:escape)assert(encounter::Distance2d(here,escape.front())<=encounter::Distance2d(here,point)+0.001f);
+  assert(encounter::Distance2d(here,escape.front())<35);
+ }
+ {
+  encounter::Point here{-25,-215,-86};std::vector<encounter::Circle> crowd{{here,10}};
+  auto escape=onyxia::Candidates(here,37,crowd,{},true);assert(!escape.empty());
+  assert(encounter::SpreadOverlap(escape.front(),crowd)<=1);
+  for(auto point:escape)if(encounter::SpreadOverlap(point,crowd)<=1)
+   assert(encounter::Distance2d(here,escape.front())<=encounter::Distance2d(here,point)+0.001f);
+ }
+ // A missing offense/healing range cannot veto emergency breath movement.
+ bot.x=-25;bot.y=-215;bot.z=-86;a.ranged=true;a.spellRange=0;boss.cast=&breath;planner.flightUntil=0;
+ assert(planner.Calculate().active);a.spellRange=40;a.ranged=false;boss.cast=nullptr;
  // Synchronous 40-member updates from an exact stack exercise symmetry and
  // convergence, not just an isolated bot finding an empty point.
  std::vector<encounter::Point> raid(40,{-25,-215,-86});

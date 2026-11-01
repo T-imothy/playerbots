@@ -98,7 +98,13 @@ namespace ai { namespace classicraid
             case 15953: return entry == 16505 ? 3 : 0; // 16506 worshippers are reserved for native Embrace.
             case 15952: return entry == 16486 ? 8 : entry == 17055 ? 2 : 0;
             case 15954: return entry == 16984 || entry == 16983 || entry == 16981 || entry == 16982 ? 3 : 0;
-            case 16060: return entry == 16125 || entry == 16126 || entry == 16127 ||
+            case 16060:
+#ifdef MANGOSBOT_ZERO
+                if (entry == 16126 || entry == 16150) return 7; // Riders' lethal raid damage.
+                if (entry == 16125 || entry == 16148) return 6; // Deathknights and their marks.
+                if (entry == 16149) return 4;
+#endif
+                return entry == 16125 || entry == 16126 || entry == 16127 ||
                 entry == 16124 || entry == 16148 || entry == 16149 || entry == 16150 ? 3 : 0;
             case 15932: return entry == 16360 && decimated ? 6 : 0;
             case 15990: return entry == 16429 ? 7 : entry == 16428 ? 6 : entry == 16427 ? 5 : 0;
@@ -112,6 +118,9 @@ namespace ai { namespace classicraid
     }
     inline bool Front(unsigned entry)
     {
+#ifdef MANGOSBOT_ZERO
+        if(entry==15348)return true; // Native Wide Slash25814 uses frontal-cone target24.
+#endif
         return Dragon(entry) || entry == 12435 || entry == 12017 || entry == 14020 || entry == 12460 ||
             entry == 12416 || entry == 12422 || entry == 12461 || entry == 12467 || entry == 14456 ||
             entry == 15956 || entry == 15952 || entry == 16028 || entry == 15931 || entry == 15932 ||

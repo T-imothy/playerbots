@@ -1,5 +1,6 @@
 """Compile actual trio balancing and fake-death transition targeting."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -62,9 +63,9 @@ dispatcher=(root/'playerbot/strategy/actions/DungeonAddTargetAction.cpp').read_t
 assert dispatcher.index('ai->IsHeal(bot)')<dispatcher.index('GetThekalTarget()')
 assert dispatcher.index('overridesObjective(ai->GetUnit')<dispatcher.index('GetThekalTarget()')
 assert '(!objectiveBossCommand || objectiveBossCommand == 14509)' in dispatcher
-for era in ('classic','tbc','wotlk'):
-    repo=root.parent/era
-    if not repo.exists():repo=root.parent/f'mangos-{era}-behavior'
+for era in core_eras(('classic','tbc','wotlk')):
+    repo=core_path(era,root.parent/era)
+    if not repo.exists():repo=core_path(era,root.parent/f'mangos-{era}-behavior')
     native=(repo/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/zulgurub/boss_thekal.cpp').read_text()
     assert 'SetStandState(UNIT_STAND_STATE_DEAD)' in native and 'SetDeathPrevention(true)' in native
     assert 'SPELL_TIGER_FORM        = 24169' in native

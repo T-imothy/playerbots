@@ -64,6 +64,14 @@ namespace ai
         bool isUseful() override;
         bool Execute(Event& event) override;
     };
+    class ViscidusPoisonAction : public Action
+    {
+    public:
+        ViscidusPoisonAction(PlayerbotAI* ai) : Action(ai, "viscidus poison") {}
+        uint32 SelectPoisonRemoval(Unit*& target);
+        bool isUseful() override;
+        bool Execute(Event& event) override;
+    };
     class HeiganDanceAction : public MovementAction
     {
     public:
@@ -71,6 +79,7 @@ namespace ai
         bool isUseful() override;
         bool Execute(Event& event) override;
         bool ShouldReactionInterruptCast() const override;
+        bool ShouldReactionInterruptMovement() const override;
         static bool GetPlan(PlayerbotAI* ai, EncounterPosition& plan);
     };
     class NajentusSpineAction : public MovementAction
@@ -214,6 +223,8 @@ namespace ai
         MoveAwayFromHazard(PlayerbotAI* ai, std::string name = "move away from hazard") : MovementAction(ai, name) {}
         bool Execute(Event& event) override;
         bool isPossible() override;
+        bool ShouldReactionInterruptCast() const override;
+        bool ShouldReactionInterruptMovement() const override;
 
 #ifdef GenerateBotHelp
         virtual std::string GetHelpName() { return "move away from hazard"; }

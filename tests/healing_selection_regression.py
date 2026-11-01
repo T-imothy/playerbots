@@ -84,6 +84,8 @@ struct SpellEntryPredicate{virtual bool Check(const SpellEntry*)=0;};
 struct PartyMemberValue{PlayerbotAI* ai;Player* bot;bool IsTargetOfSpellCast(Unit*,SpellEntryPredicate&);};
 bool NeedsRazorgoreControllerHealing(PlayerbotAI*,Unit*){return false;}
 Unit* burstPatient=nullptr;bool NeedsMoltenCoreBurstHealing(PlayerbotAI*,Unit*u){return u&&u==burstPatient;}
+Unit* sapphironTank=nullptr;bool NeedsNaxxramasTankHealing(PlayerbotAI*,Unit*u){return u&&u==sapphironTank;}
+bool sapphironSelf=false;bool NeedsSapphironSelfHealing(PlayerbotAI*){return sapphironSelf;}
 Unit* raidObjective=nullptr;Unit* FindRaidHealingObjective(PlayerbotAI*){return raidObjective;}
 struct PartyMemberToHeal:PartyMemberValue{ObjectGuid CalculateRaw();Unit* Calculate(){return ai->GetUnit(CalculateRaw());}bool CanHealPet(Pet*);bool Check(Unit*);std::vector<Player*> GetPartyMembers();};
 #define AI_VALUE(type,key) ai->value<type>(key)
@@ -137,6 +139,10 @@ int main(){
  bot.selection=0;a.hp=30;b.maxhp=10000;b.hp=9000;b.tank=true;
  assert(selector.Calculate()==&a); // healer index must stay within the urgent band
  a.hp=40;burstPatient=&b;assert(selector.Calculate()==&b);a.hp=10;assert(selector.Calculate()==&a);burstPatient=nullptr;
+ // Reserved Sapphiron healers retain the admitted tank while ordinary healers triage.
+ sapphironTank=&b;assert(selector.Calculate()==&b);b.phase=2;assert(selector.Calculate()==&a);b.phase=1;
+ sapphironSelf=true;assert(selector.Calculate()==&bot);sapphironSelf=false;assert(selector.Calculate()==&b);
+ sapphironTank=nullptr;assert(selector.Calculate()==&a);
  // An incoming cast is not a guarantee that a critically injured player is safe.
  a.hp=10;healing.m_targets.unit=a.guid;healer.casts[0]=&healing;ai.nearest={healer.guid};
  assert(selector.Calculate()==&a);ai.nearest.clear();b.tank=false;b.maxhp=100;

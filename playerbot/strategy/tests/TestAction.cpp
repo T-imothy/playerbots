@@ -50,6 +50,14 @@ TestAction::TestAction(PlayerbotAI* ai, std::string name)
 void TestAction::RegisterCommands()
 {
 #ifdef MANTECH_RAID_LAB
+    commands.push_back(std::make_unique<CommandRaidLabPack>());
+    commands.push_back(std::make_unique<CommandRaidLabCorridor>());
+    commands.push_back(std::make_unique<CommandRaidLabLeader>());
+    commands.push_back(std::make_unique<CommandRaidLabSeed>());
+    commands.push_back(std::make_unique<CommandRaidLabProgression>());
+    commands.push_back(std::make_unique<CommandRaidLabProvision>());
+    commands.push_back(std::make_unique<CommandRaidLabEvent>());
+    commands.push_back(std::make_unique<CommandRaidLabLanding>());
     commands.push_back(std::make_unique<CommandRaidLabStaging>());
     commands.push_back(std::make_unique<CommandRaidLab>());
 #endif
@@ -99,6 +107,8 @@ void TestAction::RegisterMonitors()
 {
 #ifdef MANTECH_RAID_LAB
     monitors.push_back(std::make_unique<MonitorRaidLabDeath>());
+    monitors.push_back(std::make_unique<MonitorRaidLabCompletion>());
+    monitors.push_back(std::make_unique<MonitorRaidLabNoEngagement>());
 #endif
     monitors.push_back(std::make_unique<MonitorStateDead>());
     monitors.push_back(std::make_unique<MonitorStateTime>());
@@ -246,6 +256,11 @@ bool TestAction::Execute(Event& event)
 
         bossFocusMgr->Update();
         CheckMonitors();
+#ifdef MANTECH_RAID_LAB
+        if (ctx.result == TestResult::PENDING && bot->IsInWorld() && ctx.focusMobGuid &&
+            RaidLab::BossResetObserved(bot->GetMap(),ctx.focusMobGuid.GetRawValue()))
+            SetResult(TestResult::FAIL,"Native boss evaded and reset; thirty-second recovery observed");
+#endif
         if (ctx.result != TestResult::PENDING)
         {
             return true;
@@ -264,7 +279,8 @@ bool TestAction::Execute(Event& event)
     TestResult commandResult = ExecuteCommand(ctx.script[ctx.pc], message);
 
     // Log command execution for scenario, quest and lab tests
-    if (ctx.testName.find("scenario_") == 0 || ctx.testName.find("quest_") == 0 || ctx.testName.find("lab_") == 0 || ctx.testName.find("lab_micro") == 0)
+    if (ctx.testName.find("scenario_") == 0 || ctx.testName.find("quest_") == 0 || ctx.testName.find("lab_") == 0 || ctx.testName.find("lab_micro") == 0 ||
+        (ctx.testName.find("raidlab_") == 0 && commandResult != TestResult::PENDING))
     {
         std::string result = (commandResult == TestResult::PASS ? "PASS" :
                 commandResult == TestResult::FAIL               ? "FAIL" :
@@ -294,6 +310,17 @@ bool TestAction::Execute(Event& event)
     }
     else if (commandResult == TestResult::PENDING)
     {
+#ifdef MANTECH_RAID_LAB
+        // A progressing simulated player is doing useful asynchronous work.
+        // Returning false here invokes the idle engine delay, producing a
+        // six-yard step only every ten seconds despite a ready raid.
+        if (RaidLab::Controlled(bot) && ctx.testName.find("raidlab_") == 0 && ctx.pc < ctx.script.size() &&
+            (ctx.script[ctx.pc].find("raidlab corridor ") == 0 || ctx.script[ctx.pc].find("raidlab progression ") == 0))
+        {
+            SetDuration(500);
+            return true; // Keep pc and PENDING result; never skip readiness or combat checks.
+        }
+#endif
         return false;
     }
     else

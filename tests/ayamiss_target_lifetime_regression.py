@@ -1,10 +1,11 @@
 """Compile each core's actual paralysis branch with depleted target lists."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
-for era in ('classic','tbc','wotlk'):
-    source=(root.parent/f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts/kalimdor/ruins_of_ahnqiraj/boss_ayamiss.cpp').read_text()
+for era in core_eras(('classic','tbc','wotlk')):
+    source=(core_path(era,root.parent/f'mangos-{era}-behavior')/'src/game/AI/ScriptDevAI/scripts/kalimdor/ruins_of_ahnqiraj/boss_ayamiss.cpp').read_text()
     branch=block(source,'case AYAMISS_PARALYZE:')
     code=r'''
 #include <cassert>

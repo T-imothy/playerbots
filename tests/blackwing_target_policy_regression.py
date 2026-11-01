@@ -86,6 +86,9 @@ struct PossibleAttackTargetsValue{static bool IsValid(Unit*u,Player*,float,bool,
 struct BlackwingLairPriorityTargetAction{PlayerbotAI* ai;Player* bot;Unit* GetTarget();};
 Unit* RazorgoreDefenseTarget(PlayerbotAI*,bool& active){active=false;return nullptr;}
 bool RazorgoreEggPhase(PlayerbotAI*){return false;}Unit* RazorgoreCreature(Unit*,unsigned){return nullptr;}bool IsProtectedBlackwingTarget(Player*,Unit*){return false;}
+// Nefarian native wave assignment is covered by its own actual-code fixture.
+bool NefariusWaveEncounter(PlayerbotAI*){return false;}
+Unit* NefariusStableWaveTank(PlayerbotAI*,const std::vector<Unit*>&,const std::vector<Player*>&){assert(false);return nullptr;}
 #define AI_VALUE(type,name) ai->value<type>(name)
 __ROLES__
 int main(){

@@ -79,10 +79,15 @@ bool HostileGroundDamageTrigger::IsActive()
     MaNGOS::WorldObjectListSearcher<HostileDamageAreaCheck> searcher(areas, check);
     Cell::VisitAllObjects(bot, searcher, 30.0f);
     bool inside = false;
-    if (bot->GetMapId() == 533 || bot->GetMapId() == 249 || bot->GetMapId() == 309)
+    if (bot->GetMapId() == 533 || bot->GetMapId() == 249 || bot->GetMapId() == 309
+#ifdef MANGOSBOT_ZERO
+        || bot->GetMapId() == 509
+#endif
+        )
     {
         std::list<HazardPosition> warnings;
         AppendNativeEncounterActorHazards(ai, warnings);
+        AppendKurinnaxxTrapHazards(ai, warnings);
         const WorldPosition here(bot);
         for (const auto& warning : warnings)
             if (here.distance(warning.first) <= warning.second) inside = true;

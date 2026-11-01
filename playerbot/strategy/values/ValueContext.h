@@ -203,6 +203,7 @@ namespace ai
                 creators["current cc target"] = [](PlayerbotAI* ai) { return new CurrentCcTargetValue(ai); };
                 creators["pet target"] = [](PlayerbotAI* ai) { return new PetTargetValue(ai); };
                 creators["old target"] = [](PlayerbotAI* ai) { return new CurrentTargetValue(ai); };
+                creators["thaddius prepared target"] = [](PlayerbotAI* ai) { return new UnitManualSetValue(ai, ObjectGuid(), "thaddius prepared target"); };
                 creators["grind target"] = [](PlayerbotAI* ai) { return new GrindTargetValue(ai); };
                 creators["rti target"] = [](PlayerbotAI* ai) { return new RtiTargetValue(ai); };
                 creators["rti cc target"] = [](PlayerbotAI* ai) { return new RtiCcTargetValue(ai); };

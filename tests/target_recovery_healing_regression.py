@@ -27,7 +27,8 @@ def cast_fixture(cast_source):
     method=block(source,'bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool waitForSpell, uint32* outSpellDuration)')
     tree=ast.parse((root/'tests/cast_dispatch_lifetime_regression.py').read_text())
     code=next(n.value for n in ast.walk(tree) if isinstance(n,ast.Constant) and isinstance(n.value,str) and '#include <cassert>' in n.value)
-    code=code.split('int main(){')[0].replace('__FUNCTIONS__',method)
+    guard='#include "'+(root/'playerbot/SpellSelectionGuard.h').as_posix()+'"\n'
+    code=code.split('int main(){')[0].replace('__FUNCTIONS__',guard+method)
     code=code.replace('UNIT_STAT_CHASE=1,','SPELL_ATTR_ALLOW_WHILE_SITTING=999,CAST_ANGLE_IN_FRONT=1,UNIT_STAT_CHASE=1,')
     code=code.replace('bool channel=false;','bool HasAttribute(int)const{return false;}bool channel=false;')
     code=code.replace('struct WorldObject {bool world=true;','struct WorldObject {unsigned guid=1;bool world=true;')
@@ -56,10 +57,29 @@ for label,recovery_source,expected in versions:
     code=code.replace('struct Spell {', 'struct Spell {const SpellEntry*m_spellInfo=&entry;bool CanBeInterrupted(){return true;}')
     code=code.replace('struct ChatHelper {', 'bool IsPositiveSpell(const SpellEntry*){return true;}\nstruct ChatHelper {')
     code=code.replace('bool HasStrategy(const char*,BotState)', 'void InterruptSpell(){}void SpellInterrupted(unsigned){}bool DoSpecificAction(const char*,Event&,bool){return false;}bool HasStrategy(const char*,BotState)')
-    code+='\nstruct SelectNewTargetAction {Player*bot;PlayerbotAI*ai;Context*context;bool Execute(Event&);};\n'+recovery
+    code=code.replace('Unit* GetUnit(ObjectGuid){return nullptr;}', 'Unit* known=nullptr;Unit* GetUnit(ObjectGuid g){return known&&known->GetObjectGuid().id==g.id?known:nullptr;}')
+    code+='\nbool activeRaidControl=false; bool HasNaxxramasControlCast(PlayerbotAI*){return activeRaidControl;}\nstruct SelectNewTargetAction {Player*bot;PlayerbotAI*ai;Context*context;bool Execute(Event&);};\n'+recovery
     code+=r'''
 int main(){
- Player bot;PlayerbotAI ai{&bot};Unit patient;patient.guid=2;Event event;
+ Player bot;PlayerbotAI ai{&bot};Unit patient;patient.guid=2;ai.known=&patient;Event event;
+ // Exercise the complete production Unit CastSpell method, including each
+ // early return after temporary self/ally/enemy selection is installed.
+ for(unsigned original:{0u,42u})for(unsigned targetGuid:{1u,2u,42u})for(int failure=0;failure<6;++failure){
+  bot.selection=original;patient.guid=targetGuid;bot.stand=true;bot.falling=false;
+  ai.master=true;ai.jumping=false;sServerFacade.moving=false;sServerFacade.front=true;
+  Spell::result=SPELL_CAST_OK;entry.Targets=0;entry.channel=false;entry.casttime=1000;
+  if(failure==0)bot.stand=false;
+  if(failure==1){sServerFacade.front=false;ai.master=false;}
+  if(failure==2){sServerFacade.moving=true;bot.falling=true;}
+  if(failure==3)Spell::result=SPELL_FAILED_NO_POWER;
+  if(failure==4){entry.channel=true;entry.casttime=0;}
+  if(failure==5)entry.casttime=0;
+  bool accepted=ai.CastSpell(1,&patient,nullptr,true,nullptr);
+  assert(accepted==(failure>=4));assert(bot.selection.id==original);
+  for(Spell*s:Spell::events)delete s;Spell::events.clear();assert(Spell::live==0);
+ }
+ bot.stand=true;bot.falling=false;ai.jumping=false;sServerFacade.moving=false;sServerFacade.front=true;
+ Spell::result=SPELL_CAST_OK;entry.channel=false;entry.casttime=1000;patient.guid=2;
  SelectNewTargetAction recovery{&bot,&ai,&context};bot.selection=0;ai.master=true;
  entry.Targets=0;int healed=0,cleanupTurns=0;
  // An injured ally remains available; no hostile replacement is available.
@@ -73,13 +93,16 @@ int main(){
  std::cout<<"heals="<<healed<<" cleanup-only turns="<<cleanupTurns<<"\n";
  assert(healed==EXPECTED);assert(Spell::live==0);
  // A real stale combat target or active attack still counts as recovery.
- context.GetValue<Unit*>("current target")->Set(&patient);bot.selection=patient.GetObjectGuid();
- assert(recovery.Execute(event)==CLEAN_SUCCESS);assert(!context.GetValue<Unit*>("current target")->Get());
+ context.GetValue<ObjectGuid>("current target")->Set(patient.GetObjectGuid());bot.selection=patient.GetObjectGuid();
+ assert(recovery.Execute(event)==CLEAN_SUCCESS);assert(!context.GetValue<ObjectGuid>("current target")->Get());
  assert(!bot.selection);assert(!recovery.Execute(event));
  bot.victim=&patient;assert(recovery.Execute(event)==CLEAN_SUCCESS);assert(!bot.GetVictim());
  assert(!recovery.Execute(event));
 }
 '''.replace('EXPECTED',str(expected)).replace('CLEAN_SUCCESS','false' if label=='before recovery change' else 'true')
+    if label=='corrected recovery':
+        code=code.replace('entry.Targets=0;int healed=0,cleanupTurns=0;',
+            'bot.selection=42;activeRaidControl=true;assert(!recovery.Execute(event));assert(bot.selection.id==42);activeRaidControl=false;bot.selection=0;entry.Targets=0;int healed=0,cleanupTurns=0;')
     for era in ('ZERO','ONE','TWO'):
         with tempfile.TemporaryDirectory(prefix='recovery-interaction-') as folder:
             p=Path(folder);(p/'test.cpp').write_text(code)

@@ -47,7 +47,7 @@ bool HealthInRangeTrigger::IsActive()
     // health to other decisions or enabling low-health emergency cooldowns.
     if (!healthCheck && (getName() == "medium health" || getName() == "party member medium health") &&
         GetValue() >= minValue && (NeedsFullHealingToRemoveAura(GetTarget()) || RemainingHealingAbsorb(GetTarget()) ||
-            NeedsRaidObjectiveHealing(GetTarget())))
+            NeedsRaidObjectiveHealing(GetTarget()) || NeedsNaxxramasTankHealing(ai, GetTarget())))
         healthCheck = true;
 
     // Use each healing class's learned fast/emergency party actions while a

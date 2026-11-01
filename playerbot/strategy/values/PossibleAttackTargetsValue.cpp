@@ -1,8 +1,11 @@
 
 #include "playerbot/playerbot.h"
+#include "playerbot/RaidLabTrace.h"
 #include "PossibleAttackTargetsValue.h"
 #include "PossibleTargetsValue.h"
+#include "EncounterPositionValue.h"
 #include "playerbot/strategy/actions/EncounterSpellPolicy.h"
+#include "playerbot/strategy/actions/ClassicRaidActions.h"
 
 #include "playerbot/ServerFacade.h"
 #include "Grids/GridNotifiers.h"
@@ -149,7 +152,17 @@ bool PossibleAttackTargetsValue::HasBreakableCC(Unit* target, Player* player)
 bool PossibleAttackTargetsValue::HasUnBreakableCC(Unit* target, Player* player)
 {
     if (IsViscidusShatterTarget(target, player)) return false;
-    if (target->IsStunned())
+    // A damage-safe stun such as Cheap Shot is part of killing the active
+    // BWL pack or Classic Gothik wave, not a reason to cancel its casts.
+    // Damage-breakable control, fear, roots and assigned CC remain protected
+    // by their independent checks. Other encounters retain their policy.
+    const bool damageSafeStun = player->GetMapId() == 469
+#ifdef MANGOSBOT_ZERO
+        || (player->GetMapId() == 533 && GothikGroupEngagedAdd(player,target))
+#endif
+        ;
+    if (target->IsStunned() && (!damageSafeStun ||
+        target->HasBreakableByDamageCrowdControlAura()))
     {
         return true;
     }
@@ -170,6 +183,7 @@ bool PossibleAttackTargetsValue::HasUnBreakableCC(Unit* target, Player* player)
 bool PossibleAttackTargetsValue::IsCcTarget(Unit* attacker, Player* player)
 {
     PlayerbotAI* ai = player->GetPlayerbotAI();
+    if (MajordomoPolymorphReserved(ai, attacker)) return true;
     if (ai)
     {
         Group* group = ai->GetBot()->GetGroup();
@@ -312,13 +326,18 @@ bool PossibleAttackTargetsValue::IsTapped(Unit* target, Player* player)
 bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float range, bool ignoreCC, bool checkAttackerValid)
 {
     // Check for the valid attackers value
-    if (checkAttackerValid && !AttackersValue::IsValid(target, player))
+    // Gothik's split-side adds can be fighting a teammate without having this
+    // damage bot on their threat list yet. Requiring personal threat made the
+    // raid plan pause damage, so that first attack could never establish it.
+    // Native encounter/side/group validation replaces only that prerequisite;
+    // ordinary hostility, LOS, distance and CC checks below still run.
+    if (checkAttackerValid && !AttackersValue::IsValid(target, player) && !GothikGroupEngagedAdd(player,target))
     {
-        return false;
+        return RaidLabMovementResult(player, "possible_target_reject", __LINE__, false);
     }
 
     if (!IsPossibleTarget(target, player, range, ignoreCC))
-        return false;
+        return RaidLabMovementResult(player, "possible_target_reject", __LINE__, false);
 
     if (sServerFacade.GetThreatManager(target).getCurrentVictim())
         return true;
@@ -338,31 +357,32 @@ bool PossibleAttackTargetsValue::IsValid(Unit* target, Player* player, float ran
     if (player->GetPlayerbotAI() && !player->GetPlayerbotAI()->HasActivePlayerMaster()&& PAI_VALUE(ObjectGuid, "rti target") == target->GetObjectGuid())
         return true;
 
-    return false;
+    return RaidLabMovementResult(player, "possible_target_reject", __LINE__, false);
 }
 
 bool PossibleAttackTargetsValue::IsPossibleTarget(Unit* target, Player* player, float range, bool ignoreCC)
 {
+    if (KelthuzadDormantAdd(player,target)) return false;
     // This path is also used with a cached attacker list and attacker validation disabled.
-    if (!PossibleTargetsValue::IsValid(target, player, true) || IsProtectedBlackwingTarget(player, target)) return false;
+    if (!PossibleTargetsValue::IsValid(target, player, true) || IsProtectedBlackwingTarget(player, target)) return RaidLabMovementResult(player, "possible_target_reject", __LINE__, false);
     if(target)
     {
         // If the target is in an attackable distance
         if(!player->IsWithinDistInMap(target, range))
         {
-            return false;
+            return RaidLabMovementResult(player, "possible_target_reject", __LINE__, false);
         }
 
         // If the target is immune to any damage
         if (IsImmuneToDamage(target, player))
         {
-            return false;
+            return RaidLabMovementResult(player, "possible_target_reject", __LINE__, false);
         }
 
         // If the target is CC'ed or is a CC target (don't place a dot before we recast cc...)
         if(!ignoreCC && !HasIgnoreCCRti(target, player) && (HasBreakableCC(target, player) || HasUnBreakableCC(target, player)) || IsCcTarget(target, player))
         {
-            return false;
+            return RaidLabMovementResult(player, "possible_target_reject", __LINE__, false);
         }
 
         // If the target is a NPC
@@ -372,14 +392,14 @@ bool PossibleAttackTargetsValue::IsPossibleTarget(Unit* target, Player* player, 
             // If the target is not tapped (the player doesn't have the loot rights (gray name))
             if (!IsTapped(target, player))
             {
-                return false;
+                return RaidLabMovementResult(player, "possible_target_reject", __LINE__, false);
             }
         }
 
         return true;
     }
 
-    return false;
+    return RaidLabMovementResult(player, "possible_target_reject", __LINE__, false);
 }
 
 bool PossibleAddsValue::Calculate()

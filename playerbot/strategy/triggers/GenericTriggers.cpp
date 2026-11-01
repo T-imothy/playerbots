@@ -1,4 +1,5 @@
 #include "playerbot/strategy/MeleeCombatPolicy.h"
+#include "playerbot/strategy/ClassicRaidPolicy.h"
 
 #include "playerbot/playerbot.h"
 #include "playerbot/strategy/generic/PullStrategy.h"
@@ -17,6 +18,18 @@
 #include <regex>
 
 using namespace ai;
+
+bool BloodFuryTrigger::IsActive()
+{
+#ifdef MANGOSBOT_ZERO
+    // Classic Blood Fury applies 23230: healing received is halved. An
+    // assigned raid tank must not automatically trade away incoming heals
+    // for this offensive racial, including while temporarily off-tanking.
+    if (bot->GetGroup() && (bot->GetMapId() == 409 || classicraid::Map(bot->GetMapId())) && ai->IsTank(bot))
+        return false;
+#endif
+    return BoostTrigger::IsActive();
+}
 
 bool NoManaTrigger::IsActive()
 {

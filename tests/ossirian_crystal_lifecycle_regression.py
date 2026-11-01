@@ -1,5 +1,6 @@
 """Execute native replacement-crystal selection, including the last candidate."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile
 from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
@@ -34,8 +35,8 @@ int main(){Map map;Creature boss{&map},first{&map},one{&map},two{&map};map.units
  std::cout<<"PASS: native Ossirian single/final candidate, quota, live/stale GUIDs and missing instance\n";
 }
 '''
-for era in ('classic','tbc','wotlk'):
-    source=(root.parent/f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts/kalimdor/ruins_of_ahnqiraj/boss_ossirian.cpp').read_text()
+for era in core_eras(('classic','tbc','wotlk')):
+    source=(core_path(era,root.parent/f'mangos-{era}-behavior')/'src/game/AI/ScriptDevAI/scripts/kalimdor/ruins_of_ahnqiraj/boss_ossirian.cpp').read_text()
     methods='\n'.join(block(source,name) for name in ('void DoSpawnNextCrystal(', 'void RespawnFirstCrystal()'))
     code=fixture.replace('__METHODS__',methods)
     with tempfile.TemporaryDirectory(prefix='mantech-ossirian-crystals-') as folder:

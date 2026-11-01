@@ -33,7 +33,7 @@ struct Unit{virtual ~Unit()=default;};
 struct Spline{bool done=false;bool Finalized(){return done;}};
 struct Player:Unit{Spline spline;Spline*movespline=&spline;bool world=true,alive=true,transfer=false,charm=false,sit=true,taxi=false,stopped=true,casting=true,los=true;unsigned mana=0,stands=0;float distance=70;MotionMaster motion;
  bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool IsBeingTeleported(){return transfer;}bool HasCharmer(){return charm;}
- bool IsSitState(){return sit;}void SetStandState(unsigned s){assert(s==0);sit=false;++stands;}unsigned GetMapId(){return 409;}
+ unsigned map=409;bool IsSitState(){return sit;}void SetStandState(unsigned s){assert(s==0);sit=false;++stands;}unsigned GetMapId(){return map;}
  float GetPositionX(){return 0;}float GetPositionY(){return 0;}float GetPositionZ(){return 0;}MotionMaster*GetMotionMaster(){return &motion;}
  bool IsStopped(){return stopped;}bool IsTaxiFlying(){return taxi;}bool IsNonMeleeSpellCasted(bool,bool,bool){return casting;}
  bool IsWithinLOSInMap(Unit*,bool){return los;}float GetDistance(Unit*,bool,int){return distance;}};
@@ -56,6 +56,8 @@ struct PlayerbotAI{Player*bot;ObjectGuid regroupDeadTarget=0;ReactionEngine*reac
 namespace ai{Player*GetPartyCombatAnchor(PlayerbotAI*a){return a->anchor?a->bot:nullptr;}}
 struct Action{virtual ~Action()=default;bool useful=true;unsigned duration=8000;std::string name;std::string getName(){return name;}virtual bool isUseful(){return useful;}unsigned GetDuration(){return duration;}};
 struct MovementAction:Action{};struct AttackAction:MovementAction{};
+bool heiganEscape=false;
+struct HeiganDanceAction{HeiganDanceAction(PlayerbotAI*){}bool ShouldReactionInterruptCast(){return heiganEscape;}};
 struct Reaction{Action*action=nullptr;unsigned duration=0;bool IsValid()const{return action;}bool IsActive()const{return action&&duration>100;}
  Action*GetAction()const{return action;}void Reset(){action=nullptr;duration=0;}void SetDuration(unsigned n){duration=n;}void SetAction(Action*);bool Update(unsigned);};
 struct{unsigned reactDelay=100;}sPlayerbotAIConfig;
@@ -110,6 +112,24 @@ int main(){Player bot;PlayerbotAI ai{&bot};ReactionEngine engine{&ai};ai.reactio
  engine.Update(50,false,false,found);assert(engine.IsReacting());
  engine.NotifyHazard();assert(engine.IsReacting()); // repeated in-fire frames cannot starve escape
  engine.ongoingReaction.SetAction(&nativeCast);engine.NotifyHazard();assert(!engine.IsReacting());
+ // Recorded Heigan bandage: the next wave changes two seconds into an
+ // eight-second reaction. Re-evaluate immediately, not after its duration.
+ for(unsigned map:{0u,409u,469u,533u})for(bool escapeNeeded:{false,true}) {
+  bot.map=map;heiganEscape=escapeNeeded;engine.aiReactionUpdateDelay=0;
+  engine.ongoingReaction.SetAction(&nativeCast);const auto searches=engine.searches;
+  engine.Update(50,false,false,found);
+#ifdef MANGOSBOT_ZERO
+  const bool preempt=map==533&&escapeNeeded;
+#else
+  const bool preempt=false;
+#endif
+  assert(engine.IsReacting()!=preempt&&engine.searches==searches+(preempt?1:0));
+  if(!preempt)assert(engine.ongoingReaction.duration==7950);
+ }
+ bot.map=533;heiganEscape=true;bot.stopped=false;bot.spline.done=false;
+ engine.ongoingReaction.SetAction(&oldFollow);engine.aiReactionUpdateDelay=0;
+ engine.Update(50,false,false,found);assert(engine.IsReacting()); // keep actual escape movement
+ engine.ongoingReaction.Reset();bot.map=409;heiganEscape=false;
  // Execute the actual native unqualified reach admission with no mana.
  Unit enemy;bot.casting=false;ai.stay=false;bot.distance=70;ReachTargetAction approach{&ai,&bot,&enemy};
  assert(approach.isUseful()&&ai.castQueries==0);approach.spellName="frostbolt";assert(!approach.isUseful()&&ai.castQueries==1);

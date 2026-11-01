@@ -1,4 +1,5 @@
 #include "playerbot/playerbot.h"
+#include "playerbot/RaidLabTrace.h"
 #include "EncounterPositionValue.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "Grids/GridNotifiers.h"
@@ -48,34 +49,67 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan, 
     auto& point = plan.destination;
     if (!plan.active || !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer() ||
         plan.map != bot->GetMapId() || plan.instance != bot->GetInstanceId() ||
-        !std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) return false;
+        !std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z)) return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,(false));
     const float originalZ = point.z;
     bot->UpdateAllowedPositionZ(point.x, point.y, point.z);
     if (!std::isfinite(point.z) || std::fabs(point.z - originalZ) > 8.0f ||
-        bot->GetDistance(point.x, point.y, point.z) > 60) return false;
+        bot->GetDistance(point.x, point.y, point.z) > 60) {
+#ifdef MANTECH_RAID_LAB
+        RaidLab::DestinationRejected(bot,1,point.x,point.y,point.z,originalZ);
+#endif
+        return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,false);
+    }
     const WorldPosition destination(plan.map, point.x, point.y, point.z);
     if (plan.map == 409 && plan.spell == 21155 &&
-        (destination.isInWater() || destination.isUnderWater())) return false;
+        (destination.isInWater() || destination.isUnderWater())) return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,(false));
     auto hazards = ai->GetAiObjectContext()->GetValue<std::list<HazardPosition>>("hazards")->Get();
     if (Unit* boss = ai->GetUnit(plan.boss))
         if (bot->IsInMap(boss) && boss->IsAlive() && boss->IsInCombat() &&
             CurrentBossPursuitSpell(bot, boss) == plan.spell && plan.spell)
         {
             const float clearance = BossEscapeDistance(bot, boss, plan.spell);
-            if (clearance <= 0) return false;
+            if (clearance <= 0) return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,(false));
             // A destination behind the pursuer can be clear yet have a path
             // through its melee range. Require outward travel on every segment.
             hazards.emplace_back(WorldPosition(boss), clearance - 2);
         }
-    if (plan.map == 409) AppendMoltenCoreGroundHazards(ai, hazards);
+    std::list<HazardPosition> nativeGround;
+    if (plan.map == 409)
+    {
+        AppendMoltenCoreGroundHazards(ai, nativeGround);
+        hazards.insert(hazards.end(), nativeGround.begin(), nativeGround.end());
+    }
     if (plan.map == 469) AppendBlackwingGroundHazards(ai, hazards);
 #ifdef MANGOSBOT_ZERO
+    bool heiganEscape = false;
+    if (plan.map == 533 && plan.spell >= 30116 && plan.spell <= 30119)
+        if (Unit* boss = ai->GetUnit(plan.boss))
+            if (boss->IsInWorld() && boss->IsAlive() && boss->IsInCombat() &&
+                !boss->HasCharmer() && boss->GetEntry() == 15936 && bot->IsInMap(boss))
+            {
+                const bool cloud = boss->HasAura(29350);
+                if (cloud || (!ai->IsTank(bot) && (ai->IsHeal(bot) || ai->IsRanged(bot))))
+                {
+                    const float radius = NativeEncounterSpellRadius(cloud ? 30122 : 29310);
+                    if (!std::isfinite(radius) || radius <= 0 || radius > 40) return false;
+                    heiganEscape = true;
+                    // A safe platform endpoint does not authorize crossing
+                    // Heigan's current Mana Burn on the way there. Existing
+                    // segment admission permits outward escape from danger.
+                    hazards.emplace_back(WorldPosition(boss), radius + boss->GetCombatReach() + bot->GetCombatReach());
+                }
+            }
+    bool onyxiaBreathEscape = false;
+    std::list<HazardPosition> onyxiaBreath;
     if (plan.map == 249 && plan.spell != 18392 && plan.spell)
     {
         std::vector<encounter::Circle> breath;
         if (OnyxiaBreathThreats(plan.spell, breath))
+        {
+            onyxiaBreathEscape = true;
             for (const auto& circle : breath)
-                hazards.emplace_back(WorldPosition(plan.map, circle.center.x, circle.center.y, circle.center.z), circle.radius - 1);
+                onyxiaBreath.emplace_back(WorldPosition(plan.map, circle.center.x, circle.center.y, circle.center.z), circle.radius - 1);
+        }
     }
 #endif
     if (plan.map == 531)
@@ -89,22 +123,64 @@ bool ai::ValidateEncounterDestination(PlayerbotAI* ai, EncounterPosition& plan, 
             hazards.emplace_back(WorldPosition(plan.map, circle.center.x, circle.center.y, circle.center.z), circle.radius - 1);
     }
     for (const auto& hazard : hazards)
-        if (destination.distance(hazard.first) < hazard.second + 1) return false;
+        if (destination.distance(hazard.first) < hazard.second + 1) return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,(false));
+#ifdef MANGOSBOT_ZERO
+    for (const auto& hazard : onyxiaBreath)
+        if (destination.distance(hazard.first) < hazard.second + 1) return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,false);
+#endif
     if (!requireWalkingPath || bot->GetDistance(point.x, point.y, point.z) <= 1.0f)
-        return plan.map != 469 || BlackwingMovementRouteSafe(ai, {destination});
+        return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,
+            (plan.map != 469 || BlackwingMovementRouteSafe(ai, {destination})) &&
+            (plan.map != 409 || MajordomoFormationRouteSafe(ai, {destination}, ai->GetUnit(plan.boss))) &&
+            (plan.map != 309 || MadnessFormationRouteSafe(ai, {destination}, ai->GetUnit(plan.boss))));
     // A safe endpoint can still require crossing a void zone. Check one bounded
     // native normal route; incomplete/shortcut paths cannot establish safety.
     const auto path = destination.getPathStepFrom(WorldPosition(bot), bot, true);
-    if (path.size() < 2 || path.size() > 256 || !destination.isPathTo(path, 1.0f, 2.0f)) return false;
-    if (plan.map == 409 && !LavaTrashRouteSafe(ai, path)) return false;
-    if (plan.map == 469 && !BlackwingMovementRouteSafe(ai, path)) return false;
+    if (path.size() < 2 || path.size() > 256 || !destination.isPathTo(path, 1.0f, 2.0f)) {
+#ifdef MANTECH_RAID_LAB
+        RaidLab::DestinationRejected(bot,2,point.x,point.y,point.z,originalZ,uint32(path.size()),
+            path.empty()?0:path.back().getX(),path.empty()?0:path.back().getY(),path.empty()?0:path.back().getZ());
+#endif
+        return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,false);
+    }
+    if (plan.map == 409 && !LavaTrashRouteSafe(ai, path)) return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,(false));
+    if (plan.map == 409 && !MajordomoFormationRouteSafe(ai, path, ai->GetUnit(plan.boss))) return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,false);
+    if (plan.map == 469 && !BlackwingMovementRouteSafe(ai, path)) return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,(false));
+    if (plan.map == 309 && !MadnessFormationRouteSafe(ai, path, ai->GetUnit(plan.boss))) return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,false);
     WorldPosition previous(bot);
+    bool firstPoint = true;
     for (const WorldPosition& waypoint : path)
     {
-        if (!IsHazardSafeSegment(previous, waypoint, hazards)) return false;
+        const bool groundProjection = firstPoint && ((plan.map == 409 &&
+            ai->HasStrategy("magmadar", BotState::BOT_STATE_COMBAT))
+#ifdef MANGOSBOT_ZERO
+            || (plan.map == 531 && plan.spell == 7393)
+            || onyxiaBreathEscape
+            || heiganEscape
+            // Native ZG ground hazards have the same initial nav-floor
+            // projection. The bounded helper still rejects inward walking,
+            // new hazards, other floors and every unsafe remaining segment.
+            || plan.map == 309
+#endif
+            );
+        if (!((groundProjection && IsHazardSafeGroundProjection(previous, waypoint, hazards)) ||
+              IsMoltenCoreGroundEscapeSegment(previous, waypoint, hazards, nativeGround)))
+        {
+#ifdef MANTECH_RAID_LAB
+            for(const auto& hazard:hazards) if(!IsHazardSafeSegment(previous,waypoint,std::list<HazardPosition>{hazard})) {
+                RaidLab::RouteRejected(bot,previous.getX(),previous.getY(),previous.getZ(),waypoint.getX(),waypoint.getY(),waypoint.getZ(),hazard.first.getX(),hazard.first.getY(),hazard.first.getZ(),hazard.second);break;
+            }
+#endif
+            return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,false);
+        }
+#ifdef MANGOSBOT_ZERO
+        if (onyxiaBreathEscape && !IsOnyxiaBreathSafeSegment(previous, waypoint, onyxiaBreath, firstPoint))
+            return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,false);
+#endif
         previous = waypoint;
+        firstPoint = false;
     }
-    return true;
+    return RaidLabMovementResult(bot,"mc_validate_destination",__LINE__,(true));
 }
 
 EncounterPosition NetherspitePositionValue::Calculate()

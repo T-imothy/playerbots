@@ -1,14 +1,16 @@
 """Execute native Web Wrap selection with depleted raids and the Wrath release hook."""
 from pathlib import Path
-import subprocess, tempfile, sys
+import subprocess, tempfile, sys, os
 from behavior_regression import block
 
 root=Path(__file__).resolve().parents[1]
 mode=sys.argv[1] if len(sys.argv)>1 else 'all'
 assert mode in ('all','selection','release')
-for era in ('classic','tbc','wotlk'):
+for era in os.environ.get('PLAYERBOT_TEST_NATIVE_ERAS','classic,tbc,wotlk').split(','):
     region='northrend' if era=='wotlk' else 'eastern_kingdoms'
-    source=(root.parent/f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts/{region}/naxxramas/boss_maexxna.cpp').read_text()
+    core=root.parent/era
+    if not core.exists():core=root.parent/f'mangos-{era}-behavior'
+    source=(core/f'src/game/AI/ScriptDevAI/scripts/{region}/naxxramas/boss_maexxna.cpp').read_text()
     selection=block(source,'struct WebWrapMaexxna')+';'
     release=block(block(source,'struct npc_web_wrapAI'),'void JustDied(') if era=='wotlk' else 'void JustDied(Unit*) override {}'
     code=r'''

@@ -1,5 +1,6 @@
 """Exercise each native Mar'li phase/evade implementation against her spell-list contract."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess
 import tempfile
 from behavior_regression import block
@@ -54,8 +55,8 @@ int main(){
  std::cout<<"PASS: native Marli phase lists, repeated transitions, cast failure, wipe reset and charge\n";
 }
 '''
-for era in ('classic','tbc','wotlk'):
-    native = (root.parent/era/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/zulgurub/boss_marli.cpp').read_text()
+for era in core_eras(('classic','tbc','wotlk')):
+    native = (core_path(era,root.parent/era)/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms/zulgurub/boss_marli.cpp').read_text()
     enums = native[native.index('enum\n'):native.index('struct boss_marliAI')]
     methods = '\n'.join(block(native, name) for name in ('void Reset()', 'void JustReachedHome()', 'void ExecuteAction('))
     code = fixture.replace('__ENUMS__', enums).replace('__METHODS__', methods)

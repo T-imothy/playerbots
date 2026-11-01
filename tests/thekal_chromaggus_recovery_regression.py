@@ -1,10 +1,11 @@
 """Execute native resurrection lambdas and Chromaggus's one-shot enrage."""
 from pathlib import Path
+from native_core_paths import core_path, core_eras
 import subprocess,tempfile,re
 from behavior_regression import block
 root=Path(__file__).resolve().parents[2]
-for era in ('classic','tbc','wotlk'):
-    scripts=root/f'mangos-{era}-behavior/src/game/AI/ScriptDevAI/scripts/eastern_kingdoms'
+for era in core_eras(('classic','tbc','wotlk')):
+    scripts=core_path(era,root/f'mangos-{era}-behavior')/'src/game/AI/ScriptDevAI/scripts/eastern_kingdoms'
     source=(scripts/'zulgurub/boss_thekal.cpp').read_text()
     def callback(struct,action):
         scope=source[source.index('struct '+struct):]
@@ -15,6 +16,7 @@ for era in ('classic','tbc','wotlk'):
     spell=re.search(r'SPELL_ENRAGE\s*=\s*(\d+)',chrom)[1]
     code=r'''
 #include <cassert>
+#define RAID_LAB_PHASE(unit,field,value) ((field)=(value))
 #include <map>
 #include <iostream>
 using uint32=unsigned;

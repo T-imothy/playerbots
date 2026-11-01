@@ -21,6 +21,8 @@ helper='\n'.join(line for line in helper.splitlines() if not line.startswith('#i
 base=r'''
 #include <algorithm>
 #include <cassert>
+#include <list>
+#include <type_traits>
 #include <iostream>
 #include <tuple>
 #include <vector>
@@ -31,7 +33,9 @@ constexpr int SPELL_CAST_OK=0,SPELL_FAILED_UNIT_NOT_INFRONT=1;
 constexpr unsigned TRIGGERED_NORMAL_COMBAT_CAST=1,TRIGGERED_PET_CAST=2;
 #define MANGOS_ASSERT assert
 struct PlayerbotAI;struct Pet;struct Unit;
-struct SpellEntry{unsigned Id=0;bool damage=false,positive=false;unsigned Effect[3]={},StackAmount=0;};
+struct SpellEntry{unsigned Id=0;bool damage=false,positive=false;unsigned Effect[3]={},StackAmount=0,EffectChainTarget[3]={},MaxAffectedTargets=0;};
+using ObjectGuid=unsigned;
+bool IsAreaOfEffectSpell(const SpellEntry*s){return s->MaxAffectedTargets>1;}
 struct Targets{Unit*target=nullptr;Unit*getUnitTarget(){return target;}void setUnitTarget(Unit*u){target=u;}};
 using SpellCastTargets=Targets;
 unsigned nativeSpellStarts=0;int nativeSpellResult=SPELL_CAST_OK;
@@ -62,12 +66,15 @@ struct Player:Unit{PlayerbotAI*brain=nullptr;Pet*pet=nullptr;bool transfer=false
  Player(){player=true;}Pet*GetPet(){return pet;}bool IsBeingTeleported(){return transfer;}
  PlayerbotAI*GetPlayerbotAI(){return brain;}void*GetGroup(){return group;}};
 namespace ai{struct ClassicRaidPlan{bool holdDamage=false;};}
-struct Context{ai::ClassicRaidPlan plan;template<class T>struct Value{T value;T Get(){return value;}};
- template<class T>Value<T>*GetValue(const char*){static Value<T>v;v.value=plan;return &v;}};
+struct Context{ai::ClassicRaidPlan plan;std::list<ObjectGuid> nearby;template<class T>struct Value{T value;T Get(){return value;}};
+ template<class T>Value<T>*GetValue(const char*,const char* = nullptr){static Value<T>v;if constexpr(std::is_same_v<T,ai::ClassicRaidPlan>)v.value=plan;else v.value=nearby;return &v;}};
 struct PlayerbotAI{Player bot;Context context;bool real=false,offenseAllowed=true;unsigned offenseQueries=0;
- PlayerbotAI(){bot.brain=this;}bool IsRealPlayer(){return real;}Context*GetAiObjectContext(){return &context;}};
+ Unit* reserved=nullptr;Unit*GetUnit(unsigned){return reserved;}Player*GetBot(){return &bot;}PlayerbotAI(){bot.brain=this;}bool IsRealPlayer(){return real;}Context*GetAiObjectContext(){return &context;}};
 bool IsPositiveSpell(const SpellEntry*s,Unit*,Unit*){return s->positive;}
 namespace ai{
+ bool MajordomoPolymorphReserved(PlayerbotAI*a,Unit*u){return a&&u&&a->reserved==u;}
+ bool petApproachAllowed=true;
+ bool KelthuzadOpeningApproachAllowed(PlayerbotAI*,Unit*,bool pet){assert(pet);return petApproachAllowed;}
  bool ClassicRaidDamageSpell(const SpellEntry*s){return s&&s->damage;}
  bool ClassicRaidOffenseAllowed(PlayerbotAI*a,const SpellEntry*s,Unit*){++a->offenseQueries;return s&&!s->damage?true:a->offenseAllowed;}
  bool RaidPetOffenseAllowed(Unit*,const SpellEntry*,Unit*);void StopUnsafeRaidPetCasts(Unit*);
@@ -89,6 +96,16 @@ struct PetAI:CreatureAI{Pet*m_pet;Unit*m_unit,*m_creature;bool m_inCombat=false,
 __NATIVE__
 int main(){PlayerbotAI owner;Pet pet;Unit enemy;pet.owner=&owner.bot;owner.bot.pet=&pet;PetAI native(&pet);
  SpellEntry damage{1,true,false},heal{2,false,true},buff{3,false,true},cc{4,false,false};
+
+#ifdef MANGOSBOT_ZERO
+ owner.bot.map=pet.map=enemy.map=409;owner.reserved=&enemy;
+ assert(!ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));assert(!ai::RaidPetOffenseAllowed(&pet,&damage,&enemy));
+ assert(ai::RaidPetOffenseAllowed(&pet,&heal,&owner.bot)&&ai::RaidPetOffenseAllowed(&pet,&cc,&enemy));
+ Unit elite;elite.map=409;assert(ai::RaidPetOffenseAllowed(&pet,&damage,&elite));
+ damage.EffectChainTarget[0]=2;owner.context.nearby={1};assert(!ai::RaidPetOffenseAllowed(&pet,&damage,&elite));
+ owner.reserved=nullptr;assert(ai::RaidPetOffenseAllowed(&pet,&damage,&elite));damage.EffectChainTarget[0]=0;
+ owner.bot.map=pet.map=enemy.map=533;owner.context.nearby.clear();
+#endif
  owner.context.plan.holdDamage=true;
  assert(!ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));native.AttackStart(&enemy);assert(!pet.victim&&pet.starts==0);
  assert(!native.CanAutoCast(&damage,&enemy)&&native.nativeChecks==0);
@@ -111,9 +128,46 @@ int main(){PlayerbotAI owner;Pet pet;Unit enemy;pet.owner=&owner.bot;owner.bot.p
  owner.offenseAllowed=true;native.AttackStart(&enemy);assert(pet.victim==&enemy&&pet.starts==1);
  assert(native.CanAutoCast(&damage,&enemy)); // Hold end restores native attacks without react-state bookkeeping.
  assert(native.Cast({&damage,&enemy,true})&&nativeSpellStarts==starts+1);
+ ai::petApproachAllowed=false;
+ assert(!ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy)&&!native.CanAutoCast(&damage,&enemy));
+ assert(native.CanAutoCast(&heal,&owner.bot)&&native.CanAutoCast(&buff,&pet));
+ native.UpdateAI(100);assert(!pet.victim&&!native.m_inCombat);
+ // Native KT opening temporarily clears the owner's combat flag while the
+ // summoned soldier is incoming. Pet attack/ongoing chase must stay denied.
+ owner.bot.combat=false;
+#ifdef MANGOSBOT_ZERO
+ assert(!ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));
+ assert(!native.CanAutoCast(&damage,&enemy));
+ const auto beforeStarts=pet.starts;native.AttackStart(&enemy);assert(pet.starts==beforeStarts);
+ pet.victim=&enemy;pet.motion.type=CHASE_MOTION_TYPE;native.m_inCombat=true;
+ pet.casts[0]=&cast;const auto beforeInterrupts=pet.interrupts.size();
+ native.UpdateAI(100);assert(!pet.victim&&!native.m_inCombat&&pet.motion.type==0);
+ assert(pet.interrupts.size()==beforeInterrupts+1);
+ assert(native.CanAutoCast(&heal,&owner.bot)&&native.CanAutoCast(&buff,&pet));
+ owner.real=true;assert(ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));owner.real=false;
+ owner.bot.map=pet.map=enemy.map=409;assert(ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));
+ owner.bot.map=pet.map=enemy.map=533;
+#else
+ assert(ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));
+#endif
+ owner.bot.combat=true;
+ ai::petApproachAllowed=true;
  owner.context.plan.holdDamage=true;
  owner.real=true;assert(ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));owner.real=false;
  pet.map=409;assert(ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));pet.map=533;
+ pet.map=owner.bot.map=enemy.map=509;
+#ifdef MANGOSBOT_ZERO
+ assert(!ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));
+#else
+ assert(ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));
+#endif
+ pet.map=owner.bot.map=enemy.map=469;
+#ifdef MANGOSBOT_ZERO
+ assert(!ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));
+#else
+ assert(ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));
+#endif
+ pet.map=owner.bot.map=enemy.map=533;
  owner.bot.map=409;assert(ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));owner.bot.map=533;
  owner.bot.pet=nullptr;assert(ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));owner.bot.pet=&pet;
  pet.charmed=true;assert(ai::RaidPetOffenseAllowed(&pet,nullptr,&enemy));pet.charmed=false; // Never govern possessed encounter actors.

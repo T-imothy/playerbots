@@ -10,7 +10,7 @@ source=(repo/'playerbot/strategy/actions/MovementActions.cpp').read_text()
 if '--before-empty-move' in sys.argv:
     source=subprocess.check_output(['git','-c','safe.directory='+repo.as_posix(),'-C',str(repo),
         'show','8e74916a:playerbot/strategy/actions/MovementActions.cpp'],text=True)
-methods='\n'.join(block(source, marker) for marker in ('bool MovementAction::BuildSafeHazardPath(', 'bool MovementAction::DispatchMovement('))
+methods='\n'.join(block(source, marker) for marker in ('bool MovementAction::BuildSafeHazardPath(', 'bool MovementAction::DispatchMovement(', 'bool MovementAction::ContinueAdmittedRaidEscape(', 'bool MovementAction::MoveAdmittedRaidEscape('))
 safety=(repo/'playerbot/strategy/actions/MovementPathSafety.h').read_text().replace('#pragma once','').replace('#include "playerbot/strategy/values/HazardsValue.h"','')
 code=r'''
 #include <algorithm>
@@ -21,16 +21,26 @@ code=r'''
 #include <limits>
 #include <list>
 #include <vector>
-using uint32=uint32_t;
+using uint32=uint32_t;using int32=int32_t;
 namespace G3D {struct Vector3{float x=0,y=0,z=0;};}
+struct Spline{bool done=false;std::vector<G3D::Vector3>points{{4,0,0},{10,0,0}};
+ bool Finalized(){return done;}G3D::Vector3 FinalDestination(){return points.back();}
+ const Spline&_Spline(){return *this;}int _currentSplineIdx(){return 0;}
+ int last()const{return int(points.size())-1;}const G3D::Vector3&getPoint(int i)const{return points.at(i);}};
 struct Position {float x,y,z,o;Position(float a,float b,float c,float d):x(a),y(b),z(c),o(d){}};
 enum ForcedMovement{FORCED_MOVEMENT_WALK,FORCED_MOVEMENT_RUN,FORCED_MOVEMENT_FLIGHT};
-enum{MOVE_FLIGHT,PATHFIND_NORMAL=1,PATHFIND_NOPATH=2};
+enum{MOVE_FLIGHT,PATHFIND_NORMAL=1,PATHFIND_NOPATH=2,EFFECT_MOTION_TYPE=7,UNIT_STAND_STATE_STAND=0};
 struct MotionMaster {unsigned clears=0,points=0,paths=0;bool generated=false;std::vector<G3D::Vector3> route;
- void Clear(){++clears;}void MovePath(std::vector<G3D::Vector3>& p,ForcedMovement,bool,bool=false){++paths;route=p;}
+ int type=0;int GetCurrentMovementGeneratorType(){return type;}
+ void Clear(bool=false,bool=false){++clears;}void MovePath(std::vector<G3D::Vector3>& p,ForcedMovement,bool,bool=false){++paths;route=p;}
  void MovePoint(unsigned,float x,float y,float z,ForcedMovement,bool gen){++points;generated=gen;route={{x,y,z}};}
  void MovePoint(unsigned,Position p,ForcedMovement,float,bool gen){++points;generated=gen;route={{p.x,p.y,p.z}};}};
 struct Unit {float x=-10,y=0,z=0;unsigned map=1;bool flying=false,transport=false,navFail=false,navEmpty=false,navShort=false;MotionMaster motion;
+ Spline*movespline=nullptr;
+ bool world=true,alive=true,charmed=false,teleport=false,standing=true,casting=true;float projection=0;bool inward=false;
+ bool IsInWorld(){return world;}bool IsAlive(){return alive;}bool HasCharmer(){return charmed;}bool IsBeingTeleported(){return teleport;}
+ bool IsStandState(){return standing;}void SetStandState(int){standing=true;}void HandleEmoteState(int){}
+ bool IsNonMeleeSpellCasted(bool,bool,bool){return casting;}
  unsigned GetMapId()const{return map;}void* GetTransport(){return transport?this:nullptr;}
  bool IsFlying(){return flying;}bool IsFreeFlying(){return flying;}float GetSpeed(int){return 7;}
  MotionMaster* GetMotionMaster(){return &motion;}};
@@ -46,20 +56,27 @@ struct WorldPosition {unsigned map=1;float x=0,y=0,z=0;
  std::vector<G3D::Vector3> toPointsArray(const std::vector<WorldPosition>& p){std::vector<G3D::Vector3> out;for(auto& point:p)out.push_back(point.getVector3());return out;}};
 using HazardPosition=std::pair<WorldPosition,float>;
 struct TravelPath {std::vector<WorldPosition> path;std::vector<WorldPosition> getPointPath(){return path;}};
-struct PlayerbotAI {std::list<HazardPosition> hazards;bool lava=false,routeSafe=true,bwl=false,bwlSafe=true;unsigned stops=0;void StopMoving(){++stops;}};
-bool BlackwingSuppressionMovementActive(PlayerbotAI*a){return a->bwl;}
+struct PlayerbotAI {std::list<HazardPosition> hazards;bool lava=false,routeSafe=true,bwl=false,bwlSafe=true;unsigned stops=0,interrupts=0;void StopMoving(){++stops;}
+ bool canMove=true,jumping=false;bool CanMove(){return canMove;}bool IsJumping(){return jumping;}void InterruptSpell(bool){++interrupts;}};
+bool RaidUnpulledPackMovementActive(PlayerbotAI*a){return a->bwl;}
+bool BlackwingMovementRouteSafe(PlayerbotAI*a,const std::vector<WorldPosition>&){return a->bwlSafe;}
+bool RaidLabMovementResult(Unit*,const char*,int,bool result){return result;}
 bool BuildBlackwingMovementPath(PlayerbotAI*a,const WorldPosition&p,std::vector<WorldPosition>&out){out={{p.map,p.x-1,p.y,p.z},p};return a->bwlSafe;}
 bool LavaTrashCombatActive(PlayerbotAI*a){return a->lava;}
 bool LavaTrashRouteSafe(PlayerbotAI*a,const std::vector<WorldPosition>&){return a->routeSafe;}
+std::list<HazardPosition> nativeGround;
+void AppendMoltenCoreGroundHazards(PlayerbotAI*,std::list<HazardPosition>&out){out=nativeGround;}
 struct MovementAction {PlayerbotAI* ai;Unit* bot;Unit* mover;bool detour=false;float waited=0;
  Unit* GetMover(Unit*){return mover;}void WaitForReach(float distance){waited=distance;}
  bool GeneratePathAvoidingHazards(std::vector<WorldPosition>& path){if(detour&&path.size()>2){path[1].y=3;return true;}return false;}
  bool BuildSafeHazardPath(std::vector<WorldPosition>&,Unit*);
+ unsigned duration=0;void UpdateMovementState(){}void SetDuration(unsigned n){duration=n;}void ClearIdleState(){}
+ bool MoveAdmittedRaidEscape(const WorldPosition&);bool ContinueAdmittedRaidEscape();
  bool DispatchMovement(TravelPath,bool,bool);};
 }
 using namespace ai;
 struct PathFinder {Unit* unit;std::vector<G3D::Vector3> path;PathFinder(Unit* u):unit(u){}
- bool calculate(G3D::Vector3 start,G3D::Vector3 end,bool force){assert(!force);path={start,end};if(unit->navEmpty)path.clear();else if(unit->navShort)path.back()=start;return end.x < 50000;}
+ bool calculate(G3D::Vector3 start,G3D::Vector3 end,bool force){assert(!force);start.z+=unit->projection;path={start,end};if(unit->inward)path.insert(path.begin()+1,{start.x-2,start.y,start.z});if(unit->navEmpty)path.clear();else if(unit->navShort)path.back()=start;return end.x < 50000;}
  int getPathType(){return unit->navFail?PATHFIND_NOPATH:PATHFIND_NORMAL;}
  std::vector<G3D::Vector3>& getPath(){return path;}};
 #define AI_VALUE(type,name) ai->hazards
@@ -67,6 +84,25 @@ __SAFETY__
 __METHODS__
 int main(){
  PlayerbotAI ai;Unit bot;MovementAction action{&ai,&bot,&bot};
+ {
+ Spline spline;bot.movespline=&spline;bot.map=531;bot.x=4;ai.hazards={{{531,0,0,0},8}};
+#ifdef MANGOSBOT_ZERO
+ for(unsigned i=0;i<20;++i)assert(action.ContinueAdmittedRaidEscape());
+ assert(bot.motion.clears==0&&bot.motion.paths==0&&ai.interrupts==0);
+ ai.hazards.push_back({{531,10,0,0},2});assert(!action.ContinueAdmittedRaidEscape());ai.hazards.pop_back();
+ spline.points={{4,0,0},{2,0,0},{10,0,0}};assert(!action.ContinueAdmittedRaidEscape());
+ spline.points={{4,0,0},{7,5,0},{10,0,0}};ai.hazards.push_back({{531,7,5,0},1});assert(!action.ContinueAdmittedRaidEscape());ai.hazards.pop_back();
+ spline.points={{4,0,0},{10,0,0}};ai.canMove=false;assert(!action.ContinueAdmittedRaidEscape());ai.canMove=true;
+ bot.motion.type=EFFECT_MOTION_TYPE;assert(!action.ContinueAdmittedRaidEscape());bot.motion.type=0;
+ spline.done=true;assert(!action.ContinueAdmittedRaidEscape());spline.done=false;
+ bot.teleport=true;assert(!action.ContinueAdmittedRaidEscape());bot.teleport=false;
+ bot.transport=true;assert(!action.ContinueAdmittedRaidEscape());bot.transport=false;
+ for(unsigned m:{0u,409u,469u,489u,533u,230u}){bot.map=m;assert(!action.ContinueAdmittedRaidEscape());}
+#else
+ assert(!action.ContinueAdmittedRaidEscape());
+#endif
+ bot.movespline=nullptr;bot.map=1;bot.x=-10;ai.hazards.clear();
+ }
  TravelPath route{{{1,-10,0,0},{1,0,0,0},{1,10,0,0}}};
  assert(!action.DispatchMovement({},true,false));assert(bot.motion.clears==0);
  TravelPath invalid=route;invalid.path.back().x=std::numeric_limits<float>::quiet_NaN();
@@ -106,6 +142,33 @@ int main(){
  Unit vehicle;action.mover=&vehicle;ai.hazards.clear();
  assert(action.DispatchMovement(route,true,false));assert(vehicle.motion.points==1);
  action.mover=nullptr;assert(!action.DispatchMovement(route,true,false));
+ // An actual failed escape cannot mutate casting or the current motion.
+ bot=Unit{};bot.map=531;bot.x=1;bot.z=1;action.mover=&bot;ai=PlayerbotAI{};
+ ai.hazards={{{531,0,0,0},5}};bot.projection=-1;
+ WorldPosition exit{531,8,0,0};
+#ifdef MANGOSBOT_ZERO
+ assert(action.MoveAdmittedRaidEscape(exit));assert(ai.interrupts==1&&bot.motion.paths==1&&action.duration==250);
+ const auto escaped=bot.motion.paths,interrupted=ai.interrupts,cleared=bot.motion.clears;
+ auto refused=[&](){assert(!action.MoveAdmittedRaidEscape(exit));assert(ai.interrupts==interrupted&&bot.motion.paths==escaped&&bot.motion.clears==cleared);};
+ bot.navFail=true;refused();bot.navFail=false;
+ bot.navEmpty=true;refused();bot.navEmpty=false;
+ bot.navShort=true;refused();bot.navShort=false;
+ bot.inward=true;refused();bot.inward=false;
+ bot.projection=-3;refused();bot.projection=-1;
+ bot.transport=true;refused();bot.transport=false;
+ bot.teleport=true;refused();bot.teleport=false;
+ bot.world=false;refused();bot.world=true;bot.alive=false;refused();bot.alive=true;
+ bot.charmed=true;refused();bot.charmed=false;ai.canMove=false;refused();ai.canMove=true;
+ ai.jumping=true;refused();ai.jumping=false;bot.motion.type=EFFECT_MOTION_TYPE;refused();bot.motion.type=0;
+ ai.bwl=true;ai.bwlSafe=false;refused();ai.bwl=false;
+ exit={531,2,0,0};refused();exit={531,50,0,0};refused();exit={531,1,0,1};refused();
+ exit={531,8,0,0};ai.hazards.push_back({{531,4,0,0},1});refused();ai.hazards.pop_back();
+ for(unsigned map:{0,1,30,489,529,229,230,532}){bot.map=map;exit.map=map;refused();}
+ for(unsigned map:{409,249,469,533,309,509,531})assert(UsesClassicRaidEscapeAdmission(map));
+#else
+ assert(!action.MoveAdmittedRaidEscape(exit)&&ai.interrupts==0&&bot.motion.paths==0);
+ std::vector<WorldPosition> native{exit};assert(!action.BuildSafeHazardPath(native,&bot));
+#endif
  std::cout<<"PASS: native detour dispatch, empty/nonfinite/map guards, failed navigation, whole-segment hazards and selected mover\n";
 }
 '''.replace('__SAFETY__',safety).replace('__METHODS__',methods)

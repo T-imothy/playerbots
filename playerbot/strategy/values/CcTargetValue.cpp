@@ -7,6 +7,7 @@
 #include "playerbot/strategy/values/RtiTargetValue.h"
 #include "playerbot/strategy/actions/MoltenCoreGarrActions.h"
 #include "playerbot/strategy/actions/MoltenCoreLavaTrashActions.h"
+#include "playerbot/strategy/actions/EncounterSpellPolicy.h"
 #include "Grids/GridNotifiers.h"
 #include "Grids/GridNotifiersImpl.h"
 #include "Grids/CellImpl.h"
@@ -42,6 +43,20 @@ public:
         if (!bot || !bot->IsInWorld() || bot->IsBeingTeleported() || !bot->IsAlive() ||
             !creature || !creature->IsInWorld() || !creature->IsAlive() || !bot->IsInMap(creature))
             return;
+
+#ifdef MANGOSBOT_ZERO
+        // A raid companion's existing sheep/fear is sufficient control. The
+        // native cast can succeed without replacing that aura, so checking
+        // only HasMyAura causes other mages to cast repeatedly at the same add.
+        // This selector is not the encounter-owned Garr/MC banish allocator.
+        switch (bot->GetMapId())
+        {
+            case 249: case 309: case 409: case 469: case 509: case 531: case 533:
+                if (bot->GetGroup() && !ai->IsRealPlayer() &&
+                    (creature->HasBreakableByDamageCrowdControlAura() || creature->HasAuraType(SPELL_AURA_MOD_FEAR))) return;
+                break;
+        }
+#endif
 
         AiObjectContext* context = ai->GetAiObjectContext();
 
@@ -152,6 +167,8 @@ ObjectGuid CcTargetValue::Calculate()
     }
 
     Unit* assigned = nullptr;
+    if (qualifier == "polymorph" && MajordomoPolymorphAssignment(ai, assigned))
+        return assigned ? assigned->GetObjectGuid() : ObjectGuid();
     if (GarrBanishAssignment(ai, qualifier, assigned))
         return assigned ? assigned->GetObjectGuid() : ObjectGuid();
     FindTargetForCcStrategy strategy(ai, qualifier);

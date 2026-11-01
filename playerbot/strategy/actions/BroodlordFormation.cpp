@@ -46,7 +46,11 @@ bool ai::BroodlordFormationPlan(PlayerbotAI* ai, Unit* boss, Unit* target, Class
     if (boss->GetDistance(tankStation.x, tankStation.y, tankStation.z) > 60 ||
         bot->GetPositionZ() < 448.60f) return true;
     const bool holding = boss->GetVictim() == bot;
-    const bool ranged = !holding && (ai->IsRanged(bot) || ai->IsHeal(bot));
+    bool recoveringTank = false;
+#ifdef MANGOSBOT_ZERO
+    recoveringTank = !holding && ai->IsTank(bot);
+#endif
+    const bool ranged = !holding && !recoveringTank && (ai->IsRanged(bot) || ai->IsHeal(bot));
     Unit* anchor = boss;
     if (ranged && ai->IsHeal(bot))
     {
@@ -64,7 +68,7 @@ bool ai::BroodlordFormationPlan(PlayerbotAI* ai, Unit* boss, Unit* target, Class
     auto endpoint = [&](const encounter::Point& point, bool transit) {
         if (point.z < 448.60f || std::fabs(point.z - tankStation.z) > 3.0f) return false;
         const float angle = std::atan2(point.y - boss->GetPositionY(), point.x - boss->GetPositionX());
-        if (!holding && !transit && std::cos(angle - boss->GetOrientation()) > 0) return false;
+        if (!holding && !recoveringTank && !transit && std::cos(angle - boss->GetOrientation()) > 0) return false;
         if (ranged)
         {
             if (std::hypot(point.x - boss->GetPositionX(), point.y - boss->GetPositionY()) < blast + 2 ||
@@ -86,19 +90,19 @@ bool ai::BroodlordFormationPlan(PlayerbotAI* ai, Unit* boss, Unit* target, Class
             if (!BuildBlackwingMovementPath(ai, WorldPosition(469, p.destination.x, p.destination.y, p.destination.z), path)) return false;
             WorldPosition previous(bot);
             std::list<HazardPosition> avoid;
-            if (!holding) avoid.emplace_back(WorldPosition(boss), ranged ? blast + 2 : 1.0f);
+            if (!holding && !recoveringTank) avoid.emplace_back(WorldPosition(boss), ranged ? blast + 2 : 1.0f);
             auto frontalRisk = [&](const WorldPosition& point) {
                 const float dx = point.getX() - boss->GetPositionX(), dy = point.getY() - boss->GetPositionY();
                 return std::max(0.0f, std::cos(std::atan2(dy, dx) - boss->GetOrientation())) *
                     std::max(0.0f, maximum + 3 - std::hypot(dx, dy));
             };
-            float risk = (!holding && !ranged) ? frontalRisk(previous) : 0;
+            float risk = (!holding && !recoveringTank && !ranged) ? frontalRisk(previous) : 0;
             for (const auto& step : path)
             {
                 if (step.getZ() < 448.60f || (!holding && !IsHazardSafeSegment(previous, step, avoid))) return false;
                 // A melee already in front may leave, but a safe flank route
                 // cannot cut across cleave just because its endpoint is behind.
-                if (!holding && !ranged)
+                if (!holding && !recoveringTank && !ranged)
                 {
                     const unsigned samples = std::max(1u, unsigned(std::ceil(previous.distance(step) / 0.5f)));
                     for (unsigned i = 1; i <= samples; ++i)
@@ -117,6 +121,23 @@ bool ai::BroodlordFormationPlan(PlayerbotAI* ai, Unit* boss, Unit* target, Class
         }
         return true;
     };
+    if (recoveringTank)
+    {
+        // Broodlord is taunt-immune. A tank who lost threat must attack from
+        // the near melee edge instead of orbiting behind each new victim.
+        // Once threat returns, the ordinary wall station takes over again.
+        const encounter::Point here{bot->GetPositionX(),bot->GetPositionY(),bot->GetPositionZ()};
+        if (boss->GetDistance(here.x,here.y,here.z)<=maximum && legal(here))
+        { plan.position=p;return true; }
+        const float angle=std::atan2(here.y-boss->GetPositionY(),here.x-boss->GetPositionX());
+        const encounter::Point nearEdge{boss->GetPositionX()+maximum*std::cos(angle),
+            boss->GetPositionY()+maximum*std::sin(angle),tankStation.z};
+        if (legal(nearEdge)) {plan.position=p;return true;}
+        p.destination=here;
+        if (ValidateEncounterDestination(ai,p) && p.destination.z>=448.60f &&
+            bot->GetDistance(p.destination.x,p.destination.y,p.destination.z)<=1.0f) plan.position=p;
+        return true;
+    }
     if (holding)
     {
         if (legal(tankStation)) plan.position = p;

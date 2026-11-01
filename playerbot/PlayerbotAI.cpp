@@ -4,6 +4,7 @@
 #endif
 #include "PlayerbotMgr.h"
 #include "playerbot/playerbot.h"
+#include "playerbot/SpellSelectionGuard.h"
 #include "playerbot/strategy/actions/ClassicRaidActions.h"
 #include "playerbot/strategy/actions/NaxxramasControlCommands.h"
 #include "playerbot/strategy/actions/BlackwingLairDungeonActions.h"
@@ -847,6 +848,10 @@ bool PlayerbotAI::UpdateAIReaction(uint32 elapsed, bool minimal, bool isStunned)
         {
             if(reaction->ShouldInterruptCast())
             {
+#ifdef MANTECH_RAID_LAB
+                if (reaction->GetAction() && bot->IsNonMeleeSpellCasted(false,false,true))
+                    RaidLab::Count(bot,("reaction_interrupt:"+reaction->GetAction()->getName()).c_str(),0,1);
+#endif
                 InterruptSpell();
             }
 
@@ -1496,17 +1501,23 @@ void PlayerbotAI::PrepareForUrgentHazard()
     // Owning-map update only; native fear/root and spell readiness still apply.
     if (!bot || IsRealPlayer() || !bot->IsInWorld() || !bot->IsAlive() ||
         bot->IsBeingTeleported() || bot->HasCharmer()) return;
-    // Magmadar's fire polling runs every update. An unexecuted escape must
+    // Native MC ground-fire polling runs every update. An unexecuted escape must
     // not cancel each newly started heal/damage cast again on the next tick.
-    // The admitted reaction still interrupts via ShouldReactionInterruptCast;
+    // The admitted escape still interrupts through MoveAdmittedRaidEscape;
     // waking a search alone is not proof that movement can actually execute.
-    const bool magmadar = bot->GetMapId()==409 && HasStrategy("magmadar", BotState::BOT_STATE_COMBAT);
+    bool preserveCast = bot->GetMapId()==409 && HasStrategy("magmadar", BotState::BOT_STATE_COMBAT);
+#ifdef MANGOSBOT_ZERO
+    // Gehennas native trace: rejected exits were cancelling Flash of Light
+    // every ~100ms. This wake is called by StopMoltenCoreUnsafeTravel for
+    // actual Rain of Fire / Magmadar ground objects, not boss pulse timers.
+    preserveCast = preserveCast || bot->GetMapId()==409;
+#endif
 #ifdef MANTECH_RAID_LAB
     if (bot->IsNonMeleeSpellCasted(false,false,true))
-        RaidLab::Event(bot,magmadar?"hazard_wake_preserve_cast":"urgent_hazard_interrupt");
+        RaidLab::Event(bot,preserveCast?"hazard_wake_preserve_cast":"urgent_hazard_interrupt");
     RaidLab::Count(bot,"urgent_hazard_wake",0,0);
 #endif
-    if (!magmadar) bot->InterruptNonMeleeSpells(false);
+    if (!preserveCast) bot->InterruptNonMeleeSpells(false);
     reactionEngine->NotifyHazard();
     ResetAIInternalUpdateDelay();
     isWaiting=false;
@@ -1580,10 +1591,29 @@ void PlayerbotAI::PrepareForUrgentCombat()
     if (!danger) { urgentRecoveryTarget.Clear(); return; }
     // This polling fallback also covers missed visibility packets. Only the
     // owner-map update resolves native victims or changes cast/movement state.
-    if (notified || urgentRecoveryTarget != danger->GetObjectGuid())
+    const bool changed = urgentRecoveryTarget != danger->GetObjectGuid();
+    if (notified || changed)
     {
         urgentRecoveryTarget = danger->GetObjectGuid();
+#ifdef MANGOSBOT_ZERO
+        // Attack notifications also arrive while this carrier is already at
+        // the tanks. Waking the AI must not cancel a useful Frostbolt/heal on
+        // every such packet. Interrupt only for an admitted carrier movement
+        // or the first assignment of a loose mob to this tank.
+        if (IsTank(bot))
+        {
+            if (changed) bot->InterruptNonMeleeSpells(false);
+        }
+        else
+        {
+            EncounterPosition recovery;
+            if (PlanLavaTrashCarrier(this,recovery) &&
+                bot->GetDistance(recovery.destination.x,recovery.destination.y,recovery.destination.z)>1.5f)
+                bot->InterruptNonMeleeSpells(false);
+        }
+#else
         bot->InterruptNonMeleeSpells(false);
+#endif
         if (bot->IsSitState()) bot->SetStandState(UNIT_STAND_STATE_STAND);
         if (!notified) reactionEngine->NotifyPartyCombat();
         aiObjectContext->GetValue<EncounterPosition>("molten core position")->Reset();
@@ -1596,6 +1626,10 @@ bool PlayerbotAI::HasPendingCombatEngagement()
 {
     if (!HasRealPlayerMaster() || IsRealPlayer() || !bot->GetGroup() ||
         !bot->IsInWorld() || !bot->IsAlive() || bot->IsBeingTeleported() || bot->HasCharmer()) return false;
+    // PrepareForPartyCombat wakes these companions from this same evidence.
+    // Without retaining it here, empty personal attacker/target caches cause
+    // combat -> idle -> combat every update, cancelling heals and pet summons.
+    if (ai::HasClassicRaidPartyCombat(this)) return true;
     Unit* current = GetUnit(aiObjectContext->GetValue<ObjectGuid>("current target")->Get());
     if (current && current->IsInWorld() && current->IsAlive() && bot->IsInMap(current) &&
         !sServerFacade.IsFriendlyTo(bot, current) && current->IsInCombat()) return true;
@@ -5152,7 +5186,12 @@ bool PlayerbotAI::HasSpell(uint32 spellid) const
 
 bool PlayerbotAI::CanCastSpell(std::string name, Unit* target, uint8 effectMask, Item* itemTarget, bool ignoreRange, bool ignoreInCombat, bool ignoreMount, SpellCastResult* checkResult)
 {
-    return CanCastSpell(aiObjectContext->GetValue<uint32>("spell id", name)->Get(), target, effectMask, true, itemTarget, ignoreRange, ignoreInCombat, ignoreMount, checkResult);
+    const uint32 id = aiObjectContext->GetValue<uint32>("spell id", name)->Get();
+#ifdef MANTECH_RAID_LAB
+    if (!id && CombatDiagnostics::Select(this))
+        CombatDiagnostics::Record(this, name, CombatActionContext::Current(), "unresolved_spell_name", SPELL_FAILED_NOT_KNOWN, 0, target);
+#endif
+    return CanCastSpell(id, target, effectMask, true, itemTarget, ignoreRange, ignoreInCombat, ignoreMount, checkResult);
 }
 
 bool PlayerbotAI::CanCastSpell(uint32 spellid, Unit* target, uint8 effectMask, bool checkHasSpell, Item* itemTarget, bool ignoreRange, bool ignoreInCombat, bool ignoreMount, SpellCastResult* checkResult)
@@ -5482,8 +5521,7 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, GameObject* goTarget, uint8 effec
         return false;
     }
 
-    //ObjectGuid oldSel = bot->GetSelectionGuid();
-    bot->SetSelectionGuid(goTarget->GetObjectGuid());
+    ai::ScopedSpellSelection selection(bot, goTarget->GetObjectGuid());
     Spell* spell = new Spell(bot, spellInfo, false);
 
     spell->m_targets.setGOTarget(goTarget);
@@ -5492,8 +5530,6 @@ bool PlayerbotAI::CanCastSpell(uint32 spellid, GameObject* goTarget, uint8 effec
 
     SpellCastResult result = spell->CheckCast(true);
     delete spell;
-    //if (oldSel)
-    //    bot->SetSelectionGuid(oldSel);
 
     if (checkResult)
     {
@@ -5698,8 +5734,7 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         failWithDelay = true;
     }
 
-	ObjectGuid oldSel = bot->GetSelectionGuid();
-	bot->SetSelectionGuid(target->GetObjectGuid());
+    ai::ScopedSpellSelection selection(bot, target->GetObjectGuid());
 
     WorldObject* faceTo = target;
     if (!sServerFacade.IsInFront(bot, faceTo, sPlayerbotAIConfig.sightDistance, CAST_ANGLE_IN_FRONT))
@@ -5892,9 +5927,6 @@ bool PlayerbotAI::CastSpell(uint32 spellId, Unit* target, Item* itemTarget, bool
         aiObjectContext->GetValue<LastSpellCast&>("last spell cast")->Get().Set(spellId, target->GetObjectGuid(), time(0));
 
     aiObjectContext->GetValue<ai::PositionMap&>("position")->Get()["random"].Reset();
-
-    if (oldSel)
-        bot->SetSelectionGuid(oldSel);
 
     if (HasStrategy("debug spell", BotState::BOT_STATE_NON_COMBAT))
     {
@@ -9682,8 +9714,21 @@ bool PlayerbotAI::CanMove()
     return true;
 }
 
+#ifdef MANTECH_RAID_LAB
+void PlayerbotAI::StopMoving(std::source_location origin)
+#else
 void PlayerbotAI::StopMoving()
+#endif
 {
+#ifdef MANTECH_RAID_LAB
+    if (bot && bot->IsInWorld() && RaidLab::AllowedMap(bot->GetMapId()) && bot->movespline && !bot->movespline->Finalized())
+    {
+        std::string file=origin.file_name();const auto slash=file.find_last_of("/\\");
+        if (slash!=std::string::npos) file=file.substr(slash+1);
+        const std::string label="ai_stop:"+file;
+        RaidLab::Count(bot,label.c_str(),origin.line());
+    }
+#endif
     if (bot->IsTaxiFlying())
         return;
 

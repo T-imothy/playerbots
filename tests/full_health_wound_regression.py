@@ -3,6 +3,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 from behavior_regression import block
+from native_core_paths import core_path, core_eras
 
 repo=Path(__file__).resolve().parents[1]
 policy=(repo/'playerbot/strategy/actions/EncounterHealingPolicy.cpp').read_text()
@@ -42,6 +43,7 @@ struct HealthInRangeTrigger:ValueInRangeTrigger{PlayerbotAI* ai;std::string name
  Player* GetMaster(){return nullptr;}bool IsActive();};
 #define AI_VALUE2(type,key,qualifier) ai->value<type>(key)
 bool burst=false;bool NeedsMoltenCoreBurstHealing(PlayerbotAI*,Unit*u){return burst&&u&&u->hp<u->maxhp;}
+bool NeedsNaxxramasTankHealing(PlayerbotAI*,Unit*){return false;}
 __METHODS__
 int main(){
  Player patient;PlayerbotAI ai;ai.target=&patient;HealthInRangeTrigger t;t.target=&patient;t.ai=&ai;
@@ -92,14 +94,15 @@ for era in ('ZERO','ONE','TWO'):
         tmp=Path(directory);(tmp/'test.cpp').write_text(code)
         subprocess.run(['cl','/nologo','/std:c++17','/EHsc',f'/DMANGOSBOT_{era}','test.cpp','/Fe:test.exe'],cwd=tmp,check=True)
         subprocess.run([str(tmp/'test.exe')],cwd=tmp,check=True)
-for era in ('tbc','wotlk'):
-    core=repo.parent/era
+for era in core_eras(('tbc','wotlk')):
+    core=core_path(era,repo.parent/era)
     native=(core/'src/game/Spells/SpellAuras.cpp').read_text()
     marker=native.index('case 43093: case 31956: case 38801:')
     section=native[marker:marker+600]
     assert 'target->GetHealth() == target->GetMaxHealth()' in section
     assert 'target->RemoveAurasDueToSpell(GetId())' in section
-print('PASS: both native periodic-damage handlers confirm full-health removal')
-native=(repo.parent/'wotlk/src/game/Entities/Unit.cpp').read_text()
-assert 'GetAurasByType(SPELL_AURA_HEAL_ABSORB)' in native
-assert 'AURA_REMOVE_BY_SHIELD_BREAK' in native
+print('PASS: requested native periodic-damage handlers confirm full-health removal; other eras not inspected')
+if 'wotlk' in core_eras():
+    native=(core_path('wotlk',repo.parent/'wotlk')/'src/game/Entities/Unit.cpp').read_text()
+    assert 'GetAurasByType(SPELL_AURA_HEAL_ABSORB)' in native
+    assert 'AURA_REMOVE_BY_SHIELD_BREAK' in native

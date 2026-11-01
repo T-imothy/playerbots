@@ -14,6 +14,7 @@ code=r'''
 #include <string>
 #include "__GEOMETRY__"
 using namespace ai;using uint32=unsigned;using int32=int;
+enum class BotState{BOT_STATE_COMBAT};
 struct Spline{bool done=true;encounter::Point end;bool Finalized(){return done;}auto FinalDestination(){return end;}};
 struct Unit{unsigned GetEntry(){return 0;}};
 struct Guid{bool IsEmpty(){return true;}};
@@ -23,11 +24,11 @@ struct Player{float x=0,y=0,z=0;Spline spline;Spline*movespline=&spline;
 struct SpellEntry{unsigned Id=1;bool channel=false;int duration=0;};
 struct Spell{SpellEntry*m_spellInfo;unsigned cast=0;unsigned GetCastTime(){return cast;}};
 bool IsChanneledSpell(const SpellEntry*s){return s->channel;}int GetSpellDuration(const SpellEntry*s){return s->duration;}
-struct PlayerbotAI{Player*bot;unsigned nativeGcd=1500;uint32 CalculateGlobalCooldown(unsigned){return nativeGcd;}Unit* GetUnit(Guid){return nullptr;}uint32 GetSpellCastDuration(Spell*);};
+struct PlayerbotAI{Player*bot;bool HasStrategy(const char*,BotState){return false;}unsigned nativeGcd=1500;uint32 CalculateGlobalCooldown(unsigned){return nativeGcd;}Unit* GetUnit(Guid){return nullptr;}uint32 GetSpellCastDuration(Spell*);};
 struct{unsigned reactDelay=100;}sPlayerbotAIConfig;
 struct EncounterPosition{bool active=true,groundOnly=false;unsigned spell=0;Guid source,boss;encounter::Point destination;};
 bool GetPlan(PlayerbotAI*,EncounterPosition&p){p.destination={0,0,0};return true;}
-struct MoltenCorePositionAction{PlayerbotAI*ai;Player*bot;bool isUseful();bool ShouldReactionInterruptCast(){return false;}};
+struct MoltenCorePositionAction{PlayerbotAI*ai;Player*bot;bool isUseful();bool ShouldReactionInterruptCast(){return false;}bool PositionMayInterruptCast(){return false;}};
 struct MoltenCorePositionValue{PlayerbotAI*ai;Player*bot;EncounterPosition Calculate();};
 unsigned checked=0,reject=8;bool danger=true;std::vector<encounter::Circle>circles;
 bool MoltenCoreThreats(PlayerbotAI*,EncounterPosition&,std::vector<encounter::Circle>&out){out=circles;return danger;}

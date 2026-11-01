@@ -3551,7 +3551,12 @@ void PlayerbotFactory::InitEquipment(bool incremental, bool syncWithMaster, bool
                     if (proto->RandomProperty)
                     {
                         randomEnchBestId = sRandomItemMgr.CalculateBestRandomEnchantId(bot->getClass(), specId, newItemId);
+#if defined(MANTECH_RAID_LAB) && defined(MANGOSBOT_ZERO)
+                        // Match candidate sorting: this is a property ID containing enchant IDs.
+                        randomEnchBestValue = sRandomItemMgr.CalculateRandomPropertyWeight(bot->getClass(), specId, randomEnchBestId);
+#else
                         randomEnchBestValue = sRandomItemMgr.CalculateEnchantWeight(bot->getClass(), specId, randomEnchBestId);
+#endif
                         newStatValue += randomEnchBestValue;
                     }
 

@@ -7,9 +7,39 @@
 
 using namespace ai;
 
+void ai::AppendGrobbulusCloudHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards)
+{
+#ifdef MANGOSBOT_ZERO
+    Player* bot=ai->GetBot();
+    if (!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId()!=533 || !bot->GetGroup() ||
+        bot->IsBeingTeleported() || bot->HasCharmer() || ai->IsRealPlayer() ||
+        !ai->HasStrategy("dungeon",BotState::BOT_STATE_COMBAT)) return;
+    std::list<Unit*> clouds;
+    MaNGOS::AllCreaturesOfEntryInRangeCheck check(bot,16363,60.0f);
+    MaNGOS::UnitListSearcher<decltype(check)> searcher(clouds,check);
+    Cell::VisitAllObjects(bot,searcher,60.0f);
+    for (Unit* cloud:clouds)
+    {
+        if (!cloud->IsInWorld() || !cloud->IsAlive() || cloud->HasCharmer() || !bot->IsInMap(cloud) ||
+            std::fabs(cloud->GetPositionZ()-bot->GetPositionZ())>8 ||
+            cloud->GetUInt32Value(UNIT_CREATED_BY_SPELL)!=28240) continue;
+        Unit* owner=ai->GetUnit(cloud->GetSpawnerGuid());
+        if (!owner || !owner->IsInWorld() || !bot->IsInMap(owner) || owner->HasCharmer() ||
+            !(owner->GetEntry()==15931 || (owner->IsPlayer() && bot->GetGroup()->IsMember(owner->GetObjectGuid())))) continue;
+        auto aura=cloud->GetSpellAuraHolder(28158,cloud->GetObjectGuid());
+        if (!aura || aura->GetAuraDuration()<=0 || aura->GetAuraDuration()>60000) continue;
+        // Classic Spell::GetRadius(28241) overrides its DBC radius with this
+        // growth formula. Predict one hazard-cache interval plus one yard.
+        const float radius=0.3f*(60000-aura->GetAuraDuration())*0.001f;
+        hazards.emplace_back(WorldPosition(cloud),radius+1.3f);
+    }
+#endif
+}
+
 void ai::AppendNativeEncounterActorHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards)
 {
     AppendZulGurubActorHazards(ai, hazards);
+    AppendGrobbulusCloudHazards(ai, hazards);
     Player* bot = ai->GetBot();
     if (bot->GetMapId() == 533 && bot->IsInWorld() && bot->IsAlive() &&
         !bot->IsBeingTeleported() && !bot->HasCharmer() && !ai->IsRealPlayer() &&

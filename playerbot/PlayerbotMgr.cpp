@@ -25,6 +25,52 @@
 class LoginQueryHolder;
 class CharacterHandler;
 
+#if defined(MANTECH_RAID_LAB) && defined(MANGOSBOT_ZERO)
+namespace {
+int RaidLabDruidTankPreset(uint8 cls, uint32 level, BotRoles role)
+{
+    if (cls!=CLASS_DRUID || level!=60 || role!=BOT_ROLE_TANK) return -1;
+    // Generic tree-only role filtering calls every feral path DPS, then
+    // falls back to an arbitrary spec when a druid tank is requested. The
+    // local level-60 fixture selects a configured native bear talent path
+    // using the same learned talent ranks that the combat strategy recognizes.
+    for (auto& path:sPlayerbotAIConfig.classSpecs[cls].talentPath) {
+        if (path.talentSpec.empty()) continue;
+        auto& spec=path.talentSpec.back();
+        if (spec.highestTree()!=1) continue;
+        for (const auto& talent:spec.talents) {
+            if (!talent.talentInfo || talent.rank<1 || talent.rank>MAX_TALENT_RANK) continue;
+            const uint32 spell=talent.talentInfo->RankID[talent.rank-1];
+            if (spell==16958 || spell==16961) return path.id;
+        }
+    }
+    return -1;
+}
+int RaidLabDruidDamagePreset(uint8 cls, uint32 level, BotRoles role, uint32 seed)
+{
+    if (cls!=CLASS_DRUID || level!=60 || role!=BOT_ROLE_DPS) return -1;
+    std::vector<int> eligible;
+    for (auto& path:sPlayerbotAIConfig.classSpecs[cls].talentPath) {
+        if (path.talentSpec.empty()) continue;
+        auto& spec=path.talentSpec.back();
+        const int tree=spec.highestTree();
+        if (tree!=0 && tree!=1) continue;
+        bool bear=false;
+        for (const auto& talent:spec.talents) {
+            if (!talent.talentInfo || talent.rank<1 || talent.rank>MAX_TALENT_RANK) continue;
+            const uint32 spell=talent.talentInfo->RankID[talent.rank-1];
+            if (spell==16958 || spell==16961) bear=true;
+        }
+        // AiFactory treats feral paths with these learned ranks as tanks.
+        // Keep both configured balance and cat paths in the DPS test roster.
+        if (tree==0 || !bear) eligible.push_back(path.id);
+    }
+    std::sort(eligible.begin(),eligible.end());
+    return eligible.empty() ? -1 : eligible[seed%eligible.size()];
+}
+}
+#endif
+
 PlayerbotHolder::PlayerbotHolder() : PlayerbotAIBase()
 {
     m_holderHandlers["list"] = &PlayerbotHolder::HandleList;
@@ -2040,7 +2086,31 @@ void PlayerbotHolder::CreateBot(Player* master, const std::string param, std::li
             newBot->learnDefaultSpells();
 
             std::ostringstream out;
+#if defined(MANTECH_RAID_LAB) && defined(MANGOSBOT_ZERO)
+            if (temporary && role==BOT_ROLE_TANK && cls==CLASS_DRUID && level==60) {
+                const int preset=RaidLabDruidTankPreset(cls,level,role);
+                if (preset>=0) {
+                    sRandomPlayerbotMgr.SetValue(botGuid,"specNo",uint32(preset+1));
+                    sLog.outString("RAID_LAB_ROSTER: requested druid tank guid=%u native_preset=%d",botGuid,preset);
+                } else {
+                    sLog.outError("RAID_LAB_ROSTER: no configured native druid tank preset guid=%u",botGuid);
+                }
+            }
+            else if (temporary && role==BOT_ROLE_DPS && cls==CLASS_DRUID && level==60) {
+                const int preset=RaidLabDruidDamagePreset(cls,level,role,botGuid);
+                if (preset>=0) {
+                    sRandomPlayerbotMgr.SetValue(botGuid,"specNo",uint32(preset+1));
+                    sLog.outString("RAID_LAB_ROSTER: requested druid DPS guid=%u native_preset=%d",botGuid,preset);
+                } else {
+                    sLog.outError("RAID_LAB_ROSTER: no configured native druid DPS preset guid=%u",botGuid);
+                }
+            }
+#endif
             ChangeTalentsAction::AutoSelectTalents(newBot, &out, role);
+#if defined(MANTECH_RAID_LAB) && defined(MANGOSBOT_ZERO)
+            if (temporary && level==60 && role!=BOT_ROLE_NONE)
+                sRandomPlayerbotMgr.SetValue(botGuid,"raid lab role",uint32(role));
+#endif
 
             sRandomPlayerbotMgr.SetValue(botGuid, "create levelup", 1);
         }
@@ -2530,6 +2600,17 @@ void PlayerbotHolder::UpdatePendingTests(uint32 elapsed)
         pt.gateSkips = 0;
 
         std::string createParams = TestRegistry::GetBotCreationRequirement(pt.testName);
+#if defined(MANTECH_RAID_LAB) && defined(MANGOSBOT_ZERO)
+        // A passive synthetic leader must not consume one of the functional
+        // tank/healer slots. Keep explicit class/role requirements intact;
+        // the default player-led raid baseline uses a mage, like the reported
+        // player session. Autonomous bot-led and non-raid tests are unchanged.
+        if (pt.testName.find("raidlab_")==0 && pt.testName.find("_leader")!=std::string::npos &&
+            createParams.find("class=")==std::string::npos && createParams.find("role=")==std::string::npos) {
+            createParams += " class=mage";
+            sLog.outString("RAID_LAB_ROSTER: passive player leader class=mage test=%s",pt.testName.c_str());
+        }
+#endif
 
         createParams += " login=0 temporary=1 test=" + pt.testName;       
 

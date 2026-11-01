@@ -40,6 +40,7 @@ bool compareByHealth(const Unit *u1, const Unit *u2)
 
 ObjectGuid PartyMemberToHeal::Calculate()
 {
+    if (NeedsSapphironSelfHealing(ai)) return bot->GetObjectGuid();
     std::vector<Unit*> needHeals;
     std::vector<Unit*> tankTargets;
     const bool preHealing = ai->HasStrategy("preheal", BotState::BOT_STATE_COMBAT);
@@ -129,6 +130,9 @@ ObjectGuid PartyMemberToHeal::Calculate()
             }
         }
     }
+
+    for (Unit* tank : tankTargets)
+        if (NeedsNaxxramasTankHealing(ai, tank)) return tank->GetObjectGuid();
 
     if (Unit* objective = FindRaidHealingObjective(ai))
     {

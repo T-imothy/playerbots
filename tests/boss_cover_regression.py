@@ -6,7 +6,7 @@ from behavior_regression import block
 root=Path(__file__).resolve().parents[1]
 value=(root/'playerbot/strategy/values/BossCoverPositionValue.cpp').read_text()
 action=(root/'playerbot/strategy/actions/BossCoverAction.cpp').read_text()
-methods='\n'.join([block(value,s) for s in ('bool ai::IsBossCoverMap(', 'uint32 ai::BossCoverMechanic(', 'bool ai::IsBossCoverPosition(', 'EncounterPosition BossCoverPositionValue::Calculate(')]+[block(action,'bool BossCoverAction::'+s+'(') for s in ('GetPlan','isUseful','ShouldReactionInterruptCast','Execute')])
+methods='\n'.join([block(value,s) for s in ('bool BossCoverPositionValue::ChromaggusWarning(', 'bool ai::IsBossCoverMap(', 'uint32 ai::BossCoverMechanic(', 'bool ai::IsBossCoverPosition(', 'EncounterPosition BossCoverPositionValue::Calculate(')]+[block(action,'bool BossCoverAction::'+s+'(') for s in ('GetPlan','isUseful','ShouldReactionInterruptCast','Execute')])
 code=r'''
 #include <algorithm>
 #include <cassert>
@@ -16,6 +16,9 @@ code=r'''
 #include <map>
 #include <set>
 #include <vector>
+#include "__CLOCK__"
+time_t simulatedNow=100;
+#define time(x) simulatedNow
 using uint32=unsigned;
 constexpr float M_PI_F=3.14159265358979323846f;
 enum{CURRENT_GENERIC_SPELL=0,SPELL_STATE_CASTING=1,SPELL_STATE_FINISHED=2,IDLE_MOTION_TYPE=0};
@@ -71,7 +74,7 @@ namespace ai {
  unsigned CurrentBossEscapeSpell(Player*,Unit*b){return b->cast&&b->cast->state==SPELL_STATE_CASTING&&b->cast->m_spellInfo->Id==70123?70123:0;}
  bool IsBossCoverMap(unsigned);unsigned BossCoverMechanic(PlayerbotAI*,Unit*,bool);
  bool IsBossCoverPosition(PlayerbotAI*,Unit*,const encounter::Point&);
- struct BossCoverPositionValue{PlayerbotAI*ai;Player*bot;ObjectGuid shelterBoss;EncounterPosition Calculate();};
+ struct BossCoverPositionValue{PlayerbotAI*ai;Player*bot;ObjectGuid shelterBoss,breathOwner;unsigned breathInstance=0;ChromaggusBreathClock breathClock;EncounterPosition Calculate();bool ChromaggusWarning(Unit*);};
  struct BossCoverAction{PlayerbotAI*ai;Player*bot;
   static bool GetPlan(PlayerbotAI*,EncounterPosition&);bool isUseful();bool ShouldReactionInterruptCast()const;bool Execute(Event&);
   bool IsReaction(){return true;}void SetDuration(unsigned){}
@@ -79,6 +82,8 @@ namespace ai {
  };
 }
 using namespace ai;
+BossCoverPositionValue* observedPlanner=nullptr;
+static bool ChromaggusCoverWarning(PlayerbotAI*,Unit*boss){return observedPlanner&&observedPlanner->ChromaggusWarning(boss);}
 #define AI_VALUE(type,key) (std::string(key)=="attackers"?ai->attackers:ai->objects)
 #define AI_VALUE2(type,key,qualifier) ai->nearby
 __METHODS__
@@ -87,6 +92,7 @@ int main(){
  // A marked add hides the boss from attackers; BWL safety must still see it.
  ai.attackers={99};
  BossCoverPositionValue planner{&ai,&bot};BossCoverAction action{&ai,&bot};Event event;
+ observedPlanner=&planner;
  auto calculate=[&](){ai.context.position.data=planner.Calculate();return ai.context.position.data;};
  bot.aura.stacks=4;assert(!calculate().active);bot.aura.stacks=5;auto plan=calculate();
  assert(plan.active&&plan.destination.x>=6&&ai.pathChecks<=8);assert(action.isUseful()&&action.ShouldReactionInterruptCast());
@@ -111,6 +117,18 @@ int main(){
  tank.wall=true;assert(!calculate().active);tank.wall=false;tank.x=100;assert(!calculate().active);
  ai.healer=false;boss.victim=nullptr;
  boss.entry=14020;SpellEntry info;Spell cast{&info};boss.cast=&cast;
+ boss.cast=nullptr;assert(!calculate().active);
+ for(simulatedNow=101;simulatedNow<122;++simulatedNow)assert(!calculate().active);
+#ifdef MANGOSBOT_ZERO
+ assert(calculate().active&&ai.context.position.data.spell==14020&&action.GetPlan(&ai,plan));
+ boss.victim=&bot;assert(!calculate().active);boss.victim=nullptr;
+ ai.healer=true;boss.victim=&tank;tank.x=0;tank.wall=true;assert(!calculate().active);
+ tank.wall=false;assert(calculate().active);ai.healer=false;boss.victim=nullptr;
+#else
+ assert(!calculate().active);
+#endif
+ // Clear the observation window before the independent native-cast cases.
+ simulatedNow=200;boss.cast=&cast;
  for(unsigned id:{23187,23189,23308,23309,23310,23312,23313,23314,23315,23316}){info.Id=id;assert(calculate().active);}
  info.Id=1;assert(!calculate().active);info.Id=23187;cast.state=SPELL_STATE_FINISHED;assert(!calculate().active);cast.state=SPELL_STATE_CASTING;
  ai.attackers={1};bot.map=boss.map=556;boss.entry=18473;boss.victim=&bot;
@@ -150,7 +168,7 @@ int main(){
  assert(!calculate().active);
  std::cout<<"PASS: native cover mechanic gates, stack hysteresis, real-path requirement, stale-cover rejection and safe holds\n";
 }
-'''.replace('__METHODS__',methods).replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix())
+'''.replace('__METHODS__',methods).replace('__GEOMETRY__',(root/'playerbot/strategy/EncounterGeometry.h').as_posix()).replace('__CLOCK__',(root/'playerbot/strategy/ChromaggusBreathClock.h').as_posix())
 for era in ('ZERO','ONE','TWO'):
  with tempfile.TemporaryDirectory(prefix='mantech-boss-cover-') as directory:
   tmp=Path(directory);(tmp/'test.cpp').write_text(arrival_fixture(code))

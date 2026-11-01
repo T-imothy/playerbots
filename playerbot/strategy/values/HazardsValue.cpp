@@ -2,6 +2,8 @@
 #include "playerbot/playerbot.h"
 #include "playerbot/ServerFacade.h"
 #include "HazardsValue.h"
+#include "EncounterPositionValue.h"
+#include "AI/ScriptDevAI/include/sc_instance.h"
 #include "playerbot/strategy/AiObjectContext.h"
 #include "MotionGenerators/PathFinder.h"
 #include "Entities/GameObject.h"
@@ -40,6 +42,43 @@ void ai::AppendBlackwingGroundHazards(PlayerbotAI* ai, std::list<HazardPosition>
     Cell::VisitAllObjects(bot, searcher, 60.0f);
     for (WorldObject* object : objects)
         hazards.emplace_back(WorldPosition(object), static_cast<DynamicObject*>(object)->GetRadius() + 1.0f);
+}
+
+void ai::AppendKurinnaxxTrapHazards(PlayerbotAI* ai, std::list<HazardPosition>& hazards)
+{
+#ifdef MANGOSBOT_ZERO
+    Player* bot=ai->GetBot();
+    if(!bot->IsInWorld() || !bot->IsAlive() || bot->GetMapId()!=509 || !bot->GetGroup() ||
+       bot->IsBeingTeleported() || bot->HasCharmer() || ai->IsRealPlayer() ||
+       !ai->HasStrategy("dungeon",BotState::BOT_STATE_COMBAT))return;
+    InstanceData* instance=bot->GetMap()->GetInstanceData();
+    if(!instance || instance->GetData(0)!=IN_PROGRESS)return;
+    const float radius=NativeEncounterSpellRadius(25656);
+    if(!std::isfinite(radius) || radius<=0 || radius>35)return;
+    struct TrapCheck {
+        Player* bot;
+        WorldObject const& GetFocusObject() const{return *bot;}
+        bool operator()(WorldObject* object) const {
+            if(!object || object->GetTypeId()!=TYPEID_GAMEOBJECT || !object->IsInWorld() ||
+               !bot->IsInMap(object) || std::fabs(object->GetPositionZ()-bot->GetPositionZ())>8)return false;
+            GameObject* trap=static_cast<GameObject*>(object);
+            // 26524 selects a player, who summons the real GO through 25648.
+            // Observe its armed lifetime; never retain an already spent trap.
+            return trap->GetEntry()==180647 && trap->GetSpellId()==25648 && trap->IsSpawned() &&
+                trap->GetGoType()==GAMEOBJECT_TYPE_TRAP && trap->GetUseCount()==0 &&
+                (trap->GetLootState()==GO_READY || trap->GetLootState()==GO_NOT_READY);
+        }
+    } check{bot};
+    WorldObjectList objects;
+    MaNGOS::WorldObjectListSearcher<TrapCheck> searcher(objects,check);
+    Cell::VisitAllObjects(bot,searcher,60.0f);
+    for(WorldObject* object:objects) {
+        Unit* summoner=ai->GetUnit(static_cast<GameObject*>(object)->GetSpawnerGuid());
+        if(!summoner || !summoner->IsInWorld() || !bot->IsInMap(summoner) || summoner->HasCharmer() ||
+           !(summoner->GetEntry()==15348 || (summoner->IsPlayer() && bot->GetGroup()->IsMember(summoner->GetObjectGuid()))))continue;
+        hazards.emplace_back(WorldPosition(object),radius+1.0f);
+    }
+#endif
 }
 
 Hazard::Hazard()
@@ -210,6 +249,7 @@ std::list<HazardPosition> HazardsValue::Calculate()
 
     AppendMoltenCoreGroundHazards(ai, hazards);
     AppendBlackwingGroundHazards(ai, hazards);
+    AppendKurinnaxxTrapHazards(ai, hazards);
     AppendVashjStriderHazards(ai, hazards);
     AppendNativeEncounterActorHazards(ai, hazards);
     return hazards;

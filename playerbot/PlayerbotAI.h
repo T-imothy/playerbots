@@ -1,5 +1,6 @@
 #ifdef MANTECH_RAID_LAB
 #include "World/RaidLab.h"
+#include <source_location>
 #endif
 #pragma once
 
@@ -724,7 +725,11 @@ public:
     void SetFallAfterJump() { fallAfterJump = true; }
     void SetJumpTime(uint32 time) { jumpTime = time; }
     bool CanMove();
+#ifdef MANTECH_RAID_LAB
+    void StopMoving(std::source_location origin = std::source_location::current());
+#else
     void StopMoving();
+#endif
     bool IsInRealGuild();
     void SetPlayerFriend(bool isFriend) {isPlayerFriend = isFriend;}
     bool IsPlayerFriend() { return isPlayerFriend; }
