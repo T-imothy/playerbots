@@ -43,10 +43,10 @@ int main(){
  go.lock=0;assert(!action.CheckClassicBanner());go.lock=1479;
  bot.transfer=true;assert(!action.CheckClassicBanner());bot.transfer=false;
  bot.usable=false;assert(!action.CheckClassicBanner());bot.usable=true;
- bot.staticLos=false;bot.poleLos=true;assert(action.CheckClassicBanner());c=casts;bot.poleLos=false;
- bot.combat=true;assert(!action.CheckClassicBanner()&&casts==c);bot.combat=false;
- auto moves=action.moves;assert(action.CheckClassicBanner()&&action.moves==moves+1&&casts==c);
- action.route=false;assert(!action.CheckClassicBanner()&&casts==c);action.route=true;bot.staticLos=true;
+ // Placed tower flags can fail bot LOS while the native player cast accepts.
+ bot.staticLos=false;assert(action.CheckClassicBanner());
+ reject=true;auto previousWait=ai.waited;assert(!action.CheckClassicBanner()&&ai.waited==previousWait);
+ reject=false;bot.staticLos=true;c=casts;
  bot.cast=true;assert(!action.CheckClassicBanner());bot.cast=false;
  bg.eventActive=false;assert(!action.CheckClassicBanner());bg.eventActive=true;
  bg.map.event.event2=BG_AB_NODE_STATUS_ALLY_OCCUPIED;assert(!action.CheckClassicBanner());
@@ -64,7 +64,7 @@ int main(){
   bg.map.event.event2=team==ALLIANCE?BG_AV_NODE_STATUS_ALLY_CONTESTED:BG_AV_NODE_STATUS_HORDE_CONTESTED;
   assert(!action.CheckClassicBanner());
  }
- std::cout<<"PASS actual Classic banner approach/cast, faction and active-event checks, rejected cast, LOS, immunity, transfer, cast preservation, teammate ownership\n";
+ std::cout<<"PASS actual Classic banner approach/cast, faction and active-event checks, native capture rejection and visibility semantics, immunity, transfer, cast preservation, teammate ownership\n";
 }
 '''.replace('__BODY__',body)
 with tempfile.TemporaryDirectory(prefix='classic-bg-banner-') as tmp:

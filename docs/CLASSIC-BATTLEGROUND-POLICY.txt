@@ -37,7 +37,7 @@ Alterac Valley
 
 Capture and combat
   AB/AV captures use native spell 21651 on active lock-1479 banners. They
-  preserve normal cast time, ownership, immunity, range and static-map LOS
+  preserve normal cast time, ownership, immunity, range and native cast
   validation. The banner's own model is not treated as an occluding wall.
   A teammate's cast only suppresses another capture at that same banner.
   The bot fights immediate blockers and attacks on itself/nearby teammates,
@@ -65,4 +65,4 @@ Regression coverage
   banner coordinates, pending capture guards and final-general conditions.
   Existing WSG and shared BG recovery regressions cover all expansion modes.
 
-AV flag destinations reject decorative roof banners and preserve the clickable flag floor. Nearby capture checks test the visible pole as well as the base (GO collision height is zero), retain static wall checks, and approach the actual flag if occluded. No direct capture handler or instant capture is used.
+AV flag destinations reject decorative roof banners and preserve the clickable flag floor. Capture uses the same native game-object cast checks as players, without an additional bot-only unit LOS restriction on placed tower banners. The normal 3D interaction range, active flag, faction, immunity and native cast checks remain authoritative. No direct capture handler or instant capture is used.
