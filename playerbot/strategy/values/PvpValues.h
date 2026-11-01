@@ -13,6 +13,11 @@ namespace ai
     bool ShouldAdvanceWarsongObjective(PlayerbotAI* ai);
     bool IsWarsongLocalThreat(PlayerbotAI* ai, Unit* enemy, Unit* protectedPlayer);
     Unit* SelectWarsongCombatTarget(PlayerbotAI* ai);
+#ifdef MANGOSBOT_ZERO
+    unsigned BattlegroundTeamSlot(Player* bot, unsigned& count);
+    bool ShouldEngageBattlegroundTarget(PlayerbotAI* ai, Unit* target);
+    bool ShouldAdvanceBattlegroundObjective(PlayerbotAI* ai);
+#endif
 
     struct WarsongObjective
     {

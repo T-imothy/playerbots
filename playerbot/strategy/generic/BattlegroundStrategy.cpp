@@ -33,16 +33,37 @@ void BattlegroundStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigge
 
     triggers.push_back(new TriggerNode(
         "bg active",
-        NextAction::array(0, new NextAction("check mount state", 2.0f), new NextAction("bg move to objective",
+        NextAction::array(0, new NextAction("check mount state",
+#ifdef MANGOSBOT_ZERO
+            ACTION_MOVE + 6), new NextAction("bg move to objective",
+#else
+            2.0f), new NextAction("bg move to objective",
+#endif
             SupportsBattlegroundObjectiveRecovery(ai->GetBot()) ? ACTION_MOVE + 5 : 1.0f), NULL)));
+#ifdef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("bg waiting",
+        NextAction::array(0, new NextAction("check mount state", ACTION_MOVE + 6), NULL)));
+#endif
 
     triggers.push_back(new TriggerNode(
         "very often",
-        NextAction::array(0, new NextAction("bg check objective", 10.0f), NULL)));
+        NextAction::array(0, new NextAction("bg check objective",
+#ifdef MANGOSBOT_ZERO
+            ACTION_MOVE + 8
+#else
+            10.0f
+#endif
+        ), NULL)));
 
     triggers.push_back(new TriggerNode(
         "bg active",
-        NextAction::array(0, new NextAction("bg check flag", ACTION_HIGH), NULL)));
+        NextAction::array(0, new NextAction("bg check flag",
+#ifdef MANGOSBOT_ZERO
+            ACTION_MOVE + 7
+#else
+            ACTION_HIGH
+#endif
+        ), NULL)));
 
     triggers.push_back(new TriggerNode(
         "bg ended",
@@ -64,9 +85,18 @@ void BattlegroundStrategy::InitNonCombatTriggers(std::list<TriggerNode*> &trigge
 void BattlegroundStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 {
     if (!SupportsBattlegroundObjectiveRecovery(ai->GetBot())) return;
+#ifdef MANGOSBOT_ZERO
+    triggers.push_back(new TriggerNode("bg active", NextAction::array(0, new NextAction("bg move to objective", ACTION_MOVE + 5), NULL)));
+#endif
     // Captures/ended status must remain available during native PvP combat.
     triggers.push_back(new TriggerNode("bg active", NextAction::array(0, new NextAction("bg check flag", ACTION_HIGH), NULL)));
-    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("bg check objective", 10.0f), NULL)));
+    triggers.push_back(new TriggerNode("very often", NextAction::array(0, new NextAction("bg check objective",
+#ifdef MANGOSBOT_ZERO
+        ACTION_MOVE + 8
+#else
+        10.0f
+#endif
+    ), NULL)));
     triggers.push_back(new TriggerNode("bg ended", NextAction::array(0, new NextAction("bg leave", ACTION_HIGH), NULL)));
 }
 void BattlegroundStrategy::InitDeadTriggers(std::list<TriggerNode*>& triggers)
@@ -275,6 +305,26 @@ void ArenaStrategy::InitCombatTriggers(std::list<TriggerNode*>& triggers)
 
 namespace
 {
+#ifdef MANGOSBOT_ZERO
+    class BattlegroundObjectiveMultiplier : public Multiplier
+    {
+    public:
+        BattlegroundObjectiveMultiplier(PlayerbotAI* ai) : Multiplier(ai, "battleground objective") {}
+        float GetValue(Action* action) override
+        {
+            const auto type = ActualBattlegroundType(bot);
+            if (!action || (type != BATTLEGROUND_AB && type != BATTLEGROUND_AV) || ai->HasRealPlayerMaster()) return 1.0f;
+            const std::string& name = action->getName();
+            if (dynamic_cast<AttackAction*>(action) || name == "dps assist" || name == "tank assist" ||
+                name == "reach melee" || name == "reach spell" || name == "set behind")
+            {
+                Unit* target = action->GetTarget();
+                if (target && !ShouldEngageBattlegroundTarget(ai, target)) return 0.0f;
+            }
+            return 1.0f;
+        }
+    };
+#endif
     class WarsongObjectiveMultiplier : public Multiplier
     {
     public:
@@ -348,6 +398,20 @@ namespace
             return 1.0f;
         }
     };
+}
+
+void BattlegroundStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+#ifdef MANGOSBOT_ZERO
+    multipliers.push_back(new BattlegroundObjectiveMultiplier(ai));
+#endif
+}
+
+void BattlegroundStrategy::InitNonCombatMultipliers(std::list<Multiplier*>& multipliers)
+{
+#ifdef MANGOSBOT_ZERO
+    multipliers.push_back(new BattlegroundObjectiveMultiplier(ai));
+#endif
 }
 
 void WarsongStrategy::InitCombatMultipliers(std::list<Multiplier*>& multipliers)

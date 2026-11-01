@@ -2869,7 +2869,7 @@ bool BGTactics::Execute(Event& event)
             return true;
 
 #ifdef MANGOSBOT_ZERO
-        if (sServerFacade.IsInCombat(bot) && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG)))
+        if (sServerFacade.IsInCombat(bot) && !ShouldAdvanceBattlegroundObjective(ai) && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG)))
 #else
         if (sServerFacade.IsInCombat(bot) && !(bot->HasAura(BG_WS_SPELL_WARSONG_FLAG) || bot->HasAura(BG_WS_SPELL_SILVERWING_FLAG) || bot->HasAura(EY_SPELL_NETHERSTORM_FLAG)))
 #endif
@@ -2909,6 +2909,9 @@ bool BGTactics::Execute(Event& event)
 
     if (getName() == "check flag")
     {
+#ifdef MANGOSBOT_ZERO
+        if (bgType == BATTLEGROUND_AB || bgType == BATTLEGROUND_AV) return CheckClassicBanner();
+#endif
         switch (bgType)
         {
             case BATTLEGROUND_AV: return CheckFlagAv();
@@ -3061,11 +3064,15 @@ bool BGTactics::selectObjective(bool reset)
         bool hasObjective = false;
         WorldLocation objectiveLocation;
 
+#ifdef MANGOSBOT_ZERO
+        hasObjective = SelectClassicAlteracObjective(objectiveLocation);
+#else
         switch (bot->GetTeam())
         {
             case ALLIANCE: hasObjective = SelectAvObjectiveAlliance(objectiveLocation); break;
             case HORDE: hasObjective = SelectAvObjectiveHorde(objectiveLocation); break;
         }
+#endif
 
         if (hasObjective)
         {
@@ -3083,6 +3090,9 @@ bool BGTactics::selectObjective(bool reset)
     }
     case BATTLEGROUND_AB:
     {
+#ifdef MANGOSBOT_ZERO
+        return SelectClassicArathiObjective();
+#else
         // Common setup for both HORDE and ALLIANCE
         uint32 role = context->GetValue<uint32>("bg role")->Get();
         bool defender = role < 5;
@@ -3199,6 +3209,7 @@ bool BGTactics::selectObjective(bool reset)
             return true;
         }
         break;
+#endif
     }
 #ifndef MANGOSBOT_ZERO
     case BATTLEGROUND_EY: //Role < 4: Defender, else Attacker. In the beginning split for all points. Afterwards pick random strategies
@@ -4197,7 +4208,11 @@ bool BGTactics::moveToObjectiveWp(BattleBotPath* const& currentPath, uint32 curr
     uint32 const lastPointInPath = reverse ? 0 : ((*currentPath).size() - 1);
 
     if ((currentPoint == lastPointInPath) || !bot->IsAlive() ||
-        (bot->IsInCombat() && !IsBattlegroundFlagCarrier(bot) && !ShouldAdvanceWarsongObjective(ai)))
+        (bot->IsInCombat() && !IsBattlegroundFlagCarrier(bot) && !ShouldAdvanceWarsongObjective(ai)
+#ifdef MANGOSBOT_ZERO
+            && !ShouldAdvanceBattlegroundObjective(ai)
+#endif
+        ))
     {
         // Path is over.
         //ostringstream out; out << "Reached path end!";
@@ -4925,6 +4940,17 @@ bool BGTactics::refreshWarsongObjective()
 
 bool BGTactics::isUseful()
 {
+#ifdef MANGOSBOT_ZERO
+    if (getName() == "move to objective" &&
+        (ActualBattlegroundType(bot) == BATTLEGROUND_AB || ActualBattlegroundType(bot) == BATTLEGROUND_AV))
+    {
+        if (!bot->IsAlive() || !ai->CanMove() || bot->GetBattleGround()->GetStatus() != STATUS_IN_PROGRESS) return false;
+        PositionEntry pos = AI_VALUE(PositionMap&, "position")["bg objective"];
+        if (!pos.isSet()) return true;
+        if (sqrt(bot->GetDistance(pos.x, pos.y, pos.z, DIST_CALC_NONE)) < 5.0f) return false;
+        if (!ShouldAdvanceBattlegroundObjective(ai)) return false;
+    }
+#endif
     if (getName() != "move to objective" || ActualBattlegroundType(bot) != BATTLEGROUND_WS)
         return true;
     refreshWarsongObjective();

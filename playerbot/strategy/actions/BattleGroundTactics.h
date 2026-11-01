@@ -58,6 +58,11 @@ public:
     virtual bool Execute(Event& event) override;
     bool isUseful() override;
 private:
+#ifdef MANGOSBOT_ZERO
+    bool SelectClassicArathiObjective();
+    bool SelectClassicAlteracObjective(WorldLocation& location);
+    bool CheckClassicBanner();
+#endif
     uint32 warsongRetryUntil = 0;
     uint32 battlegroundObjectiveCheck = 0;
     bool refreshWarsongObjective();

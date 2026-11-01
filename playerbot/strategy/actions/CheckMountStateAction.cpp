@@ -40,7 +40,12 @@ bool CheckMountStateAction::Execute(Event& event)
 
     if (hasEnemy)
     {
-        float distToTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "current target")) ? AI_VALUE2(float, "distance", "current target") : 0;
+        Unit* currentTarget = ai->GetUnit(AI_VALUE(ObjectGuid, "current target"));
+        float distToTarget = currentTarget ? AI_VALUE2(float, "distance", "current target") : 0.0f;
+#ifdef MANGOSBOT_ZERO
+        // A visible candidate with no selected target is not a target at zero yards.
+        if (!currentTarget && bot->InBattleGround()) distToTarget = 10000.0f;
+#endif
         canAttackTarget = sServerFacade.IsDistanceLessThan(distToTarget, GetAttackDistance());
         shouldChaseTarget = sServerFacade.IsDistanceGreaterThan(distToTarget, 45.0f) && AI_VALUE2(bool, "moving", "current target");
         farFromTarget = sServerFacade.IsDistanceGreaterThan(distToTarget, 40.0f);
@@ -52,6 +57,12 @@ bool CheckMountStateAction::Execute(Event& event)
     //Mount up in battle grounds
     if (bot->InBattleGround())
     {
+#ifdef MANGOSBOT_ZERO
+        if (!bot->IsMounted() && (bot->IsInCombat() || bot->IsNonMeleeSpellCasted(false, false, true))) return false;
+        PositionEntry objective = AI_VALUE(PositionMap&, "position")["bg objective"];
+        if (!bot->IsMounted() && objective.isSet() && objective.mapId == bot->GetMapId() &&
+            sqrt(bot->GetDistance(objective.x, objective.y, objective.z, DIST_CALC_NONE)) < 25.0f) return false;
+#endif
         if (WorldPosition(bot).currentHeight() < -5.0f)
             return UnMount();
 
@@ -357,7 +368,7 @@ bool CheckMountStateAction::CanMountInBg() const
             return false;
         GameObject* AllianceflagStand = bg->GetBgMap()->GetGameObject(ObjectGuid(HIGHGUID_GAMEOBJECT, id, lowguid));
 
-        if (bot->IsWithinDistInMap(AllianceflagStand, 3.0f))
+        if (AllianceflagStand && bot->IsWithinDistInMap(AllianceflagStand, 3.0f))
             return false;
 
         //check near H Flag
@@ -365,7 +376,7 @@ bool CheckMountStateAction::CanMountInBg() const
         id = 179831;
         GameObject* HordeflagStand = bg->GetBgMap()->GetGameObject(ObjectGuid(HIGHGUID_GAMEOBJECT, id, lowguid));
 
-        if (bot->IsWithinDistInMap(HordeflagStand, 3.0f))
+        if (HordeflagStand && bot->IsWithinDistInMap(HordeflagStand, 3.0f))
             return false;
 #endif
     }

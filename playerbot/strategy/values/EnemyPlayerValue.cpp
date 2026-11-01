@@ -44,7 +44,12 @@ bool EnemyPlayersValue::IsValid(Unit* target, Player* player)
 {
     if (!PossibleTargetsValue::IsValid(target, player, true)) return false;
     if (PlayerbotAI* ai = player->GetPlayerbotAI())
+    {
         if (MeleeCcCheck(ai).Protected(target)) return false;
+#ifdef MANGOSBOT_ZERO
+        if (!ShouldEngageBattlegroundTarget(ai, target)) return false;
+#endif
+    }
     if (target)
     {
         // If the target is a player
