@@ -4012,6 +4012,9 @@ bool BGTactics::moveToObjective()
         //ostringstream out; out << "Moving to objective " << pos.x << ", " << pos.y << ", Distance: " << sServerFacade.GetDistance2d(bot, pos.x, pos.y);
         //bot->Say(out.str(), LANG_UNIVERSAL);
 
+#ifdef MANGOSBOT_ZERO
+        if (bgType == BATTLEGROUND_AV && MoveToClassicAlteracApproach(pos)) return true;
+#endif
         // more precise position for wsg
         if (bgType == BATTLEGROUND_WS)
             return MoveTo(bot->GetMapId(), pos.x, pos.y, pos.z);

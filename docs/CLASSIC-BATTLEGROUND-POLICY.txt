@@ -24,6 +24,10 @@ Alterac Valley
   Six of 40 bots work on towers, three handle threatened home objectives,
   and the main force advances through the enemy graveyard chain. Pending
   graveyard assaults retain a pair of guards while the force advances.
+  The tower squad assaults together and leaves a guard on each pending tower.
+  Offensive teams use separate midfield approaches from existing AV paths,
+  with native navigation and combat checks. The actual banner remains the
+  objective; route legs cannot become capture or combat objectives themselves.
   Towers are approached at the live banner position, including its floor.
   Main-force survivors help unfinished towers after the graveyard chain.
   The general becomes the shared objective once all four enemy towers are

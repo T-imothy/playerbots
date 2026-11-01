@@ -14,6 +14,7 @@
 #endif
 #include "CheckMountStateAction.h"
 
+namespace ai { class PositionEntry; }
 using namespace ai;
 
 #define SPELL_CAPTURE_BANNER 21651
@@ -62,9 +63,12 @@ private:
     bool SelectClassicArathiObjective();
     bool SelectClassicAlteracObjective(WorldLocation& location);
     bool CheckClassicBanner();
+    bool MoveToClassicAlteracApproach(PositionEntry objective);
 #endif
     uint32 warsongRetryUntil = 0;
     uint32 battlegroundObjectiveCheck = 0;
+    uint32 classicAvCrossingInstance = 0;
+    unsigned classicAvCrossingStep = 0;
     bool refreshWarsongObjective();
     bool SelectAvObjectiveAlliance(WorldLocation& objectiveLocation);
     bool SelectAvObjectiveHorde(WorldLocation& objectiveLocation);

@@ -44,6 +44,24 @@ int main() {
   towers[i]=Node::Destroyed;
  }
  assert(TowerSquadSize(40)==6 && TowerSquadSize(20)==3 && TowerSquadSize(4)==0);
+ for(bool a:{true,false}) {
+  unsigned instance=0,step=0;ApproachPoint p;
+  const float start=a?700.f:-1000.f,goal=a?-600.f:77.f;
+  assert(AlteracApproach(a,12,instance,step,start,-400,50,goal,p)&&step==0);
+  auto first=p;
+  assert(AlteracApproach(a,12,instance,step,first.x,first.y,first.z,goal,p)&&step==1);
+  auto second=p;
+  assert(!AlteracApproach(a,12,instance,step,second.x,second.y,second.z,goal,p)&&step==2);
+  // Repeated calls after completion cannot reverse the route.
+  assert(!AlteracApproach(a,12,instance,step,second.x,second.y,second.z,goal,p));
+  // A death/return to our half and a new match both start a fresh approach.
+  assert(AlteracApproach(a,12,instance,step,start,-400,50,goal,p)&&step==0);
+  step=2;assert(AlteracApproach(a,12,instance,step,a?73.f:-612.f,-400,50,goal,p)&&step==0);
+  step=2;assert(AlteracApproach(a,13,instance,step,start,-400,50,goal,p)&&step==0);
+  // Home defense and already-crossed players get no detour back across midfield.
+  assert(!AlteracApproach(a,13,instance,step,start,-400,50,start,p));
+  assert(!AlteracApproach(a,13,instance,step,a?-700.f:200.f,-300,50,goal,p));
+ }
  std::cout<<"PASS Classic AB opening coverage, both teams, mixed defense/attack; AV tower squad and completed-objective general gate\n";
 }
 '''

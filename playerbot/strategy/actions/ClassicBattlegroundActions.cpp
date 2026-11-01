@@ -155,18 +155,18 @@ bool BGTactics::SelectClassicAlteracObjective(WorldLocation& location)
         }
     }
 
-    // Six of forty attack towers in two groups of three. Each leaves one
-    // guard on its assaulted tower while the other two advance to the next.
+    // Keep the small tower squad together for the assault. Leave one guard
+    // at each pending tower while the rest advance; do not begin as fragile
+    // three-player teams with no guarantee of a healer in either group.
     if (slot < towerSquad)
     {
-        const unsigned lane = slot % 2;
-        for (unsigned i = lane; i < 4; i += 2)
+        for (unsigned i = 0; i < 4; ++i)
         {
             if (towerStates[i] == policy::Node::Destroyed) continue;
-            if (towerStates[i] == policy::Node::OurAssault && slot / 2 != 0) continue;
+            if (towerStates[i] == policy::Node::OurAssault && slot != i % towerSquad) continue;
             return resolve(towers[i]);
         }
-        // Help the other lane if ours is finished.
+        // Reinforce a pending capture if every tower is already assaulted.
         for (unsigned i = 0; i < 4; ++i)
             if (towerStates[i] != policy::Node::Destroyed) return resolve(towers[i]);
     }
@@ -194,6 +194,20 @@ bool BGTactics::SelectClassicAlteracObjective(WorldLocation& location)
         if (towerStates[i] != policy::Node::Destroyed) unfinished.push_back(i);
     if (!unfinished.empty()) return resolve(towers[unfinished[(slot / 3) % unfinished.size()]]);
     return resolve(graves[2]);
+}
+
+bool BGTactics::MoveToClassicAlteracApproach(PositionEntry objective)
+{
+    BattleGround* bg = bot->GetBattleGround();
+    if (!bg || ActualBattlegroundType(bot) != BATTLEGROUND_AV || bg->GetStatus() != STATUS_IN_PROGRESS ||
+        !bot->IsAlive() || bot->IsBeingTeleported() || bot->IsNonMeleeSpellCasted(false, false, true) ||
+        ai->HasRealPlayerMaster() || !objective.isSet() || objective.mapId != bot->GetMapId()) return false;
+    policy::ApproachPoint next;
+    if (!policy::AlteracApproach(bot->GetTeam() == ALLIANCE, bg->GetInstanceId(), classicAvCrossingInstance,
+        classicAvCrossingStep, bot->GetPositionX(), bot->GetPositionY(), bot->GetPositionZ(), objective.x, next)) return false;
+    // Do not replace the actual objective: targeting/capture decisions must
+    // continue to refer to its banner, not to an intermediate travel point.
+    return MoveTo(bot->GetMapId(), next.x, next.y, next.z);
 }
 
 bool BGTactics::CheckClassicBanner()
