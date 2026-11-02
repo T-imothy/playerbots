@@ -242,7 +242,20 @@ namespace
         if (bot->GetSocial()->HasIgnore(owner->GetObjectGuid())) return "ignored";
         return "";
     }
-    std::string Control(Player* owner, Player* bot)
+    bool CanReclaimPublicRaidBot(Player* owner, Player* bot)
+    {
+        // Explicit summons may restore a public companion to the current raid
+        // leader after a logout/leadership handoff. Personal/guild/free-alt bots
+        // retain their controller; battleground leadership is not ownership.
+        Group* group = Party(bot);
+        if (!group || !group->IsRaidGroup() || group != Party(owner) ||
+            !group->IsLeader(owner->GetObjectGuid()) || owner->InBattleGround() || bot->InBattleGround() ||
+            !sPlayerbotAIConfig.IsInRandomAccountList(bot->GetSession()->GetAccountId()))
+            return false;
+        Player* master = bot->GetPlayerbotAI()->GetMaster();
+        return master && master->isRealPlayer() && master != owner && Party(master) == group;
+    }
+    std::string Control(Player* owner, Player* bot, bool allowLeaderHandoff = false)
     {
         std::string reason = Identity(owner, bot);
         if (!reason.empty()) return reason;
@@ -250,7 +263,8 @@ namespace
         Group* group = Party(bot);
         if (group && group != Party(owner)) return "external_group";
         Player* master = bot->GetPlayerbotAI()->GetMaster();
-        if (master && master->isRealPlayer() && master != owner) return "other_controller";
+        if (master && master->isRealPlayer() && master != owner &&
+            !(allowLeaderHandoff && CanReclaimPublicRaidBot(owner, bot))) return "other_controller";
         bool own = owner->GetSession()->GetAccountId() == bot->GetSession()->GetAccountId();
         if (!own && master != owner && (!group || !group->IsLeader(owner->GetObjectGuid())))
             return "not_controller";
@@ -556,7 +570,7 @@ namespace
             return;
         }
         std::string reason = request.operation == "summon" || request.operation == "prepare" ?
-            Control(owner,bot) : BotRecruitment::Eligibility(owner,bot);
+            Control(owner,bot,request.operation == "summon") : BotRecruitment::Eligibility(owner,bot);
         if (request.operation == "who")
         {
             if (!Identity(owner,bot).empty()) { Report(request,"refused","not_available_bot"); return; }
@@ -634,6 +648,16 @@ namespace
                 return;
             }
             if (!HasRoom(state.summons,request.owner)) { Report(request,"refused","busy"); return; }
+            if (CanReclaimPublicRaidBot(owner, bot))
+            {
+                Player* previous = bot->GetPlayerbotAI()->GetMaster();
+                // World-thread request processing owns this transition. Do not
+                // reset strategies, cancel casts, alter gear or clear combat.
+                bot->GetPlayerbotAI()->SetMaster(owner);
+                sLog.outString("PLAYERBOT_CONTROLLER: operation=summon request=%s bot=%u previous=%u owner=%u reason=raid_leader_reclaim",
+                    request.id.empty() ? "legacy" : request.id.c_str(), bot->GetGUIDLow(),
+                    previous->GetGUIDLow(), owner->GetGUIDLow());
+            }
             request.expires = Now() + limits::SummonSeconds;
             request.leader = Party(owner) ? Party(owner)->GetLeaderGuid() : request.owner;
             request.membership = Party(owner);

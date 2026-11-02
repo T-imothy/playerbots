@@ -66,7 +66,7 @@ struct DungeonMap:Map{unsigned count=1,max=40;InstanceData data;
  InstanceData* GetInstanceData(){return &data;}};
 struct MapEntry{bool instanced=false;bool Instanceable()const{return instanced;}};
 struct MapStore{MapEntry entry;bool missing=false;MapEntry const* LookupEntry(uint32){return missing?nullptr:&entry;}}sMapStore;
-struct Log{unsigned diagnostics=0;template<class... T>void outString(const char* format,T...){if(std::string(format)=="PLAYERBOT_RECRUIT_DIAG: %s")++diagnostics;}}sLog;
+struct Log{unsigned diagnostics=0,handoffs=0;template<class... T>void outString(const char* format,T...){if(std::string(format)=="PLAYERBOT_RECRUIT_DIAG: %s")++diagnostics;if(std::string(format).find("PLAYERBOT_CONTROLLER:")==0)++handoffs;}}sLog;
 #define DEBUG_LOG(...) ((void)0)
 struct WorldLocation{uint32 mapid=409;float coord_x=0,coord_y=0,coord_z=0;};
 struct LfgData {int state=LFG_STATE_NONE;int GetState(){return state;}};
@@ -161,6 +161,58 @@ void invite(Player& p,Player& b){WorldPacket packet;packet<<b.name;p.session.Han
 void command(Player& p,std::string args){assert(ai::BotRecruitment::HandleCommand(&p,"recruit v1 "+args));tick();}
 bool has(std::string t){for(auto const& m:messages)if(m.find(t)!=std::string::npos)return true;return false;}
 int main(){
+ // Logout can leave public companions following another still-online human.
+ // A restored raid leader's explicit summon reclaims them without AI resets.
+ for(bool legacy:{false,true}) {reset();Player p(1,true),other(3,true),b(2);Group g;
+ g.raid=true;g.leader=p.GetObjectGuid();p.group=other.group=b.group=&g;b.ai.master=&other;
+ b.combat=p.combat=true;unsigned handoffs=sLog.handoffs;
+ command(p,"peek status 2");assert(b.ai.master==&other&&b.summons==0);
+ command(p,"notyet prepare 2 gear");assert(has("other_controller")&&!b.gear&&b.ai.master==&other);
+ if(legacy){assert(ai::BotRecruitment::Queue(&p,&b,"summon"));tick();}else command(p,"reclaim summon 2");
+ assert(b.ai.master==&p&&b.summons==1&&!b.gear&&!b.ai.changes&&b.combat&&p.combat&&sLog.handoffs==handoffs+1);
+ if(!legacy){command(p,"reclaim summon 2");assert(b.summons==1&&sLog.handoffs==handoffs+1);}
+ b.transfer=false;tick();assert(has("arrived ok")||has("arrived (ok)"));
+ command(other,"steal summon 2");assert(b.ai.master==&p&&b.summons==1&&has("other_controller"));
+ // A deliberate later leadership transfer is also respected, once requested.
+ g.leader=other.GetObjectGuid();command(other,"newleader summon 2");assert(b.ai.master==&other&&b.summons==2);
+ }
+ // Leadership does not override personal ownership, other groups, BG control,
+ // identity, ignore/faction/security checks, or a normal five-player party.
+ for(unsigned fault=0;fault<12;++fault){reset();Player p(1,true),other(3,true),b(2),conflict(4);Group g,external;
+ g.raid=true;g.leader=p.GetObjectGuid();p.group=other.group=b.group=&g;b.ai.master=&other;
+ if(fault==0)g.leader=other.GetObjectGuid();
+ if(fault==1){g.leader=other.GetObjectGuid();g.assistant=p.GetObjectGuid();}
+ if(fault==2)g.raid=false;
+ if(fault==3)b.group=&external;
+ if(fault==4)other.group=&external;
+ if(fault==5){b.session.account=other.session.account;sPlayerbotAIConfig.allowGuildBots=true;p.guild=b.guild=1;}
+ if(fault==6)p.bg=true;if(fault==7)b.bg=true;
+ if(fault==8)b.ai.security.allow=false;if(fault==9)b.social.ignored=true;
+ if(fault==10)b.team=1;if(fault==11)conflict.name=b.name;
+ unsigned handoffs=sLog.handoffs;command(p,"deny summon 2");
+ assert(b.ai.master==&other&&!b.summons&&!b.gear&&sLog.handoffs==handoffs&&has("refused"));
+ }
+ // A confirmed refusal stays refused on replay after leadership changes.
+ reset();{Player p(1,true),other(3,true),b(2);Group g;g.raid=true;g.leader=other.GetObjectGuid();
+ p.group=other.group=b.group=&g;b.ai.master=&other;command(p,"refused summon 2");
+ g.leader=p.GetObjectGuid();command(p,"refused summon 2");assert(b.ai.master==&other&&!b.summons);
+ command(p,"retry summon 2");assert(b.ai.master==&p&&b.summons==1&&!b.gear);}
+ // Never take over an existing request/transfer; its original receipt is kept.
+ for(bool started:{false,true}){reset();Player p(1,true),other(3,true),b(2);Group g;g.raid=true;g.leader=other.GetObjectGuid();
+ p.group=other.group=b.group=&g;b.ai.master=&other;other.transport=!started;
+ command(other,"original summon 2");assert(b.summons==unsigned(started));
+ g.leader=p.GetObjectGuid();command(p,"busy summon 2");assert(b.ai.master==&other&&has("other_controller")&&has("leader_changed"));
+ command(other,"original summon 2");assert(has("leader_changed")&&b.summons==unsigned(started));
+ if(started)b.transfer=false;
+ command(p,"retry summon 2");assert(b.ai.master==&p&&b.summons==unsigned(started)+1);
+ command(p,"cancel cancel 2");assert(!b.gear&&has("cancelled transfer_may_complete"));}
+ // A full raid burst can reclaim every public companion in bounded work.
+ reset();{Player p(1,true),other(99,true);Group g;g.raid=true;g.leader=p.GetObjectGuid();g.count=40;
+ p.group=other.group=&g;std::vector<std::unique_ptr<Player>> bots;
+ for(unsigned id=2;id<40;++id){bots.emplace_back(new Player(id));auto b=bots.back().get();b->group=&g;b->ai.master=&other;assert(ai::BotRecruitment::Queue(&p,b,"summon"));}
+ for(unsigned i=0;i<30;++i)tick();
+ for(auto& b:bots)assert(b->ai.master==&p&&b->summons==1&&!b->gear&&!b->ai.changes);
+ }
  // Windia regression: GUID discovery must not invite the lower-level namesake
  // selected by native name lookup. Also test a conflicting real player.
  for(bool human : {false,true}) { reset();Player p(1,true),wanted(2),namesake(3,human);
